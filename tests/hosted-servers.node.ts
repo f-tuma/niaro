@@ -7,15 +7,22 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { HostedServers, maskLog } from "../apps/server-hosting/manager";
+import {
+  HostedServers,
+  maskLog,
+  type HostedRuntime,
+} from "../apps/server-hosting/manager";
 import {
   DockerSandbox,
   HOSTED_NETWORK,
   NODE_IMAGE,
+  ProcessSandbox,
   type Sandbox,
 } from "../apps/server-hosting/sandbox";
 import { HOSTED_TEMPLATES } from "../apps/server-hosting/templates";
@@ -100,6 +107,8 @@ function harness(
     "test-secret",
     {
       sandbox,
+      // Docker on purpose: auto would fall back to Node processes.
+      ...(options.missing ? { runtime: "docker" as const } : {}),
       npm: "fake-npm",
       allowCustom: options.allowCustom,
       ports: { first: 39150 + Math.floor(Math.random() * 40), last: 39199 },
@@ -276,6 +285,7 @@ test("Docker runs every server hardened, on loopback, with a pinned image and no
     port: 39100,
     memoryMb: 512,
     envFile: "/srv/hosted/hs_x.env",
+    env: { SHOULD_STAY_IN_FILE: "x" },
     program: {
       kind: "node",
       entry: "node_modules/p/dist/index.js",
@@ -292,6 +302,7 @@ test("Docker runs every server hardened, on loopback, with a pinned image and no
   assert.equal(pair("--memory"), "512m");
   assert.equal(pair("-p"), "127.0.0.1:39100:39100");
   assert.equal(pair("--env-file"), "/srv/hosted/hs_x.env");
+  assert(!run.some((a) => a.includes("SHOULD_STAY_IN_FILE")));
   assert.equal(pair("-v"), "/srv/hosted/hs_x:/data");
   assert(run.includes(NODE_IMAGE));
   assert.match(NODE_IMAGE, /^node@sha256:[a-f0-9]{64}$/);
@@ -303,6 +314,7 @@ test("Docker runs every server hardened, on loopback, with a pinned image and no
     dir: "/srv/hosted/hs_y",
     port: 39101,
     memoryMb: 256,
+    env: {},
     program: {
       kind: "image",
       image: "example/mcp@sha256:" + "a".repeat(64),
@@ -322,4 +334,256 @@ test("Docker runs every server hardened, on loopback, with a pinned image and no
     maskLog('{"refresh_token":"abc123","other":1} Bearer xyz.def'),
     '{"refresh_token":"[redacted]","other":1} [redacted]',
   );
+});
+
+test("auto uses Docker when it answers and Node processes otherwise", async () => {
+  const fake = (kind: "docker" | "process", works: boolean): Sandbox => ({
+    kind,
+    probe: () => node(`process.exit(${works ? 0 : 1})`),
+    install: () => node(""),
+    lock: () => node(""),
+    run: () => node(""),
+  });
+  const kind = async (runtime: HostedRuntime, docker: boolean) => {
+    const root = mkdtempSync(join(tmpdir(), "agent-hosted-"));
+    try {
+      return await new HostedServers(
+        new DatabaseSync(":memory:"),
+        join(root, "hosted"),
+        [],
+        "test-secret",
+        {
+          runtime,
+          sandbox: fake("docker", docker),
+          processSandbox: fake("process", true),
+        },
+      ).sandboxKind();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  assert.equal(await kind("auto", true), "docker");
+  assert.equal(await kind("auto", false), "process");
+  assert.equal(await kind("docker", false), undefined);
+  assert.equal(await kind("process", true), "process");
+  // The real probe: this Node supports the permission model.
+  const probe = new ProcessSandbox().probe();
+  const child = spawn(probe.command, probe.args, { stdio: "ignore" });
+  assert.equal(
+    await new Promise((done) => child.once("exit", (code) => done(code))),
+    0,
+  );
+});
+
+test("a process gets an explicit environment, the permission model and loopback", () => {
+  process.env.AGENT_TEST_SECRET = "must-not-leak";
+  try {
+    const sandbox = new ProcessSandbox("/usr/bin/node", "npm");
+    const run = sandbox.run({
+      name: "agent-hs_x",
+      dir: "/srv/hosted/hs_x",
+      port: 39100,
+      memoryMb: 512,
+      env: {
+        MS365_MCP_BODY_FORMAT: "html",
+        NODE_OPTIONS: "--allow-child-process",
+        HOME: "/elsewhere",
+      },
+      program: {
+        kind: "node",
+        entry: "node_modules/p/dist/index.js",
+        args: ["--http", "0.0.0.0:39100", "--host", "0.0.0.0", "--x=0.0.0.0"],
+      },
+    });
+    assert.equal(run.command, "/usr/bin/node");
+    assert.equal(run.cwd, "/srv/hosted/hs_x");
+    assert.deepEqual(run.args.slice(0, 5), [
+      "--permission",
+      "--allow-fs-read=/srv/hosted/hs_x",
+      "--allow-fs-write=/srv/hosted/hs_x/home",
+      "--max-old-space-size=384",
+      "--import",
+    ]);
+    assert.deepEqual(run.args.slice(6), [
+      "/srv/hosted/hs_x/node_modules/p/dist/index.js",
+      "--http",
+      "127.0.0.1:39100",
+      "--host",
+      "127.0.0.1",
+      "--x=0.0.0.0",
+    ]);
+    assert(
+      !run.args.some((a) =>
+        /^--allow-(child-process|worker|addons|wasi)/.test(a),
+      ),
+    );
+    assert.deepEqual(run.env, {
+      MS365_MCP_BODY_FORMAT: "html",
+      PATH: process.env.PATH ?? "",
+      HOME: "/srv/hosted/hs_x/home",
+      TMPDIR: "/srv/hosted/hs_x/home/tmp",
+      NODE_ENV: "production",
+    });
+    const install = sandbox.install(
+      "/srv/hosted/hs_x",
+      "/srv/hosted/hs_x/.npm-cache",
+    );
+    assert.equal(install.command, "npm");
+    assert.equal(install.cwd, "/srv/hosted/hs_x");
+    assert.deepEqual(install.args, [
+      "ci",
+      "--ignore-scripts",
+      "--omit=dev",
+      "--no-audit",
+      "--no-fund",
+    ]);
+    assert.deepEqual(install.env, {
+      PATH: process.env.PATH ?? "",
+      HOME: "/srv/hosted/hs_x/home",
+      TMPDIR: "/srv/hosted/hs_x/home/tmp",
+      npm_config_cache: "/srv/hosted/hs_x/.npm-cache",
+      npm_config_update_notifier: "false",
+    });
+    assert.throws(() =>
+      sandbox.run({
+        name: "agent-hs_y",
+        dir: "/srv/hosted/hs_y",
+        port: 39101,
+        memoryMb: 256,
+        env: {},
+        program: {
+          kind: "image",
+          image: "example/mcp@sha256:" + "a".repeat(64),
+          containerPort: 8080,
+          args: [],
+        },
+      }),
+    );
+  } finally {
+    delete process.env.AGENT_TEST_SECRET;
+  }
+});
+
+// Runs under the real permission flags: reports what it can reach, then serves HTTP.
+const confined = `
+const fs = require("node:fs"), path = require("node:path");
+const port = Number(process.argv.slice(2).find((a) => /:\\d+$/.test(a)).split(":").at(-1));
+console.log("listen " + process.argv.slice(2).find((a) => /:\\d+$/.test(a)));
+console.log("env " + Object.keys(process.env).sort().join(","));
+const attempt = (name, fn) => { try { fn(); console.log(name + " ok"); } catch (e) { console.log(name + " " + e.code); } };
+attempt("outside", () => fs.readFileSync(path.resolve(__dirname, "../../../../../../secret")));
+attempt("sibling", () => fs.readdirSync(path.resolve(__dirname, "../../../../..")));
+attempt("own", () => fs.readFileSync(path.resolve(__dirname, "../../../../package.json")));
+attempt("home", () => fs.writeFileSync(path.join(process.env.HOME, "state.json"), "{}"));
+attempt("dir", () => fs.writeFileSync(path.resolve(__dirname, "../../../../x"), ""));
+attempt("child", () => require("node:child_process").execFileSync(process.execPath, ["-v"]));
+require("node:http").createServer((q, s) => s.end("ok")).listen(port, "127.0.0.1");
+`;
+test("without Docker a template runs as a confined Node process that cannot read the server's files", async () => {
+  process.env.AGENT_TEST_SECRET = "must-not-leak";
+  const root = mkdtempSync(join(tmpdir(), "agent-hosted-"));
+  // Stands in for the identity directory's own files beside hosted/.
+  writeFileSync(join(root, "secret"), "TEST-identity-secret", { mode: 0o600 });
+  const installs: { cwd?: string; env: NodeJS.ProcessEnv }[] = [];
+  const trusted: string[] = [];
+  const hosted = new HostedServers(
+    new DatabaseSync(":memory:"),
+    join(root, "hosted"),
+    trusted,
+    "test-secret",
+    {
+      runtime: "process",
+      allowCustom: true,
+      processSandbox: new ProcessSandbox(process.execPath, "fake-npm"),
+      ports: { first: 39150 + Math.floor(Math.random() * 40), last: 39199 },
+      readyTimeoutMs: 8000,
+      // npm ci without the registry: lays out the template's entry point.
+      launch: (command, args, options) => {
+        if (command !== "fake-npm") return spawn(command, args, options);
+        installs.push({ cwd: options.cwd?.toString(), env: options.env! });
+        const pkg = join(
+          String(options.cwd),
+          "node_modules/@softeria/ms-365-mcp-server",
+        );
+        return spawn(
+          process.execPath,
+          [
+            "-e",
+            `const fs = require("node:fs");
+            fs.mkdirSync(${JSON.stringify(join(pkg, "dist"))}, { recursive: true });
+            fs.writeFileSync(${JSON.stringify(join(pkg, "package.json"))}, '{"type":"commonjs"}');
+            fs.writeFileSync(${JSON.stringify(join(pkg, "dist", "index.js"))}, ${JSON.stringify(confined)});`,
+          ],
+          options,
+        );
+      },
+    },
+  );
+  try {
+    assert.equal(await hosted.sandboxKind(), "process");
+    const created = hosted.create("org-a", "microsoft-365");
+    const origin = new URL(created.url).origin;
+    assert(trusted.includes(origin));
+    await until(() => hosted.list("org-a")[0]!.status === "running", 15000);
+    const response = await fetch(`${origin}/`);
+    assert.equal(await response.text(), "ok");
+    const dir = join(root, "hosted", created.id);
+    assert.equal(installs.length, 1);
+    assert.equal(installs[0]!.cwd, dir);
+    assert.equal(installs[0]!.env.npm_config_cache, join(dir, ".npm-cache"));
+    assert.equal(installs[0]!.env.AGENT_TEST_SECRET, undefined);
+    const log = hosted.logs("org-a", created.id);
+    assert(log.includes(`listen 127.0.0.1:${new URL(origin).port}`));
+    assert(
+      log.includes("env HOME,MS365_MCP_BODY_FORMAT,NODE_ENV,PATH,TMPDIR"),
+      log.join("\n"),
+    );
+    for (const line of [
+      "outside ERR_ACCESS_DENIED",
+      "sibling ERR_ACCESS_DENIED",
+      "own ok",
+      "home ok",
+      "dir ERR_ACCESS_DENIED",
+      "child ERR_ACCESS_DENIED",
+    ])
+      assert(log.includes(line), `${line}\n${log.join("\n")}`);
+    assert(!existsSync(join(root, "hosted", `${created.id}.env`)));
+    // Stopping ends the process; no leftover listens on the port.
+    const stopped = hosted.command("org-a", created.id, 1, "stop")!;
+    assert.equal(stopped.status, "stopped");
+    await assert.rejects(
+      (async () => {
+        for (let i = 0; i < 40; i++) {
+          await fetch(`${origin}/`);
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      })(),
+    );
+    // A link out of the directory would be followed, so it fails the start.
+    symlinkSync(join(root, "secret"), join(dir, "home", "link"));
+    hosted.command("org-a", created.id, stopped.revision, "start");
+    await until(() => hosted.list("org-a")[0]!.status === "failed");
+    assert.equal(hosted.list("org-a")[0]!.error, "install_failed");
+    // Custom code needs Docker.
+    hosted.createCustom("org-a", "TEST custom", {
+      source: "npm",
+      package: "@example/mcp",
+      version: "1.2.3",
+      args: ["--port", "{port}"],
+      env: [],
+    });
+    await until(
+      () =>
+        hosted.list("org-a").find((s) => s.source === "npm")?.status ===
+        "failed",
+    );
+    assert.equal(
+      hosted.list("org-a").find((s) => s.source === "npm")!.error,
+      "sandbox_unavailable",
+    );
+  } finally {
+    delete process.env.AGENT_TEST_SECRET;
+    await hosted.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });

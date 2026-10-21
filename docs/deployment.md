@@ -118,8 +118,8 @@ terminates HTTPS; it has no Caddy and publishes no port.
    the deploy fails without it) and optionally the `SMTP_*` variables (see
    `.env.example`).
 3. **Advanced → Mounts**: a file mount `server.json` with the server profile;
-   start from `examples/self-hosted/server.json` and change the name and time
-   zone. Dokploy stores it in `../files/server.json`, which the compose file
+   start from `examples/self-hosted/server.dokploy.json` and change the name
+   and time zone. Dokploy stores it in `../files/server.json`, which the compose file
    mounts read-only at `/config/server.json`. It holds no secrets: providers,
    models and services are configured in administration.
 4. **Domains**: the host from `NIARO_PUBLIC_URL`, service `niaro`, container
@@ -127,6 +127,9 @@ terminates HTTPS; it has no Caddy and publishes no port.
    must match: the server accepts only its public origin.
 5. Deploy, then open the container's terminal in Dokploy and run
    `niaro admin-key --initial` once (see First run).
+6. Microsoft 365 and other hosted MCP servers are added afterwards in
+   administration (Hosted); they install on first start and need outbound
+   access to the npm registry.
 
 Traefik streams responses without buffering and sends `X-Forwarded-For`;
 `NIARO_TRUST_PROXY=auto` trusts it because the public URL is HTTPS and the
@@ -388,10 +391,16 @@ admin-key --initial`; never written to the container log), stored only as a
 
 ## Not in the image
 
-- **Hosted MCP servers** (Administration → Hosted) run in a Docker sandbox. The
-  image contains no Docker CLI and the socket is not mounted (that would give
-  the container control of the host), so they report `sandbox_unavailable`.
-  Run such servers separately and connect them as remote MCP services by URL.
+- **Docker for hosted MCP servers.** The image contains no Docker CLI and the
+  socket is not mounted (that would give the container control of the host).
+  Hosted templates such as Microsoft 365 (Administration → Hosted) then run as
+  child processes of the server instead (`administration.identity.hosting.runtime`
+  `"auto"`, or `NIARO_HOSTED_RUNTIME=process`): installed from their pinned
+  lockfile into `/data/identity/hosted/`, bound to loopback, and confined by
+  Node's permission model to their own directory, so they cannot read the
+  server's data or start other programs. They share the server's user and
+  network, so only the bundled, pinned templates run this way; custom servers
+  still need Docker. See [docs/self-hosting.md](self-hosting.md#without-docker).
 - **Local Whisper transcription** (`whisper.cpp` with a Whisper model) is not
   part of the image. The image carries only whisper.cpp's speech detection
   (v1.9.4, Silero v6.2.0, in `/app/voice`; the example profile points

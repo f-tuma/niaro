@@ -11,8 +11,8 @@
 #                (Let's Encrypt); the domain must equal NIARO_PUBLIC_URL.
 # After the first deploy, in the niaro container's terminal:
 #   niaro admin-key --initial
-# Microsoft 365 (mail, calendar) runs as the ms365 service; add it in
-# administration as an MCP service with URL http://ms365:3000/mcp.
+# Microsoft 365 and other hosted MCP servers are added in administration
+# (Hosted); without Docker they run inside this container.
 name: niaro
 
 services:
@@ -48,7 +48,6 @@ services:
       - "8793"
     networks:
       - dokploy-network
-      - internal
     # Hardened: read-only root filesystem (the server writes only to /data and
     # /tmp), no Linux capabilities, no privilege gain through setuid binaries.
     read_only: true
@@ -63,34 +62,9 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
 
-  # Microsoft 365 MCP: the hosted template as a container. Reachable only by
-  # niaro on the internal network; the profile lists it in integrationOrigins.
-  ms365:
-    build:
-      context: .
-      target: ms365
-    image: ${NIARO_MS365_IMAGE:-niaro-ms365:local}
-    init: true
-    restart: unless-stopped
-    expose:
-      - "3000"
-    networks:
-      - internal
-    read_only: true
-    tmpfs:
-      - /tmp:size=64m,mode=1777
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    mem_limit: 512m
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
-
 networks:
   dokploy-network:
     external: true
-  # Between niaro and ms365 only.
-  internal:
 
 volumes:
   niaro-data:

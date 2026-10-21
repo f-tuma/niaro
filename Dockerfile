@@ -47,23 +47,6 @@ RUN git clone --depth 1 --branch v1.9.4 https://github.com/ggml-org/whisper.cpp.
       https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin \
  && echo "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987  out/models/ggml-silero-v6.2.0.bin" | sha256sum -c -
 
-# --- ms365: the Microsoft 365 MCP server as its own container ---------------
-# The same pinned package and lockfile as the hosted template, for deployments
-# without the Docker sandbox (compose.dokploy.yml). Every request carries the
-# person's own Microsoft token; the server keeps no credentials.
-FROM ${NODE_IMAGE} AS ms365
-WORKDIR /app
-COPY apps/server-hosting/templates/microsoft-365/package.json \
-     apps/server-hosting/templates/microsoft-365/package-lock.json ./
-RUN npm ci --ignore-scripts --omit=dev --no-audit --no-fund
-# It writes its log under $HOME; the root filesystem is read-only, /tmp is not.
-ENV NODE_ENV=production \
-    MS365_MCP_BODY_FORMAT=html \
-    HOME=/tmp/home
-USER node
-EXPOSE 3000
-CMD ["sh", "-c", "mkdir -p \"$HOME/.ms-365-mcp-server/logs\" && exec node node_modules/@softeria/ms-365-mcp-server/dist/index.js --http 0.0.0.0:3000 --preset calendar,mail --allow-unauthenticated-discovery"]
-
 # --- runtime: production dependencies only, non-root ------------------------
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \

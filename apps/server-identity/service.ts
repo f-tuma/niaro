@@ -415,7 +415,11 @@ export async function openIdentity(
       join(settings.directory, "hosted"),
       trusted,
       secret,
-      { allowCustom: settings.hosting.allowCustom, ...options.hosting },
+      {
+        allowCustom: settings.hosting.allowCustom,
+        runtime: settings.hosting.runtime,
+        ...options.hosting,
+      },
     );
     service = new IdentityService(
       db,
@@ -5174,9 +5178,7 @@ export class IdentityService {
                   organizationId,
                   canManage,
                   allowCustom: hosted.allowCustom,
-                  sandbox: (await hosted.sandboxAvailable())
-                    ? "docker"
-                    : "unavailable",
+                  sandbox: (await hosted.sandboxKind()) ?? "unavailable",
                   templates: hosted.templates(),
                   servers: canManage ? hosted.list(organizationId) : [],
                 }),

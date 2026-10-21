@@ -62,6 +62,7 @@ const aiProfiles = z
           message: "AI profile IDs must be unique",
         });
   });
+export const HOSTED_RUNTIMES = ["auto", "docker", "process"] as const;
 export const ServerConfigSchema = z
   .strictObject({
     version: z.literal(1),
@@ -83,10 +84,15 @@ export const ServerConfigSchema = z
             baseURL: origin,
             voiceAssetsDirectory: path.optional(),
             /** Custom MCP servers (npm packages, pinned images) run code on this machine,
-             * in a Docker sandbox. Only the operator can allow them, never the console. */
+             * in a Docker sandbox. Only the operator can allow them, never the console.
+             * runtime: auto uses Docker when it answers, otherwise runs templates as Node
+             * processes of this server (NIARO_HOSTED_RUNTIME overrides it). */
             hosting: z
-              .strictObject({ allowCustom: z.boolean().default(false) })
-              .default({ allowCustom: false }),
+              .strictObject({
+                allowCustom: z.boolean().default(false),
+                runtime: z.enum(HOSTED_RUNTIMES).default("auto"),
+              })
+              .default({ allowCustom: false, runtime: "auto" }),
             mail: MailSettings.optional(),
             /** How long a browser stays signed in to an account without being
              * used; every day of use extends it. */
@@ -276,6 +282,16 @@ function listenHost(env: NodeJS.ProcessEnv = process.env) {
     );
   return host as ServerConfig["listen"]["host"];
 }
+/** NIARO_HOSTED_RUNTIME: a container image without Docker can force `process`. */
+function hostedRuntime(env: NodeJS.ProcessEnv = process.env) {
+  const runtime = env.NIARO_HOSTED_RUNTIME?.trim();
+  if (!runtime) return undefined;
+  if (!(HOSTED_RUNTIMES as readonly string[]).includes(runtime))
+    throw new ServerConfigError(
+      `NIARO_HOSTED_RUNTIME must be one of ${HOSTED_RUNTIMES.join(", ")}.`,
+    );
+  return runtime as (typeof HOSTED_RUNTIMES)[number];
+}
 
 /**
  * SMTP_HOST, SMTP_PORT, SMTP_SECURE (true | starttls | false), SMTP_USER,
@@ -335,6 +351,9 @@ export function loadServerConfig(file: string): ServerConfig {
     );
   }
   config.listen.host = listenHost() ?? config.listen.host;
+  const runtime = hostedRuntime();
+  if (runtime && config.administration?.identity)
+    config.administration.identity.hosting.runtime = runtime;
   applyMailEnvironment(config);
   const base = dirname(resolve(file));
   config.dataDirectory = resolve(base, config.dataDirectory);

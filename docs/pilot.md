@@ -107,8 +107,9 @@ contains no message contents or keys (`docker compose logs niaro`).
   process outputs; the mobile app does not yet have the Overview.
 - Deleting a personal process cannot be undone; a personal process cannot be
   converted into a company one.
-- Hosted MCP servers do not work inside the container (they need the Docker
-  sandbox).
+- Inside the container, hosted MCP servers run without Docker as confined Node
+  processes: only the prepared templates (Microsoft 365), no custom servers
+  ([without Docker](self-hosting.md#without-docker)).
 - Voice transcription and read-aloud do not count toward usage limits (they are
   billed by audio length).
 - A workspace without a model set in the catalog uses the older simplified

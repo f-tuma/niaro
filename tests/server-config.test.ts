@@ -156,7 +156,7 @@ test("identity uses a profile-relative private directory and a canonical local l
     mobile: { model: "disabled", voice: "disabled", sessionIdleDays: 30 },
     aiProfiles: { models: [], voices: [] },
     // Custom hosted servers run code on the machine: off unless the operator says so.
-    hosting: { allowCustom: false },
+    hosting: { allowCustom: false, runtime: "auto" },
     hub: { scheduler: { intervalSeconds: 300, maxPerTick: 10, idleDays: 14 } },
     // Meeting sound is kept 30 days after processing.
     meetings: { audioRetentionDays: 30, glossary: [], chunkSeconds: 300 },
@@ -170,6 +170,18 @@ test("identity uses a profile-relative private directory and a canonical local l
         identity: {
           ...value.administration.identity,
           hosting: { allowCustom: "yes" },
+        },
+      },
+    }).success,
+  ).toBe(false);
+  expect(
+    ServerConfigSchema.safeParse({
+      ...value,
+      administration: {
+        ...value.administration,
+        identity: {
+          ...value.administration.identity,
+          hosting: { allowCustom: false, runtime: "podman" },
         },
       },
     }).success,

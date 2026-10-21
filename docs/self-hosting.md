@@ -178,7 +178,8 @@ The installed Expo CLI requires a compatible `@expo/ngrok` helper for that mode.
 ## Hosted MCP servers
 
 Some services have no MCP server of their own. **Hosted servers** runs them on this
-machine, always in a Docker sandbox. **Services → Add service → Microsoft 365** starts
+machine, in a Docker sandbox, or as Node processes where there is no Docker (see
+[without Docker](#without-docker)). **Services → Add service → Microsoft 365** starts
 the prepared Microsoft 365 server (Outlook calendar and mail, Softeria
 `ms-365-mcp-server`), links it to a Microsoft sign-in method and creates the service with
 personal sign-in.
@@ -218,6 +219,44 @@ minutes. The console shows the last 200 log lines with tokens and secret values
 redacted. Up to eight hosted servers run on loopback ports 39100–39199. Removing one
 deletes its container, directory and address. Access to Docker is equivalent to root on
 the host, so run Agent Server only on a machine you trust it with.
+
+### Without Docker
+
+A container image (Dokploy) has no Docker CLI or socket. There the prepared templates
+run as Node child processes of the server, in the same container; custom servers do not
+run at all. The profile chooses the runtime, and `NIARO_HOSTED_RUNTIME` overrides it:
+
+```json
+"administration": { "identity": { "hosting": { "runtime": "auto" } } }
+```
+
+`auto` (default) uses Docker when `docker info` answers and processes otherwise;
+`docker` never falls back; `process` never uses Docker. **Hosted servers** says
+"Without Docker" in its header when processes are in use.
+
+Installation is the same `npm ci --ignore-scripts --omit=dev` from the template's
+committed lockfile, run by the server's npm in the hosted server's directory with its
+cache, `HOME` and `TMPDIR` there too, so it works on a read-only root file system. It
+needs the npm registry on first start; without it the server shows "Installation
+failed". The program then starts with Node's permission model:
+
+- `node --permission`, reading only its own directory under
+  `<identity directory>/hosted/` and writing only its `home/`. The identity database,
+  `secret`, the admin key and workflow data are unreadable; so are `/proc` and other
+  hosted servers. No child processes, worker threads, native addons or WASI. A
+  symbolic link leading out of the directory fails the start, because Node follows it;
+- an explicit environment: `PATH`, `HOME`, `TMPDIR`, `NODE_ENV=production` and the
+  template's fixed settings. Nothing of the server's own environment is passed;
+- `127.0.0.1` on its assigned port (a `0.0.0.0` host in the arguments becomes
+  loopback), a heap limit from the template's memory, and the same readiness check,
+  crash backoff and restart on server start as in Docker. It exits when the server is
+  gone, so no process keeps the port.
+
+The limits are weaker than the container's: the process runs as the server's own user,
+only Node's permission model limits its file access (Node does not call it a defence
+against malicious code), its network is not restricted (it can reach the internet, this
+server and other loopback services), and there is no process or hard memory limit.
+That is why only templates pinned in code run this way.
 
 ## Backups and upgrades
 

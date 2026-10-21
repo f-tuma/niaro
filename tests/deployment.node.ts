@@ -87,9 +87,14 @@ test("container environment sets the public origin and the listener", () => {
         },
       }),
     );
-    const base = { NIARO_PUBLIC_URL: undefined, NIARO_LISTEN_HOST: undefined };
+    const base = {
+      NIARO_PUBLIC_URL: undefined,
+      NIARO_LISTEN_HOST: undefined,
+      NIARO_HOSTED_RUNTIME: undefined,
+    };
     const plain = withEnv(base, () => loadServerConfig(file));
     assert.equal(plain.listen.host, "127.0.0.1");
+    assert.equal(plain.administration?.identity?.hosting.runtime, "auto");
     assert.equal(
       plain.administration?.identity?.baseURL,
       "https://assistant.example.com",
@@ -98,10 +103,15 @@ test("container environment sets the public origin and the listener", () => {
       {
         NIARO_PUBLIC_URL: "https://niaro.example.org",
         NIARO_LISTEN_HOST: "0.0.0.0",
+        NIARO_HOSTED_RUNTIME: "process",
       },
       () => loadServerConfig(file),
     );
     assert.equal(container.listen.host, "0.0.0.0");
+    assert.equal(
+      container.administration?.identity?.hosting.runtime,
+      "process",
+    );
     assert.equal(
       container.administration?.identity?.baseURL,
       "https://niaro.example.org",
@@ -116,6 +126,7 @@ test("container environment sets the public origin and the listener", () => {
       { ...base, NIARO_PUBLIC_URL: "http://assistant.example.com" },
       { ...base, NIARO_PUBLIC_URL: "https://assistant.example.com/path" },
       { ...base, NIARO_LISTEN_HOST: "10.0.0.5" },
+      { ...base, NIARO_HOSTED_RUNTIME: "podman" },
     ])
       assert.throws(
         () => withEnv(env, () => loadServerConfig(file)),

@@ -551,12 +551,16 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
         const restarting = h.restart().then(() => {
           drained = true;
         });
-        await delay(30);
+        // Shutdown starts asynchronously; a slow machine needs longer than a
+        // fixed pause before new admission is refused.
+        let status = 200;
+        for (let i = 0; i < 100 && status !== 503; i++) {
+          await delay(20);
+          status = (await h.request("owner", base + "/capabilities?" + h.query))
+            .status;
+        }
         assert.equal(drained, false);
-        assert.equal(
-          (await h.request("owner", base + "/capabilities?" + h.query)).status,
-          503,
-        );
+        assert.equal(status, 503);
         release();
         await pending;
         await restarting;

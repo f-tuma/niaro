@@ -112,7 +112,8 @@ export const HostedServersSchema = z.strictObject({
   canManage: z.boolean(),
   /** The operator's server profile decides; the console can never turn it on. */
   allowCustom: z.boolean(),
-  sandbox: z.enum(["docker", "unavailable"]),
+  /** process: no Docker, templates run as Node processes of the server. */
+  sandbox: z.enum(["docker", "process", "unavailable"]),
   templates: z.array(HostedTemplateSchema).max(20),
   servers: z.array(HostedServerSchema).max(20),
 });

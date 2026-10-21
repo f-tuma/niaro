@@ -11,7 +11,7 @@
       "directory": "/data/identity",
       "baseURL": "https://assistant.example.com",
       "voiceAssetsDirectory": "/app/voice",
-      "integrationOrigins": ["http://ms365:3000"]
+      "integrationOrigins": []
     }
   },
   "adapters": {

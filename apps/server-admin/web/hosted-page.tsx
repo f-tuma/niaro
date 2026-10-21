@@ -78,6 +78,7 @@ const en = {
   exists: "This server is already running for the organization.",
   noSandbox:
     "Docker is not available to this server, so hosted servers cannot run.",
+  processRuntime: "Without Docker: processes of this server",
   limit: "The server limit has been reached.",
   errors: {
     install_failed: "Installation failed. Check the log.",
@@ -117,6 +118,7 @@ const cs: typeof en = {
   exists: "Tento server pro organizaci už běží.",
   noSandbox:
     "Tento server nemá přístup k Dockeru, hostované servery proto nemohou běžet.",
+  processRuntime: "Bez Dockeru: běží jako procesy serveru",
   limit: "Byl dosažen limit počtu serverů.",
   errors: {
     install_failed: "Instalace selhala. Podívej se do logu.",
@@ -217,7 +219,8 @@ export function HostedPage() {
     ) ?? [];
   const actions = value?.canManage ? (
     <>
-      {value.allowCustom && organizationId && (
+      {/* Custom code runs only in Docker. */}
+      {value.allowCustom && value.sandbox === "docker" && organizationId && (
         <CustomServer organizationId={organizationId} />
       )}
       {available.map((template) => (
@@ -240,6 +243,11 @@ export function HostedPage() {
       <PageHeader
         title={copy.title}
         count={value?.servers.length || undefined}
+        description={
+          value?.canManage && value.sandbox === "process"
+            ? copy.processRuntime
+            : undefined
+        }
         actions={value?.servers.length ? actions : undefined}
       />
       {failure && (

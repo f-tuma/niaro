@@ -14,7 +14,10 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  readlinkSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -29,7 +32,12 @@ import {
   type HostedServer,
   type HostedTemplateId,
 } from "../../packages/protocol/hosted";
-import { DockerSandbox, type Command, type Sandbox } from "./sandbox";
+import {
+  DockerSandbox,
+  ProcessSandbox,
+  type Command,
+  type Sandbox,
+} from "./sandbox";
 import { HOSTED_TEMPLATES } from "./templates";
 
 export class HostedError extends Error {
@@ -83,9 +91,13 @@ export type Launcher = (
   args: string[],
   options: SpawnOptions,
 ) => ChildProcess;
+/** auto: Docker when it answers, otherwise Node processes with the permission model. */
+export type HostedRuntime = "auto" | "docker" | "process";
 export type HostedOptions = {
-  /** Test seams: the sandbox, the process launcher and the npm command for registry lookups. */
+  runtime?: HostedRuntime;
+  /** Test seams: the sandboxes, the process launcher and the npm command for registry lookups. */
   sandbox?: Sandbox;
+  processSandbox?: Sandbox;
   launch?: Launcher;
   npm?: string;
   ports?: { first: number; last: number };
@@ -121,24 +133,48 @@ export function maskLog(line: string, known: readonly string[] = []) {
 }
 const digestFile = (file: string) =>
   createHash("sha256").update(readFileSync(file)).digest("hex");
+/** Whether a symbolic link under the directory points outside it. */
+export function escapes(dir: string): boolean {
+  const root = realpathSync(dir);
+  const walk = (current: string): boolean =>
+    readdirSync(current, { withFileTypes: true }).some((entry) => {
+      const path = join(current, entry.name);
+      if (entry.isSymbolicLink()) {
+        let target: string;
+        try {
+          target = realpathSync(path);
+        } catch {
+          // Dangling: its target could still appear later.
+          target = resolve(current, readlinkSync(path));
+        }
+        return !target.startsWith(root + "/");
+      }
+      return entry.isDirectory() && walk(path);
+    });
+  return walk(root);
+}
 
 /** Runs MCP servers in a Docker sandbox, supervised: one directory, one container and one
  * loopback port per server. Only templates in code, or custom npm packages and pinned images
- * when the operator allowed them, can run; the console never supplies a command or a shell. */
+ * when the operator allowed them, can run; the console never supplies a command or a shell.
+ * Without Docker, templates (never custom servers) run as Node processes instead. */
 export class HostedServers {
   private runtimes = new Map<string, Runtime>();
   private installs = new Map<string, Promise<void>>();
   private closing = false;
   private networkReady?: Promise<void>;
   private readonly key: Buffer;
-  private readonly sandbox: Sandbox;
+  private readonly docker: Sandbox;
+  private readonly processSandbox: Sandbox;
+  private readonly mode: HostedRuntime;
+  private selected?: Promise<Sandbox | undefined>;
+  private chosen?: Sandbox;
   private readonly launch: Launcher;
   private readonly npm: string;
   private readonly ports: { first: number; last: number };
   private readonly maxServers: number;
   private readonly readyTimeoutMs: number;
   readonly allowCustom: boolean;
-  private available?: Promise<boolean>;
   constructor(
     private readonly db: DatabaseSync,
     private readonly root: string,
@@ -150,9 +186,12 @@ export class HostedServers {
     this.key = Buffer.from(
       hkdfSync("sha256", secret, "agent-server", "hosted-servers/v1", 32),
     );
-    this.sandbox = options.sandbox ?? new DockerSandbox();
-    this.launch = options.launch ?? spawn;
     this.npm = options.npm ?? "npm";
+    this.docker = options.sandbox ?? new DockerSandbox();
+    this.processSandbox =
+      options.processSandbox ?? new ProcessSandbox(process.execPath, this.npm);
+    this.mode = options.runtime ?? "auto";
+    this.launch = options.launch ?? spawn;
     this.ports = options.ports ?? { first: 39100, last: 39199 };
     this.maxServers = options.maxServers ?? 8;
     this.readyTimeoutMs = options.readyTimeoutMs ?? 60000;
@@ -181,12 +220,23 @@ export class HostedServers {
       }),
     );
   }
-  /** Checked once; a server without Docker shows every hosted server as failed. */
-  sandboxAvailable() {
-    this.available ??= this.exec(this.sandbox.probe(), 10000).then(
-      (r) => r.code === 0,
-    );
-    return this.available;
+  /** Chosen once; without a usable runtime every hosted server shows as failed. */
+  private sandbox() {
+    this.selected ??= (async () => {
+      const usable = async (sandbox: Sandbox) =>
+        (await this.exec(sandbox.probe(), 10000)).code === 0;
+      for (const sandbox of [this.docker, this.processSandbox])
+        if (
+          (this.mode === "auto" || this.mode === sandbox.kind) &&
+          (await usable(sandbox))
+        )
+          return (this.chosen = sandbox);
+      return undefined;
+    })();
+    return this.selected;
+  }
+  async sandboxKind() {
+    return (await this.sandbox())?.kind;
   }
   private seal(value: Record<string, string>, id: string) {
     const iv = randomBytes(12),
@@ -571,10 +621,11 @@ export class HostedServers {
       let child: ChildProcess;
       try {
         child = this.launch(command.command, command.args, {
-          env: {
+          env: (command.env ?? {
             PATH: process.env.PATH ?? "",
             ...env,
-          } as unknown as NodeJS.ProcessEnv,
+          }) as unknown as NodeJS.ProcessEnv,
+          ...(command.cwd ? { cwd: command.cwd } : {}),
           stdio: ["ignore", "pipe", "pipe"],
           timeout,
         });
@@ -592,20 +643,24 @@ export class HostedServers {
       child.once("close", (code) => done({ code, stdout }));
     });
   }
-  private ensureNetwork() {
+  private ensureNetwork(sandbox: Sandbox) {
     this.networkReady ??= (async () => {
-      const network = this.sandbox.network();
-      if ((await this.exec(network.inspect, 10000)).code !== 0)
+      const network = sandbox.network?.();
+      if (network && (await this.exec(network.inspect, 10000)).code !== 0)
         await this.exec(network.create, 20000);
     })();
     return this.networkReady;
   }
-  private install(row: Row, runtime: Runtime) {
+  private install(row: Row, runtime: Runtime, sandbox: Sandbox) {
     const dir = this.directory(row);
     const marker = join(dir, ".agent-installed");
     const definition = row.definition;
-    const cache = join(this.root, ".npm-cache");
-    mkdirSync(join(dir, "home"), { recursive: true, mode: 0o700 });
+    // A process has no mounted cache, so it keeps one in its own directory.
+    const cache =
+      sandbox.kind === "process"
+        ? join(dir, ".npm-cache")
+        : join(this.root, ".npm-cache");
+    mkdirSync(join(dir, "home", "tmp"), { recursive: true, mode: 0o700 });
     if (definition.source === "image") return Promise.resolve();
     const pending = this.installs.get(row.id);
     if (pending) return pending;
@@ -629,7 +684,7 @@ export class HostedServers {
         );
         runtime.status = "installing";
         const locked = await this.exec(
-          this.sandbox.lock(dir, cache),
+          sandbox.lock(dir, cache),
           5 * 60 * 1000,
           {},
           runtime,
@@ -645,7 +700,7 @@ export class HostedServers {
         return;
       runtime.status = "installing";
       const installed = await this.exec(
-        this.sandbox.install(dir, cache),
+        sandbox.install(dir, cache),
         5 * 60 * 1000,
         {},
         runtime,
@@ -688,17 +743,28 @@ export class HostedServers {
     const generation = ++runtime.generation;
     runtime.error = undefined;
     runtime.status = "starting";
-    if (!(await this.sandboxAvailable())) {
+    const sandbox = await this.sandbox();
+    // Custom code runs only in Docker; the process runtime is for curated templates.
+    if (
+      !sandbox ||
+      (sandbox.kind === "process" && row.definition.source !== "template")
+    ) {
       if (runtime.generation !== generation) return;
       runtime.status = "failed";
       runtime.error = "sandbox_unavailable";
       return;
     }
-    await this.ensureNetwork();
-    await this.exec(this.sandbox.remove(this.container(row)), 20000);
+    await this.ensureNetwork(sandbox);
+    const leftover = sandbox.remove?.(this.container(row));
+    if (leftover) await this.exec(leftover, 20000);
     if (runtime.generation !== generation || this.closing) return;
     try {
-      await this.install(row, runtime);
+      await this.install(row, runtime, sandbox);
+      // Node's permission model follows links, so none may lead out of the directory.
+      if (sandbox.kind === "process" && escapes(this.directory(row))) {
+        this.append(runtime, "a link leads out of the server directory");
+        throw new HostedError("hosted_install_failed");
+      }
     } catch {
       if (runtime.generation !== generation) return;
       runtime.status = "failed";
@@ -756,24 +822,31 @@ export class HostedServers {
               item.secret ? secretValues[item.name] : item.value,
             ])
             .filter((pair): pair is [string, string] => pair[1] !== undefined);
-    if (env.length)
+    // A process gets them in its own environment instead.
+    const file = sandbox.kind === "docker" && env.length > 0;
+    if (file)
       writeFileSync(
         this.envFile(row),
         env.map(([k, v]) => `${k}=${v}`).join("\n") + "\n",
         { mode: 0o600 },
       );
     else rmSync(this.envFile(row), { force: true });
-    const command = this.sandbox.run({
+    const command = sandbox.run({
       name: this.container(row),
-      dir: this.directory(row),
+      // Real path: the permission model compares the paths Node resolves.
+      dir: realpathSync(this.directory(row)),
       port: row.port,
       memoryMb,
       program,
-      ...(env.length ? { envFile: this.envFile(row) } : {}),
+      env: Object.fromEntries(env),
+      ...(file ? { envFile: this.envFile(row) } : {}),
     });
     const known = Object.values(secretValues);
     const child = this.launch(command.command, command.args, {
-      env: { PATH: process.env.PATH ?? "" } as unknown as NodeJS.ProcessEnv,
+      env: (command.env ?? {
+        PATH: process.env.PATH ?? "",
+      }) as unknown as NodeJS.ProcessEnv,
+      ...(command.cwd ? { cwd: command.cwd } : {}),
       stdio: ["ignore", "pipe", "pipe"],
     });
     runtime.child = child;
@@ -849,21 +922,33 @@ export class HostedServers {
     const child = runtime.child;
     runtime.child = undefined;
     runtime.status = "stopped";
-    if (child && child.exitCode === null) child.kill("SIGTERM");
+    if (child && child.exitCode === null) {
+      child.kill("SIGTERM");
+      setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null)
+          child.kill("SIGKILL");
+      }, 5000).unref();
+    }
     // The container must not outlive the attached client, e.g. after SIGKILL.
-    void this.exec(this.sandbox.remove(this.container(row)), 20000);
+    const leftover = this.chosen?.remove?.(this.container(row));
+    if (leftover) void this.exec(leftover, 20000);
   }
   async close() {
     this.closing = true;
     const rows = this.rows();
-    const exits = [...this.runtimes.values()]
+    const children = [...this.runtimes.values()]
       .map((r) => r.child)
-      .filter((c): c is ChildProcess => !!c && c.exitCode === null)
-      .map((c) => new Promise<void>((done) => c.once("exit", () => done())));
+      .filter((c): c is ChildProcess => !!c && c.exitCode === null);
+    const exits = children.map(
+      (c) => new Promise<void>((done) => c.once("exit", () => done())),
+    );
     for (const row of rows) if (this.runtimes.has(row.id)) this.halt(row);
     await Promise.race([
       Promise.all(exits),
       new Promise((r) => setTimeout(r, 5000)),
     ]);
+    for (const child of children)
+      if (child.exitCode === null && child.signalCode === null)
+        child.kill("SIGKILL");
   }
 }
