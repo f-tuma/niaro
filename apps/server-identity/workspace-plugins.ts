@@ -27,6 +27,10 @@ export class WorkspacePluginStore {
       revision INTEGER NOT NULL, settings TEXT
     ) STRICT;`);
   }
+  /** The server's time zone changed in administration: workspaces on the server's settings follow. */
+  setDefaultTimeZone(timeZone: string) {
+    this.defaults = PluginSettingsSchema.parse({ ...this.defaults, timeZone });
+  }
   read(workspaceId: string) {
     const row = this.db
       .prepare(

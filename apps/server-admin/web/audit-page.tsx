@@ -62,6 +62,8 @@ export const auditActions: Record<AuditEntry["action"], keyof Copy> = {
   "mcp.access_revoked": "auditMcpAccessRevoked",
   "auth.provider_changed": "auditAuthProvider",
   "hosted.server_changed": "auditHostedServer",
+  "server.settings_changed": "auditServerSettings",
+  "server.settings_imported": "auditServerSettingsImported",
   "catalog.ai_changed": "auditCatalogAi",
   "catalog.routing_changed": "auditCatalogRouting",
   "catalog.service_changed": "auditCatalogService",

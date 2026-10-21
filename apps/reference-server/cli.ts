@@ -8,15 +8,17 @@ import { createReferenceServer, loadServerAdapters } from "./runtime";
 // Operator secrets (e.g. SMTP) may live in an ignored .env next to the repo.
 if (existsSync(".env")) process.loadEnvFile(".env");
 
-const [mode, profileArgument, user, workspace, ...extra] =
-  process.argv.slice(2);
-const file = profileArgument || process.env.SERVER_PROFILE;
+const [mode, ...rest] = process.argv.slice(2);
+// The profile is optional: `admin-key --initial` may follow the mode directly.
+if (rest[0]?.startsWith("--")) rest.unshift("");
+const [profileArgument, user, workspace, ...extra] = rest;
+/** No profile: the automatic profile is built from the environment. */
+const file = profileArgument || process.env.SERVER_PROFILE || undefined;
 /** `admin-key <profile> --initial`: show a key left by an older version once, then delete it. */
 const initial = mode === "admin-key" && user === "--initial" && !workspace;
 async function main() {
   try {
     if (
-      !file ||
       extra.length ||
       !["start", "check", "pair", "admin-key", "admin-rotate-key"].includes(
         mode ?? "",
@@ -25,9 +27,13 @@ async function main() {
       (mode === "pair" && (!user || !workspace))
     )
       throw new ServerConfigError(
-        "Usage: npm run server [-- <profile.json>] | npm run server:check [-- <profile.json>] | npm run server:pair -- <profile.json> <user> <a|b> | npm run server:admin-key -- <profile.json> [--initial] | npm run server:admin-rotate-key -- <profile.json> (start/check profile defaults to SERVER_PROFILE from .env)",
+        "Usage: npm run server [-- <profile.json>] | npm run server:check [-- <profile.json>] | npm run server:pair -- <profile.json> <user> <a|b> | npm run server:admin-key -- <profile.json> [--initial] | npm run server:admin-rotate-key -- <profile.json> (the profile defaults to SERVER_PROFILE from .env; without one, the automatic profile is built from NIARO_PUBLIC_URL and NIARO_DATA)",
       );
     const config = loadServerConfig(file);
+    if (!file && mode === "start")
+      console.log(
+        `No server profile: using the automatic profile (data in ${dirname(config.dataDirectory)}).`,
+      );
     if (mode === "admin-key" || mode === "admin-rotate-key") {
       if (!config.administration)
         throw new ServerConfigError(

@@ -299,7 +299,7 @@ export function createAdminHandler(
           AdminOverviewSchema.parse({
             profile: "agent-server-admin/2",
             server: {
-              name: config.name,
+              name: options.identity?.serverSettings()?.name ?? config.name,
               workflowProfile: PROFILE,
               startedAt,
               sessionSeconds: config.sessionSeconds,

@@ -97,8 +97,17 @@ export class HubScheduler {
   private budget = new Map<string, number>();
   constructor(
     private deps: HubSchedulerDependencies,
-    readonly settings: HubScheduleSettings = HUB_SCHEDULE_DEFAULTS,
+    public settings: HubScheduleSettings = HUB_SCHEDULE_DEFAULTS,
   ) {}
+  /** New settings from administration; a changed interval restarts the timer. */
+  configure(settings: HubScheduleSettings) {
+    const restart = settings.intervalSeconds !== this.settings.intervalSeconds;
+    this.settings = settings;
+    if (!restart || this.stopped) return;
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+    this.start();
+  }
 
   /** Ticks every `intervalSeconds`; a non-positive interval never ticks. */
   start() {

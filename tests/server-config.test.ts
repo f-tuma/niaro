@@ -9,7 +9,9 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  automaticServerProfile,
   loadServerConfig,
+  ServerConfigError,
   ServerConfigSchema,
 } from "../apps/reference-server/config";
 import { loadServerAdapters } from "../apps/reference-server/runtime";
@@ -426,5 +428,163 @@ describe("SMTP settings from the environment", () => {
       SMTP_FROM: "assistant@example.test",
     });
     expect(() => loadServerConfig(withIdentity())).toThrow(/SMTP settings/);
+  });
+});
+
+describe("automatic profile from the environment", () => {
+  const keys = [
+    "NIARO_PUBLIC_URL",
+    "NIARO_DATA",
+    "NIARO_NAME",
+    "NIARO_TIME_ZONE",
+    "NIARO_PORT",
+    "NIARO_LISTEN_HOST",
+    "NIARO_HOSTED_RUNTIME",
+    "TZ",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_SECURE",
+    "SMTP_FROM",
+  ];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  beforeEach(() => {
+    for (const k of keys) delete process.env[k];
+  });
+  afterEach(() => {
+    for (const k of keys)
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+  });
+
+  test("builds the container profile under NIARO_DATA with the example adapters", () => {
+    Object.assign(process.env, {
+      NIARO_PUBLIC_URL: "https://niaro.example.com",
+      NIARO_DATA: join(directory, "data"),
+    });
+    const config = loadServerConfig();
+    expect(config).toMatchObject({
+      name: "Niaro",
+      listen: { host: "127.0.0.1", port: 8793 },
+      dataDirectory: join(directory, "data", "workflow"),
+      allowedOrigins: [],
+      plugins: { enabled: ["datetime", "memory"], timeZone: "Europe/Prague" },
+      administration: {
+        keyFile: join(directory, "data", "admin-key.json"),
+        identity: {
+          directory: join(directory, "data", "identity"),
+          baseURL: "https://niaro.example.com",
+          integrationOrigins: [],
+        },
+      },
+      adapters: {
+        model: { provider: "fixture" },
+        voice: { provider: "disabled" },
+        crm: { provider: "disabled" },
+        calendar: { provider: "simulated" },
+      },
+    });
+    // Nothing is created while loading.
+    expect(existsSync(join(directory, "data"))).toBe(false);
+    // The image's voice assets are used only where they exist.
+    expect(
+      automaticServerProfile(process.env, join(directory, "missing"))
+        .administration.identity,
+    ).not.toHaveProperty("voiceAssetsDirectory");
+    expect(
+      automaticServerProfile(process.env, directory).administration.identity,
+    ).toMatchObject({ voiceAssetsDirectory: directory });
+  });
+
+  test("NIARO_NAME, NIARO_TIME_ZONE (or TZ) and NIARO_PORT set the rest", () => {
+    Object.assign(process.env, {
+      NIARO_PUBLIC_URL: "http://localhost:9000",
+      NIARO_DATA: directory,
+      NIARO_NAME: "TEST Niaro",
+      NIARO_PORT: "9000",
+      TZ: "America/New_York",
+    });
+    const config = loadServerConfig();
+    expect(config.name).toBe("TEST Niaro");
+    expect(config.listen.port).toBe(9000);
+    expect(config.plugins?.timeZone).toBe("America/New_York");
+    process.env.NIARO_TIME_ZONE = "Asia/Tokyo";
+    expect(loadServerConfig().plugins?.timeZone).toBe("Asia/Tokyo");
+    // Empty values keep the defaults.
+    Object.assign(process.env, {
+      NIARO_NAME: " ",
+      NIARO_TIME_ZONE: "",
+      TZ: "",
+      NIARO_PUBLIC_URL: "http://localhost:8793",
+      NIARO_PORT: "",
+    });
+    expect(loadServerConfig()).toMatchObject({
+      name: "Niaro",
+      listen: { port: 8793 },
+      plugins: { timeZone: "Europe/Prague" },
+    });
+  });
+
+  test("NIARO_PUBLIC_URL is required and every value is validated", () => {
+    process.env.NIARO_DATA = directory;
+    expect(() => loadServerConfig()).toThrow(ServerConfigError);
+    expect(() => loadServerConfig()).toThrow(/NIARO_PUBLIC_URL/);
+    const valid = {
+      NIARO_PUBLIC_URL: "https://niaro.example.com",
+      NIARO_PORT: "",
+      NIARO_TIME_ZONE: "",
+      NIARO_NAME: "",
+    };
+    for (const change of [
+      { NIARO_PUBLIC_URL: "http://niaro.example.com" },
+      { NIARO_PORT: "80" },
+      { NIARO_PORT: "8793x" },
+      { NIARO_TIME_ZONE: "Mars/Olympus" },
+      { NIARO_NAME: "x".repeat(101) },
+    ]) {
+      Object.assign(process.env, valid, change);
+      expect(() => loadServerConfig()).toThrow(ServerConfigError);
+    }
+    Object.assign(process.env, valid);
+    expect(loadServerConfig().name).toBe("Niaro");
+  });
+
+  test("container overrides still apply, and an explicit profile wins", () => {
+    Object.assign(process.env, {
+      NIARO_PUBLIC_URL: "https://niaro.example.com",
+      NIARO_DATA: directory,
+      NIARO_NAME: "TEST automatic",
+      NIARO_LISTEN_HOST: "0.0.0.0",
+      NIARO_HOSTED_RUNTIME: "process",
+      SMTP_HOST: "smtp.example.test",
+      SMTP_FROM: "assistant@example.test",
+    });
+    const automatic = loadServerConfig();
+    expect(automatic.listen.host).toBe("0.0.0.0");
+    expect(automatic.administration?.identity?.hosting.runtime).toBe("process");
+    expect(automatic.administration?.identity?.mail).toMatchObject({
+      host: "smtp.example.test",
+      port: 465,
+    });
+    const file = join(directory, "profile.json");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        ...profile(),
+        administration: {
+          keyFile: "./admin-key.json",
+          identity: {
+            directory: "./identities",
+            baseURL: "https://assistant.example.com",
+          },
+        },
+      }),
+    );
+    const explicit = loadServerConfig(file);
+    expect(explicit.name).toBe("TEST configurable assistant");
+    expect(explicit.dataDirectory).toBe(join(directory, "state"));
+    expect(explicit.listen).toEqual({ host: "0.0.0.0", port: 8794 });
+    expect(explicit.administration?.identity?.baseURL).toBe(
+      "https://niaro.example.com",
+    );
   });
 });

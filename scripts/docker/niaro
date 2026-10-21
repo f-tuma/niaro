@@ -1,6 +1,7 @@
 #!/bin/sh
 # Container entry point and operator commands.
-#   niaro start | check                 run / validate the server ($NIARO_CONFIG)
+#   niaro start | check                 run / validate the server ($NIARO_CONFIG,
+#                                       or the automatic profile without one)
 #   niaro admin-rotate-key              print a new administrator key (old one stops working)
 #   niaro admin-key                     print a key only if none exists yet
 #   niaro admin-key --initial           print a key an older version left at first start, once
@@ -9,7 +10,16 @@
 #   niaro healthcheck                   exit 0 when /healthz answers
 set -eu
 cd /app
+# A profile file is optional: without one (no NIARO_CONFIG and nothing mounted
+# at /config/server.json) the server builds the automatic profile from the
+# environment (NIARO_PUBLIC_URL, NIARO_DATA, NIARO_NAME, NIARO_TIME_ZONE).
 config="${NIARO_CONFIG:-/config/server.json}"
+if [ ! -f "$config" ]; then
+  if [ -n "${NIARO_CONFIG:-}" ] && [ "${1:-start}" = start ]; then
+    echo "No server profile at $config: using the automatic profile." >&2
+  fi
+  config=""
+fi
 data="${NIARO_DATA:-/data}"
 run_ts() {
   exec node --disable-warning=ExperimentalWarning --import tsx "$@"

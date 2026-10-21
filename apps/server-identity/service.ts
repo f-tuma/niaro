@@ -121,7 +121,10 @@ import {
   MemoryViewSchema,
   type MemorySource,
 } from "../../packages/protocol/memory";
-import type { PluginSettings } from "../server-plugins/registry";
+import {
+  PluginSettingsSchema,
+  type PluginSettings,
+} from "../server-plugins/registry";
 import { WorkspacePluginStore } from "./workspace-plugins";
 import {
   UpdateWorkspacePluginsSchema,
@@ -185,6 +188,16 @@ import {
 import { exchangeOAuthCode } from "../server-integrations/service-oauth";
 
 import { AuthProviderStore } from "./auth-providers";
+import { ServerSettingsStore, serverSettingsDefaults } from "./server-settings";
+import {
+  ImportServerSettingsSchema,
+  SERVER_SETTINGS_PROFILE,
+  ServerSettingsViewSchema,
+  UpdateServerSettingsSchema,
+  serverSettingsFile,
+  serverSettingsOfFile,
+  type ServerSettings,
+} from "../../packages/protocol/server-settings";
 import {
   createAuthProviderBridge,
   providerCallbackOutcome,
@@ -265,8 +278,9 @@ async function body(req: IncomingMessage) {
             ? 131072
             : req.url?.split("?")[0] === "/admin/api/identity/skills/command"
               ? 524288
-              : req.url?.split("?")[0] === "/admin/auth/sign-in/email"
-                ? 32768
+              : req.url?.split("?")[0] === "/admin/auth/sign-in/email" ||
+                  req.url?.startsWith("/admin/api/identity/server-settings")
+                ? 65536
                 : 8192)
       )
         throw new IdentityError(413, "identity_invalid_input");
@@ -407,9 +421,15 @@ export async function openIdentity(
         /* Legacy local Whisper does not require the standalone cloud VAD binary. */
       }
     }
+    // Administration may change some profile values; the saved ones win.
+    const serverSettings = new ServerSettingsStore(
+      db,
+      serverSettingsDefaults(config),
+    );
+    const current = serverSettings.read().settings;
     // One list for catalog validation and the transport: hosted servers add their
     // loopback origin while they exist and remove it when deleted.
-    const trusted = [...settings.integrationOrigins];
+    const trusted = [...current.integrationOrigins];
     const hosted = new HostedServers(
       db,
       join(settings.directory, "hosted"),
@@ -452,7 +472,10 @@ export async function openIdentity(
       ),
       options.calendarTransport,
       speechProcessor,
-      config.plugins,
+      {
+        ...PluginSettingsSchema.parse(config.plugins ?? {}),
+        timeZone: current.timeZone,
+      },
       {
         store: authProviders,
         bridge,
@@ -473,8 +496,9 @@ export async function openIdentity(
       settings.mail,
       secret,
       mcpOAuth,
-      settings.hub,
-      settings.meetings,
+      { scheduler: current.hubScheduler },
+      current.meetings,
+      serverSettings,
     );
     await service.initializeMemory();
     service.attachHosting(hosted);
@@ -617,6 +641,7 @@ export class IdentityService {
   private meetings: MeetingStore;
   private meetingProcessor: MeetingProcessor;
   private meetingSweep?: ReturnType<typeof setInterval>;
+  private meetingRetentionDays: number;
   private hub: Hub;
   /** Keeps hourly and daily widgets fresh in the background; ticks are no-ops until a runner is attached. */
   private hubScheduler: HubScheduler;
@@ -650,6 +675,7 @@ export class IdentityService {
     private mcpOAuth?: ReturnType<typeof createMcpOAuth>,
     hubSettings?: { scheduler: HubScheduleSettings },
     meetingSettings?: Partial<MeetingSettings>,
+    private serverSettingsStore?: ServerSettingsStore,
   ) {
     this.mcpGrants = new McpAccessStore(db, {
       checkServer: (id) => !this.closing && id === this.workflowServerId,
@@ -657,6 +683,7 @@ export class IdentityService {
     this.mcpAdmissions = new McpAdmissionStore(db);
     this.meetings = new MeetingStore(db);
     const meetingOptions = { ...MEETING_SETTINGS_DEFAULTS, ...meetingSettings };
+    this.meetingRetentionDays = meetingOptions.audioRetentionDays;
     this.meetingProcessor = new MeetingProcessor(this.meetings, {
       // One queue with chat voice, which always goes first.
       queue:
@@ -666,20 +693,7 @@ export class IdentityService {
       glossary: meetingOptions.glossary,
       chunkSeconds: meetingOptions.chunkSeconds,
     });
-    // Sound of processed meetings is kept for a while, then swept daily.
-    const sweep = () =>
-      this.serial(async () => {
-        if (this.closing) return;
-        const deleted = this.meetings.sweepAudio(
-          meetingOptions.audioRetentionDays,
-        );
-        if (deleted) operatorLog("meeting_audio_retention", { deleted });
-      }).catch(() => {});
-    if (meetingOptions.audioRetentionDays > 0) {
-      this.meetingSweep = setInterval(sweep, 24 * 60 * 60 * 1000);
-      this.meetingSweep.unref();
-      setImmediate(sweep);
-    }
+    this.scheduleMeetingSweep();
     this.loops = new LoopsStore(db, catalog.store);
     this.plugins = new WorkspacePluginStore(db, pluginSettings);
     this.skills = new SkillStore(db, (record) => this.audit.append(record));
@@ -3587,6 +3601,51 @@ export class IdentityService {
   session(req: IncomingMessage) {
     return this.serial(() => this.getSession(req));
   }
+  /** Sound of processed meetings is kept for a while, then swept daily. */
+  private scheduleMeetingSweep() {
+    if (this.meetingSweep) clearInterval(this.meetingSweep);
+    this.meetingSweep = undefined;
+    if (!(this.meetingRetentionDays > 0) || this.closing) return;
+    const sweep = () =>
+      this.serial(async () => {
+        if (this.closing || !(this.meetingRetentionDays > 0)) return;
+        const deleted = this.meetings.sweepAudio(this.meetingRetentionDays);
+        if (deleted) operatorLog("meeting_audio_retention", { deleted });
+      }).catch(() => {});
+    this.meetingSweep = setInterval(sweep, 24 * 60 * 60 * 1000);
+    this.meetingSweep.unref();
+    setImmediate(sweep);
+  }
+  /** The server settings in force: saved in administration, else the profile's. */
+  serverSettings(): ServerSettings | undefined {
+    return this.serverSettingsStore?.read().settings;
+  }
+  /** Settings read at use take effect at once; origins wait for a restart. */
+  private applyServerSettings(next: ServerSettings, previous: ServerSettings) {
+    this.plugins.setDefaultTimeZone(next.timeZone);
+    this.meetingProcessor.configure(next.meetings);
+    if (next.meetings.audioRetentionDays !== this.meetingRetentionDays) {
+      this.meetingRetentionDays = next.meetings.audioRetentionDays;
+      this.scheduleMeetingSweep();
+    }
+    if (
+      JSON.stringify(next.hubScheduler) !==
+      JSON.stringify(previous.hubScheduler)
+    )
+      this.hubScheduler.configure(next.hubScheduler);
+  }
+  private serverSettingsView(organizationId: string) {
+    const store = this.serverSettingsStore!;
+    const current = store.read();
+    return ServerSettingsViewSchema.parse({
+      profile: SERVER_SETTINGS_PROFILE,
+      organizationId,
+      revision: current.revision,
+      settings: current.settings,
+      defaults: store.defaults,
+      restartPending: store.restartPending(),
+    });
+  }
   private needsSetup() {
     return !this.db.prepare('SELECT id FROM "user" LIMIT 1').get();
   }
@@ -5466,6 +5525,72 @@ export class IdentityService {
           return respond(200, { ok: true });
         }
 
+        if (url.pathname.startsWith("/admin/api/identity/server-settings")) {
+          // Server-wide settings: owners and administrators, from an account.
+          const store = this.serverSettingsStore;
+          const action = url.pathname.slice(
+            "/admin/api/identity/server-settings".length,
+          );
+          const methods = (
+            {
+              "": ["GET", "POST"],
+              "/export": ["GET"],
+              "/import": ["POST"],
+            } as Record<string, string[] | undefined>
+          )[action];
+          if (!store || !methods) return respond(404, { error: "not_found" });
+          if (!methods.includes(req.method ?? ""))
+            return respond(405, { error: "method_not_allowed" });
+          const { organizationId } =
+            req.method === "GET"
+              ? z
+                  .strictObject({ organizationId: IdentityId })
+                  .parse(Object.fromEntries(url.searchParams))
+              : z.object({ organizationId: IdentityId }).parse(payload);
+          const actor = await this.actor(req, organizationId);
+          if (actor.role === "member")
+            throw new IdentityError(403, "identity_forbidden");
+          if (action === "/export")
+            return respond(200, serverSettingsFile(store.read().settings));
+          if (req.method === "POST") {
+            const change =
+              action === "/import"
+                ? ImportServerSettingsSchema.parse(payload)
+                : UpdateServerSettingsSchema.parse(payload);
+            const settings =
+              "file" in change
+                ? serverSettingsOfFile(change.file)
+                : change.settings;
+            let previous;
+            try {
+              previous = await this.transaction(async () => {
+                const previous = store.update(change.revision, settings);
+                this.audit.append({
+                  organizationId,
+                  workspaceId: null,
+                  actorId: actor.userId,
+                  source: "console",
+                  action:
+                    action === "/import"
+                      ? "server.settings_imported"
+                      : "server.settings_changed",
+                  targetId: null,
+                  outcome: "succeeded",
+                  details: {
+                    previousRevision: previous.revision,
+                    revision: previous.revision + 1,
+                  },
+                });
+                return previous;
+              });
+            } catch (error) {
+              store.forget();
+              throw error;
+            }
+            this.applyServerSettings(store.read().settings, previous.settings);
+          }
+          return respond(200, this.serverSettingsView(organizationId));
+        }
         if (url.pathname === "/admin/api/identity/plugins/preview") {
           if (req.method !== "POST")
             return respond(405, { error: "method_not_allowed" });

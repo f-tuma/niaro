@@ -3,16 +3,19 @@
 One container image runs the whole Niaro server: the app API used by the web
 and mobile apps, the web app at `/`, administration at `/admin`, the Mastra
 runtime and its storage. Everything the server writes lives in one volume
-mounted at `/data`. The server profile is mounted read-only. An optional Caddy
-container provides HTTPS.
+mounted at `/data`. A server profile is optional: without one the server builds
+its own from the environment ([automatic profile](#automatic-profile)), and
+settings an administrator changes later live in administration
+([server settings](#server-settings-in-administration)). `compose.yml` mounts
+the example profile read-only. An optional Caddy container provides HTTPS.
 
-| Piece                            | In the repository                                                                              |
-| -------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Image                            | [`Dockerfile`](../Dockerfile), [`.dockerignore`](../.dockerignore)                             |
-| Compose example                  | [`compose.yml`](../compose.yml)                                                                |
-| Server profile for the container | [`examples/self-hosted/server.json`](../examples/self-hosted/server.json)                      |
-| HTTPS proxy                      | [`examples/self-hosted/Caddyfile`](../examples/self-hosted/Caddyfile)                          |
-| Backup and restore               | [`scripts/backup.mjs`](../scripts/backup.mjs), [`scripts/restore.mjs`](../scripts/restore.mjs) |
+| Piece                     | In the repository                                                                              |
+| ------------------------- | ---------------------------------------------------------------------------------------------- |
+| Image                     | [`Dockerfile`](../Dockerfile), [`.dockerignore`](../.dockerignore)                             |
+| Compose example           | [`compose.yml`](../compose.yml)                                                                |
+| Server profile (optional) | [`examples/self-hosted/server.json`](../examples/self-hosted/server.json)                      |
+| HTTPS proxy               | [`examples/self-hosted/Caddyfile`](../examples/self-hosted/Caddyfile)                          |
+| Backup and restore        | [`scripts/backup.mjs`](../scripts/backup.mjs), [`scripts/restore.mjs`](../scripts/restore.mjs) |
 
 For a development checkout without containers see [self-hosting](self-hosting.md)
 (it uses `examples/self-hosted/server.local.json`).
@@ -119,14 +122,15 @@ commit in `NIARO_GIT_REF`), so the file works without a checkout.
    raw compose (or point the service at this repository with compose path
    `./compose.dokploy.yml`). Redeploying rebuilds from the current ref.
 2. **Environment**: `NIARO_PUBLIC_URL=https://assistant.example.com` (required,
-   the deploy fails without it) and optionally the `SMTP_*` variables (see
-   `.env.example`).
-   The server profile is built into the image
-   (`examples/self-hosted/server.dokploy.json` at `/app/profiles/dokploy.json`,
-   name "Niaro", time zone Europe/Prague); it holds no secrets, providers,
-   models and services are configured in administration. For your own profile
-   add an **Advanced → Mounts** file mount and set `NIARO_CONFIG` to its path
-   in the container, e.g. `/config/server.json`.
+   the deploy fails without it) and optionally `NIARO_NAME`,
+   `NIARO_TIME_ZONE` and the `SMTP_*` variables (see `.env.example`).
+   No profile and no file mount are needed: the server builds the
+   [automatic profile](#automatic-profile) (name "Niaro", time zone
+   Europe/Prague, data in the volume). Providers, models and services are
+   configured in administration, the server's name, time zone, meetings,
+   overview refresh and origins in administration → Settings. To use your own
+   profile anyway, add an **Advanced → Mounts** file mount and set
+   `NIARO_CONFIG` to its path in the container, e.g. `/config/server.json`.
 3. **Domains**: the host from `NIARO_PUBLIC_URL`, service `niaro`, container
    port `8793`, HTTPS with Let's Encrypt. The domain and `NIARO_PUBLIC_URL`
    must match: the server accepts only its public origin.
@@ -190,23 +194,64 @@ an older version left in `/data/admin-key.initial`, once, and deletes it.
 
 The image sets these environment variables; compose sets the first group.
 
-| Variable                                                                           | Default                           | Meaning                                                                                                                                                                                                           |
-| ---------------------------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NIARO_PUBLIC_URL`                                                                 | `http://localhost:8793` (compose) | The one public origin. Replaces `administration.identity.baseURL`. Must be `https://…` (any host), or `http://localhost:<listen.port>` for a local trial.                                                         |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | unset                             | Invitation and reset mail; replaces `identity.mail`. `SMTP_SECURE` is `true` (465), `starttls` (587) or `false` (loopback only).                                                                                  |
-| `NIARO_CONFIG`                                                                     | `/config/server.json`             | Profile path inside the container.                                                                                                                                                                                |
-| `NIARO_DATA`                                                                       | `/data`                           | Data volume, used by `niaro backup` / `niaro restore`.                                                                                                                                                            |
-| `NIARO_LISTEN_HOST`                                                                | `0.0.0.0`                         | Overrides `listen.host`. A profile itself accepts only loopback; the image binds all interfaces of the container network so Caddy and port publishing can reach it. Allowed: `127.0.0.1`, `::1`, `0.0.0.0`, `::`. |
-| `NIARO_LOG`                                                                        | `1`                               | Structured operator log lines on stdout (see Logs).                                                                                                                                                               |
-| `NODE_ENV`                                                                         | `production`                      |                                                                                                                                                                                                                   |
+| Variable                                                                           | Default                                  | Meaning                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NIARO_PUBLIC_URL`                                                                 | `http://localhost:8793` (compose)        | The one public origin. Replaces `administration.identity.baseURL`. Must be `https://…` (any host), or `http://localhost:<listen.port>` for a local trial.                                                         |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | unset                                    | Invitation and reset mail; replaces `identity.mail`. `SMTP_SECURE` is `true` (465), `starttls` (587) or `false` (loopback only).                                                                                  |
+| `NIARO_CONFIG`                                                                     | `/config/server.json`                    | Profile path inside the container. Without a file there the [automatic profile](#automatic-profile) is used.                                                                                                      |
+| `NIARO_NAME`, `NIARO_TIME_ZONE`, `NIARO_PORT`                                      | `Niaro`, `TZ` or `Europe/Prague`, `8793` | Automatic profile only: the server's name, default time zone and port. Name and time zone can be changed later in administration.                                                                                 |
+| `NIARO_DATA`                                                                       | `/data`                                  | Data volume, used by `niaro backup` / `niaro restore`.                                                                                                                                                            |
+| `NIARO_LISTEN_HOST`                                                                | `0.0.0.0`                                | Overrides `listen.host`. A profile itself accepts only loopback; the image binds all interfaces of the container network so Caddy and port publishing can reach it. Allowed: `127.0.0.1`, `::1`, `0.0.0.0`, `::`. |
+| `NIARO_LOG`                                                                        | `1`                                      | Structured operator log lines on stdout (see Logs).                                                                                                                                                               |
+| `NODE_ENV`                                                                         | `production`                             |                                                                                                                                                                                                                   |
 
-Compose-only variables: `NIARO_CONFIG` (host path of the profile, default the
-example), `NIARO_DATA_VOLUME` (volume name, default `niaro-data`),
+Compose-only variables: `NIARO_CONFIG` (`compose.yml`: host path of the profile,
+default the example; `compose.dokploy.yml`: optional path in the container), `NIARO_DATA_VOLUME` (volume name, default `niaro-data`),
 `NIARO_IMAGE` (default `niaro:local`), `NIARO_TRUST_PROXY` (`auto`: trust the
 bundled proxy's `X-Forwarded-For` only with an HTTPS public URL; `1` always,
 `0` never; see Production behind HTTPS), `NIARO_TRUSTED_PROXIES` (the
 proxy's own addresses, when other containers share its network; unset: any
 loopback or private-network peer), `NIARO_MAX_CONCURRENT_RUNS`.
+
+### Automatic profile
+
+Without a profile file (no `NIARO_CONFIG` and nothing at `/config/server.json`;
+outside a container: no profile argument and no `SERVER_PROFILE`) the server
+builds the profile below and validates it like a file. `NIARO_PUBLIC_URL` is
+required then; the server refuses to start without it. The overrides above
+(`NIARO_LISTEN_HOST`, `NIARO_HOSTED_RUNTIME`, `SMTP_*`) apply as to a file.
+
+| Field                               | Value                                                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------------- |
+| `name`                              | `NIARO_NAME`, default `Niaro`                                                         |
+| `listen`                            | `127.0.0.1` (the image's `NIARO_LISTEN_HOST` widens it), `NIARO_PORT` or `8793`       |
+| `dataDirectory`                     | `$NIARO_DATA/workflow` (`NIARO_DATA` defaults to `/data`)                             |
+| `administration.keyFile`            | `$NIARO_DATA/admin-key.json`                                                          |
+| `administration.identity.directory` | `$NIARO_DATA/identity`                                                                |
+| `administration.identity.baseURL`   | `NIARO_PUBLIC_URL`                                                                    |
+| `voiceAssetsDirectory`              | `/app/voice` when it exists (in the image)                                            |
+| `plugins`                           | `datetime` and `memory`; time zone `NIARO_TIME_ZONE`, else `TZ`, else `Europe/Prague` |
+| `adapters`                          | fixture / disabled / disabled / simulated, as the example profiles                    |
+
+### Server settings in administration
+
+Some profile values are defaults that an owner or administrator changes in
+administration → **Settings** (audited as "Server settings changed"): the
+server's name, the default time zone (`plugins.timeZone`), meetings
+(`administration.identity.meetings`: audio retention, glossary, chunk length),
+the overview refresh (`administration.identity.hub.scheduler`), integration
+origins (`administration.identity.integrationOrigins`) and web client origins
+(`allowedOrigins`). Saved values live in the identity database and win over the
+profile; a setting nobody changed follows the profile. Name, time zone,
+meetings and overview refresh apply at once; the two origin lists are read at
+startup and apply after a restart (the page says so).
+
+**Export** downloads these settings as a JSON file (`"profile":
+"niaro-server-settings"`, `"version": 1`; no secrets, no paths). **Import**
+validates a file with the same rules as the profile, shows what would change
+and applies it after confirmation (audited as "Server settings imported").
+
+### Profile file
 
 Profile (`examples/self-hosted/server.json`), container layout:
 

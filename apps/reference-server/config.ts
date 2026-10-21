@@ -1,9 +1,16 @@
 import { MailSettings } from "../server-identity/invitations";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
-import { ServiceUrl } from "../../packages/protocol/service-catalog";
 import { ConnectionOrigin } from "../../packages/protocol/connections";
+import {
+  AllowedOrigins,
+  HubSchedulerServerSettings,
+  IntegrationOrigins,
+  MeetingServerSettings,
+  ServerName,
+  ServerOrigin,
+} from "../../packages/protocol/server-settings";
 import { AIProfileId } from "../../packages/protocol/workspace-ai";
 import { CalendarCollectionUrl } from "../../packages/protocol/workspace-calendar";
 import { PluginSettingsSchema } from "../server-plugins/registry";
@@ -14,14 +21,6 @@ const path = z
   .min(1)
   .max(1024)
   .refine((v) => !v.includes("\0"));
-const origin = z.url().refine((value) => {
-  try {
-    const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol) && url.origin === value;
-  } catch {
-    return false;
-  }
-});
 const catalogId = AIProfileId.refine((value) => value !== "instance");
 const profileName = z.string().trim().min(1).max(100);
 const aiProfiles = z
@@ -66,13 +65,13 @@ export const HOSTED_RUNTIMES = ["auto", "docker", "process"] as const;
 export const ServerConfigSchema = z
   .strictObject({
     version: z.literal(1),
-    name: z.string().trim().min(1).max(100),
+    name: ServerName,
     listen: z.strictObject({
       host: z.enum(["127.0.0.1", "::1"]).default("127.0.0.1"),
       port: z.number().int().min(1024).max(65535),
     }),
     dataDirectory: path,
-    allowedOrigins: z.array(origin).max(20),
+    allowedOrigins: AllowedOrigins,
     sessionSeconds: z.number().int().min(30).max(3600).default(1800),
     plugins: PluginSettingsSchema.optional(),
     administration: z
@@ -81,7 +80,7 @@ export const ServerConfigSchema = z
         identity: z
           .strictObject({
             directory: path,
-            baseURL: origin,
+            baseURL: ServerOrigin,
             voiceAssetsDirectory: path.optional(),
             /** Custom MCP servers (npm packages, pinned images) run code on this machine,
              * in a Docker sandbox. Only the operator can allow them, never the console.
@@ -98,18 +97,7 @@ export const ServerConfigSchema = z
              * used; every day of use extends it. */
             accountSessionDays: z.number().int().min(1).max(90).default(30),
             connectionOrigins: z.array(ConnectionOrigin).max(20).default([]),
-            integrationOrigins: z
-              .array(
-                ServiceUrl.refine((v) => {
-                  try {
-                    return new URL(v).origin === v;
-                  } catch {
-                    return false;
-                  }
-                }),
-              )
-              .max(50)
-              .default([]),
+            integrationOrigins: IntegrationOrigins.default([]),
             calendarCollections: z
               .array(CalendarCollectionUrl)
               .max(20)
@@ -127,50 +115,19 @@ export const ServerConfigSchema = z
                 sessionIdleDays: 30,
               }),
             /** Meeting recordings: sound retention and transcription hints. */
-            meetings: z
-              .strictObject({
-                /** Days the sound of a processed meeting is kept; 0 keeps it forever. */
-                audioRetentionDays: z
-                  .number()
-                  .int()
-                  .min(0)
-                  .max(3650)
-                  .default(30),
-                /** Names and terms the transcriber should spell right in every meeting. */
-                glossary: z
-                  .array(z.string().trim().min(1).max(100))
-                  .max(200)
-                  .default([]),
-                /** Seconds of audio per timestamped transcription request. */
-                chunkSeconds: z.number().int().min(120).max(600).default(300),
-              })
-              .default({
-                audioRetentionDays: 30,
-                glossary: [],
-                chunkSeconds: 300,
-              }),
+            meetings: MeetingServerSettings.default({
+              audioRetentionDays: 30,
+              glossary: [],
+              chunkSeconds: 300,
+            }),
             /** The overview's background refresh of hourly and daily AI widgets. */
             hub: z
               .strictObject({
-                scheduler: z
-                  .strictObject({
-                    /** Seconds between passes; 0 turns the scheduler off. */
-                    intervalSeconds: z
-                      .number()
-                      .int()
-                      .min(0)
-                      .max(86400)
-                      .default(300),
-                    /** Fills started per pass, across everyone. */
-                    maxPerTick: z.number().int().min(1).max(200).default(10),
-                    /** People who have not opened the overview for this long are left alone. */
-                    idleDays: z.number().int().min(1).max(365).default(14),
-                  })
-                  .default({
-                    intervalSeconds: 300,
-                    maxPerTick: 10,
-                    idleDays: 14,
-                  }),
+                scheduler: HubSchedulerServerSettings.default({
+                  intervalSeconds: 300,
+                  maxPerTick: 10,
+                  idleDays: 14,
+                }),
               })
               .default({
                 scheduler: {
@@ -327,27 +284,86 @@ function applyMailEnvironment(
   config.administration.identity.mail = settings.data;
 }
 
-/** Operator-owned local JSON only. Paths resolve relative to the profile, never the launch directory. */
-export function loadServerConfig(file: string): ServerConfig {
+/** The container's port when no profile names one. */
+export const AUTOMATIC_PORT = 8793;
+/**
+ * The profile a container builds for itself when none is given: everything
+ * under NIARO_DATA (default /data), the public origin from NIARO_PUBLIC_URL
+ * (required), NIARO_NAME, NIARO_TIME_ZONE (or TZ) and NIARO_PORT, and the
+ * same adapters as the example profiles. It passes the same validation as a
+ * profile file, and the same environment overrides apply afterwards.
+ */
+export function automaticServerProfile(
+  env: NodeJS.ProcessEnv = process.env,
+  voiceDirectory = "/app/voice",
+) {
+  const value = (name: string) => env[name]?.trim() || undefined;
+  if (!value("NIARO_PUBLIC_URL"))
+    throw new ServerConfigError(
+      "No server profile: set NIARO_PUBLIC_URL to the public https:// origin, or pass a profile file.",
+    );
+  const port = value("NIARO_PORT") ?? String(AUTOMATIC_PORT);
+  if (!/^\d{1,5}$/.test(port))
+    throw new ServerConfigError("NIARO_PORT must be a port number.");
+  const data = resolve(value("NIARO_DATA") ?? "/data");
+  return {
+    version: 1,
+    name: value("NIARO_NAME") ?? "Niaro",
+    listen: { host: "127.0.0.1", port: Number(port) },
+    dataDirectory: resolve(data, "workflow"),
+    allowedOrigins: [],
+    plugins: {
+      enabled: ["datetime", "memory"],
+      timeZone: value("NIARO_TIME_ZONE") ?? value("TZ") ?? "Europe/Prague",
+    },
+    administration: {
+      keyFile: resolve(data, "admin-key.json"),
+      identity: {
+        directory: resolve(data, "identity"),
+        // Replaced by NIARO_PUBLIC_URL below, like in a profile file.
+        baseURL: "https://localhost",
+        ...(existsSync(voiceDirectory)
+          ? { voiceAssetsDirectory: voiceDirectory }
+          : {}),
+      },
+    },
+    adapters: {
+      model: { provider: "fixture" },
+      voice: { provider: "disabled" },
+      crm: { provider: "disabled" },
+      calendar: { provider: "simulated" },
+    },
+  };
+}
+
+/**
+ * Operator-owned local JSON only. Paths resolve relative to the profile, never
+ * the launch directory. Without a file the automatic profile is used.
+ */
+export function loadServerConfig(file?: string): ServerConfig {
   let config: ServerConfig;
   let raw: unknown;
-  try {
-    const stats = statSync(file);
-    if (!stats.isFile() || stats.size > 65536) throw Error();
-    raw = JSON.parse(readFileSync(file, "utf8"));
-  } catch {
-    throw new ServerConfigError(
-      "Invalid server profile. Check its version, fields, paths and adapter dependencies.",
-    );
-  }
+  if (file)
+    try {
+      const stats = statSync(file);
+      if (!stats.isFile() || stats.size > 65536) throw Error();
+      raw = JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      throw new ServerConfigError(
+        "Invalid server profile. Check its version, fields, paths and adapter dependencies.",
+      );
+    }
+  else raw = automaticServerProfile();
   applyDeploymentEnvironment(raw);
   try {
     config = ServerConfigSchema.parse(raw);
   } catch {
     throw new ServerConfigError(
-      process.env.NIARO_PUBLIC_URL?.trim()
-        ? "Invalid server profile or NIARO_PUBLIC_URL. The public URL must be one HTTPS origin, or http://localhost:<listen port>."
-        : "Invalid server profile. Check its version, fields, paths and adapter dependencies.",
+      !file
+        ? "Invalid automatic profile. Check NIARO_PUBLIC_URL (one HTTPS origin), NIARO_NAME, NIARO_TIME_ZONE (or TZ) and NIARO_PORT."
+        : process.env.NIARO_PUBLIC_URL?.trim()
+          ? "Invalid server profile or NIARO_PUBLIC_URL. The public URL must be one HTTPS origin, or http://localhost:<listen port>."
+          : "Invalid server profile. Check its version, fields, paths and adapter dependencies.",
     );
   }
   config.listen.host = listenHost() ?? config.listen.host;
@@ -355,7 +371,7 @@ export function loadServerConfig(file: string): ServerConfig {
   if (runtime && config.administration?.identity)
     config.administration.identity.hosting.runtime = runtime;
   applyMailEnvironment(config);
-  const base = dirname(resolve(file));
+  const base = file ? dirname(resolve(file)) : "/";
   config.dataDirectory = resolve(base, config.dataDirectory);
   if (config.administration)
     config.administration.keyFile = resolve(

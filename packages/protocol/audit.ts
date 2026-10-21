@@ -9,6 +9,8 @@ export const AuditAction = z.enum([
   "mcp.access_revoked",
   "auth.provider_changed",
   "hosted.server_changed",
+  "server.settings_changed",
+  "server.settings_imported",
   "catalog.ai_changed",
   "catalog.routing_changed",
   "catalog.service_changed",

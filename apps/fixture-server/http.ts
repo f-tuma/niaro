@@ -297,7 +297,8 @@ export type FixtureServerOptions = {
   synthesizer?: SpeechSynthesizer;
   model?: DecisionRouter;
   crm?: ContactDirectory;
-  serverName?: string;
+  /** A function is read at every request: administration may rename the server. */
+  serverName?: string | (() => string);
 };
 export function createFixtureServer(
   directory: string,
@@ -309,9 +310,9 @@ export function createFixtureServer(
   options: FixtureServerOptions = {},
 ) {
   const serverName =
-    options.serverName === undefined
-      ? undefined
-      : ServerInfoSchema.shape.name.parse(options.serverName);
+    typeof options.serverName === "string"
+      ? ServerInfoSchema.shape.name.parse(options.serverName)
+      : options.serverName;
   const release = acquireServerLock(directory);
   let auth: FixtureAuth;
   let storage: FixtureStorage;
@@ -1254,7 +1255,8 @@ export function createFixtureServer(
           await run(() =>
             ServerInfoSchema.parse({
               profile: SERVER_INFO_PROFILE,
-              name: serverName,
+              name:
+                typeof serverName === "function" ? serverName() : serverName,
               scope: session.scope,
               workflowProfile: PROFILE,
               componentCatalog: {

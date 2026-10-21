@@ -389,7 +389,8 @@ half; with silence trimming and one record extraction a typical meeting comes
 to roughly **$0.25 per hour**. Check current OpenRouter prices before
 enabling. A two-track recording pays for each channel's speech separately.
 
-Server settings, all optional:
+Server settings, all optional (owners and administrators can change them in
+administration → Settings; the profile's values are the defaults):
 
 ```json
 "administration": {

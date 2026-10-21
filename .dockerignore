@@ -9,7 +9,6 @@
 !apps/
 !packages/
 !scripts/
-!examples/self-hosted/server.dokploy.json
 
 # Never, even inside allowed directories.
 **/node_modules

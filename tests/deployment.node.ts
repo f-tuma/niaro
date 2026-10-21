@@ -432,3 +432,93 @@ test("a fresh start logs the setup hint and no key", async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("without a profile the server builds its own from the environment", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "niaro-deploy-automatic-"));
+  try {
+    const port = await new Promise<number>((resolve) => {
+      const probe = createNetServer().listen(0, "127.0.0.1", () => {
+        const { port } = probe.address() as AddressInfo;
+        probe.close(() => resolve(port));
+      });
+    });
+    const env = {
+      ...process.env,
+      TSX_DISABLE_CACHE: "1",
+      // The repository's .env may name a development profile.
+      SERVER_PROFILE: "",
+      NIARO_CONFIG: "",
+      NIARO_PUBLIC_URL: `http://localhost:${port}`,
+      NIARO_PORT: String(port),
+      NIARO_DATA: dir,
+      NIARO_NAME: "TEST automatic",
+      NIARO_LISTEN_HOST: "",
+    };
+    const node = [
+      "--disable-warning=ExperimentalWarning",
+      "--import",
+      "tsx",
+      "apps/reference-server/cli.ts",
+    ];
+    // `check` validates the same profile without starting anything.
+    const checked = JSON.parse(
+      execFileSync(process.execPath, [...node, "check"], {
+        env,
+        encoding: "utf8",
+      }),
+    );
+    assert.equal(checked.name, "TEST automatic");
+    const server = spawn(process.execPath, [...node, "start"], {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let log = "";
+    server.stdout.on("data", (chunk) => (log += String(chunk)));
+    server.stderr.on("data", (chunk) => (log += String(chunk)));
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(Error(log)), 60_000);
+        server.stdout.on("data", () => {
+          if (/Administration:/.test(log)) {
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+        server.once("exit", () => reject(Error(log)));
+      });
+      assert.match(log, /using the automatic profile/);
+      assert.match(log, /Activation: create the owner account/);
+      assert.ok(log.includes(`http://localhost:${port}/admin/`));
+      // Everything lives under NIARO_DATA.
+      for (const name of ["admin-key.json", "admin-key.initial", "identity"])
+        assert.ok(existsSync(join(dir, name)), name);
+      // The container healthcheck finds the port without a profile file.
+      execFileSync(process.execPath, ["scripts/docker/healthcheck.mjs", ""], {
+        env,
+      });
+      // The first-start key is fetched without naming a profile.
+      const key = execFileSync(
+        process.execPath,
+        [...node, "admin-key", "--initial"],
+        { env, encoding: "utf8" },
+      ).trim();
+      assert.match(key, /^acadmin_[A-Za-z0-9_-]{43}$/);
+      assert.ok(!existsSync(join(dir, "admin-key.initial")));
+    } finally {
+      server.kill("SIGTERM");
+      await new Promise((resolve) => server.once("exit", resolve));
+    }
+    // Without NIARO_PUBLIC_URL there is no automatic profile.
+    assert.throws(
+      () =>
+        execFileSync(process.execPath, [...node, "check"], {
+          env: { ...env, NIARO_PUBLIC_URL: "" },
+          stdio: "pipe",
+        }),
+      (error: { stderr?: Buffer }) =>
+        /NIARO_PUBLIC_URL/.test(String(error.stderr)),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

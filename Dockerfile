@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
 # One image for the whole server: app API, web app, administration, Mastra
-# runtime and storage. Data lives in one volume at /data; the server profile is
-# mounted read-only at /config/server.json, or the bundled Dokploy profile at
-# /app/profiles/dokploy.json is used. See docs/deployment.md.
+# runtime and storage. Data lives in one volume at /data. Without a server
+# profile the server builds its own from the environment (NIARO_PUBLIC_URL and
+# friends); a profile mounted read-only at /config/server.json (or at
+# $NIARO_CONFIG) is used instead when present. See docs/deployment.md.
 ARG NODE_IMAGE=node:22.23.3-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
 
 # --- build: full install from the lockfile, web bundle, runtime selection ----
@@ -25,9 +26,7 @@ RUN npm run admin:build \
            /runtime/apps/server-admin/vite.config.ts \
  && cp scripts/backup.mjs scripts/restore.mjs scripts/backup-common.mjs /runtime/scripts/ \
  && cp scripts/docker/healthcheck.mjs /runtime/scripts/docker/ \
- && cp scripts/docker/tsconfig.runtime.json /runtime/tsconfig.json \
- && mkdir -p /runtime/profiles \
- && cp examples/self-hosted/server.dokploy.json /runtime/profiles/dokploy.json
+ && cp scripts/docker/tsconfig.runtime.json /runtime/tsconfig.json
 
 # --- voice: speech detection for chat voice (whisper.cpp VAD + Silero) -------
 # Chat voice cuts silence locally before it sends speech to the catalog's
@@ -53,7 +52,6 @@ RUN git clone --depth 1 --branch v1.9.4 https://github.com/ggml-org/whisper.cpp.
 # --- runtime: production dependencies only, non-root ------------------------
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
-    NIARO_CONFIG=/config/server.json \
     NIARO_DATA=/data \
     NIARO_LISTEN_HOST=0.0.0.0 \
     NIARO_LOG=1

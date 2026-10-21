@@ -209,15 +209,20 @@ export function createReferenceServer(
   const publicOrigin = config.administration?.identity?.baseURL
     ? new URL(config.administration.identity.baseURL).origin
     : null;
+  // Saved in administration, else the profile's; read once, at startup.
+  const allowed =
+    identity?.serverSettings()?.allowedOrigins ?? config.allowedOrigins;
   const origins =
-    publicOrigin && !config.allowedOrigins.includes(publicOrigin)
-      ? [...config.allowedOrigins, publicOrigin]
-      : config.allowedOrigins;
+    publicOrigin && !allowed.includes(publicOrigin)
+      ? [...allowed, publicOrigin]
+      : allowed;
   return createFixtureServer(config.dataDirectory, origins, {
     ...adapters,
     management,
     identity,
     sessionTtlMs: config.sessionSeconds * 1000,
-    serverName: config.name,
+    serverName: identity
+      ? () => identity.serverSettings()?.name ?? config.name
+      : config.name,
   });
 }

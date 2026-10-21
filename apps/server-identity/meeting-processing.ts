@@ -232,6 +232,17 @@ export class MeetingProcessor {
     this.queue = options.queue ?? new SpeechQueue();
     this.glossary = (options.glossary ?? []).slice(0, 200);
   }
+  /** New server settings: chunks started from now on use them. */
+  configure(
+    options: Pick<MeetingProcessorOptions, "chunkSeconds" | "glossary">,
+  ) {
+    if (options.chunkSeconds !== undefined)
+      this.chunkSeconds = Math.max(
+        MEETING_CHUNK_SECONDS.min,
+        Math.min(MEETING_CHUNK_SECONDS.max, options.chunkSeconds),
+      );
+    if (options.glossary) this.glossary = options.glossary.slice(0, 200);
+  }
   /** Three attempts in all; only busy, rate-limited, 5xx and timeouts repeat. */
   private async attempt<T>(fn: () => Promise<T>, signal: AbortSignal) {
     for (let attempt = 0; ; attempt++) {

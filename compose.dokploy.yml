@@ -12,8 +12,9 @@
 #   Environment  NIARO_PUBLIC_URL=https://<domain>   (required; SMTP_* optional)
 #   Domains      <domain> → service "niaro", port 8793, HTTPS on
 #                (Let's Encrypt); the domain must equal NIARO_PUBLIC_URL.
-# Right after the first deploy, open https://<domain>/admin/ and create the
-# owner account: the first person who signs up becomes the owner.
+# No server profile and no file mount: the server builds its profile from
+# these variables. Right after the first deploy, open https://<domain>/admin/
+# and create the owner account: the first person who signs up becomes the owner.
 # Microsoft 365 and other hosted MCP servers are added in administration
 # (Hosted); without Docker they run inside this container.
 name: niaro
@@ -28,10 +29,13 @@ services:
     environment:
       # The one public origin people open; the same host as the Dokploy domain.
       NIARO_PUBLIC_URL: ${NIARO_PUBLIC_URL:?Set NIARO_PUBLIC_URL to the https:// domain}
-      # The profile in the image (examples/self-hosted/server.dokploy.json); it
-      # holds no secrets. To use your own, add a Dokploy file mount and point
-      # this at it, e.g. /config/server.json.
-      NIARO_CONFIG: ${NIARO_CONFIG:-/app/profiles/dokploy.json}
+      # Optional: the server's name and default time zone (also changeable in
+      # administration, Settings).
+      NIARO_NAME: ${NIARO_NAME:-}
+      NIARO_TIME_ZONE: ${NIARO_TIME_ZONE:-}
+      # Optional: your own server profile, through a Dokploy file mount, e.g.
+      # /config/server.json. Empty uses the automatic profile.
+      NIARO_CONFIG: ${NIARO_CONFIG:-}
       # Traefik is the only way in and sends X-Forwarded-For; "auto" trusts it
       # because the public URL is HTTPS.
       NIARO_TRUST_PROXY: ${NIARO_TRUST_PROXY:-auto}

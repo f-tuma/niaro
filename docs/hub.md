@@ -408,7 +408,7 @@ Built-in typed widgets are never due.
 identity service at boot, stopped on close) keeps `hourly` and `daily` AI
 widgets fresh between visits, so the person finds current data on open. Every
 `intervalSeconds` (profile `administration.identity.hub.scheduler`, default
-300, `0` disables it) it lists every hub's typed widgets and starts the fills
+300, `0` disables it; administration → Settings changes it at runtime) it lists every hub's typed widgets and starts the fills
 that are due by their setting: `hourly` when the data is older than an hour,
 `daily` older than 24 hours; `on_open` and `manual` are never scheduled and
 process widgets are not scheduled (they need the person's live credential).
