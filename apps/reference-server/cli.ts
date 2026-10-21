@@ -92,50 +92,65 @@ async function main() {
         );
       } else {
         // First start of a new installation: create the administrator key.
-        // Only its digest is stored; `admin-rotate-key` replaces a lost key.
-        // On a terminal it is shown once. Otherwise (a container, a service
-        // manager) stdout goes to logs that are kept and shipped, so the key is
-        // left in a private file for `admin-key --initial` to show and delete.
+        // Only its digest is stored; the plain key waits in a private file
+        // and is printed at every start until the owner account exists, so
+        // activation needs nothing but the log. Once the owner exists the key
+        // is replaced, so the copy in the logs no longer opens anything.
+        const waiting = config.administration
+          ? initialKeyFile(config.administration.keyFile)
+          : undefined;
         if (
           config.administration &&
           !existsSync(config.administration.keyFile)
         ) {
           const key = issueAdminKey(config.administration.keyFile);
-          const open = `Open ${config.administration.identity?.baseURL ?? "the server"}/admin/, choose "Use a recovery key" and create the owner account.`;
-          if (process.stdout.isTTY)
-            console.log(
-              [
-                "",
-                "=== First start: administrator key (shown once, never logged again) ===",
-                key,
-                open,
-                "Store the key in a password manager. Rotate it with the admin-rotate-key command.",
-                "=======================================================================",
-                "",
-              ].join("\n"),
-            );
-          else {
-            const waiting = initialKeyFile(config.administration.keyFile);
-            writeFileSync(waiting, `${key}\n`, { mode: 0o600 });
-            chmodSync(waiting, 0o600);
-            console.log(
-              [
-                "",
-                "=== First start: administrator key created ===",
-                `It is not printed here because this output is a log. It waits in ${waiting} (readable only by the server user).`,
-                "Show it once (it is deleted after reading): docker compose exec niaro niaro admin-key --initial",
-                `(outside Docker: npm run server:admin-key -- <profile.json> --initial). ${open}`,
-                "===============================================",
-                "",
-              ].join("\n"),
-            );
-          }
+          writeFileSync(waiting!, `${key}\n`, { mode: 0o600 });
+          chmodSync(waiting!, 0o600);
         }
         const identity = config.administration?.identity
           ? await (
               await import("../server-identity/service")
             ).openIdentity(config)
           : undefined;
+        const admin = `${config.administration?.identity?.baseURL ?? "the server"}/admin/`;
+        /** The owner exists: retire the logged key and its waiting copy. */
+        const activated = () => {
+          if (!config.administration || !waiting || !existsSync(waiting))
+            return;
+          issueAdminKey(config.administration.keyFile, true);
+          rmSync(waiting, { force: true });
+          console.log(
+            "Owner account created: the activation key was replaced. A new recovery key: niaro admin-rotate-key",
+          );
+        };
+        if (config.administration && waiting) {
+          const pending = identity ? identity.setupPending() : true;
+          if (pending && existsSync(waiting))
+            console.log(
+              [
+                "",
+                "=== Activation: create the owner account ===",
+                `Open ${admin}, choose "Use a recovery key" and enter:`,
+                readFileSync(waiting, "utf8").trim(),
+                "This key is printed at every start until the owner exists, then replaced.",
+                "============================================",
+                "",
+              ].join("\n"),
+            );
+          else if (pending)
+            console.log(
+              `No owner account yet. Get an activation key with: niaro admin-rotate-key (outside Docker: npm run server:admin-rotate-key -- <profile.json>), then open ${admin}`,
+            );
+          else activated();
+          if (identity && pending) {
+            const watch = setInterval(() => {
+              if (identity.setupPending()) return;
+              clearInterval(watch);
+              activated();
+            }, 5000);
+            watch.unref();
+          }
+        }
         let server;
         try {
           server = createReferenceServer(config, adapters, identity);

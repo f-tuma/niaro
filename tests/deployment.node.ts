@@ -327,7 +327,7 @@ test("rate limits count the real client behind the trusted proxy only", async ()
   );
 });
 
-test("a first start without a terminal keeps the administrator key out of the log", async () => {
+test("until the owner exists every start logs the activation key, then it is replaced", async () => {
   const dir = mkdtempSync(join(tmpdir(), "niaro-deploy-first-start-"));
   try {
     const port = await new Promise<number>((resolve) => {
@@ -368,49 +368,54 @@ test("a first start without a terminal keeps the administrator key out of the lo
     ];
     const env = { ...process.env, TSX_DISABLE_CACHE: "1" };
     // stdout is a pipe here, as under Docker or a service manager.
-    const server = spawn(process.execPath, [...cli, "start", profile], {
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let log = "";
-    server.stdout.on("data", (chunk) => (log += String(chunk)));
-    server.stderr.on("data", (chunk) => (log += String(chunk)));
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(Error(log)), 60_000);
-      server.stdout.on("data", () => {
-        if (/Administration:/.test(log)) {
-          clearTimeout(timer);
-          resolve();
-        }
+    const start = async () => {
+      const server = spawn(process.execPath, [...cli, "start", profile], {
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
       });
-      server.once("exit", () => reject(Error(log)));
-    });
-    server.kill("SIGTERM");
-    await new Promise((resolve) => server.once("exit", resolve));
+      let log = "";
+      server.stdout.on("data", (chunk) => (log += String(chunk)));
+      server.stderr.on("data", (chunk) => (log += String(chunk)));
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(Error(log)), 60_000);
+        server.stdout.on("data", () => {
+          if (/Administration:/.test(log)) {
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+        server.once("exit", () => reject(Error(log)));
+      });
+      server.kill("SIGTERM");
+      await new Promise((resolve) => server.once("exit", resolve));
+      return log;
+    };
     const waiting = join(dir, "admin-key.initial");
-    assert.doesNotMatch(log, /acadmin_/);
-    assert.match(log, /admin-key --initial/);
+    const first = await start();
     assert.equal(statSync(waiting).mode & 0o777, 0o600);
     const key = readFileSync(waiting, "utf8").trim();
     assert.match(key, /^acadmin_[A-Za-z0-9_-]{43}$/);
-    const shown = execFileSync(
-      process.execPath,
-      [...cli, "admin-key", profile, "--initial"],
-      { env, stdio: "pipe" },
-    ).toString();
-    assert.equal(shown.trim(), key);
+    assert.match(first, /Activation: create the owner account/);
+    assert.ok(first.includes(key));
+    // A restart before activation shows the same key again.
+    const digest = readFileSync(join(dir, "admin-key.json"), "utf8");
+    assert.ok((await start()).includes(key));
+    assert.equal(readFileSync(join(dir, "admin-key.json"), "utf8"), digest);
+    // The owner exists: the logged key is retired and nothing is printed.
+    const db = new DatabaseSync(join(dir, "identity", "identity.sqlite"));
+    try {
+      const now = new Date().toISOString();
+      db.prepare(
+        'INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") VALUES (?, ?, ?, 1, ?, ?)',
+      ).run("TEST-owner", "TEST Owner", "owner@example.test", now, now);
+    } finally {
+      db.close();
+    }
+    const after = await start();
+    assert.doesNotMatch(after, /acadmin_/);
+    assert.match(after, /activation key was replaced/);
     assert.ok(!existsSync(waiting));
-    // Shown once only.
-    assert.throws(() =>
-      execFileSync(
-        process.execPath,
-        [...cli, "admin-key", profile, "--initial"],
-        {
-          env,
-          stdio: "pipe",
-        },
-      ),
-    );
+    assert.notEqual(readFileSync(join(dir, "admin-key.json"), "utf8"), digest);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

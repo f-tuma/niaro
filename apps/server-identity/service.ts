@@ -3585,6 +3585,10 @@ export class IdentityService {
   private needsSetup() {
     return !this.db.prepare('SELECT id FROM "user" LIMIT 1').get();
   }
+  /** No account exists yet: the owner is still to be created. */
+  setupPending() {
+    return this.needsSetup();
+  }
   private async actor(req: IncomingMessage, orgId: string) {
     const session = await this.getSession(req);
     if (!session) throw new IdentityError(401, "identity_unauthorized");
