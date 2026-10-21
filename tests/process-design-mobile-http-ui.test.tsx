@@ -17,6 +17,9 @@ import {
 } from "../packages/protocol/process-design";
 import { mobileHttpChildFixture } from "./helpers/process-mobile-http-child";
 
+// Each test starts a child HTTP server; slower CI runners need more than 5 s.
+jest.setTimeout(30_000);
+
 const mockStorageValues = new Map<string, string>();
 let mockRequestSequence = 0;
 

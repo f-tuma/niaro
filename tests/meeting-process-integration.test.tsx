@@ -16,6 +16,9 @@ import { processInputCopy } from "../packages/ui-catalog/process-input-copy";
 import { mobileHttpChildFixture } from "./helpers/process-mobile-http-child";
 import { processObject } from "./helpers/service-process";
 
+// Each test starts a child HTTP server; slower CI runners need more than 5 s.
+jest.setTimeout(30_000);
+
 jest.mock("../apps/mobile/meeting-device", () => ({
   useMeetingDevice: () => ({ capture: null, durationMillis: 0 }),
 }));
@@ -78,10 +81,7 @@ async function prepareReviewedMeetingLaunch({
       init?: RequestInit,
     ) => {
       const response = await nodeFetch(String(url), init);
-      if (
-        shouldDropProcessAck &&
-        String(url).includes("/processes/commands")
-      ) {
+      if (shouldDropProcessAck && String(url).includes("/processes/commands")) {
         shouldDropProcessAck = false;
         throw Error("TEST simulate lost process command ACK");
       }
@@ -430,7 +430,9 @@ test("incompatible meeting sources are explained and leave a manual input path",
     expect((await h.fixture.inspect()).commandPosts).toBe(0);
 
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: en.processesPrepare }));
+      fireEvent.press(
+        screen.getByRole("button", { name: en.processesPrepare }),
+      );
       await flush();
     });
     await waitFor(() =>
