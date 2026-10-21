@@ -393,6 +393,31 @@ describe("SMTP settings from the environment", () => {
     ).toMatchObject({ port: 587, secure: false, starttls: true });
   });
 
+  test("the sender may carry a display name, quoted or not", () => {
+    for (const from of [
+      "Example Niaro <info@example.test>",
+      '"Example Niaro" <info@example.test>',
+    ]) {
+      Object.assign(process.env, {
+        SMTP_HOST: "smtp.example.test",
+        SMTP_PORT: "587",
+        SMTP_SECURE: "STARTTLS",
+        SMTP_FROM: from,
+      });
+      expect(
+        loadServerConfig(withIdentity()).administration?.identity?.mail,
+      ).toMatchObject({ starttls: true, from });
+    }
+    for (const from of [
+      "Example Niaro",
+      "Example <not-an-address>",
+      "a@example.test\r\nBcc: b@example.test",
+    ]) {
+      process.env.SMTP_FROM = from;
+      expect(() => loadServerConfig(withIdentity())).toThrow(/SMTP settings/);
+    }
+  });
+
   test("unencrypted SMTP to a remote host is rejected", () => {
     Object.assign(process.env, {
       SMTP_HOST: "smtp.example.test",

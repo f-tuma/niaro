@@ -3,6 +3,16 @@ import type { DatabaseSync } from "node:sqlite";
 import nodemailer from "nodemailer";
 import { z } from "zod";
 import { IdentityError } from "./error";
+/** A bare address or "Display Name <address>" (quotes optional), the forms
+ * the mail transport takes; line breaks never pass, so no header injection. */
+const Sender = z
+  .string()
+  .trim()
+  .max(320)
+  .refine((value) => {
+    const named = /^"?([^"<>\r\n]*?)"?\s*<([^<>\s]+)>$/.exec(value);
+    return z.email().safeParse(named ? named[2] : value).success;
+  }, "Use an address or Name <address>");
 export const MailSettings = z
   .strictObject({
     host: z.string().min(1),
@@ -12,7 +22,7 @@ export const MailSettings = z
     /** Upgrade a plain connection with STARTTLS (usually port 587) and fail
      * instead of sending unencrypted when the server does not offer it. */
     starttls: z.boolean().default(false),
-    from: z.email(),
+    from: Sender,
     user: z.string().optional(),
     password: z.string().optional(),
   })
