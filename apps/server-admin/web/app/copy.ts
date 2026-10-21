@@ -40,7 +40,7 @@ const en = {
   noWorkspace: "You don't have access to any workspace yet.",
   noWorkspaceHint: "Ask an administrator to add you.",
   setupTitle: "The server isn't set up yet",
-  openAdministration: "Open administration",
+  createOwner: "Create the owner account",
   toggleSidebar: "Toggle sidebar",
   skipToContent: "Skip to content",
 };
@@ -85,7 +85,7 @@ const cs: AppCopy = {
   noWorkspace: "Zatím nemáš přístup k žádnému pracovnímu prostoru.",
   noWorkspaceHint: "Požádej správce, ať tě přidá.",
   setupTitle: "Server ještě není nastavený",
-  openAdministration: "Otevřít administraci",
+  createOwner: "Vytvořit účet vlastníka",
   toggleSidebar: "Přepnout panel",
   skipToContent: "Přejít na obsah",
 };

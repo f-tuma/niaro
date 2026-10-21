@@ -71,15 +71,14 @@ pnpm install --frozen-lockfile
 npm run admin:build
 mkdir -p .servers/local
 cp examples/self-hosted/server.local.json .servers/local/server.json
-npm run server:admin-key -- .servers/local/server.json   # prints a one-time recovery key
 npm run server -- .servers/local/server.json
 ```
 
-1. Open `http://localhost:8793/admin/`, choose **Use a recovery key** and create the first organization and owner.
-2. Sign in with that account, add a workspace, an AI provider and the services you want the assistant to use.
+1. Open `http://localhost:8793/admin/` and create the organization and its owner: on a new server the first account becomes the owner, and you land signed in with a first workspace.
+2. Add an AI provider and the services you want the assistant to use.
 3. Start the app in another terminal with `npm run android`, `npm run ios` or `npm run web` and sign in with the server address. The browser client runs on `http://localhost:8081`; add that origin to `allowedOrigins` in the profile and restart the server first.
 
-The example profile makes no paid calls and has no real CRM or calendar connection. Keep the recovery key and everything under `.servers/` out of version control. For HTTPS, reverse proxies and backups see [self-hosting](docs/self-hosting.md). To run the server as one container image with compose, Caddy HTTPS, backups and upgrades, see [deployment](docs/deployment.md).
+The example profile makes no paid calls and has no real CRM or calendar connection. Keep everything under `.servers/` out of version control; `npm run server:admin-rotate-key -- .servers/local/server.json` prints a recovery key for emergencies. For HTTPS, reverse proxies and backups see [self-hosting](docs/self-hosting.md). To run the server as one container image with compose, Caddy HTTPS, backups and upgrades, see [deployment](docs/deployment.md).
 
 For a phone on Wi-Fi, use `pnpm start --lan --port 8081` and open its QR code in the installed development build. The phone must reach the computer's LAN address on that port. `pnpm android --device` builds/installs a current Android client when native dependencies have changed; restarting Metro alone does not update native modules. See [mobile development troubleshooting](docs/self-hosting.md#mobile-development-over-wi-fi).
 

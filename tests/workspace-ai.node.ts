@@ -232,6 +232,8 @@ test("Workspace AI: administrator policy, routing, audit and live changes", asyn
       password,
       organizationName: "TEST Alpha",
     });
+    // Setup signed this browser in as the owner: back to the recovery key.
+    await operator("api/login", { key });
     await owner("auth/sign-in/email", {
       email: "owner@example.test",
       password,

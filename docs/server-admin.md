@@ -59,7 +59,7 @@ It replaces the digest atomically, invalidates existing administration sessions 
 
 This development service binds to loopback only. Admin APIs accept the exact localhost/127.0.0.1/IPv6-loopback host and same origin, require JSON plus a custom header for POST, and reject cross-site fetches. Sessions use an independent opaque, HttpOnly, SameSite=Strict cookie scoped to `/admin`. The browser does not store the administrator key. The current HTTP-loopback cookie is not a production HTTPS deployment configuration.
 
-Only the login shell, compiled public assets and enabled-auth-methods metadata are unauthenticated. Instance inventory requires a recovery-key session; organization accounts receive no legacy instance integrations or tools. A mobile bearer token or pairing code cannot grant it. Login attempts and recovery-key sessions are bounded. Responses are no-store, carry a restrictive CSP and anti-framing headers, and expose an explicit metadata allowlist. Provider keys, credentials, private paths, linked-provider account data and contacts are never part of the inventory DTO.
+Only the login shell, compiled public assets, enabled-auth-methods metadata and, while no account exists, the owner setup are unauthenticated. Instance inventory requires a recovery-key session; organization accounts receive no legacy instance integrations or tools. A mobile bearer token or pairing code cannot grant it. Login attempts and recovery-key sessions are bounded. Responses are no-store, carry a restrictive CSP and anti-framing headers, and expose an explicit metadata allowlist. Provider keys, credentials, private paths, linked-provider account data and contacts are never part of the inventory DTO.
 
 The management contract is `agent-server-admin/2`, separate from the unchanged mobile workflow contract. It exposes:
 
@@ -94,20 +94,20 @@ The directory resolves relative to the profile and must differ from `dataDirecto
 
 Startup creates a private directory (0700), persistent random secret (0600), SQLite database (0600), official Better Auth schema and application-owned workspace, connection and policy tables. Another process cannot open the same identity directory for serving. Back up this directory as a unit, including the secret and a consistent SQLite snapshot, before changing auth versions. Workflow data and pairing files are not migrated or assigned to a company.
 
-1. Sign in using **Use a recovery key** and open **People**.
-2. Enter the company name and its first owner's name, email and a password of at least 12 characters. This one-time operation is atomic and available only while the identity database has no users.
-3. Sign out and use the new account. In **People**, the owner can provision local accounts, change roles and remove membership. No invitation emails are sent. Existing global accounts cannot be reset or silently added by another owner.
+1. Open `/admin/`. While the identity database has no users, the page shows the owner setup instead of the sign-in (also inside the console after **Use a recovery key**, in **People**).
+2. Enter the company name and its first owner's name, email and a password of at least 12 characters. This one-time operation is atomic: it creates the owner, the company and a first workspace named like it, and signs the owner in. Whoever does it first becomes the owner, so do it right after deploying.
+3. In **People**, the owner can provision local accounts, change roles and remove membership. No invitation emails are sent. Existing global accounts cannot be reset or silently added by another owner.
 4. In **Workspaces**, an owner or administrator can create spaces and grant members access. Ordinary members see only explicitly assigned spaces. Removing organization membership also removes its workspace grants.
 
 Only owners manage organization roles/accounts; owners and administrators manage all of their organization's workspaces. The last owner cannot be removed or demoted. Membership and session validity are re-read for each request, including mutations. A selected organization ID never grants access, and the recovery key never impersonates an organization member. Body reads have an 8 KiB cap and a 10-second deadline outside the serialized DB operations. User + membership creation rolls back as one transaction if any step fails.
 
 API contracts are explicit and do not expose the entire Better Auth router:
 
-- `GET /admin/api/auth-methods`: whether account authentication is enabled.
+- `GET /admin/api/auth-methods`: whether account authentication is enabled (`identity`) and whether owner setup is open (`setup`, no account exists yet).
 - `POST /admin/auth/sign-in/email`: local email/password sign-in; HttpOnly/SameSite cookie, rate-limited; response only `{ "ok": true }`.
 - `POST /admin/auth/sign-out`: account sign-out (empty body is supported). The console uses the unified `/admin/api/logout` endpoint to revoke both types of session.
 - `GET /admin/api/identity`: `agent-identity/1` principal and organization memberships, or setup status for the recovery operator.
-- `POST /admin/api/identity/bootstrap`: first company/owner; recovery only.
+- `POST /admin/api/identity/bootstrap`: first company/owner and workspace, only while no account exists (409 afterwards); no session needed, same-origin console request, 10 attempts per minute per address. Signs the new owner in (Better Auth session cookie) and ends a recovery session that made the request.
 - `GET /admin/api/identity/organization?id=…`: permitted members and workspaces, with server-computed management flags.
 - `POST /admin/api/identity/command`: validated `createAccount`, `changeRole`, `removeMember`, `createWorkspace`, `setWorkspaceMember` commands.
 

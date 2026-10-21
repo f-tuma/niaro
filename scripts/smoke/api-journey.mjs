@@ -1,6 +1,6 @@
-// API-level pilot journey against a fresh server: first run with the
-// recovery key, owner bootstrap, workspace, invitation by link (no SMTP),
-// member onboarding and the member's web app API calls.
+// API-level pilot journey against a fresh server: the first visitor creates
+// the owner (no key), the recovery key still works, workspace, invitation by
+// link (no SMTP), member onboarding and the member's web app API calls.
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import {
@@ -59,33 +59,21 @@ export async function apiJourney(
     );
   });
 
-  await step("recovery key login", async () => {
-    assert.match(adminKey, /^acadmin_[A-Za-z0-9_-]+$/, "admin key format");
-    expectStatus(
-      await recovery.post("/admin/api/login", { key: "acadmin_wrong" }),
-      401,
-      "wrong recovery key",
+  await step("a fresh server offers owner setup to anyone", async () => {
+    assert.deepEqual(
+      expectStatus(
+        await anonymous.get("/admin/api/auth-methods"),
+        200,
+        "auth methods",
+      ),
+      { identity: true, setup: true },
     );
-    expectStatus(
-      await recovery.post("/admin/api/login", { key: adminKey }),
-      200,
-      "login",
-    );
-    assert.ok(
-      recovery.cookies.has("agent_admin_session"),
-      "recovery session cookie",
-    );
-    const state = expectStatus(
-      await recovery.get("/admin/api/identity"),
-      200,
-      "identity",
-    );
-    assert.equal(state.needsSetup, true, "a fresh volume needs setup");
+    expectStatus(await anonymous.get("/admin/api/identity"), 401, "identity");
   });
 
-  await step("bootstrap owner and organization (setup form)", async () => {
+  await step("the first visitor becomes the owner, signed in", async () => {
     expectStatus(
-      await recovery.post("/admin/api/identity/bootstrap", {
+      await owner.post("/admin/api/identity/bootstrap", {
         ...accounts.owner,
         organizationName: accounts.organizationName,
       }),
@@ -93,13 +81,15 @@ export async function apiJourney(
       "bootstrap",
     );
     const state = expectStatus(
-      await recovery.get("/admin/api/identity"),
+      await owner.get("/admin/api/identity"),
       200,
       "identity",
     );
     assert.equal(state.needsSetup, false, "setup closed after bootstrap");
+    assert.equal(state.user?.email, accounts.owner.email, "signed in");
+    assert.equal(state.organizations[0]?.role, "owner");
     expectStatus(
-      await recovery.post("/admin/api/identity/bootstrap", {
+      await anonymous.post("/admin/api/identity/bootstrap", {
         ...accounts.owner,
         email: "second@smoke.test",
         organizationName: "Second",
@@ -107,7 +97,35 @@ export async function apiJourney(
       409,
       "second bootstrap",
     );
+    assert.equal(
+      expectStatus(
+        await anonymous.get("/admin/api/auth-methods"),
+        200,
+        "auth methods",
+      ).setup,
+      false,
+    );
   });
+
+  if (adminKey)
+    await step("recovery key login still works", async () => {
+      assert.match(adminKey, /^acadmin_[A-Za-z0-9_-]+$/, "admin key format");
+      expectStatus(
+        await recovery.post("/admin/api/login", { key: "acadmin_wrong" }),
+        401,
+        "wrong recovery key",
+      );
+      expectStatus(
+        await recovery.post("/admin/api/login", { key: adminKey }),
+        200,
+        "login",
+      );
+      assert.equal(
+        expectStatus(await recovery.get("/admin/api/overview"), 200, "overview")
+          .authentication.current,
+        "admin-key",
+      );
+    });
 
   await step("owner signs in with email and password", async () => {
     expectStatus(
@@ -601,7 +619,7 @@ export async function apiJourney(
   return ctx;
 }
 
-// Standalone: node scripts/smoke/api-journey.mjs <base URL> <admin key>
+// Standalone: node scripts/smoke/api-journey.mjs <base URL> [admin key]
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const [base, adminKey] = process.argv.slice(2);
   const report = new Report();

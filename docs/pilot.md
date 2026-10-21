@@ -20,13 +20,13 @@ services, and the agent reads and changes them there.
 1. A server with Docker, a domain and open ports 80/443.
 2. Following [deployment.md](deployment.md#install-with-compose):
    `NIARO_PUBLIC_URL=https://assistant.example.com docker compose --profile https up -d --build`.
-3. Print the one-time administrator key and copy it into a password manager:
-   `docker compose exec niaro niaro admin-key --initial`. The key is shown only
-   once (it is not in the server log); replace a lost key with
-   `docker compose exec niaro niaro admin-rotate-key`.
-4. Open `https://assistant.example.com/admin/`, sign in with the key and create
-   the organization and the owner account. Then sign in with that account.
-5. Set up backups: `docker compose exec -T niaro niaro backup - > backup-$(date +%F).tar.gz`
+3. Right after the deploy, open `https://assistant.example.com/admin/` and
+   create the organization and the owner account: on a new server the first
+   person who signs up becomes the owner, so do it before anyone else can.
+   You land signed in, with a first workspace named like the organization.
+   For emergencies, `docker compose exec niaro niaro admin-rotate-key` prints
+   a recovery key (**Use a recovery key** on the sign-in page).
+4. Set up backups: `docker compose exec -T niaro niaro backup - > backup-$(date +%F).tar.gz`
    (daily, off the server). Try a restore once.
 
 ## 2. First setup (administrator)

@@ -598,6 +598,11 @@ export class IdentityService {
   private appLogins: AppLogin;
   private accountSecurity: AccountSecurity;
   private executions = new Set<AbortController>();
+  /** Owner setup attempts per client address, for one minute. */
+  private bootstrapAttempts = new Map<
+    string,
+    { count: number; until: number }
+  >();
   private catalogRequests = new Set<Promise<void>>();
   /** Hub opens in flight per person: one at a time, a few may wait. */
   private hubOpens = new Map<
@@ -3704,10 +3709,34 @@ export class IdentityService {
       }),
     });
   }
-  private async bootstrap(input: unknown) {
+  /**
+   * Creates the owner while no account exists: the first person to sign up
+   * (or the recovery console) becomes the owner, with the organization and
+   * a first workspace, and is signed in like any other account.
+   */
+  private async bootstrap(
+    req: IncomingMessage,
+    res: ServerResponse,
+    input: unknown,
+    operator: boolean,
+  ) {
+    const client = clientAddress(req);
+    const now = Date.now();
+    for (const [id, item] of this.bootstrapAttempts)
+      if (item.until <= now) this.bootstrapAttempts.delete(id);
+    const attempt = this.bootstrapAttempts.get(client) ?? {
+      count: 0,
+      until: now + 60_000,
+    };
+    this.bootstrapAttempts.set(client, attempt);
+    if (++attempt.count > 10 || this.bootstrapAttempts.size > 1000) {
+      res.setHeader("Retry-After", "60");
+      throw new IdentityError(429, "identity_rate_limited");
+    }
     const value = BootstrapIdentitySchema.parse(input);
     if (!this.needsSetup())
       throw new IdentityError(409, "identity_already_initialized");
+    const source = operator ? "recovery" : "console";
     await this.transaction(async () => {
       const created = await this.auth.api.signUpEmail({
         body: {
@@ -3724,17 +3753,48 @@ export class IdentityService {
         },
       });
       if (!org) throw new IdentityError(503, "identity_unavailable");
+      const actorId = operator ? null : created.user.id;
       this.audit.append({
         organizationId: org.id,
         workspaceId: null,
-        actorId: null,
-        source: "recovery",
+        actorId,
+        source,
         action: "organization.created",
         targetId: org.id,
         outcome: "succeeded",
         details: {},
       });
+      // A first workspace, named like the organization, so the owner can use
+      // the app at once (owners reach every workspace of their organization).
+      const workspaceId = randomUUID();
+      this.db
+        .prepare("INSERT INTO agent_workspace VALUES (?, ?, ?)")
+        .run(workspaceId, org.id, value.organizationName);
+      this.audit.append({
+        organizationId: org.id,
+        workspaceId,
+        actorId,
+        source,
+        action: "workspace.created",
+        targetId: workspaceId,
+        outcome: "succeeded",
+        details: {},
+      });
     });
+    // The new owner lands signed in, through Better Auth like every sign-in.
+    const signedIn = await this.auth.api.signInEmail({
+      body: { email: value.email, password: value.password },
+      headers: this.headers(req),
+      returnHeaders: true,
+    });
+    const cookies = signedIn.headers.getSetCookie();
+    if (cookies.length)
+      res.setHeader("Set-Cookie", [
+        ...[res.getHeader("Set-Cookie")]
+          .flat()
+          .filter((v): v is string => typeof v === "string"),
+        ...cookies,
+      ]);
     return { ok: true };
   }
   private async command(req: IncomingMessage, input: unknown) {
@@ -4013,6 +4073,8 @@ export class IdentityService {
     req: IncomingMessage,
     res: ServerResponse,
     isOperator: () => boolean,
+    /** Ends the recovery-key session once the owner is signed in instead. */
+    endRecovery?: () => void,
   ): Promise<boolean> {
     const url = new URL(req.url!, this.baseURL);
     const respond = (status: number, data: unknown) => {
@@ -5032,8 +5094,10 @@ export class IdentityService {
           req.method === "POST" &&
           url.pathname === "/admin/api/identity/bootstrap"
         ) {
-          if (!operator) throw new IdentityError(403, "identity_forbidden");
-          return respond(200, await this.bootstrap(payload));
+          const result = await this.bootstrap(req, res, payload, operator);
+          // The console now runs as the owner, not on the recovery key.
+          if (operator) endRecovery?.();
+          return respond(200, result);
         }
         // Recovery access deliberately does not impersonate an organization member.
         if (operator) throw new IdentityError(403, "identity_account_required");

@@ -286,6 +286,8 @@ export async function designHttpFixture(
     ).status,
     200,
   );
+  // Setup signed this browser in as the owner: back to the recovery key.
+  await request("operator", "api/login", { key });
   assert.equal(
     (
       await request("owner", "auth/sign-in/email", {

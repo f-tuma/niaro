@@ -26,6 +26,7 @@ import { Skeleton } from "@admin/components/ui/skeleton";
 import { AuthLayout } from "@admin/components/console/auth-layout";
 import { SubmitButton } from "@admin/components/console/forms";
 import { en, cs, type Copy } from "./i18n";
+import { AccountInputs, formValues, issue } from "./account-inputs";
 import { AdminContext } from "./context";
 import { designAuthority, resetDesignAuthority } from "./lib/design-authority";
 import {
@@ -92,17 +93,19 @@ export function App() {
     queryKey: ["auth-methods"],
     queryFn: async () => {
       const value = await api("auth-methods");
-      return (
+      const flag = (name: string) =>
         !!value &&
         typeof value === "object" &&
-        "identity" in value &&
-        value.identity === true
-      );
+        name in value &&
+        (value as Record<string, unknown>)[name] === true;
+      // `setup`: no account exists yet, the first one becomes the owner.
+      return { identity: flag("identity"), setup: flag("setup") };
     },
     staleTime: 30_000,
   });
   const [loginMode, setLoginMode] = useState<"key" | "account">("account");
-  const useAccount = methods.data === true && loginMode === "account";
+  const useAccount = methods.data?.identity === true && loginMode === "account";
+  const setupOpen = useAccount && methods.data?.setup === true;
   const [email, setEmail] = useState("");
   const [key, setKey] = useState("");
   const request = useRef<AbortController | null>(null);
@@ -189,7 +192,11 @@ export function App() {
     );
     return () => clearTimeout(timer);
   }, [client, data]);
-  async function authenticate(logout = false) {
+  /** Signs in, signs out, or with `setup` creates the owner (signed in). */
+  async function authenticate(
+    logout = false,
+    setup?: Record<string, FormDataEntryValue>,
+  ) {
     if (action) return;
     setAuthorityReady(false);
     setAuthorityGeneration(resetDesignAuthority());
@@ -204,7 +211,10 @@ export function App() {
     try {
       let consentRedirect: string | null = null;
       // Keep the key out of Query's mutation cache and all persistent storage.
-      if (!logout && useAccount) {
+      if (setup) {
+        await api("identity/bootstrap", setup, controller.signal);
+        void client.invalidateQueries({ queryKey: ["auth-methods"] });
+      } else if (!logout && useAccount) {
         const result = await authApi(
           "sign-in/email",
           {
@@ -251,7 +261,11 @@ export function App() {
         });
       return true;
     } catch (error) {
-      if (!controller.signal.aborted) setActionError(errorMessage(error));
+      if (!controller.signal.aborted)
+        setActionError(setup ? issue(error) : errorMessage(error));
+      // Someone else became the owner first: offer the sign-in instead.
+      if (setup && error instanceof ApiError && error.status === 409)
+        void client.invalidateQueries({ queryKey: ["auth-methods"] });
       return false;
     } finally {
       sessionChannel.current?.postMessage("changed");
@@ -289,9 +303,10 @@ export function App() {
   if (!data)
     return (
       <AuthLayout
-        title={copy.loginTitle}
+        title={setupOpen ? copy.setupTitle : copy.loginTitle}
+        description={setupOpen ? copy.setupDescription : undefined}
         footer={
-          methods.data && (
+          methods.data?.identity && (
             <Button
               variant="link"
               size="sm"
@@ -317,6 +332,22 @@ export function App() {
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-full" />
           </div>
+        ) : setupOpen ? (
+          <form
+            onSubmit={(event) => {
+              void authenticate(false, formValues(event));
+            }}
+          >
+            <fieldset disabled={action !== null} className="contents">
+              <FieldGroup>
+                <AccountInputs copy={copy} setup />
+                {error && <FieldError>{copy[error]}</FieldError>}
+                <SubmitButton pending={action === "login"}>
+                  {copy.setupAction}
+                </SubmitButton>
+              </FieldGroup>
+            </fieldset>
+          </form>
         ) : (
           <>
             <form

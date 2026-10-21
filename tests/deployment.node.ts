@@ -327,7 +327,7 @@ test("rate limits count the real client behind the trusted proxy only", async ()
   );
 });
 
-test("until the owner exists every start logs the activation key, then it is replaced", async () => {
+test("a fresh start logs the setup hint and no key", async () => {
   const dir = mkdtempSync(join(tmpdir(), "niaro-deploy-first-start-"));
   try {
     const port = await new Promise<number>((resolve) => {
@@ -390,18 +390,22 @@ test("until the owner exists every start logs the activation key, then it is rep
       await new Promise((resolve) => server.once("exit", resolve));
       return log;
     };
-    const waiting = join(dir, "admin-key.initial");
     const first = await start();
-    assert.equal(statSync(waiting).mode & 0o777, 0o600);
-    const key = readFileSync(waiting, "utf8").trim();
-    assert.match(key, /^acadmin_[A-Za-z0-9_-]{43}$/);
-    assert.match(first, /Activation: create the owner account/);
-    assert.ok(first.includes(key));
-    // A restart before activation shows the same key again.
+    // No key in the log or on disk: the first account becomes the owner.
+    assert.match(
+      first,
+      new RegExp(
+        `No owner yet: open http://127\\.0\\.0\\.1:${port}/admin/ and create the owner account`,
+      ),
+    );
+    assert.doesNotMatch(first, /acadmin_/);
+    assert.ok(!existsSync(join(dir, "admin-key.initial")));
+    // The recovery key exists only as a digest, for admin-rotate-key.
     const digest = readFileSync(join(dir, "admin-key.json"), "utf8");
-    assert.ok((await start()).includes(key));
-    assert.equal(readFileSync(join(dir, "admin-key.json"), "utf8"), digest);
-    // The owner exists: the logged key is retired and nothing is printed.
+    assert.equal(statSync(join(dir, "admin-key.json")).mode & 0o777, 0o600);
+    assert.doesNotMatch(digest, /acadmin_/);
+    assert.match(JSON.parse(digest).hash, /^[a-f0-9]{64}$/);
+    // A restart keeps the key; once the owner exists the hint is gone.
     const db = new DatabaseSync(join(dir, "identity", "identity.sqlite"));
     try {
       const now = new Date().toISOString();
@@ -412,10 +416,18 @@ test("until the owner exists every start logs the activation key, then it is rep
       db.close();
     }
     const after = await start();
-    assert.doesNotMatch(after, /acadmin_/);
-    assert.match(after, /activation key was replaced/);
+    assert.doesNotMatch(after, /No owner yet|acadmin_/);
+    assert.equal(readFileSync(join(dir, "admin-key.json"), "utf8"), digest);
+    // A key file left by an older version is shown once, then deleted.
+    const waiting = join(dir, "admin-key.initial");
+    writeFileSync(waiting, "acadmin_TEST-leftover\n", { mode: 0o600 });
+    const shown = execFileSync(
+      process.execPath,
+      [...cli, "admin-key", profile, "--initial"],
+      { env, encoding: "utf8" },
+    );
+    assert.equal(shown.trim(), "acadmin_TEST-leftover");
     assert.ok(!existsSync(waiting));
-    assert.notEqual(readFileSync(join(dir, "admin-key.json"), "utf8"), digest);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

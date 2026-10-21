@@ -112,17 +112,31 @@ test("Better Auth HTTP: bootstrap, isolation, live roles, workspace grants, revo
       slow.destroy();
     }
     assert.equal((await anonymous("api/identity")).status, 401);
-    assert.equal(
-      (
-        await anonymous("api/identity/bootstrap", {
-          name: "TEST Owner",
-          email: "owner@example.test",
-          password,
-          organizationName: "TEST Alpha",
-        })
-      ).status,
-      403,
-    );
+    // A fresh server tells signed-out visitors that owner setup is open.
+    assert.deepEqual((await anonymous("api/auth-methods")).data, {
+      identity: true,
+      setup: true,
+    });
+    // Open setup still needs the console's own same-origin request.
+    for (const extra of [
+      { Origin: "https://attacker.example" },
+      { "X-Agent-Admin": "0" },
+    ] as Record<string, string>[])
+      assert.equal(
+        (
+          await anonymous(
+            "api/identity/bootstrap",
+            {
+              name: "TEST Owner",
+              email: "owner@example.test",
+              password,
+              organizationName: "TEST Alpha",
+            },
+            extra,
+          )
+        ).status,
+        403,
+      );
     assert.equal(
       (
         await anonymous("auth/sign-up/email", {
@@ -163,11 +177,52 @@ test("Better Auth HTTP: bootstrap, isolation, live roles, workspace grants, revo
     );
     failureDb.exec("DROP TRIGGER test_fail_org");
     failureDb.close();
-    const bootstraps = await Promise.all([
-      operator("api/identity/bootstrap", setup),
-      operator("api/identity/bootstrap", setup),
-    ]);
+    // Without the recovery key, the first of two visitors becomes the owner
+    // and lands signed in, with the organization and a first workspace.
+    const visitors = [client(), client()];
+    const bootstraps = await Promise.all(
+      visitors.map((visitor) => visitor("api/identity/bootstrap", setup)),
+    );
     assert.deepEqual(bootstraps.map((r) => r.status).sort(), [200, 409]);
+    const first = visitors[bootstraps.findIndex((r) => r.status === 200)]!;
+    const firstState = (await first("api/identity")).data;
+    assert.equal(firstState.needsSetup, false);
+    assert.equal(firstState.user.email, setup.email);
+    assert.deepEqual(
+      firstState.organizations.map((o: { name: string; role: string }) => [
+        o.name,
+        o.role,
+      ]),
+      [["TEST Alpha", "owner"]],
+    );
+    assert.deepEqual(
+      (
+        await first(
+          `api/identity/organization?id=${firstState.organizations[0].id}`,
+        )
+      ).data.workspaces.map((w: { name: string }) => w.name),
+      ["TEST Alpha"],
+    );
+    assert.equal(
+      (await first("api/overview")).data.authentication.current,
+      "better-auth",
+    );
+    // Once an account exists setup is closed, for the recovery key too.
+    assert.equal(
+      (await anonymous("api/identity/bootstrap", setup)).status,
+      409,
+    );
+    assert.equal((await operator("api/identity/bootstrap", setup)).status, 409);
+    assert.deepEqual((await anonymous("api/auth-methods")).data, {
+      identity: true,
+      setup: false,
+    });
+    // Setup attempts are rate limited per client address.
+    const attempts: number[] = [];
+    for (let i = 0; i < 12; i++)
+      attempts.push((await anonymous("api/identity/bootstrap", setup)).status);
+    assert.equal(attempts.at(-1), 429);
+    assert.deepEqual([...new Set(attempts)], [409, 429]);
     assert.equal(
       (await owner("auth/sign-in/email", { email: setup.email, password }))
         .status,
@@ -525,17 +580,21 @@ test("public HTTPS origin behind a loopback proxy pins Host/Origin and uses Secu
       .getSetCookie()
       .map((c) => c.split(";")[0])
       .join("; ");
-    assert.equal(
-      (
-        await call("api/identity/bootstrap", {
-          name: "TEST Owner",
-          email: "test-https@example.test",
-          password,
-          organizationName: "TEST HTTPS",
-        })
-      ).status,
-      200,
+    const created = await call("api/identity/bootstrap", {
+      name: "TEST Owner",
+      email: "test-https@example.test",
+      password,
+      organizationName: "TEST HTTPS",
+    });
+    assert.equal(created.status, 200);
+    // Setup from the recovery console signs the owner in and ends the
+    // recovery session, so the console runs as the owner.
+    const handoff = created.headers.getSetCookie();
+    assert.ok(
+      handoff.some((c) => /session_token=[^;]+;.*Secure/i.test(c)),
+      String(handoff),
     );
+    assert.ok(handoff.some((c) => /^agent_admin_session=;.*Max-Age=0/.test(c)));
     cookie = "";
     const personal = await call("auth/sign-in/email", {
       email: "test-https@example.test",

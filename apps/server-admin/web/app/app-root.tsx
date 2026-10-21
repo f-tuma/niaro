@@ -66,6 +66,21 @@ export function WebApp() {
       IdentityStateSchema.parse(await api("identity", undefined, signal)),
     retry: false,
   });
+  const signedOutError =
+    identity.error instanceof ApiError &&
+    (identity.error.status === 401 || identity.error.status === 403);
+  // A fresh server: nobody has signed up, the first account becomes the owner.
+  const setupOpen = useQuery({
+    queryKey: ["app", "setup-open"],
+    enabled: signedOutError,
+    queryFn: async ({ signal }) => {
+      const value = await api("auth-methods", undefined, signal);
+      return !!value && typeof value === "object" && "setup" in value
+        ? value.setup === true
+        : false;
+    },
+    retry: false,
+  });
   const organizations = identity.data?.organizations ?? [];
   const details = useQuery({
     queryKey: ["app", "workspaces", organizations.map((o) => o.id)],
@@ -107,7 +122,11 @@ export function WebApp() {
       .finally(signedOut);
   }, [signedOut]);
 
-  if (identity.isPending || (organizations.length > 0 && details.isPending))
+  if (
+    identity.isPending ||
+    (organizations.length > 0 && details.isPending) ||
+    (signedOutError && setupOpen.isPending)
+  )
     return (
       <AuthLayout title={copy.loading}>
         <div
@@ -120,10 +139,15 @@ export function WebApp() {
         </div>
       </AuthLayout>
     );
-  if (
-    identity.error instanceof ApiError &&
-    (identity.error.status === 401 || identity.error.status === 403)
-  )
+  if (signedOutError && setupOpen.data)
+    return (
+      <AuthLayout title={copy.setupTitle}>
+        <Button asChild>
+          <a href="/admin/">{copy.createOwner}</a>
+        </Button>
+      </AuthLayout>
+    );
+  if (signedOutError)
     return (
       <SignIn language={language} onSignedIn={() => void identity.refetch()} />
     );
@@ -146,7 +170,7 @@ export function WebApp() {
     return (
       <AuthLayout title={copy.setupTitle}>
         <Button asChild>
-          <a href="/admin/">{copy.openAdministration}</a>
+          <a href="/admin/">{copy.createOwner}</a>
         </Button>
       </AuthLayout>
     );

@@ -130,9 +130,11 @@ test("invitation links, passwords, reset links and own sign-ins", async (t) => {
       organizationId,
       name: "TEST Workspace",
     });
+    // Setup also created a first workspace named like the organization.
     const workspaceId = (
       await owner(`api/identity/organization?id=${organizationId}`)
-    ).data.workspaces[0].id as string;
+    ).data.workspaces.find((w: { name: string }) => w.name === "TEST Workspace")
+      .id as string;
     const target = { organizationId, workspaceId };
     const invite = async (email: string) => {
       const sent = await owner("api/identity/invitations", {

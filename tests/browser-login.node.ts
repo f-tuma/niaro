@@ -111,6 +111,8 @@ test("Browser login: consent, scope, one-use redemption and cancellation", async
       ).status,
       200,
     );
+    // Setup signed the operator's browser in as the owner: back to the key.
+    assert.equal((await operator("api/login", { key })).status, 200);
     assert.equal(
       (
         await owner("auth/sign-in/email", {

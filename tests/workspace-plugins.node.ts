@@ -179,6 +179,8 @@ test("workspace plugins: authenticated configuration controls actual runtime and
       ).status,
       200,
     );
+    // Setup signed the operator in as the owner: back to the recovery key.
+    await operator("api/login", { key });
     await owner("auth/sign-in/email", {
       email: "owner@example.test",
       password,
@@ -203,8 +205,11 @@ test("workspace plugins: authenticated configuration controls actual runtime and
     const detail = (
       await owner(`api/identity/organization?id=${organizationId}`)
     ).data;
-    const workspaceId = detail.workspaces[0].id,
-      secondId = detail.workspaces[1].id;
+    // Setup's own first workspace ("TEST Plugins") is not used here.
+    const named = (name: string) =>
+      detail.workspaces.find((w: { name: string }) => w.name === name).id;
+    const workspaceId = named("TEST One"),
+      secondId = named("TEST Two");
     const target = { organizationId, workspaceId };
     await seedIdentityFixture(identity, {
       organizationId,

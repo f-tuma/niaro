@@ -12,8 +12,8 @@
 #   Environment  NIARO_PUBLIC_URL=https://<domain>   (required; SMTP_* optional)
 #   Domains      <domain> → service "niaro", port 8793, HTTPS on
 #                (Let's Encrypt); the domain must equal NIARO_PUBLIC_URL.
-# After the first deploy, in the niaro container's terminal:
-#   niaro admin-key --initial
+# Right after the first deploy, open https://<domain>/admin/ and create the
+# owner account: the first person who signs up becomes the owner.
 # Microsoft 365 and other hosted MCP servers are added in administration
 # (Hosted); without Docker they run inside this container.
 name: niaro

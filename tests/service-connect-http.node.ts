@@ -132,6 +132,8 @@ test("a phone connects a Microsoft account once through the browser and calls th
       password,
       organizationName: "TEST Org",
     });
+    // Setup signed this browser in as the owner: back to the recovery key.
+    await operator("api/login", { key });
     await owner("auth/sign-in/email", {
       email: "owner@example.test",
       password,

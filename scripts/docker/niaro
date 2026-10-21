@@ -3,7 +3,7 @@
 #   niaro start | check                 run / validate the server ($NIARO_CONFIG)
 #   niaro admin-rotate-key              print a new administrator key (old one stops working)
 #   niaro admin-key                     print a key only if none exists yet
-#   niaro admin-key --initial           print the first-start key once, then delete it
+#   niaro admin-key --initial           print a key an older version left at first start, once
 #   niaro backup -  > backup.tar.gz     consistent snapshot of $NIARO_DATA to stdout
 #   niaro restore - < backup.tar.gz     restore into an empty $NIARO_DATA
 #   niaro healthcheck                   exit 0 when /healthz answers

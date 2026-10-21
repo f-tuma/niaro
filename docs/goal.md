@@ -129,7 +129,7 @@ All checklist items pass; the pilot can start.
 | #   | Item                                    | Verified by                                                                                               |
 | --- | --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | 1   | Image, compose, Caddy HTTPS, `/healthz` | `Dockerfile`, `compose.yml`; built and run, HTTPS through Caddy ([deployment.md](deployment.md))          |
-| 2   | First run                               | key to `/data/admin-key.initial`, `niaro admin-key --initial`; `tests/deployment.node.ts`, smoke          |
+| 2   | First run                               | first sign-up becomes the owner, no key; `tests/deployment.node.ts`, `tests/identity.node.ts`, smoke      |
 | 3   | Backup and restore                      | `niaro backup` / `restore`, online SQLite backup + integrity check; round trip tested                     |
 | 4   | Upgrade                                 | new image on a copy of the dev data: migrated, counts unchanged, integrity ok                             |
 | 5   | Logs                                    | structured access / model-call lines without secrets or content; smoke checks the log                     |

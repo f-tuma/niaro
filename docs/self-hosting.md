@@ -106,11 +106,10 @@ npm run admin:build
 mkdir -p .servers/local
 cp examples/self-hosted/server.local.json .servers/local/server.json
 npm run server:check -- .servers/local/server.json
-npm run server:admin-key -- .servers/local/server.json
 npm run server -- .servers/local/server.json
 ```
 
-The key command displays a private recovery key. Save it outside source control; do not include it in screenshots or support tickets. Open `http://localhost:8793/admin/`, choose **Use a recovery key**, sign in and create the first owner/company. Then sign in with that account, create a workspace, add services/providers and assign models. The recovery account has instance/bootstrap privileges; it is not an organization member and cannot run company tools. Regular login uses Better Auth accounts. Public self-signup, email delivery and social OAuth providers are not configured in this build.
+Open `http://localhost:8793/admin/` and create the first owner/company: while no account exists the page shows the setup form instead of the sign-in, and the first account becomes the owner (signed in, with a first workspace named like the company). Then add services/providers and assign models. The first start also creates a recovery key stored only as a digest; `npm run server:admin-rotate-key -- <profile.json>` prints a usable one. Save it outside source control; do not include it in screenshots or support tickets. The recovery account has instance privileges; it is not an organization member and cannot run company tools. Regular login uses Better Auth accounts. Public self-signup, email delivery and social OAuth providers are not configured in this build.
 
 The example has no paid services or real calendar writes. `fixture` is the fallback built-in interpreter; models added in the console run independently through the new catalog. Nothing seeds fake services into a real company. Built-in connectors are configured separately; see [server profiles](server-profiles.md).
 

@@ -209,6 +209,8 @@ test("Account mobile bridge: scope, dispatch, revocation and durable receipts", 
       ).status,
       200,
     );
+    // Setup signed this browser in as the owner: back to the recovery key.
+    await operator("api/login", { key });
     await owner("auth/sign-in/email", {
       email: "owner@example.test",
       password,

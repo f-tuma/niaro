@@ -15,12 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
 import { Input } from "@admin/components/ui/input";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@admin/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@admin/components/ui/field";
 import {
   Card,
   CardContent,
@@ -91,7 +86,8 @@ import {
 import { EntityIcon, initials } from "@admin/components/console/entity-icon";
 import { useAdmin } from "./context";
 import { useConsoleScope } from "./console-scope";
-import { api, ApiError, errorMessage } from "./lib/api";
+import { api, ApiError, overviewKey } from "./lib/api";
+import { AccountInputs, formValues, issue } from "./account-inputs";
 import type { Copy } from "./i18n";
 import { WorkspaceInvitations } from "./workspace-invitations";
 import { PasswordResetSheet } from "./password-reset-sheet";
@@ -102,18 +98,6 @@ type Member = OrganizationDetail["members"][number];
 type Workspace = OrganizationDetail["workspaces"][number];
 const roles = ["owner", "admin", "member"] as const;
 
-function issue(error: unknown): keyof Copy {
-  if (error instanceof ApiError) {
-    if (error.code === "workspace_role_in_use") return "workspaceRoleInUse";
-    if (error.code === "catalog_conflict") return "workspaceRoleConflict";
-    if (error.code === "workspace_role_exists") return "workspaceRoleExists";
-    if (error.code === "identity_last_owner") return "lastOwnerError";
-    if (error.status === 403) return "forbiddenError";
-    if (error.status === 409) return "conflictError";
-    if (error.status === 400) return "inputError";
-  }
-  return errorMessage(error);
-}
 function Nothing({
   title,
   description,
@@ -138,67 +122,7 @@ function Nothing({
 }
 function AccountFields({ setup = false }: { setup?: boolean }) {
   const { copy } = useAdmin();
-  return (
-    <>
-      {setup && (
-        <Field>
-          <FieldLabel htmlFor="organization-name">
-            {copy.organizationName}
-          </FieldLabel>
-          <Input
-            id="organization-name"
-            name="organizationName"
-            maxLength={100}
-            required
-          />
-        </Field>
-      )}
-      <Field>
-        <FieldLabel htmlFor="account-name">{copy.name}</FieldLabel>
-        <Input
-          id="account-name"
-          name="name"
-          autoComplete="name"
-          maxLength={100}
-          required
-        />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="account-email">{copy.email}</FieldLabel>
-        <Input
-          id="account-email"
-          name="email"
-          type="email"
-          autoComplete="username"
-          maxLength={254}
-          required
-        />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="account-password">{copy.password}</FieldLabel>
-        <Input
-          id="account-password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          minLength={12}
-          maxLength={128}
-          aria-describedby="password-hint"
-          required
-        />
-        <FieldDescription id="password-hint">
-          {copy.passwordHint}
-        </FieldDescription>
-      </Field>
-    </>
-  );
-}
-function formValues(event: FormEvent<HTMLFormElement>) {
-  event.preventDefault();
-  const values = Object.fromEntries(new FormData(event.currentTarget));
-  const password = event.currentTarget.elements.namedItem("password");
-  if (password instanceof HTMLInputElement) password.value = "";
-  return values;
+  return <AccountInputs copy={copy} setup={setup} />;
 }
 export function Accounts() {
   return <IdentityPage page="accounts" />;
@@ -270,6 +194,8 @@ export function IdentityPage({
       // Direct request: passwords must never be retained in the Query mutation cache.
       await api(setup ? "identity/bootstrap" : "identity/command", input);
       await client.cancelQueries({ queryKey: ["admin", "organization"] });
+      // After setup the console runs as the new owner, not the recovery key.
+      if (setup) await client.invalidateQueries({ queryKey: overviewKey });
       await Promise.all([
         client.invalidateQueries({ queryKey: ["admin", "identity"] }),
         client.invalidateQueries({ queryKey: ["admin", "organization"] }),

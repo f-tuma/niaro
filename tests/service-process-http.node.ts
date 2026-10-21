@@ -102,6 +102,8 @@ test("process HTTP uses authenticated scope, stays passive and survives an ident
       ).status,
       200,
     );
+    // Setup signed this browser in as the owner: back to the recovery key.
+    await operator("api/login", { key });
     assert.equal(
       (
         await owner("auth/sign-in/email", {

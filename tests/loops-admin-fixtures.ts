@@ -316,7 +316,8 @@ export function adminLoopsFixture(
 ) {
   const path = url.pathname.replace(/^\/admin\/api\//, "");
   if (path === "overview") return { status: 200, body: loopsFixtureOverview };
-  if (path === "auth-methods") return { status: 200, body: { identity: true } };
+  if (path === "auth-methods")
+    return { status: 200, body: { identity: true, setup: false } };
   if (path === "identity") return { status: 200, body: loopsFixtureIdentity };
   if (path === "identity/organization")
     return {

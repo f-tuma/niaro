@@ -52,10 +52,10 @@ the server.
 
 ```sh
 docker compose up -d
-docker compose exec niaro niaro admin-key --initial   # the administrator key, once; see "First run"
 ```
 
-Open `http://localhost:8793/`. The defaults bind the port on `127.0.0.1` only
+Open `http://localhost:8793/admin/` and create the owner account (see "First
+run"). The defaults bind the port on `127.0.0.1` only
 and use `NIARO_PUBLIC_URL=http://localhost:8793`; nothing is reachable from other
 machines.
 
@@ -130,8 +130,8 @@ commit in `NIARO_GIT_REF`), so the file works without a checkout.
 3. **Domains**: the host from `NIARO_PUBLIC_URL`, service `niaro`, container
    port `8793`, HTTPS with Let's Encrypt. The domain and `NIARO_PUBLIC_URL`
    must match: the server accepts only its public origin.
-4. Deploy, then open the container's terminal in Dokploy and run
-   `niaro admin-key --initial` once (see First run).
+4. Deploy, then right away open `<public URL>/admin/` and create the owner
+   account (see First run): the first person to sign up becomes the owner.
 5. Microsoft 365 and other hosted MCP servers are added afterwards in
    administration (Hosted); they install on first start and need outbound
    access to the npm registry.
@@ -156,43 +156,35 @@ the consistent way, see below). Run one deployment per volume.
 
 ## First run: the owner account
 
-On the first start with an empty volume the server creates the administrator
-key. Container output is a log that is kept and often shipped elsewhere, so the
-key is not printed there: it waits in `/data/admin-key.initial` (`0600`,
-readable only by the server user, never part of a backup) and the log says so:
+A new installation has no account and needs no key: the first person who signs
+up becomes the owner. The log says so while nobody has:
 
 ```text
-=== First start: administrator key created ===
-It is not printed here because this output is a log. It waits in /data/admin-key.initial …
+No owner yet: open https://assistant.example.com/admin/ and create the owner account (the first account becomes the owner).
 ```
 
-Only the key's SHA-256 digest is stored (`/data/admin-key.json`). (Started
-directly on a terminal, e.g. `npm run server`, the key is printed there once
-instead.) Then:
+1. Right after deploying, open `<public URL>/admin/`. Until an account exists,
+   the page shows **Set up your organization** instead of the sign-in.
+2. Enter the organization name and the owner's name, email and password (at
+   least 12 characters). The server creates the owner, the organization and a
+   first workspace named like it, and signs the owner in (an ordinary account
+   session). From then on the form is closed and the page signs in.
+3. The overview's first-run checklist continues with provider, model, budget,
+   services and invitations.
 
-1. Show the key, once (the file is deleted as it is read), and copy it into a
-   password manager:
+Anyone who reaches the URL before you could take the owner role, so create the
+owner immediately after the first deploy (or keep the server unreachable until
+you have). Setup requests are rate limited and accepted only from the console's
+own origin.
 
-   ```sh
-   docker compose exec niaro niaro admin-key --initial
-   ```
-
-   A second call reports that no key is waiting.
-
-2. Open `<public URL>/admin/`, choose **Use a recovery key**, paste the key.
-3. Create the first organization and its owner (name, email, password of at
-   least 12 characters). This works once: after the first account exists the
-   setup form is closed.
-4. Sign out and sign in with the owner account. The overview's first-run
-   checklist continues with provider, model, budget, services and invitations.
-
-The recovery key keeps instance-level recovery access (it is not an
-organization member).
-
-Lost or exposed key: `docker compose exec niaro niaro admin-rotate-key` prints
-a new key to your terminal (not to the logs) and the old one stops working (a
-first-start key still waiting in `admin-key.initial` is deleted too).
-`niaro admin-key` only creates a key when none exists.
+The server also creates an administrator (recovery) key on the first start,
+but stores only its SHA-256 digest (`/data/admin-key.json`) and never prints
+it. It gives instance-level recovery access (it is not an organization
+member): `docker compose exec niaro niaro admin-rotate-key` prints a new key to
+your terminal (not to the logs), the old one stops working, and **Use a
+recovery key** on the sign-in page accepts it. `niaro admin-key` only creates a
+key when none exists; `niaro admin-key --initial` shows a first-start key that
+an older version left in `/data/admin-key.initial`, once, and deletes it.
 
 ## Configuration reference (container)
 
@@ -362,10 +354,13 @@ by built-in adapters must be mounted separately (see above).
 
 ## Security notes
 
-- **Administrator key**: handed out once after the first start (`niaro
-admin-key --initial`; never written to the container log), stored only as a
-  digest, rate limited (10 attempts per minute per address). Rotate with
-  `niaro admin-rotate-key`. It opens the recovery console, not company data.
+- **Owner setup**: open to anyone only while no account exists (the first
+  account becomes the owner), same-origin only, rate limited (10 attempts per
+  minute per address); closed for good once an account exists.
+- **Administrator key**: created at the first start, never printed or written
+  to the log, stored only as a digest, rate limited (10 attempts per minute per
+  address). Get a usable one with `niaro admin-rotate-key`. It opens the
+  recovery console, not company data.
 - **HTTPS**: with an `https://` public URL the console only accepts that Host
   and Origin, direct plain-HTTP requests to `/admin` are rejected (403), and
   all session cookies are `Secure; HttpOnly; SameSite=Strict` with path
@@ -427,12 +422,12 @@ removes the container and volume afterwards (`SMOKE_KEEP=1` leaves them for
 inspection). It prints PASS / FAIL / SKIP per step and exits non-zero on any
 failure.
 
-- **Container**: `/healthz`, `niaro healthcheck`, the first-run administrator
-  key handed out exactly once (`niaro admin-key --initial`, or the first-start
-  log on images that print it), and at the end a log without passwords, tokens,
-  message text or error lines.
+- **Container**: `/healthz`, `niaro healthcheck`, the first start's setup hint
+  with no key in the log, a recovery key from `niaro admin-rotate-key`, and at
+  the end a log without passwords, tokens, message text or error lines.
 - **API journey** (`api-journey.mjs`, plain `fetch` with a cookie jar per
-  person): recovery-key login, owner and organization bootstrap, owner sign-in
+  person): owner setup open to a signed-out visitor, the first visitor's
+  bootstrap signing in as owner (then 409), recovery-key login, owner sign-in
   (overview `console: true`), workspace, invitation by link without SMTP,
   acceptance with a new password, member sign-in, organization detail, admin
   APIs refused to the member (403, overview `console: false`), the web app's

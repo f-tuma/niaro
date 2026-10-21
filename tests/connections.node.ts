@@ -141,6 +141,8 @@ test("Workspace connections: vault, isolation, grants, dispatch, live revocation
       ).status,
       200,
     );
+    // Setup signed this browser in as the owner: back to the recovery key.
+    await operator("api/login", { key });
     await owner("auth/sign-in/email", {
       email: "owner@example.test",
       password,

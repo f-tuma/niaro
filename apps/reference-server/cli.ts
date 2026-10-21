@@ -1,10 +1,4 @@
-import {
-  chmodSync,
-  existsSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { issueAdminKey } from "../server-admin/auth";
 import { issuePairingCode } from "../fixture-server/auth";
@@ -17,11 +11,8 @@ if (existsSync(".env")) process.loadEnvFile(".env");
 const [mode, profileArgument, user, workspace, ...extra] =
   process.argv.slice(2);
 const file = profileArgument || process.env.SERVER_PROFILE;
-/** `admin-key <profile> --initial`: show the first-start key once, then delete it. */
+/** `admin-key <profile> --initial`: show a key left by an older version once, then delete it. */
 const initial = mode === "admin-key" && user === "--initial" && !workspace;
-/** Where a first start without a terminal leaves the new key, next to the key file. */
-const initialKeyFile = (keyFile: string) =>
-  join(dirname(keyFile), "admin-key.initial");
 async function main() {
   try {
     if (
@@ -42,7 +33,11 @@ async function main() {
         throw new ServerConfigError(
           "Enable administration in the server profile first.",
         );
-      const waiting = initialKeyFile(config.administration.keyFile);
+      // Older versions left the first key in a file next to the key file.
+      const waiting = join(
+        dirname(config.administration.keyFile),
+        "admin-key.initial",
+      );
       if (initial) {
         // Printed once: the file is removed as soon as it has been read.
         if (!existsSync(waiting))
@@ -91,66 +86,20 @@ async function main() {
           ),
         );
       } else {
-        // First start of a new installation: create the administrator key.
-        // Only its digest is stored; the plain key waits in a private file
-        // and is printed at every start until the owner account exists, so
-        // activation needs nothing but the log. Once the owner exists the key
-        // is replaced, so the copy in the logs no longer opens anything.
-        const waiting = config.administration
-          ? initialKeyFile(config.administration.keyFile)
-          : undefined;
-        if (
-          config.administration &&
-          !existsSync(config.administration.keyFile)
-        ) {
-          const key = issueAdminKey(config.administration.keyFile);
-          writeFileSync(waiting!, `${key}\n`, { mode: 0o600 });
-          chmodSync(waiting!, 0o600);
-        }
+        // A new installation gets an administrator (recovery) key, stored
+        // as a digest only and never shown: `admin-rotate-key` hands out a
+        // usable one. The owner is whoever signs up first in the console.
+        if (config.administration && !existsSync(config.administration.keyFile))
+          issueAdminKey(config.administration.keyFile);
         const identity = config.administration?.identity
           ? await (
               await import("../server-identity/service")
             ).openIdentity(config)
           : undefined;
-        const admin = `${config.administration?.identity?.baseURL ?? "the server"}/admin/`;
-        /** The owner exists: retire the logged key and its waiting copy. */
-        const activated = () => {
-          if (!config.administration || !waiting || !existsSync(waiting))
-            return;
-          issueAdminKey(config.administration.keyFile, true);
-          rmSync(waiting, { force: true });
+        if (identity?.setupPending())
           console.log(
-            "Owner account created: the activation key was replaced. A new recovery key: niaro admin-rotate-key",
+            `No owner yet: open ${config.administration!.identity!.baseURL}/admin/ and create the owner account (the first account becomes the owner).`,
           );
-        };
-        if (config.administration && waiting) {
-          const pending = identity ? identity.setupPending() : true;
-          if (pending && existsSync(waiting))
-            console.log(
-              [
-                "",
-                "=== Activation: create the owner account ===",
-                `Open ${admin}, choose "Use a recovery key" and enter:`,
-                readFileSync(waiting, "utf8").trim(),
-                "This key is printed at every start until the owner exists, then replaced.",
-                "============================================",
-                "",
-              ].join("\n"),
-            );
-          else if (pending)
-            console.log(
-              `No owner account yet. Get an activation key with: niaro admin-rotate-key (outside Docker: npm run server:admin-rotate-key -- <profile.json>), then open ${admin}`,
-            );
-          else activated();
-          if (identity && pending) {
-            const watch = setInterval(() => {
-              if (identity.setupPending()) return;
-              clearInterval(watch);
-              activated();
-            }, 5000);
-            watch.unref();
-          }
-        }
         let server;
         try {
           server = createReferenceServer(config, adapters, identity);

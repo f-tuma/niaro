@@ -194,45 +194,25 @@ async function main() {
 
   const adminKey = await report.step(
     J,
-    "first-run administrator key is handed out once",
+    "first start logs the setup hint and no key",
     async () => {
-      // Current images keep the key out of the log when stdout is not a
-      // terminal: `niaro admin-key --initial` prints and deletes
-      // /data/admin-key.initial. Older images print it once in the log.
-      let initial = "";
-      try {
-        initial = docker("exec", name, "niaro", "admin-key", "--initial");
-      } catch {
-        /* older image or no initial file */
-      }
-      const fromFile = initial.match(/acadmin_[A-Za-z0-9_-]+/)?.[0];
-      const keysInLog = rawLogs().match(/acadmin_[A-Za-z0-9_-]+/g) ?? [];
-      if (fromFile) {
-        assert.equal(keysInLog.length, 0, "the key must not be in the log");
-        let again = "";
-        try {
-          again = docker("exec", name, "niaro", "admin-key", "--initial");
-        } catch {
-          /* expected: the file is gone */
-        }
-        assert.ok(
-          !again.includes(fromFile),
-          "admin-key --initial printed the key a second time",
-        );
-        keySource = "admin-key --initial";
-        return fromFile;
-      }
+      // The first account becomes the owner: no key is printed or waiting.
+      const text = rawLogs();
       assert.ok(
-        rawLogs().includes("=== First start: administrator key"),
-        "no key from admin-key --initial and no first-start banner in the log",
+        text.includes("No owner yet: open "),
+        "no owner setup hint in the log",
       );
       assert.equal(
-        keysInLog.length,
-        1,
-        `expected the key exactly once in the log, found ${keysInLog.length}`,
+        (text.match(/acadmin_[A-Za-z0-9_-]+/g) ?? []).length,
+        0,
+        "the key must not be in the log",
       );
-      keySource = "first-start log";
-      return keysInLog[0];
+      // The recovery key is still there for emergencies.
+      const rotated = docker("exec", name, "niaro", "admin-rotate-key");
+      const key = rotated.match(/acadmin_[A-Za-z0-9_-]+/)?.[0];
+      assert.ok(key, "admin-rotate-key printed no key");
+      keySource = "admin-rotate-key";
+      return key;
     },
   );
   console.log(`  (administrator key from ${keySource})`);

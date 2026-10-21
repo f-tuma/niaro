@@ -188,8 +188,12 @@ export function createAdminHandler(
     }
     for (const [key, value] of Object.entries(security))
       res.setHeader(key, value);
+    // `setup`: no account exists yet, so the login page offers owner setup.
     if (req.method === "GET" && url.pathname === "/admin/api/auth-methods")
-      return respond(200, { identity: !!options.identity });
+      return respond(200, {
+        identity: !!options.identity,
+        setup: !!options.identity?.setupPending(),
+      });
     const token = (req.headers.cookie ?? "")
       .split(";")
       .map((v) => v.trim())
@@ -264,7 +268,15 @@ export function createAdminHandler(
           auth.revoke(token);
           res.setHeader("Set-Cookie", cookie("", 0));
         }
-        return options.identity.handle(req, res, operator);
+        return options.identity.handle(req, res, operator, () => {
+          auth.revoke(token);
+          res.setHeader("Set-Cookie", [
+            ...[res.getHeader("Set-Cookie")]
+              .flat()
+              .filter((v): v is string => typeof v === "string"),
+            cookie("", 0),
+          ]);
+        });
       }
       const personal = options.identity
         ? await options.identity.session(req)
