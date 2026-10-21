@@ -51,13 +51,13 @@ jobs:
       - run: pnpm exec jest --runInBand --shard=${{ matrix.shard }}/3
 
   server:
-    name: Server ${{ matrix.shard }}/4
+    name: Server ${{ matrix.shard }}/6
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -71,7 +71,7 @@ jobs:
       # Meeting tests decode real audio.
       - run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
       - run: pnpm run admin:build
-      - run: node scripts/ci-node-tests.mjs test:identity ${{ matrix.shard }}/4
+      - run: node scripts/ci-node-tests.mjs test:identity ${{ matrix.shard }}/6
 
   app:
     name: App build

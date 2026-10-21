@@ -547,23 +547,17 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
         });
         const pending = h.request("owner", base + "/turns", input);
         await ready;
-        let drained = false;
-        const restarting = h.restart().then(() => {
-          drained = true;
+        // Checked while the owner is stopped, not after a pause: a fast
+        // machine finishes the whole restart within any fixed delay.
+        let refused = 0;
+        await h.restart(async () => {
+          refused = (
+            await h.request("owner", base + "/capabilities?" + h.query)
+          ).status;
         });
-        // Shutdown starts asynchronously; a slow machine needs longer than a
-        // fixed pause before new admission is refused.
-        let status = 200;
-        for (let i = 0; i < 100 && status !== 503; i++) {
-          await delay(20);
-          status = (await h.request("owner", base + "/capabilities?" + h.query))
-            .status;
-        }
-        assert.equal(drained, false);
-        assert.equal(status, 503);
+        assert.equal(refused, 503);
         release();
         await pending;
-        await restarting;
         const response = await h.request(
           "owner",
           base + "/turns?" + query(initial.id, input.requestId),

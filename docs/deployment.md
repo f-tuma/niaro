@@ -110,10 +110,14 @@ address. No other forwarded header is trusted.
 ### Dokploy
 
 `compose.dokploy.yml` runs the same image behind Dokploy's Traefik, which
-terminates HTTPS; it has no Caddy and publishes no port.
+terminates HTTPS; it has no Caddy and publishes no port. There is no published
+image yet: Dokploy builds it from the GitHub repository
+(`https://github.com/f-tuma/niaro.git`, branch `main`, or the branch, tag or
+commit in `NIARO_GIT_REF`), so the file works without a checkout.
 
-1. Create a **Docker Compose** service from this repository with compose path
-   `./compose.dokploy.yml`.
+1. Create a **Docker Compose** service and paste `compose.dokploy.yml` as a
+   raw compose (or point the service at this repository with compose path
+   `./compose.dokploy.yml`). Redeploying rebuilds from the current ref.
 2. **Environment**: `NIARO_PUBLIC_URL=https://assistant.example.com` (required,
    the deploy fails without it) and optionally the `SMTP_*` variables (see
    `.env.example`).

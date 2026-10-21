@@ -2,8 +2,13 @@
 # Traefik terminates HTTPS, so there is no Caddy and no published port.
 # See docs/deployment.md, "Dokploy".
 #
-# In Dokploy (Docker Compose service, this repository):
-#   General      Compose path: ./compose.dokploy.yml
+# The image is built from the GitHub repository (no registry image yet), so
+# this file also works pasted as a raw compose in Dokploy. NIARO_GIT_REF picks
+# the branch, tag or commit (default main).
+#
+# In Dokploy (Docker Compose service):
+#   General      Raw compose with this file, or this repository with
+#                compose path ./compose.dokploy.yml
 #   Environment  NIARO_PUBLIC_URL=https://<domain>   (required; SMTP_* optional)
 #   Advanced     File mount "server.json" with the server profile
 #                (start from examples/self-hosted/server.dokploy.json)
@@ -17,7 +22,8 @@ name: niaro
 
 services:
   niaro:
-    build: .
+    build:
+      context: https://github.com/f-tuma/niaro.git#${NIARO_GIT_REF:-main}
     image: ${NIARO_IMAGE:-niaro:local}
     init: true
     restart: unless-stopped
