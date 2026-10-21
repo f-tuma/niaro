@@ -2,14 +2,19 @@ name: CI
 on: [push, pull_request]
 permissions:
   contents: read
+# A newer push to the same branch replaces the run still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CI: "1"
+  EXPO_NO_TELEMETRY: "1"
+  STORYBOOK_DISABLE_TELEMETRY: "true"
 jobs:
-  checks:
+  lint:
+    name: Lint and types
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      CI: "1"
-      EXPO_NO_TELEMETRY: "1"
-      STORYBOOK_DISABLE_TELEMETRY: "true"
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -20,10 +25,82 @@ jobs:
           node-version: "22.23.2"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run check
-      - run: pnpm run admin:build
+      - run: pnpm run lint
+      - run: pnpm run typecheck
       - run: python3 -m unittest discover -s scripts/audio -p 'test_*.py' -v
+
+  jest:
+    name: Jest ${{ matrix.shard }}/3
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.2"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run admin:build
+      - run: pnpm exec jest --runInBand --shard=${{ matrix.shard }}/3
+
+  server:
+    name: Server ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.2"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run admin:build
+      - run: node scripts/ci-node-tests.mjs test:identity ${{ matrix.shard }}/4
+
+  app:
+    name: App build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.2"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: pnpm exec expo install --check
       - run: pnpm run build
+
+  extras:
+    name: Storybook and audio spike
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.23.2"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run storybook:export
       - run: AUDIO_SPIKE=1 pnpm exec expo export --platform all --output-dir dist-audio
