@@ -1,0 +1,19 @@
+nodeLinker: hoisted
+packages:
+  - apps/server-admin
+  - apps/server-agent
+overrides:
+  "@storybook/react-native-ui": "10.4.0"
+  "@storybook/react-native-ui-common": "10.4.0"
+  "@storybook/react-native-theming": "10.4.0"
+  "@storybook/react": "10.4.0"
+allowBuilds:
+  esbuild: true
+  unrs-resolver: true
+minimumReleaseAgeExclude:
+  - nodemailer@10.0.12
+  - "@mastra/core@1.74.0"
+  - "@mastra/libsql@1.25.0"
+  - "@mastra/memory@1.35.0"
+  - "@ai-sdk/gateway@4.0.103"
+  - ai@7.0.127

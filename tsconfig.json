@@ -1,0 +1,26 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "types": ["node", "jest"],
+    "paths": {
+      "@admin/*": ["./apps/server-admin/web/*"]
+    }
+  },
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "packages/**/*.tsx",
+    "modules/**/*.ts",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "spikes/**/*.ts",
+    "spikes/**/*.tsx",
+    ".rnstorybook/**/*.ts",
+    ".rnstorybook/**/*.tsx",
+    "app.config.ts"
+  ],
+  "exclude": ["node_modules", "dist", "dist-storybook", "spikes/mastra"]
+}

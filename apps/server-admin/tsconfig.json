@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "paths": { "@admin/*": ["./web/*"] } },
+  "include": ["web/**/*.ts", "web/**/*.tsx", "vite.config.ts"]
+}

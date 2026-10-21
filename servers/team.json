@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "Team assistant",
+  "listen": { "host": "127.0.0.1", "port": 8795 },
+  "dataDirectory": "../.servers/team",
+  "allowedOrigins": ["http://localhost:8081", "http://localhost:8085"],
+  "sessionSeconds": 1800,
+  "adapters": {
+    "model": { "provider": "fixture" },
+    "voice": { "provider": "disabled" },
+    "crm": { "provider": "disabled" },
+    "calendar": { "provider": "simulated" }
+  }
+}

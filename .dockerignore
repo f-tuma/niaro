@@ -1,0 +1,39 @@
+# Allowlist: the build context holds only what the image needs, so local data,
+# credentials and caches can never reach a layer.
+*
+.*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.json
+!apps/
+!packages/
+!scripts/
+
+# Never, even inside allowed directories.
+**/node_modules
+**/.env
+**/.env.*
+**/*.sqlite
+**/*.sqlite-*
+**/*.log
+**/*.pem
+**/*.key
+**/admin-key.json
+apps/mobile
+apps/server-admin/node_modules
+android
+ios
+dist
+dist-admin
+dist-audio
+dist-storybook
+.servers
+.identity
+.fixture
+.fixture-calendar
+.openrouter
+.twenty
+.radicale
+.voice
+.aws

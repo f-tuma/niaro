@@ -1,0 +1,19 @@
+{
+  "//": "tsconfig.json inside the image: the repository's compiler options without the Expo base, which the runtime does not install.",
+  "compilerOptions": {
+    "strict": true,
+    "allowJs": true,
+    "esModuleInterop": true,
+    "jsx": "react-jsx",
+    "lib": ["DOM", "ESNext"],
+    "module": "preserve",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "target": "ESNext",
+    "types": ["node"]
+  },
+  "include": ["apps/**/*.ts", "packages/**/*.ts"]
+}

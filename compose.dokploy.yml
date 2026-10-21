@@ -1,0 +1,98 @@
+# Niaro on Dokploy: one server container and one data volume. Dokploy's
+# Traefik terminates HTTPS, so there is no Caddy and no published port.
+# See docs/deployment.md, "Dokploy".
+#
+# In Dokploy (Docker Compose service, this repository):
+#   General      Compose path: ./compose.dokploy.yml
+#   Environment  NIARO_PUBLIC_URL=https://<domain>   (required; SMTP_* optional)
+#   Advanced     File mount "server.json" with the server profile
+#                (start from examples/self-hosted/server.dokploy.json)
+#   Domains      <domain> → service "niaro", port 8793, HTTPS on
+#                (Let's Encrypt); the domain must equal NIARO_PUBLIC_URL.
+# After the first deploy, in the niaro container's terminal:
+#   niaro admin-key --initial
+# Microsoft 365 (mail, calendar) runs as the ms365 service; add it in
+# administration as an MCP service with URL http://ms365:3000/mcp.
+name: niaro
+
+services:
+  niaro:
+    build: .
+    image: ${NIARO_IMAGE:-niaro:local}
+    init: true
+    restart: unless-stopped
+    environment:
+      # The one public origin people open; the same host as the Dokploy domain.
+      NIARO_PUBLIC_URL: ${NIARO_PUBLIC_URL:?Set NIARO_PUBLIC_URL to the https:// domain}
+      # Traefik is the only way in and sends X-Forwarded-For; "auto" trusts it
+      # because the public URL is HTTPS.
+      NIARO_TRUST_PROXY: ${NIARO_TRUST_PROXY:-auto}
+      # Optional: only these addresses (IPs or CIDR) may set X-Forwarded-For,
+      # e.g. Traefik's address on dokploy-network; see docs/deployment.md.
+      NIARO_TRUSTED_PROXIES: ${NIARO_TRUSTED_PROXIES:-}
+      # Agent runs at once across everyone (one per person, plus a hub refresh).
+      NIARO_MAX_CONCURRENT_RUNS: ${NIARO_MAX_CONCURRENT_RUNS:-8}
+      # Optional invitation mail. Without SMTP, administrators copy links.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    volumes:
+      - niaro-data:/data
+      # Dokploy keeps file mounts in ../files next to the checkout.
+      - ../files/server.json:/config/server.json:ro
+    # Reached only through Traefik on Dokploy's network.
+    expose:
+      - "8793"
+    networks:
+      - dokploy-network
+      - internal
+    # Hardened: read-only root filesystem (the server writes only to /data and
+    # /tmp), no Linux capabilities, no privilege gain through setuid binaries.
+    read_only: true
+    tmpfs:
+      # Meeting audio is decoded here in short pieces, a few meetings at once.
+      - /tmp:size=512m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 30s
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  # Microsoft 365 MCP: the hosted template as a container. Reachable only by
+  # niaro on the internal network; the profile lists it in integrationOrigins.
+  ms365:
+    build:
+      context: .
+      target: ms365
+    image: ${NIARO_MS365_IMAGE:-niaro-ms365:local}
+    init: true
+    restart: unless-stopped
+    expose:
+      - "3000"
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  dokploy-network:
+    external: true
+  # Between niaro and ms365 only.
+  internal:
+
+volumes:
+  niaro-data:
+    # A fixed name, so redeploys and Dokploy volume backups find it.
+    name: ${NIARO_DATA_VOLUME:-niaro-data}

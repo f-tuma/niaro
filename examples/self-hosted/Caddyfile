@@ -1,0 +1,15 @@
+# HTTPS in front of Niaro. The site address is the server's public origin
+# (administration.identity.baseURL / NIARO_PUBLIC_URL), e.g.
+# https://assistant.example.com; Caddy obtains and renews its certificate.
+#
+# - compose.yml sets NIARO_PUBLIC_URL and NIARO_UPSTREAM=niaro:8793.
+# - Without containers, replace the placeholders or export the variables, and
+#   keep Node bound to 127.0.0.1:8793 (the default upstream).
+# Caddy preserves the Host header, which the server checks against the origin.
+{$NIARO_PUBLIC_URL:https://assistant.example.com} {
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy {$NIARO_UPSTREAM:127.0.0.1:8793} {
+		# Chat replies and MCP use long-lived responses.
+		flush_interval -1
+	}
+}

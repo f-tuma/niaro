@@ -1,0 +1,56 @@
+[
+  {
+    "id": "meeting",
+    "text": "Připrav schůzku s Peterem Novákem zítra ve dvě odpoledne na půl hodiny.",
+    "critical": [
+      ["peterem novákem"],
+      ["zítra"],
+      ["ve dvě", "ve 2"],
+      ["půl hodiny", "30 minut"]
+    ]
+  },
+  {
+    "id": "clarify",
+    "text": "Zítra ve čtrnáct hodin na čtyřicet pět minut.",
+    "critical": [
+      ["zítra"],
+      ["čtrnáct", "14"],
+      ["čtyřicet pět minut", "45 minut", "45 min"]
+    ]
+  },
+  {
+    "id": "contact",
+    "text": "Vyber Petera Nováka.",
+    "critical": [["vyber"], ["petera nováka"]]
+  },
+  {
+    "id": "contacts",
+    "text": "Ukaž mi testovací kontakty z cé er em.",
+    "critical": [["testovací kontakty"], ["crm", "cé er em"]]
+  },
+  {
+    "id": "number",
+    "text": "Ve čtvrtek v patnáct třicet.",
+    "critical": [["čtvrtek"], ["patnáct třicet", "15 30"]]
+  },
+  {
+    "id": "half",
+    "text": "Připrav schůzku zítra v půl třetí odpoledne.",
+    "critical": [["zítra"], ["půl třetí", "půl 3", "14 30"], ["odpoledne"]]
+  },
+  {
+    "id": "negation",
+    "text": "Ne, schůzku nevytvářej.",
+    "critical": [["ne"], ["nevytvářej"]]
+  },
+  {
+    "id": "names",
+    "text": "Připrav schůzku s Janou Dvořákovou v pátek v devět ráno.",
+    "critical": [
+      ["janou dvořákovou"],
+      ["pátek", "vpátek"],
+      ["devět", "9"],
+      ["ráno"]
+    ]
+  }
+]

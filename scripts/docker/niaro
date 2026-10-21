@@ -1,0 +1,31 @@
+#!/bin/sh
+# Container entry point and operator commands.
+#   niaro start | check                 run / validate the server ($NIARO_CONFIG)
+#   niaro admin-rotate-key              print a new administrator key (old one stops working)
+#   niaro admin-key                     print a key only if none exists yet
+#   niaro admin-key --initial           print the first-start key once, then delete it
+#   niaro backup -  > backup.tar.gz     consistent snapshot of $NIARO_DATA to stdout
+#   niaro restore - < backup.tar.gz     restore into an empty $NIARO_DATA
+#   niaro healthcheck                   exit 0 when /healthz answers
+set -eu
+cd /app
+config="${NIARO_CONFIG:-/config/server.json}"
+data="${NIARO_DATA:-/data}"
+run_ts() {
+  exec node --disable-warning=ExperimentalWarning --import tsx "$@"
+}
+command="${1:-start}"
+[ "$#" -gt 0 ] && shift
+case "$command" in
+  start | check | admin-key | admin-rotate-key)
+    run_ts apps/reference-server/cli.ts "$command" "$config" "$@" ;;
+  backup)
+    exec node --disable-warning=ExperimentalWarning scripts/backup.mjs "$data" "${1:--}" ;;
+  restore)
+    exec node --disable-warning=ExperimentalWarning scripts/restore.mjs "${1:--}" "$data" ;;
+  healthcheck)
+    exec node scripts/docker/healthcheck.mjs "$config" ;;
+  *)
+    echo "Unknown command: $command (start, check, admin-key, admin-rotate-key, backup, restore, healthcheck)" >&2
+    exit 64 ;;
+esac

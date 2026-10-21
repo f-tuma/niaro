@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "shadcn",
+        "mcp",
+        "--cwd",
+        "apps/server-admin"
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "agent-hosted-microsoft-365",
+  "private": true,
+  "description": "Pinned Microsoft 365 MCP server hosted by Agent Server. Install with npm ci --ignore-scripts.",
+  "type": "module",
+  "dependencies": {
+    "@softeria/ms-365-mcp-server": "0.156.2"
+  }
+}

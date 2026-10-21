@@ -1,0 +1,83 @@
+# Niaro: one server container, one data volume, optional Caddy for HTTPS.
+# See docs/deployment.md.
+#
+#   Local trial (HTTP on this machine only):
+#     docker compose up -d --build
+#     open http://localhost:8793/
+#   Production behind HTTPS:
+#     NIARO_PUBLIC_URL=https://assistant.example.com docker compose --profile https up -d --build
+#
+# Settings come from the environment or an `.env` file next to this file
+# (NIARO_PUBLIC_URL, NIARO_CONFIG, NIARO_DATA_VOLUME, SMTP_*).
+name: niaro
+
+services:
+  niaro:
+    build: .
+    image: ${NIARO_IMAGE:-niaro:local}
+    init: true
+    restart: unless-stopped
+    environment:
+      # The one public origin people open. HTTPS in production; the default is
+      # only for a trial on this machine.
+      NIARO_PUBLIC_URL: ${NIARO_PUBLIC_URL:-http://localhost:8793}
+      # Count sign-in limits per real client behind Caddy. "auto" trusts the
+      # proxy only with an HTTPS public URL (the https profile); the HTTP local
+      # trial has no proxy. Set 0 if the server port is reachable another way.
+      NIARO_TRUST_PROXY: ${NIARO_TRUST_PROXY:-auto}
+      # Optional: only these proxy addresses (IPs or CIDR) are trusted.
+      NIARO_TRUSTED_PROXIES: ${NIARO_TRUSTED_PROXIES:-}
+      # Agent runs at once across everyone (one per person, plus a hub refresh).
+      NIARO_MAX_CONCURRENT_RUNS: ${NIARO_MAX_CONCURRENT_RUNS:-8}
+      # Optional invitation mail. Without SMTP, administrators copy links.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    volumes:
+      - niaro-data:/data
+      - ${NIARO_CONFIG:-./examples/self-hosted/server.json}:/config/server.json:ro
+    # Loopback only: other machines reach the server through Caddy.
+    ports:
+      - "127.0.0.1:8793:8793"
+    # Hardened: read-only root filesystem (the server writes only to /data and
+    # /tmp), no Linux capabilities, no privilege gain through setuid binaries.
+    read_only: true
+    tmpfs:
+      # Meeting audio is decoded here in short pieces, a few meetings at once.
+      - /tmp:size=512m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 30s
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  caddy:
+    profiles: ["https"]
+    image: caddy:2.11-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
+    restart: unless-stopped
+    depends_on:
+      niaro:
+        condition: service_healthy
+    environment:
+      NIARO_PUBLIC_URL: ${NIARO_PUBLIC_URL:-}
+      NIARO_UPSTREAM: niaro:8793
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./examples/self-hosted/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  niaro-data:
+    # Restore into a new volume and point this at it to switch over.
+    name: ${NIARO_DATA_VOLUME:-niaro-data}
+  caddy-data:
+  caddy-config:

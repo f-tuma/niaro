@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "name": "Niaro",
+  "listen": { "host": "127.0.0.1", "port": 8793 },
+  "dataDirectory": "/data/workflow",
+  "allowedOrigins": [],
+  "plugins": { "enabled": ["datetime", "memory"], "timeZone": "Europe/Prague" },
+  "administration": {
+    "keyFile": "/data/admin-key.json",
+    "identity": {
+      "directory": "/data/identity",
+      "baseURL": "https://assistant.example.com",
+      "voiceAssetsDirectory": "/app/voice",
+      "integrationOrigins": ["http://ms365:3000"]
+    }
+  },
+  "adapters": {
+    "model": { "provider": "fixture" },
+    "voice": { "provider": "disabled" },
+    "crm": { "provider": "disabled" },
+    "calendar": { "provider": "simulated" }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@niaro/server-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./runtime.ts",
+    "./model-types": "./model-types.ts",
+    "./process-contract": "./process-contract.ts"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "@mastra/core": "1.74.0",
+    "@mastra/libsql": "1.25.0",
+    "@mastra/memory": "1.35.0",
+    "@ai-sdk/provider": "4.0.21",
+    "ai": "7.0.127",
+    "zod": "4.6.5"
+  }
+}

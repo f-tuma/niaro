@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "name": "Agent Server",
+  "listen": { "host": "127.0.0.1", "port": 8793 },
+  "dataDirectory": "./workflows",
+  "allowedOrigins": [],
+  "plugins": { "enabled": ["datetime"], "timeZone": "UTC" },
+  "administration": {
+    "keyFile": "./operator-key.json",
+    "identity": {
+      "directory": "./identity",
+      "baseURL": "http://localhost:8793",
+      "integrationOrigins": []
+    }
+  },
+  "adapters": {
+    "model": { "provider": "fixture" },
+    "voice": { "provider": "disabled" },
+    "crm": { "provider": "disabled" },
+    "calendar": { "provider": "simulated" }
+  }
+}
