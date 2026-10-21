@@ -121,17 +121,18 @@ commit in `NIARO_GIT_REF`), so the file works without a checkout.
 2. **Environment**: `NIARO_PUBLIC_URL=https://assistant.example.com` (required,
    the deploy fails without it) and optionally the `SMTP_*` variables (see
    `.env.example`).
-3. **Advanced → Mounts**: a file mount `server.json` with the server profile;
-   start from `examples/self-hosted/server.dokploy.json` and change the name
-   and time zone. Dokploy stores it in `../files/server.json`, which the compose file
-   mounts read-only at `/config/server.json`. It holds no secrets: providers,
-   models and services are configured in administration.
-4. **Domains**: the host from `NIARO_PUBLIC_URL`, service `niaro`, container
+   The server profile is built into the image
+   (`examples/self-hosted/server.dokploy.json` at `/app/profiles/dokploy.json`,
+   name "Niaro", time zone Europe/Prague); it holds no secrets, providers,
+   models and services are configured in administration. For your own profile
+   add an **Advanced → Mounts** file mount and set `NIARO_CONFIG` to its path
+   in the container, e.g. `/config/server.json`.
+3. **Domains**: the host from `NIARO_PUBLIC_URL`, service `niaro`, container
    port `8793`, HTTPS with Let's Encrypt. The domain and `NIARO_PUBLIC_URL`
    must match: the server accepts only its public origin.
-5. Deploy, then open the container's terminal in Dokploy and run
+4. Deploy, then open the container's terminal in Dokploy and run
    `niaro admin-key --initial` once (see First run).
-6. Microsoft 365 and other hosted MCP servers are added afterwards in
+5. Microsoft 365 and other hosted MCP servers are added afterwards in
    administration (Hosted); they install on first start and need outbound
    access to the npm registry.
 

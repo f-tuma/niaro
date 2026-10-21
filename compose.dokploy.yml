@@ -10,8 +10,6 @@
 #   General      Raw compose with this file, or this repository with
 #                compose path ./compose.dokploy.yml
 #   Environment  NIARO_PUBLIC_URL=https://<domain>   (required; SMTP_* optional)
-#   Advanced     File mount "server.json" with the server profile
-#                (start from examples/self-hosted/server.dokploy.json)
 #   Domains      <domain> → service "niaro", port 8793, HTTPS on
 #                (Let's Encrypt); the domain must equal NIARO_PUBLIC_URL.
 # After the first deploy, in the niaro container's terminal:
@@ -30,6 +28,10 @@ services:
     environment:
       # The one public origin people open; the same host as the Dokploy domain.
       NIARO_PUBLIC_URL: ${NIARO_PUBLIC_URL:?Set NIARO_PUBLIC_URL to the https:// domain}
+      # The profile in the image (examples/self-hosted/server.dokploy.json); it
+      # holds no secrets. To use your own, add a Dokploy file mount and point
+      # this at it, e.g. /config/server.json.
+      NIARO_CONFIG: ${NIARO_CONFIG:-/app/profiles/dokploy.json}
       # Traefik is the only way in and sends X-Forwarded-For; "auto" trusts it
       # because the public URL is HTTPS.
       NIARO_TRUST_PROXY: ${NIARO_TRUST_PROXY:-auto}
@@ -47,8 +49,6 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
     volumes:
       - niaro-data:/data
-      # Dokploy keeps file mounts in ../files next to the checkout.
-      - ../files/server.json:/config/server.json:ro
     # Reached only through Traefik on Dokploy's network.
     expose:
       - "8793"
