@@ -68,18 +68,12 @@ jobs:
           node-version: "22.23.3"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Meeting tests decode real audio. A slow package mirror is retried and
-      # bounded instead of holding the whole job.
-      - name: Install ffmpeg
-        timeout-minutes: 8
-        run: |
-          for attempt in 1 2 3; do
-            sudo apt-get update -q -o Acquire::Retries=3 -o Acquire::http::Timeout=30 &&
-              sudo apt-get install -y -q --no-install-recommends \
-                -o Acquire::Retries=3 -o Acquire::http::Timeout=30 ffmpeg && break
-            sleep 15
-          done
-          ffmpeg -version | head -1
+      # Meeting tests decode real audio: a static ffmpeg from GitHub releases,
+      # cached between runs (the Ubuntu package mirror stalls on new runners).
+      - uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          ffmpeg-version: release
+      - run: ffmpeg -version | head -1
       - run: pnpm run admin:build
       - run: node scripts/ci-node-tests.mjs test:identity ${{ matrix.shard }}/6
 
