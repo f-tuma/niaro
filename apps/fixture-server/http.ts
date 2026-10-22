@@ -501,12 +501,20 @@ export function createFixtureServer(
     }
     if (accessLog) {
       const started = performance.now();
+      // A failed request logs its error code ("hub_conflict"), never a body.
+      let error: string | undefined;
+      const end = res.end.bind(res) as (...args: unknown[]) => ServerResponse;
+      res.end = ((...args: unknown[]) => {
+        error ??= failureCode(res.statusCode, args[0]);
+        return end(...args);
+      }) as typeof res.end;
       res.once("close", () =>
         operatorLog("http_request", {
           method: req.method?.slice(0, 10) ?? "",
           path: loggedPath(req.url),
           status: res.statusCode,
           ms: Math.round(performance.now() - started),
+          ...(error ? { error } : {}),
           ...(res.writableFinished ? {} : { aborted: true }),
         }),
       );
@@ -1745,4 +1753,24 @@ export function createFixtureServer(
   server.on("close", dispose);
   server.on("error", dispose);
   return server;
+}
+
+/** The `error` code of a small JSON failure response, when it is one. */
+function failureCode(status: number, body: unknown) {
+  if (status < 400 || body === undefined || body === null) return undefined;
+  const text =
+    typeof body === "string"
+      ? body
+      : Buffer.isBuffer(body)
+        ? body.toString("utf8")
+        : undefined;
+  if (!text || text.length > 4096) return undefined;
+  try {
+    const code = (JSON.parse(text) as { error?: unknown }).error;
+    return typeof code === "string" && /^[a-z0-9_.-]{1,80}$/.test(code)
+      ? code
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }

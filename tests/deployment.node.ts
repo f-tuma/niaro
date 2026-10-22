@@ -187,6 +187,8 @@ test("health probes answer without credentials and the access log has no query",
   assert.ok(request);
   assert.equal(request.path, "/v1/a/snapshot");
   assert.equal(typeof request.ms, "number");
+  // A failure names its error code, so production logs say why.
+  assert.match(String(request.error), /^[a-z0-9_.-]+$/);
   assert.ok(!lines.join("").includes("do-not-log"));
   // Probes stay out of the access log.
   assert.ok(!entries.some((entry) => entry.path === "/healthz"));
