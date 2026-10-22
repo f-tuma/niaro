@@ -487,23 +487,23 @@ test("without a profile the server builds its own from the environment", async (
         server.once("exit", () => reject(Error(log)));
       });
       assert.match(log, /using the automatic profile/);
-      assert.match(log, /Activation: create the owner account/);
+      assert.match(log, /No owner yet: open /);
       assert.ok(log.includes(`http://localhost:${port}/admin/`));
-      // Everything lives under NIARO_DATA.
-      for (const name of ["admin-key.json", "admin-key.initial", "identity"])
+      // Everything lives under NIARO_DATA; no plain key is left on disk.
+      for (const name of ["admin-key.json", "identity"])
         assert.ok(existsSync(join(dir, name)), name);
+      assert.ok(!existsSync(join(dir, "admin-key.initial")));
       // The container healthcheck finds the port without a profile file.
       execFileSync(process.execPath, ["scripts/docker/healthcheck.mjs", ""], {
         env,
       });
-      // The first-start key is fetched without naming a profile.
+      // A recovery key is handed out without naming a profile.
       const key = execFileSync(
         process.execPath,
-        [...node, "admin-key", "--initial"],
+        [...node, "admin-rotate-key"],
         { env, encoding: "utf8" },
       ).trim();
       assert.match(key, /^acadmin_[A-Za-z0-9_-]{43}$/);
-      assert.ok(!existsSync(join(dir, "admin-key.initial")));
     } finally {
       server.kill("SIGTERM");
       await new Promise((resolve) => server.once("exit", resolve));

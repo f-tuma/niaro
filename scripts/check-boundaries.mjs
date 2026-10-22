@@ -5,6 +5,8 @@ const rules = {
   "client-core": [/from ['"]react/, /from ['"].*(ui-catalog|\/ui)/],
   ui: [/from ['"].*(client-core|protocol)/, /\bfetch\(/],
   "ui-catalog": [/from ['"].*client-core/, /\bfetch\(/],
+  // Types and helpers only: a plugin never reaches server internals through it.
+  "plugin-sdk": [/from ['"](?:\.\.\/)+(?:apps|plugins)\//, /from ['"]react/],
 };
 function files(path) {
   return readdirSync(path, { withFileTypes: true }).flatMap((e) =>
@@ -47,6 +49,19 @@ for (const directory of [
     )
       errors.push(`${file}: server implementation imported into client`);
   }
+// A plugin runs from any directory (also <identity>/plugins), where packages
+// and repository paths do not resolve: it imports the SDK as a type only, and
+// at runtime nothing but Node built-ins.
+for (const file of files("plugins")) {
+  const source = readFileSync(file, "utf8");
+  for (const [, statement, specifier] of source.matchAll(
+    /^\s*(import(?!\s+type\b)[^'"]*?|export[^'"]*?from\s*)['"]([^'"]+)['"]/gm,
+  ))
+    if (!specifier.startsWith("node:"))
+      errors.push(
+        `${file}: plugins import only types and node: built-ins (${statement.trim()} "${specifier}")`,
+      );
+}
 if (errors.length) {
   console.error(errors.join("\n"));
   process.exitCode = 1;

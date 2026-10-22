@@ -204,11 +204,9 @@ const Status = ServiceOAuthStatus.extend({ redirectUri: z.string().url() });
 export function ServiceAuthentication({
   state,
   service,
-  onConfigured,
 }: {
   state: CatalogState;
   service: Service;
-  onConfigured?: () => void;
 }) {
   const { language, data } = useAdmin(),
     client = useQueryClient();
@@ -273,7 +271,6 @@ export function ServiceAuthentication({
       );
       await client.invalidateQueries({ queryKey: ["admin", "catalog"] });
       await client.invalidateQueries({ queryKey: ["admin", "audit"] });
-      if (!controller.signal.aborted && action === "save") onConfigured?.();
       return controller.signal.aborted ? undefined : result;
     } catch (e) {
       if (!controller.signal.aborted) setError(issue(e, copy));

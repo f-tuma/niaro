@@ -90,7 +90,7 @@ export function createDrainCatalogRuntime(
   pluginSettings?: PluginSettings,
   memory?: AgentMemory,
 ): CatalogRuntime {
-  const plugins = createInternalPlugins(pluginSettings);
+  const plugins = createInternalPlugins(pluginSettings, { legacy: true });
   const store = controller.store,
     target = { organizationId, workspaceId: scope.workspaceId };
   const label = (language: Language, en: string, cs: string) =>

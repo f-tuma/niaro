@@ -238,8 +238,9 @@ export class ProcessSandbox implements Sandbox {
     if (program.kind !== "node") throw Error("Images need Docker");
     const home = join(spec.dir, "home");
     const env = { ...spec.env };
-    // Node options in the environment could widen the permissions.
-    delete env.NODE_OPTIONS;
+    // Node options or a preloaded library in the environment could widen the permissions.
+    for (const name of Object.keys(env))
+      if (/^(?:NODE_|LD_|DYLD_)/.test(name)) delete env[name];
     return {
       command: this.node,
       args: [

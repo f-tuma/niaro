@@ -17,8 +17,22 @@ const base: WorkspacePlugins = {
       effect: "pure",
       available: true,
       tools: ["internal_datetime_resolve"],
+      name: { en: "Date & time", cs: "Datum a čas" },
+      description: { en: "TEST", cs: "TEST" },
+      source: "built-in",
+      toolDetails: [
+        {
+          name: "internal_datetime_resolve",
+          title: { en: "TEST", cs: "TEST" },
+          access: "read",
+          approval: "none",
+        },
+      ],
+      settingFields: {},
     },
   ],
+  problems: [],
+  editing: { allowed: false, disabled: false },
 };
 test("a polling response started before save cannot overwrite the saved plugin revision", async () => {
   const client = new QueryClient({

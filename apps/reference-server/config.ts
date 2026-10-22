@@ -13,7 +13,7 @@ import {
 } from "../../packages/protocol/server-settings";
 import { AIProfileId } from "../../packages/protocol/workspace-ai";
 import { CalendarCollectionUrl } from "../../packages/protocol/workspace-calendar";
-import { PluginSettingsSchema } from "../server-plugins/registry";
+import { ProfilePluginSettingsSchema } from "../server-plugins/registry";
 
 const path = z
   .string()
@@ -73,7 +73,7 @@ export const ServerConfigSchema = z
     dataDirectory: path,
     allowedOrigins: AllowedOrigins,
     sessionSeconds: z.number().int().min(30).max(3600).default(1800),
-    plugins: PluginSettingsSchema.optional(),
+    plugins: ProfilePluginSettingsSchema.optional(),
     administration: z
       .strictObject({
         keyFile: path,
@@ -82,16 +82,22 @@ export const ServerConfigSchema = z
             directory: path,
             baseURL: ServerOrigin,
             voiceAssetsDirectory: path.optional(),
-            /** Custom MCP servers (npm packages, pinned images) run code on this machine,
-             * in a Docker sandbox. Only the operator can allow them, never the console.
-             * runtime: auto uses Docker when it answers, otherwise runs templates as Node
-             * processes of this server (NIARO_HOSTED_RUNTIME overrides it). */
+            /** Hosted MCP servers run code on this machine. allowCustom (default on) lets
+             * organization owners and admins add their own definitions, not only the
+             * built-in ones; only the operator can turn it off, never the console.
+             * runtime: auto uses Docker when it answers, otherwise runs npm servers as
+             * confined Node processes of this server (NIARO_HOSTED_RUNTIME overrides it). */
             hosting: z
               .strictObject({
-                allowCustom: z.boolean().default(false),
+                allowCustom: z.boolean().default(true),
                 runtime: z.enum(HOSTED_RUNTIMES).default("auto"),
               })
-              .default({ allowCustom: false, runtime: "auto" }),
+              .default({ allowCustom: true, runtime: "auto" }),
+            /** Owners may open, change and create plugins in Administration →
+             * Plugins. Saving a plugin runs its code in the server process;
+             * false (or NIARO_PLUGIN_EDITING=0) leaves the files read-only.
+             * Unset means on. */
+            pluginEditing: z.boolean().optional(),
             mail: MailSettings.optional(),
             /** How long a browser stays signed in to an account without being
              * used; every day of use extends it. */
@@ -240,6 +246,14 @@ function listenHost(env: NodeJS.ProcessEnv = process.env) {
   return host as ServerConfig["listen"]["host"];
 }
 /** NIARO_HOSTED_RUNTIME: a container image without Docker can force `process`. */
+/** NIARO_PLUGIN_EDITING=0 turns plugin editing in the console off, 1 on. */
+function pluginEditing(env: NodeJS.ProcessEnv = process.env) {
+  const value = env.NIARO_PLUGIN_EDITING?.trim();
+  if (!value) return undefined;
+  if (value !== "0" && value !== "1")
+    throw new ServerConfigError("NIARO_PLUGIN_EDITING must be 0 or 1.");
+  return value === "1";
+}
 function hostedRuntime(env: NodeJS.ProcessEnv = process.env) {
   const runtime = env.NIARO_HOSTED_RUNTIME?.trim();
   if (!runtime) return undefined;
@@ -370,6 +384,9 @@ export function loadServerConfig(file?: string): ServerConfig {
   const runtime = hostedRuntime();
   if (runtime && config.administration?.identity)
     config.administration.identity.hosting.runtime = runtime;
+  const editing = pluginEditing();
+  if (editing !== undefined && config.administration?.identity)
+    config.administration.identity.pluginEditing = editing;
   applyMailEnvironment(config);
   const base = file ? dirname(resolve(file)) : "/";
   config.dataDirectory = resolve(base, config.dataDirectory);

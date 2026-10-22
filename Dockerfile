@@ -3,7 +3,9 @@
 # runtime and storage. Data lives in one volume at /data. Without a server
 # profile the server builds its own from the environment (NIARO_PUBLIC_URL and
 # friends); a profile mounted read-only at /config/server.json (or at
-# $NIARO_CONFIG) is used instead when present. See docs/deployment.md.
+# $NIARO_CONFIG) is used instead when present. Built-in plugins ship in
+# /app/plugins; the operator's own and edited ones live in /data/identity/plugins
+# (docs/plugins.md). See docs/deployment.md.
 ARG NODE_IMAGE=node:22.23.3-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
 
 # --- build: full install from the lockfile, web bundle, runtime selection ----
@@ -21,7 +23,7 @@ COPY . .
 RUN npm run admin:build \
  && node scripts/docker/runtime-deps.mjs /runtime \
  && mkdir -p /runtime/scripts/docker \
- && cp -r apps packages dist-admin package.json /runtime/ \
+ && cp -r apps packages plugins dist-admin package.json /runtime/ \
  && rm -rf /runtime/apps/mobile /runtime/apps/server-admin/web \
            /runtime/apps/server-admin/vite.config.ts \
  && cp scripts/backup.mjs scripts/restore.mjs scripts/backup-common.mjs /runtime/scripts/ \

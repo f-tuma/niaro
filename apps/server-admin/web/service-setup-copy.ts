@@ -28,7 +28,6 @@ export type SignInOutcome = z.infer<typeof signInOutcomeSchema>;
 export const serviceDetailSearchSchema = z.object({
   tab: serviceTabSchema.optional(),
   setup: z.literal("assistant").optional(),
-  setupIssue: z.literal("sign-in-incomplete").optional(),
   signIn: signInOutcomeSchema.optional(),
 });
 
@@ -39,7 +38,6 @@ export const setupEn = {
   setupMode: "Setup method",
   assistantDescription: "Connect, then design processes in chat.",
   manualDescription: "Set up the connection and actions yourself.",
-  changeConnection: "Change template",
   purpose: "Purpose",
   noPurpose: "No purpose yet",
   editPurpose: "Edit purpose",
@@ -52,8 +50,6 @@ export const setupEn = {
   editConnection: "Edit connection",
   viewAll: "View all",
   paused: "Enable the service to design processes.",
-  signInIncomplete: "Service added, but personal sign-in isn't confirmed.",
-  completeSignIn: "Review sign-in",
   signInDetected: "Sign-in: the service's OAuth, for every action",
   clientRegistered: "client registered",
   clientMissing: "client missing",
@@ -78,7 +74,6 @@ export const setupCs: SetupCopy = {
   setupMode: "Způsob nastavení",
   assistantDescription: "Připoj službu a procesy navrhni v chatu.",
   manualDescription: "Připojení a akce nastavíš ručně.",
-  changeConnection: "Změnit šablonu",
   purpose: "Účel",
   noPurpose: "Účel zatím chybí",
   editPurpose: "Upravit účel",
@@ -91,8 +86,6 @@ export const setupCs: SetupCopy = {
   editConnection: "Upravit připojení",
   viewAll: "Zobrazit vše",
   paused: "Pro návrh procesů službu zapni.",
-  signInIncomplete: "Služba je přidaná, ale osobní přihlášení není potvrzené.",
-  completeSignIn: "Zkontrolovat přihlášení",
   signInDetected: "Přihlášení: OAuth služby, pro každou akci",
   clientRegistered: "klient zaregistrován",
   clientMissing: "klient chybí",

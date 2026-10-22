@@ -157,8 +157,8 @@ test("identity uses a profile-relative private directory and a canonical local l
     calendarCollections: [],
     mobile: { model: "disabled", voice: "disabled", sessionIdleDays: 30 },
     aiProfiles: { models: [], voices: [] },
-    // Custom hosted servers run code on the machine: off unless the operator says so.
-    hosting: { allowCustom: false, runtime: "auto" },
+    // Owners and admins may add custom hosted servers unless the operator turns it off.
+    hosting: { allowCustom: true, runtime: "auto" },
     hub: { scheduler: { intervalSeconds: 300, maxPerTick: 10, idleDays: 14 } },
     // Meeting sound is kept 30 days after processing.
     meetings: { audioRetentionDays: 30, glossary: [], chunkSeconds: 300 },

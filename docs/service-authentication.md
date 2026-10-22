@@ -149,10 +149,11 @@ one for owners, admins and members, so nobody is left out; a gate an administrat
 narrowed stays, and the add result and the Access tab say who it lets in
 (_Only these can connect: Member_).
 
-**Services → Add service** offers templates: _Microsoft 365_ runs a
-[hosted MCP server](self-hosting.md#hosted-mcp-servers) and preconfigures sign-in with a
-Microsoft sign-in method; _Twenty CRM_ prefills an MCP service. Discovered actions stay
-disabled until an administrator enables them and grants access.
+**Services → Add service** opens the service form directly. Microsoft 365 runs as a
+[hosted MCP server](hosted-servers.md) (Administration → Hosted → Add server); add its
+URL as an MCP service with authentication _None_ and set up personal sign-in on the
+Access tab with a Microsoft sign-in method. Discovered actions stay disabled until an
+administrator enables them and grants access.
 
 The first time a request needs the service, chat answers with a sign-in card:
 

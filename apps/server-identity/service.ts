@@ -122,11 +122,18 @@ import {
   type MemorySource,
 } from "../../packages/protocol/memory";
 import {
-  PluginSettingsSchema,
+  ProfilePluginSettingsSchema,
   type PluginSettings,
 } from "../server-plugins/registry";
 import { WorkspacePluginStore } from "./workspace-plugins";
+import { loadPlugins } from "../server-plugins/catalog";
+import { PluginFiles, PluginFilesError } from "../server-plugins/files";
 import {
+  ChangePluginFilesSchema,
+  PLUGIN_FILES_PROFILE,
+  PluginFilesQuerySchema,
+  PluginFilesResultSchema,
+  PluginFilesSchema,
   UpdateWorkspacePluginsSchema,
   PreviewWorkspacePluginSchema,
 } from "../../packages/protocol/workspace-plugins";
@@ -272,7 +279,8 @@ async function body(req: IncomingMessage) {
       size += chunk.length;
       if (
         size >
-        (req.url?.split("?")[0] === "/admin/api/identity/catalog/discover"
+        (req.url?.split("?")[0] === "/admin/api/identity/catalog/discover" ||
+        req.url?.split("?")[0] === "/admin/api/identity/plugin-files"
           ? 1_048_576
           : req.url?.startsWith("/admin/api/identity/catalog/")
             ? 131072
@@ -338,6 +346,10 @@ export async function openIdentity(
   const release = acquireServerLock(settings.directory);
   let db: DatabaseSync | undefined;
   try {
+    // Built-in plugins, and the operator's from <identity directory>/plugins.
+    // An invalid plugin is logged and skipped; the server starts regardless.
+    const pluginsDirectory = join(settings.directory, "plugins");
+    await loadPlugins({ dataDirectory: pluginsDirectory });
     const secretFile = join(settings.directory, "secret");
     const file = join(settings.directory, "identity.sqlite");
     if (existsSync(file) && !existsSync(secretFile))
@@ -473,7 +485,7 @@ export async function openIdentity(
       options.calendarTransport,
       speechProcessor,
       {
-        ...PluginSettingsSchema.parse(config.plugins ?? {}),
+        ...ProfilePluginSettingsSchema.parse(config.plugins ?? {}),
         timeZone: current.timeZone,
       },
       {
@@ -502,6 +514,10 @@ export async function openIdentity(
     );
     await service.initializeMemory();
     service.attachHosting(hosted);
+    service.attachPluginFiles(
+      new PluginFiles(pluginsDirectory),
+      settings.pluginEditing !== false,
+    );
     if (options.hosting?.autostart !== false) hosted.startAll();
     return service;
   } catch (error) {
@@ -648,6 +664,8 @@ export class IdentityService {
   private hubLaunch?: HubLaunch;
   private skills: SkillStore;
   private hosted?: HostedServers;
+  private pluginFiles?: PluginFiles;
+  private pluginEditing = false;
   constructor(
     private db: DatabaseSync,
     private auth: Auth,
@@ -796,6 +814,11 @@ export class IdentityService {
   }
   attachHosting(hosted: HostedServers) {
     this.hosted = hosted;
+  }
+  /** Plugin files in the console; editing is the operator's switch. */
+  attachPluginFiles(files: PluginFiles, editing: boolean) {
+    this.pluginFiles = files;
+    this.pluginEditing = editing;
   }
   attachAI(profiles: AIProfiles) {
     this.ai.attach(profiles);
@@ -5306,7 +5329,7 @@ export class IdentityService {
                   canManage,
                   allowCustom: hosted.allowCustom,
                   sandbox: (await hosted.sandboxKind()) ?? "unavailable",
-                  templates: hosted.templates(),
+                  builtins: hosted.builtins(),
                   servers: canManage ? hosted.list(organizationId) : [],
                 }),
               );
@@ -5338,19 +5361,30 @@ export class IdentityService {
               throw new IdentityError(403, "identity_forbidden");
             const server =
               input.type === "create"
-                ? hosted.create(input.organizationId, input.template)
+                ? await hosted.create(
+                    input.organizationId,
+                    input.builtin,
+                    input.secrets,
+                  )
                 : input.type === "createCustom"
-                  ? hosted.createCustom(
+                  ? await hosted.createCustom(
                       input.organizationId,
-                      input.name,
                       input.definition,
+                      input.secrets,
                     )
-                  : hosted.command(
-                      input.organizationId,
-                      input.id,
-                      input.revision,
-                      input.type,
-                    );
+                  : input.type === "secrets"
+                    ? hosted.setSecrets(
+                        input.organizationId,
+                        input.id,
+                        input.revision,
+                        input.secrets,
+                      )
+                    : hosted.command(
+                        input.organizationId,
+                        input.id,
+                        input.revision,
+                        input.type,
+                      );
             this.audit.append({
               organizationId: input.organizationId,
               workspaceId: null,
@@ -5637,7 +5671,126 @@ export class IdentityService {
               value.organizationId,
               value.workspaceId,
               actor.role !== "member",
+              {
+                allowed: actor.role === "owner" && !!this.pluginFiles,
+                disabled: !this.pluginEditing,
+              },
             ),
+          );
+        }
+        if (url.pathname === "/admin/api/identity/plugin-files") {
+          // A plugin's code runs in this process: owners only, audited, and
+          // the operator can make it read-only (NIARO_PLUGIN_EDITING=0).
+          if (req.method !== "GET" && req.method !== "POST")
+            return respond(405, { error: "method_not_allowed" });
+          const files = this.pluginFiles;
+          if (!files) return respond(404, { error: "not_found" });
+          const value =
+            req.method === "GET"
+              ? PluginFilesQuerySchema.parse(
+                  Object.fromEntries(url.searchParams),
+                )
+              : ChangePluginFilesSchema.parse(payload);
+          const actor = await this.actor(req, value.organizationId);
+          if (actor.role !== "owner")
+            throw new IdentityError(403, "identity_forbidden");
+          const id = value.pluginId;
+          const view = () => {
+            try {
+              return PluginFilesSchema.parse({
+                profile: PLUGIN_FILES_PROFILE,
+                organizationId: value.organizationId,
+                pluginId: id,
+                readOnly: !this.pluginEditing,
+                ...files.read(id),
+              });
+            } catch (error) {
+              if (error instanceof PluginFilesError)
+                throw new IdentityError(error.status, error.code);
+              throw error;
+            }
+          };
+          if (req.method === "GET") return respond(200, view());
+          const change = ChangePluginFilesSchema.parse(payload);
+          const audit = (
+            pluginEvent: "saved" | "reset" | "deleted" | "created" | "refused",
+            outcome: "succeeded" | "failed" | "denied" = "succeeded",
+          ) =>
+            this.transaction(async () =>
+              this.audit.append({
+                organizationId: value.organizationId,
+                workspaceId: null,
+                actorId: actor.userId,
+                source: "console",
+                action: "server.plugin_changed",
+                targetId: id,
+                outcome,
+                details: {
+                  pluginEvent,
+                  ...(outcome === "failed"
+                    ? { reason: "invalid_input" as const }
+                    : {}),
+                },
+              }),
+            );
+          if (!this.pluginEditing) {
+            if (change.action !== "check") await audit("refused", "denied");
+            throw new IdentityError(403, "plugin_editing_disabled");
+          }
+          const result = await files
+            .run(async () => {
+              switch (change.action) {
+                case "check": {
+                  const rejected = await files.check(id, change.files);
+                  return {
+                    outcome: rejected ? "invalid" : "valid",
+                    rejected,
+                    current: view(),
+                  } as const;
+                }
+                case "save": {
+                  const rejected = await files.save(id, change.files);
+                  await audit(
+                    rejected ? "refused" : "saved",
+                    rejected ? "failed" : "succeeded",
+                  );
+                  return {
+                    outcome: rejected ? "invalid" : "saved",
+                    rejected,
+                    current: view(),
+                  } as const;
+                }
+                case "reset": {
+                  const builtIn = files.read(id).builtIn;
+                  files.reset(id);
+                  await audit(builtIn ? "reset" : "deleted");
+                  return {
+                    outcome: builtIn ? "reset" : "deleted",
+                    rejected: null,
+                    current: builtIn ? view() : null,
+                  } as const;
+                }
+                case "create":
+                  await files.create(id);
+                  await audit("created");
+                  return {
+                    outcome: "created",
+                    rejected: null,
+                    current: view(),
+                  } as const;
+              }
+            })
+            .catch((error: unknown) => {
+              if (error instanceof PluginFilesError)
+                throw new IdentityError(error.status, error.code);
+              throw error;
+            });
+          return respond(
+            200,
+            PluginFilesResultSchema.parse({
+              profile: PLUGIN_FILES_PROFILE,
+              ...result,
+            }),
           );
         }
         if (url.pathname === "/admin/api/identity/calendar") {

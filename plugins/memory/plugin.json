@@ -1,0 +1,71 @@
+{
+  "id": "memory",
+  "version": 1,
+  "name": { "en": "Memory", "cs": "Paměť" },
+  "description": {
+    "en": "Saves what a person explicitly asks the assistant to remember, and finds it again in later chats.",
+    "cs": "Uloží, co si člověk výslovně řekne, ať si asistent zapamatuje, a najde to v dalších chatech."
+  },
+  "effect": "context",
+  "capabilities": ["memory"],
+  "tools": [
+    {
+      "name": "memory_search",
+      "title": { "en": "Search saved memory", "cs": "Hledat v paměti" },
+      "access": "read",
+      "approval": "none"
+    },
+    {
+      "name": "memory_remember",
+      "title": { "en": "Remember", "cs": "Zapamatovat si" },
+      "access": "write",
+      "approval": "explicit_command"
+    },
+    {
+      "name": "memory_revise",
+      "title": { "en": "Correct a memory", "cs": "Opravit vzpomínku" },
+      "access": "write",
+      "approval": "explicit_command"
+    },
+    {
+      "name": "memory_forget",
+      "title": { "en": "Forget", "cs": "Zapomenout" },
+      "access": "write",
+      "approval": "explicit_command"
+    }
+  ],
+  "settings": {
+    "retentionDays": {
+      "type": "integer",
+      "label": { "en": "Retention (days)", "cs": "Uchování (dny)" },
+      "default": 365,
+      "min": 1,
+      "max": 3650
+    },
+    "maxContextChars": {
+      "type": "integer",
+      "label": {
+        "en": "Context limit (characters)",
+        "cs": "Limit kontextu (znaky)"
+      },
+      "default": 4000,
+      "min": 500,
+      "max": 12000
+    },
+    "maxItems": {
+      "type": "integer",
+      "label": { "en": "Memories per request", "cs": "Vzpomínek na požadavek" },
+      "default": 8,
+      "min": 1,
+      "max": 20
+    },
+    "allowShared": {
+      "type": "boolean",
+      "label": {
+        "en": "Shared workspace memories",
+        "cs": "Sdílené vzpomínky v pracovním prostoru"
+      },
+      "default": false
+    }
+  }
+}

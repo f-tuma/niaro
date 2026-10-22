@@ -5,7 +5,7 @@ The console is served by the same Node process at `/admin/`. The client contains
 ## Console flow
 
 1. **People / Workspaces:** create a company and workspace; add members and workspace access. Choose the current company/workspace once in the sidebar.
-2. **Services → Add service:** choose **Configure with assistant** or **Configure manually**, then explicitly choose a connection template and save its name, purpose, API/MCP URL and authentication. Both preserve the existing forms; the assistant path continues into the native process designer after the connection is saved. The icon defaults to the website favicon; choose **Custom symbol** to override it. Keys are write-only and encrypted in the identity database.
+2. **Services → Add service:** choose **Configure with assistant** or **Configure manually**, then save the service's name, purpose, API/MCP URL and authentication in the service form. Both use the same form; the assistant path continues into the native process designer after the connection is saved. The icon defaults to the website favicon; choose **Custom symbol** to override it. Keys are write-only and encrypted in the identity database.
 3. **Discover actions:** read OpenAPI or MCP tools. Twenty MCP first shows its searchable action catalogue with category filters and **Select all matching actions**. Choose any number from the catalogue; the server processes the selection in bounded batches and the console automatically continues, showing cumulative progress. Optional AI enrichment improves new names/descriptions using the assigned model. Imported actions are disabled drafts with no grants and confirmation required. Existing actions are not overwritten on rediscovery.
 4. **Action editor:** edit name, description, binding, JSON input schema, effect, confirmation policy, enabled state and access. Grant organization/workspace roles or individual users; an explicit user denial wins. Services also have an Access gate that must pass before any action grant. Create and assign custom roles in Settings → Workspaces → Roles. Delete only after reviewing the inline confirmation.
 5. **AI providers:** add an OpenAI-compatible endpoint and key; choose models from its catalog or enter an ID manually. Tool support is imported when declared by the provider; otherwise an administrator must verify and enable it explicitly. Models and credentials belong to the company, and only owners/admins can change them.
@@ -34,12 +34,10 @@ The test/version console provides the rest of the paginated history and private
 test evidence. A controlled passing test does not establish live connection or
 model quality.
 
-Paused services stay paused; the assistant cannot implicitly enable them. For
-Microsoft 365, saving the service and saving personal sign-in are separate
-commands. If the second is not confirmed, keep the saved service ID and open
-**Sign-in** with a persistent repair notice. Reload does not create another
-service; a confirmed sign-in configuration save clears the notice without
-claiming that an account is connected. Existing connections need no migration.
+Paused services stay paused; the assistant cannot implicitly enable them.
+Personal sign-in (e.g. for a [hosted](hosted-servers.md) Microsoft 365 server) is
+set up on the service's **Access** tab after it is saved. Existing connections
+need no migration.
 
 Owners/admins manage processes. A person who can open the console through a
 different organization but is only a member of this workspace sees its permitted

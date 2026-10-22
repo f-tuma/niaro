@@ -1,42 +1,38 @@
-import { resolve } from "node:path";
-import type { HostedTemplateId } from "../../packages/protocol/hosted";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import {
+  HostedDefinition,
+  type HostedBuiltinId,
+} from "../../packages/protocol/hosted";
 
-export type HostedTemplate = {
-  id: HostedTemplateId;
-  name: string;
-  /** Exact version; the committed lockfile pins every dependency by integrity. */
-  package: string;
-  version: string;
-  /** Directory with package.json and package-lock.json, installed with npm ci --ignore-scripts. */
+/** A definition shipped with the server. An npm one's directory also holds package.json
+ * and a committed package-lock.json, installed with npm ci --ignore-scripts. */
+export type HostedBuiltin = {
+  id: HostedBuiltinId;
+  definition: HostedDefinition;
+  /** Directory with definition.json (and for npm, the lockfile). */
   source: string;
-  entry: string;
-  /** {port} is the listening port inside the sandbox. */
-  args: string[];
-  /** Fixed, non-secret settings of the hosted program. */
-  env?: { name: string; value: string }[];
-  memoryMb: number;
 };
 // Like dist-admin, resolved from the repository root the server starts in.
-const templates = resolve(process.cwd(), "apps/server-hosting/templates");
-export const HOSTED_TEMPLATES: Record<HostedTemplateId, HostedTemplate> = {
-  "microsoft-365": {
-    id: "microsoft-365",
-    name: "Microsoft 365",
-    package: "@softeria/ms-365-mcp-server",
-    version: "0.156.2",
-    source: resolve(templates, "microsoft-365"),
-    entry: "node_modules/@softeria/ms-365-mcp-server/dist/index.js",
-    // Each request carries the person's own Microsoft token; tool listing needs none,
-    // so actions can be discovered before anyone has connected.
-    args: [
-      "--http",
-      "0.0.0.0:{port}",
-      "--preset",
-      "calendar,mail",
-      "--allow-unauthenticated-discovery",
-    ],
-    // Mail bodies as HTML: the app renders them itself (links, lists, tables).
-    env: [{ name: "MS365_MCP_BODY_FORMAT", value: "html" }],
-    memoryMb: 512,
-  },
-};
+export const HOSTED_TEMPLATES_DIRECTORY = resolve(
+  process.cwd(),
+  "apps/server-hosting/templates",
+);
+let loaded: Map<HostedBuiltinId, HostedBuiltin> | undefined;
+/** Every templates/<id>/definition.json, validated like a custom definition. */
+export function hostedBuiltins(
+  directory = HOSTED_TEMPLATES_DIRECTORY,
+): Map<HostedBuiltinId, HostedBuiltin> {
+  if (directory === HOSTED_TEMPLATES_DIRECTORY && loaded) return loaded;
+  const builtins = new Map<HostedBuiltinId, HostedBuiltin>();
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const source = join(directory, entry.name);
+    const definition = HostedDefinition.parse(
+      JSON.parse(readFileSync(join(source, "definition.json"), "utf8")),
+    );
+    builtins.set(entry.name, { id: entry.name, definition, source });
+  }
+  if (directory === HOSTED_TEMPLATES_DIRECTORY) loaded = builtins;
+  return builtins;
+}

@@ -109,6 +109,9 @@ test("server settings: profile defaults, owner and administrator writes, audit, 
       ).status,
       200,
     );
+    // Setup ends the recovery session and signs the owner in; the recovery
+    // client signs in with the key again for the checks below.
+    await operator("admin/api/login", { key });
     await owner("admin/auth/sign-in/email", {
       email: "owner@example.test",
       password,

@@ -113,7 +113,7 @@ Open `http://localhost:8793/admin/` and create the first owner/company: while no
 
 The example has no paid services or real calendar writes. `fixture` is the fallback built-in interpreter; models added in the console run independently through the new catalog. Nothing seeds fake services into a real company. Built-in connectors are configured separately; see [server profiles](server-profiles.md).
 
-Account-backed chat also has [internal server plugins](internal-plugins.md). The shipped pure datetime tool calculates dates for the model and forwards exact timestamps to service actions. Set `plugins.timeZone` to the intended IANA zone (e.g. `Europe/Prague`); the example uses UTC. Owners/admins can override the timezone and enablement for each workspace under **Plugins** (`/admin/plugins`), or restore the server defaults. Changes persist and apply without a restart. `plugins.enabled: []` disables the tool at the operator level; workspaces cannot override that restriction. These local functions are separate from configured external connections.
+Account-backed chat also has [internal server plugins](internal-plugins.md). The shipped pure datetime tool calculates dates for the model and forwards exact timestamps to service actions. Set `plugins.timeZone` to the intended IANA zone (e.g. `Europe/Prague`); the example uses UTC. Owners/admins can override the timezone and enablement for each workspace under **Plugins** (`/admin/plugins`), or restore the server defaults. Changes persist and apply without a restart. `plugins.enabled: []` disables the tool at the operator level; workspaces cannot override that restriction. These local functions are separate from configured external connections. Plugins are files in a simple format; the owner can read, change and add them under **Plugins**, or the operator in `<identity directory>/plugins/` — see [plugins](plugins.md), including why that is running code on the server.
 
 All profile paths resolve relative to its JSON file. Keep the identity and workflow directories separate. Identity directory permissions must be `0700`; private files `0600`, owned by the process user. `npm run server:check` validates configuration without contacting providers.
 
@@ -176,86 +176,48 @@ The installed Expo CLI requires a compatible `@expo/ngrok` helper for that mode.
 
 ## Hosted MCP servers
 
-Some services have no MCP server of their own. **Hosted servers** runs them on this
-machine, in a Docker sandbox, or as Node processes where there is no Docker (see
-[without Docker](#without-docker)). **Services → Add service → Microsoft 365** starts
-the prepared Microsoft 365 server (Outlook calendar and mail, Softeria
-`ms-365-mcp-server`), links it to a Microsoft sign-in method and creates the service with
-personal sign-in.
+Some services have no MCP server of their own. **Administration → Hosted → Add
+server** runs one on this machine from a definition: a built-in one (Microsoft
+365, Softeria `ms-365-mcp-server`) or a custom npm package at an exact version or
+image pinned by digest, entered in a form or uploaded as a definition JSON. Each
+server can be exported as its definition, without secret values. Then add its
+URL as an MCP service under **Services → Add service**. See
+[hosted MCP servers](hosted-servers.md) for the definition format, secrets,
+isolation and limits.
 
-Every hosted server is one container:
-
-- the official Node image pinned by digest, or a custom image pinned by `@sha256:`;
-- a read-only root file system, no Linux capabilities, `no-new-privileges`, the
-  server's own unprivileged user, 256 processes and a memory limit;
-- its own `agent-hosted` network: internet access, but no access to this server,
-  other services on the host's loopback or other hosted servers; its port is published
-  on `127.0.0.1` only;
-- one writable directory under `<identity directory>/hosted/`. It inherits no keys or
-  passwords; each request carries the person's own token.
-
-npm servers install with `npm ci --ignore-scripts` inside the sandbox, so every package
-is verified by its integrity hash and no install script runs. Prepared templates ship a
-committed lockfile; a custom package gets one generated for its exact version before
-installation. The server needs Docker, and registry access on first start.
-
-**Custom servers** (an npm package at an exact version, or an image by digest) run code
-you chose and are off by default. Only the operator can allow them, in the server
-profile; the console cannot:
+Organization owners and admins may add custom definitions unless the operator
+turns them off in the profile:
 
 ```json
-"administration": { "identity": { "hosting": { "allowCustom": true } } }
+"administration": { "identity": { "hosting": { "allowCustom": false } } }
 ```
 
-Then organization owners and admins use **Hosted servers → Add custom**: the console
-shows the package's publisher, licence, date and integrity before installing.
-Arguments are a list with `{port}` for the listening port (listen on `0.0.0.0` inside
-the container), never a shell command. Secret variables are encrypted and passed through
-a private environment file.
-
-The server restarts a crashed container with backoff and stops after five crashes in ten
-minutes. The console shows the last 200 log lines with tokens and secret values
-redacted. Up to eight hosted servers run on loopback ports 39100–39199. Removing one
-deletes its container, directory and address. Access to Docker is equivalent to root on
-the host, so run Agent Server only on a machine you trust it with.
+With Docker every server is a hardened container on its own network, published
+on `127.0.0.1` only. Access to Docker is equivalent to root on the host, so run
+Niaro with it only on a machine you trust it with.
 
 ### Without Docker
 
-A container image (Dokploy) has no Docker CLI or socket. There the prepared templates
-run as Node child processes of the server, in the same container; custom servers do not
-run at all. The profile chooses the runtime, and `NIARO_HOSTED_RUNTIME` overrides it:
+A container image (Dokploy) has no Docker CLI or socket. There npm definitions,
+built-in and custom, run as Node child processes of the server in the same
+container: pinned by a lockfile, installed with `npm ci --ignore-scripts
+--omit=dev` into their own directory, confined by Node's permission model to that
+directory (no child processes, no access to the identity data or `secret`), on
+loopback, with an explicit minimal environment. Image definitions cannot run
+there and show "Images need Docker". The profile chooses the runtime, and
+`NIARO_HOSTED_RUNTIME` overrides it:
 
 ```json
 "administration": { "identity": { "hosting": { "runtime": "auto" } } }
 ```
 
 `auto` (default) uses Docker when `docker info` answers and processes otherwise;
-`docker` never falls back; `process` never uses Docker. **Hosted servers** says
-"Without Docker" in its header when processes are in use.
-
-Installation is the same `npm ci --ignore-scripts --omit=dev` from the template's
-committed lockfile, run by the server's npm in the hosted server's directory with its
-cache, `HOME` and `TMPDIR` there too, so it works on a read-only root file system. It
-needs the npm registry on first start; without it the server shows "Installation
-failed". The program then starts with Node's permission model:
-
-- `node --permission`, reading only its own directory under
-  `<identity directory>/hosted/` and writing only its `home/`. The identity database,
-  `secret`, the admin key and workflow data are unreadable; so are `/proc` and other
-  hosted servers. No child processes, worker threads, native addons or WASI. A
-  symbolic link leading out of the directory fails the start, because Node follows it;
-- an explicit environment: `PATH`, `HOME`, `TMPDIR`, `NODE_ENV=production` and the
-  template's fixed settings. Nothing of the server's own environment is passed;
-- `127.0.0.1` on its assigned port (a `0.0.0.0` host in the arguments becomes
-  loopback), a heap limit from the template's memory, and the same readiness check,
-  crash backoff and restart on server start as in Docker. It exits when the server is
-  gone, so no process keeps the port.
-
-The limits are weaker than the container's: the process runs as the server's own user,
-only Node's permission model limits its file access (Node does not call it a defence
-against malicious code), its network is not restricted (it can reach the internet, this
-server and other loopback services), and there is no process or hard memory limit.
-That is why only templates pinned in code run this way.
+`docker` never falls back; `process` never uses Docker. The process limits are
+weaker than a container's (same user, unrestricted network, no hard memory
+limit); see [process runtime](hosted-servers.md#runtimes). Any other MCP server,
+in any language, can run as its own compose service next to Niaro and be
+connected by URL after adding its origin under **Settings → Origins**: see
+[own compose service](hosted-servers.md#own-compose-service).
 
 ## Backups and upgrades
 

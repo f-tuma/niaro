@@ -1139,7 +1139,9 @@ export function createMastraDomain(
   inferenceCaps?: InferenceRunCaps,
 ) {
   const store = controller.store,
-    plugins = createInternalPlugins(settings);
+    plugins = createInternalPlugins(settings, {
+      scope: { workspaceId: scope.workspaceId, userId: scope.userId },
+    });
   const target = { organizationId, workspaceId: scope.workspaceId };
   const commandKey = (id: string) =>
     digest([scope.serverId, scope.workspaceId, scope.userId, id]);
@@ -3645,11 +3647,13 @@ export function createMastraDomain(
       if (plugins.has(name)) {
         if (state.plugins.length >= MAX_PLUGIN_CALLS)
           return { error: "plugin_limit" };
-        options.reportTool?.({
-          id: "datetime",
-          calls: state.plugins.length + 1,
-          status: "running",
-        });
+        // Only date & time has a chat progress row; other plugins run silently.
+        const progress = plugins.progress(name);
+        const report = (
+          calls: number,
+          status: "running" | "succeeded" | "needs_input" | "failed",
+        ) => progress && options.reportTool?.({ id: progress, calls, status });
+        report(state.plugins.length + 1, "running");
         try {
           const receipt = plugins.invoke(
             name,
@@ -3659,22 +3663,14 @@ export function createMastraDomain(
           );
           state.plugins.push(receipt);
           await save();
-          options.reportTool?.({
-            id: "datetime",
-            calls: state.plugins.length,
-            status:
-              receipt.result.status === "resolved"
-                ? "succeeded"
-                : "needs_input",
-          });
+          report(
+            state.plugins.length,
+            receipt.result.status === "resolved" ? "succeeded" : "needs_input",
+          );
           return receipt.result;
         } catch {
-          options.reportTool?.({
-            id: "datetime",
-            calls: state.plugins.length + 1,
-            status: "failed",
-          });
-          return { error: "invalid_date_arguments" };
+          report(state.plugins.length + 1, "failed");
+          return { error: plugins.failure(name) };
         }
       }
       const catalog = await inventory();

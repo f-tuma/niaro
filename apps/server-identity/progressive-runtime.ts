@@ -349,7 +349,7 @@ export function createProgressiveRuntime(
 ) {
   const store = controller.store,
     target = { organizationId, workspaceId: scope.workspaceId };
-  const plugins = createInternalPlugins(settings);
+  const plugins = createInternalPlugins(settings, { legacy: true });
   const turnId = (id: string) =>
     hash([scope.serverId, scope.workspaceId, scope.userId, id]);
   const toolName = (id: string) => "action_" + id.replaceAll("-", "_");

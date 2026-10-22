@@ -1,5 +1,12 @@
 # Internal server plugins
 
+This page describes the two built-in plugins, date & time and memory, as the
+person and the operator meet them. How plugins work, their format, the SDK,
+writing and editing your own and the security model are in
+[plugins.md](plugins.md). Both built-ins are written in that format:
+[`plugins/datetime/`](../plugins/datetime/) and
+[`plugins/memory/`](../plugins/memory/).
+
 Account-backed chat can call shipped local tools before selecting or executing an API/MCP action. The client still sends messages and renders existing cards; calculation and business logic stay on the server. A workspace needs a configured tool-capable routing model. Internal tools also work without connected external services. The legacy fixture interpreter is unchanged.
 
 ## Configuration and use
@@ -13,7 +20,7 @@ Add this optional block to the server JSON profile, then restart:
 }
 ```
 
-Omitting the block enables the pure datetime plugin with **UTC**. Set the intended IANA timezone explicitly; the server never inherits the machine timezone. `enabled: []` disables internal tools at the operator level. A user can explicitly request another IANA timezone.
+Omitting the block enables the pure datetime plugin with **UTC**. `enabled` may also name operator plugins from the data directory ([plugins.md](plugins.md#enablement-per-workspace)); a name the server does not have is ignored. Set the intended IANA timezone explicitly; the server never inherits the machine timezone. `enabled: []` disables internal tools at the operator level. A user can explicitly request another IANA timezone.
 
 ```sh
 npm run server:check -- .servers/local/server.json
@@ -34,7 +41,7 @@ Open **Plugins** at `/admin/plugins`, select a company and workspace, then edit 
 
 Workspaces initially inherit the profile settings. Saving creates a workspace override in the identity SQLite database; **Use server defaults**, followed by **Save changes**, removes that override. A restart preserves saved settings. No restart is needed for workspace changes. The operator's enabled list remains an upper bound: a workspace cannot re-enable an operator-disabled plugin. Per-user datetime overrides are not implemented; the memory plugin separately supports a personal opt-out.
 
-The authenticated `GET /admin/api/identity/plugins?organizationId=…&workspaceId=…` returns the `agent-workspace-plugins/1` inventory, defaults, effective settings, source and revision. `POST` to the same path accepts `{organizationId, workspaceId, revision, settings}`; `settings` is `{enabled: ["datetime"], timeZone: "Europe/Prague"}` or `null` for inherited defaults. Stale revisions return 409, and updates are audited as `workspace.plugins_changed`. Client drafts survive transient refresh failures; authorization failures hide the form.
+The authenticated `GET /admin/api/identity/plugins?organizationId=…&workspaceId=…` returns the `agent-workspace-plugins/1` inventory, defaults, effective settings, source and revision, and for each plugin its manifest details (name, description, tools with access and approval, setting fields, built-in / override / operator), plugins that did not load (owners and administrators) and whether the person may edit plugin files. `POST` to the same path accepts `{organizationId, workspaceId, revision, settings}`; `settings` is `{enabled: ["datetime"], timeZone: "Europe/Prague"}` (plus `memory`, and `settings: {"<plugin id>": {…}}` for other plugins' declared settings) or `null` for inherited defaults. Stale revisions return 409, and updates are audited as `workspace.plugins_changed`. Client drafts survive transient refresh failures; authorization failures hide the form.
 
 New commands use the current workspace settings. A settings change during an in-flight inference invalidates its result before dispatch. Retrying an existing command retains its already pinned reference clock/timezone and completed calculations; it does not reinterpret old relative dates against new defaults. External-service permissions remain independent.
 
@@ -94,15 +101,15 @@ Each calculation has a server-owned ref such as `result_1`. An external action c
 
 ## Execution boundary and extension point
 
-`apps/server-plugins/registry.ts` exposes the shipped manifest (`id`, `version`, `effect`, tool names), model schemas and validated invocation. Datetime is pure: its executor receives only the pinned clock, timezone and validated arguments, without service credentials, network access or an authorization capability.
+`apps/server-plugins/catalog.ts` loads the plugins (built-in, then the data directory's) and `apps/server-plugins/registry.ts` exposes the enabled pure plugins' manifests (`id`, `version`, `effect`, tool names), model schemas and validated invocation. Datetime is pure: its tool receives only the pinned clock, timezone, settings and validated arguments, without service credentials or an authorization capability.
 
 At most four local calls are allowed per command across both routing stages. The runtime requires one tool call at a time, preserves assistant/tool provenance, persists results before another inference, and checks cancellation, actor access, policy revision and provider budget throughout the loop. Existing external-action grants, revision checks, idempotency and approval policy remain authoritative. A calculation never approves a write.
 
-Only statically imported shipped code is accepted. Community installation, package/URL loading and a third-party execution sandbox are **not** implemented. Additional internal tools should extend the manifest/schema/executor boundary with tests; community plugins need a separate trust and execution model before remote code can be accepted.
+Plugins are trusted code: the built-ins ship with the server, and an owner or the operator adds or edits others in the data directory ([plugins.md](plugins.md#security)). Package/URL installation and an execution sandbox are **not** implemented; untrusted third-party code needs a separate execution model first.
 
 ## Verification
 
-`tests/server-plugins.test.ts` covers calendar arithmetic, DST, offsets, strict schemas and binding. Plugin scenarios in `tests/service-catalog.node.ts` use synthetic providers and an in-memory database to test routing, worker inference, approval, replay, clock recovery, cancellation, revocation and malformed calls. `tests/workspace-plugins.node.ts` exercises authenticated HTTP, role/workspace isolation, runtime updates, persistence, conflicts, audit, operator restrictions and read-only previews (including DST clarification and offset selection). `tests/plugin-query.test.ts` covers stale-query/save races. Run `pnpm run check` for the full regression suite; no real service writes are required.
+`tests/plugins.node.ts` covers the plugin format, loading, overrides and invalid plugins; `tests/plugin-files-http.node.ts` the console's plugin files API. `tests/server-plugins.test.ts` covers calendar arithmetic, DST, offsets, strict schemas and binding. Plugin scenarios in `tests/service-catalog.node.ts` use synthetic providers and an in-memory database to test routing, worker inference, approval, replay, clock recovery, cancellation, revocation and malformed calls. `tests/workspace-plugins.node.ts` exercises authenticated HTTP, role/workspace isolation, runtime updates, persistence, conflicts, audit, operator restrictions and read-only previews (including DST clarification and offset selection). `tests/plugin-query.test.ts` covers stale-query/save races. Run `pnpm run check` for the full regression suite; no real service writes are required.
 
 ## Long-term memory (`memory`)
 
@@ -125,7 +132,7 @@ The memory plugin is shipped with the server and opt-in. The operator must add i
 }
 ```
 
-Explicit `memory` settings are operator ceilings; workspaces can narrow them. Without explicit ceilings the workspace can configure the protocol bounds: 1–3,650 retention days, 500–12,000 context characters, 1–20 records and optional shared memory. Retention applies when a new record is saved. The plugin uses the scoped identity store; it is a context capability, not a pure datetime calculation or an external service action.
+Explicit `memory` settings are operator ceilings; workspaces can narrow them. Without explicit ceilings the workspace can configure the protocol bounds: 1–3,650 retention days, 500–12,000 context characters, 1–20 records and optional shared memory. Retention applies when a new record is saved. The plugin uses the scoped identity store through the memory capability (`ctx.memory`); it is a context plugin, not a pure calculation or an external service action. Its `index.ts` holds the tool definitions and the explicit-command rules below; the store's guarantees stay in the server.
 
 In the model planner, `memory_search` retrieves current attributed notes. `Zapamatuj si: Odpovídej česky a stručně.` / `Remember: Reply in Czech and keep answers concise.` explicitly permits saving that exact text. A model's inference, a quoted instruction or a service result cannot authorize a save. `Zapomeň na …` / `Forget …` with exact saved content permits erasure after search. The console supports private notes, revisions, deletion, personal opt-out and optional shared notes managed by owners/admins. Datetime changes preserve memory settings and vice versa.
 

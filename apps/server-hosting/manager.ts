@@ -26,11 +26,13 @@ import { join, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import {
+  HostedDefinition,
+  HostedEnvName,
   HostedPackageInfo,
   HostedServerSchema,
+  type HostedBuiltinId,
   type HostedDefinitionInput,
   type HostedServer,
-  type HostedTemplateId,
 } from "../../packages/protocol/hosted";
 import {
   DockerSandbox,
@@ -38,7 +40,7 @@ import {
   type Command,
   type Sandbox,
 } from "./sandbox";
-import { HOSTED_TEMPLATES } from "./templates";
+import { hostedBuiltins, type HostedBuiltin } from "./templates";
 
 export class HostedError extends Error {
   constructor(
@@ -48,34 +50,60 @@ export class HostedError extends Error {
     super(code);
   }
 }
-type EnvVar = { name: string; value?: string; secret: boolean };
-type Definition =
-  | { source: "template"; template: HostedTemplateId }
-  | {
-      source: "npm";
-      package: string;
-      version: string;
-      bin?: string;
-      args: string[];
-      env: EnvVar[];
-    }
-  | {
-      source: "image";
-      image: string;
-      port: number;
-      args: string[];
-      env: EnvVar[];
-    };
 type Row = {
   id: string;
   organizationId: string;
   port: number;
   revision: number;
   enabled: boolean;
-  name: string;
+  /** A built-in's definition always comes from the code, so it follows upgrades. */
+  builtin?: HostedBuiltinId;
   /** Secret values are never stored here; they are sealed in the secret column. */
-  definition: Definition;
+  definition: HostedDefinition;
 };
+type Npm = Extract<HostedDefinition["source"], { npm: string }>;
+const isNpm = (source: HostedDefinition["source"]): source is Npm =>
+  "npm" in source;
+/** Rows saved before definitions: a template id, or a custom npm package or image
+ * with a list of variables. Names that are reserved now are left out. */
+function upgrade(
+  stored: Record<string, unknown> | undefined,
+  name: unknown,
+): HostedDefinition | undefined {
+  if (!stored || (stored.source !== "npm" && stored.source !== "image"))
+    return undefined;
+  const env = z
+    .array(
+      z.object({
+        name: z.string(),
+        value: z.string().optional(),
+        secret: z.boolean(),
+      }),
+    )
+    .catch([])
+    .parse(stored.env)
+    .filter((item) => HostedEnvName.safeParse(item.name).success);
+  const parsed = HostedDefinition.safeParse({
+    version: 1,
+    name: String(name ?? "Server").slice(0, 100),
+    source:
+      stored.source === "npm"
+        ? {
+            npm: stored.package,
+            version: stored.version,
+            ...(stored.bin ? { bin: stored.bin } : {}),
+          }
+        : { image: stored.image, port: stored.port },
+    args: stored.args,
+    env: Object.fromEntries(
+      env
+        .filter((item) => !item.secret && item.value !== undefined)
+        .map((item) => [item.name, item.value]),
+    ),
+    secrets: env.filter((item) => item.secret).map((item) => item.name),
+  });
+  return parsed.success ? parsed.data : undefined;
+}
 type Runtime = {
   status: HostedServer["status"];
   child?: ChildProcess;
@@ -103,8 +131,10 @@ export type HostedOptions = {
   ports?: { first: number; last: number };
   maxServers?: number;
   readyTimeoutMs?: number;
-  /** Operator decision from the server profile; the console cannot change it. */
+  /** Operator decision from the server profile (default on); the console cannot change it. */
   allowCustom?: boolean;
+  /** Test seam: where the built-in definitions live. */
+  builtins?: string;
 };
 const LOG_LINES = 200;
 const MAX_CRASHES = 5;
@@ -154,10 +184,11 @@ export function escapes(dir: string): boolean {
   return walk(root);
 }
 
-/** Runs MCP servers in a Docker sandbox, supervised: one directory, one container and one
- * loopback port per server. Only templates in code, or custom npm packages and pinned images
- * when the operator allowed them, can run; the console never supplies a command or a shell.
- * Without Docker, templates (never custom servers) run as Node processes instead. */
+/** Runs MCP servers from definitions, supervised: one directory, one container (or confined
+ * Node process) and one loopback port per server. A definition names an npm package at an
+ * exact version or an image by digest, never a command or a shell. Built-in definitions
+ * ship with the server; custom ones need the operator's allowCustom (on by default).
+ * Without Docker, npm servers run as Node processes; images cannot run. */
 export class HostedServers {
   private runtimes = new Map<string, Runtime>();
   private installs = new Map<string, Promise<void>>();
@@ -175,6 +206,7 @@ export class HostedServers {
   private readonly maxServers: number;
   private readonly readyTimeoutMs: number;
   readonly allowCustom: boolean;
+  private readonly builtinDirectory?: string;
   constructor(
     private readonly db: DatabaseSync,
     private readonly root: string,
@@ -195,7 +227,8 @@ export class HostedServers {
     this.ports = options.ports ?? { first: 39100, last: 39199 };
     this.maxServers = options.maxServers ?? 8;
     this.readyTimeoutMs = options.readyTimeoutMs ?? 60000;
-    this.allowCustom = options.allowCustom ?? false;
+    this.allowCustom = options.allowCustom ?? true;
+    this.builtinDirectory = options.builtins;
     db.exec(`CREATE TABLE IF NOT EXISTS agent_hosted_server (
       id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, template TEXT NOT NULL,
       port INTEGER NOT NULL UNIQUE, data TEXT NOT NULL, secret TEXT,
@@ -210,15 +243,19 @@ export class HostedServers {
     mkdirSync(root, { recursive: true, mode: 0o700 });
     for (const row of this.rows()) this.trust(row);
   }
-  templates() {
-    return Object.values(HOSTED_TEMPLATES).map(
-      ({ id, name, version, package: pkg }) => ({
-        id,
-        name,
-        version,
-        package: pkg,
-      }),
-    );
+  private builtinMap(): Map<HostedBuiltinId, HostedBuiltin> {
+    try {
+      return hostedBuiltins(this.builtinDirectory);
+    } catch {
+      // Started outside the repository: no built-ins, custom servers still work.
+      return new Map();
+    }
+  }
+  builtins() {
+    return [...this.builtinMap().values()].map(({ id, definition }) => ({
+      id,
+      definition,
+    }));
   }
   /** Chosen once; without a usable runtime every hosted server shows as failed. */
   private sandbox() {
@@ -262,7 +299,9 @@ export class HostedServers {
       Buffer.concat([cipher.update(bytes!), cipher.final()]).toString("utf8"),
     ) as Record<string, string>;
   }
+  /** A built-in that is no longer shipped, or a row nothing can read, is left out. */
   private rows(organizationId?: string): Row[] {
+    const builtins = this.builtinMap();
     return (
       organizationId
         ? this.db
@@ -271,27 +310,39 @@ export class HostedServers {
             )
             .all(organizationId)
         : this.db.prepare("SELECT * FROM agent_hosted_server").all()
-    ).map((row) => {
-      const data = JSON.parse(String(row.data)) as Partial<Row> & {
+    ).flatMap((row) => {
+      const data = JSON.parse(String(row.data)) as {
         revision: number;
         enabled: boolean;
+        builtin?: string;
+        name?: string;
+        definition?: Record<string, unknown>;
       };
-      const template = String(row.template);
-      return {
-        id: String(row.id),
-        organizationId: String(row.organization_id),
-        port: Number(row.port),
-        revision: data.revision,
-        enabled: data.enabled,
-        definition: data.definition ?? {
-          source: "template",
-          template: template as HostedTemplateId,
+      const stored = data.definition;
+      const builtin =
+        data.builtin ??
+        (!stored
+          ? String(row.template)
+          : stored.source === "template"
+            ? String(stored.template)
+            : undefined);
+      const definition = builtin
+        ? builtins.get(builtin)?.definition
+        : stored?.version === 1
+          ? HostedDefinition.safeParse(stored).data
+          : upgrade(stored, data.name);
+      if (!definition) return [];
+      return [
+        {
+          id: String(row.id),
+          organizationId: String(row.organization_id),
+          port: Number(row.port),
+          revision: data.revision,
+          enabled: data.enabled,
+          ...(builtin ? { builtin } : {}),
+          definition,
         },
-        name:
-          data.name ??
-          HOSTED_TEMPLATES[template as HostedTemplateId]?.name ??
-          template,
-      };
+      ];
     });
   }
   private row(organizationId: string, id: string) {
@@ -300,15 +351,18 @@ export class HostedServers {
     return row;
   }
   private write(row: Row) {
-    this.db.prepare("UPDATE agent_hosted_server SET data=? WHERE id=?").run(
-      JSON.stringify({
-        revision: row.revision,
-        enabled: row.enabled,
-        name: row.name,
-        definition: row.definition,
-      }),
-      row.id,
-    );
+    this.db
+      .prepare("UPDATE agent_hosted_server SET data=? WHERE id=?")
+      .run(JSON.stringify(this.data(row)), row.id);
+  }
+  private data(row: Omit<Row, "id" | "organizationId" | "port">) {
+    return {
+      revision: row.revision,
+      enabled: row.enabled,
+      ...(row.builtin
+        ? { builtin: row.builtin }
+        : { definition: row.definition }),
+    };
   }
   private secretsOf(row: Row) {
     const stored = this.db
@@ -342,63 +396,20 @@ export class HostedServers {
       if (runtime.log.length > LOG_LINES) runtime.log.shift();
     }
   }
-  private artifact(definition: Definition) {
-    if (definition.source === "template") {
-      const t = HOSTED_TEMPLATES[definition.template];
-      return {
-        artifact: t.package,
-        version: t.version,
-        args: t.args,
-        env: (t.env ?? []).map(
-          (item): EnvVar => ({
-            name: item.name,
-            value: item.value,
-            secret: false,
-          }),
-        ),
-      };
-    }
-    if (definition.source === "npm")
-      return {
-        artifact: definition.package,
-        version: definition.version,
-        args: definition.args,
-        env: definition.env,
-      };
-    const [image, digest] = definition.image.split("@");
-    return {
-      artifact: image!,
-      version: digest!,
-      args: definition.args,
-      env: definition.env,
-    };
-  }
   view(row: Row): HostedServer {
     const runtime = this.runtime(row.id);
-    const { artifact, version, args, env } = this.artifact(row.definition);
+    const stored = this.secretsOf(row);
     return HostedServerSchema.parse({
       id: row.id,
-      source: row.definition.source,
-      ...(row.definition.source === "template"
-        ? { template: row.definition.template }
-        : {}),
-      name: row.name,
-      artifact,
-      version,
+      ...(row.builtin ? { builtin: row.builtin } : {}),
+      definition: row.definition,
+      secretsSet: row.definition.secrets.filter((name) => !!stored[name]),
       enabled: row.enabled,
       status: runtime.status,
-      url: `${this.origin(row)}/mcp`,
+      url: `${this.origin(row)}${row.definition.path}`,
       revision: row.revision,
       restarts: runtime.crashes.length,
       ...(runtime.error ? { error: runtime.error } : {}),
-      args,
-      env: env.map((item) => ({
-        name: item.name,
-        secret: item.secret,
-        ...(!item.secret && item.value !== undefined
-          ? { value: item.value }
-          : {}),
-      })),
     });
   }
   list(organizationId: string) {
@@ -407,17 +418,36 @@ export class HostedServers {
   logs(organizationId: string, id: string) {
     return [...this.runtime(this.row(organizationId, id).id).log];
   }
+  /** Only the definition's secret names, without line breaks. */
+  private secretValues(
+    definition: HostedDefinition,
+    values: Record<string, string>,
+  ) {
+    for (const [name, value] of Object.entries(values))
+      if (!definition.secrets.includes(name) || /[\r\n\0]/.test(value))
+        throw new HostedError("hosted_invalid");
+    return Object.fromEntries(
+      Object.entries(values).filter(([, value]) => value !== ""),
+    );
+  }
+  /** Images need Docker; refused up front when the server runs processes. */
+  private async runnable(definition: HostedDefinition) {
+    if (!isNpm(definition.source) && (await this.sandboxKind()) === "process")
+      throw new HostedError("hosted_docker_required", 409);
+  }
   private insert(
     organizationId: string,
     key: string,
-    name: string,
-    definition: Definition,
+    fields: Pick<Row, "builtin" | "definition">,
     secretValues: Record<string, string> = {},
   ) {
-    const rows = this.rows();
+    const rows = this.db
+      .prepare("SELECT port FROM agent_hosted_server")
+      .all()
+      .map((r) => Number(r.port));
     if (rows.length >= this.maxServers)
       throw new HostedError("hosted_limit", 429);
-    const used = new Set(rows.map((r) => r.port));
+    const used = new Set(rows);
     let port = this.ports.first;
     while (used.has(port) && port <= this.ports.last) port++;
     if (port > this.ports.last) throw new HostedError("hosted_limit", 429);
@@ -428,8 +458,7 @@ export class HostedServers {
       port,
       revision: 1,
       enabled: true,
-      name,
-      definition,
+      ...fields,
     };
     try {
       this.db
@@ -439,7 +468,7 @@ export class HostedServers {
           organizationId,
           key,
           port,
-          JSON.stringify({ revision: 1, enabled: true, name, definition }),
+          JSON.stringify(this.data(row)),
           Object.keys(secretValues).length ? this.seal(secretValues, id) : null,
         );
     } catch {
@@ -449,45 +478,69 @@ export class HostedServers {
     void this.run(row);
     return this.view(row);
   }
-  create(organizationId: string, templateId: HostedTemplateId) {
-    const template = HOSTED_TEMPLATES[templateId];
-    if (!template) throw new HostedError("hosted_template_unknown", 404);
-    if (
-      this.rows(organizationId).some(
-        (r) =>
-          r.definition.source === "template" &&
-          r.definition.template === templateId,
-      )
-    )
-      throw new HostedError("hosted_exists", 409);
-    return this.insert(organizationId, templateId, template.name, {
-      source: "template",
-      template: templateId,
-    });
-  }
-  createCustom(
+  async create(
     organizationId: string,
-    name: string,
+    builtinId: HostedBuiltinId,
+    secrets: Record<string, string> = {},
+  ) {
+    const builtin = this.builtinMap().get(builtinId);
+    if (!builtin) throw new HostedError("hosted_template_unknown", 404);
+    if (this.rows(organizationId).some((r) => r.builtin === builtinId))
+      throw new HostedError("hosted_exists", 409);
+    const values = this.secretValues(builtin.definition, secrets);
+    await this.runnable(builtin.definition);
+    return this.insert(
+      organizationId,
+      builtinId,
+      { builtin: builtinId, definition: builtin.definition },
+      values,
+    );
+  }
+  async createCustom(
+    organizationId: string,
     input: HostedDefinitionInput,
+    secrets: Record<string, string> = {},
   ) {
     if (!this.allowCustom) throw new HostedError("hosted_custom_disabled", 403);
-    const secretValues: Record<string, string> = {};
-    const env = input.env.map((item) => {
-      if (item.value !== undefined && /[\r\n\0]/.test(item.value))
-        throw new HostedError("hosted_invalid", 400);
-      if (item.secret) {
-        if (item.value) secretValues[item.name] = item.value;
-        return { name: item.name, secret: true };
-      }
-      return item;
-    });
+    const parsed = HostedDefinition.safeParse(input);
+    if (!parsed.success) throw new HostedError("hosted_invalid");
+    const values = this.secretValues(parsed.data, secrets);
+    await this.runnable(parsed.data);
     return this.insert(
       organizationId,
       `custom:${randomBytes(8).toString("hex")}`,
-      name,
-      { ...input, env } as Definition,
-      secretValues,
+      { definition: parsed.data },
+      values,
     );
+  }
+  /** Replaces the given secret values (empty removes one) and restarts a running server. */
+  setSecrets(
+    organizationId: string,
+    id: string,
+    revision: number,
+    secrets: Record<string, string>,
+  ) {
+    const row = this.row(organizationId, id);
+    this.check(row, revision);
+    this.secretValues(row.definition, secrets);
+    const next = { ...row, revision: row.revision + 1 };
+    const merged = { ...this.secretsOf(row), ...secrets };
+    const values = Object.fromEntries(
+      Object.entries(merged).filter(([, value]) => value !== ""),
+    );
+    this.db
+      .prepare("UPDATE agent_hosted_server SET data=?, secret=? WHERE id=?")
+      .run(
+        JSON.stringify(this.data(next)),
+        Object.keys(values).length ? this.seal(values, row.id) : null,
+        row.id,
+      );
+    if (row.enabled) {
+      this.halt(row);
+      this.runtime(row.id).crashes = [];
+      void this.run(next);
+    }
+    return this.view(next);
   }
   /** Registry metadata only: nothing is downloaded or executed. */
   async resolve(pkg: string, version?: string) {
@@ -654,32 +707,34 @@ export class HostedServers {
   private install(row: Row, runtime: Runtime, sandbox: Sandbox) {
     const dir = this.directory(row);
     const marker = join(dir, ".agent-installed");
-    const definition = row.definition;
+    const source = row.definition.source;
     // A process has no mounted cache, so it keeps one in its own directory.
     const cache =
       sandbox.kind === "process"
         ? join(dir, ".npm-cache")
         : join(this.root, ".npm-cache");
     mkdirSync(join(dir, "home", "tmp"), { recursive: true, mode: 0o700 });
-    if (definition.source === "image") return Promise.resolve();
+    if (!isNpm(source)) return Promise.resolve();
     const pending = this.installs.get(row.id);
     if (pending) return pending;
     mkdirSync(cache, { recursive: true, mode: 0o700 });
     const work = (async () => {
-      if (definition.source === "template") {
-        const source = HOSTED_TEMPLATES[definition.template].source;
-        const digest = digestFile(join(source, "package-lock.json"));
+      // A built-in ships its lockfile; a custom package is pinned once, on its first
+      // install, and its directory keeps that lockfile from then on.
+      const builtin = row.builtin && this.builtinMap().get(row.builtin);
+      if (builtin) {
+        const digest = digestFile(join(builtin.source, "package-lock.json"));
         if (existsSync(marker) && readFileSync(marker, "utf8") === digest)
           return;
         for (const file of ["package.json", "package-lock.json"])
-          copyFileSync(join(source, file), join(dir, file));
+          copyFileSync(join(builtin.source, file), join(dir, file));
       } else if (!existsSync(join(dir, "package-lock.json"))) {
         writeFileSync(
           join(dir, "package.json"),
           JSON.stringify({
             name: "agent-hosted-server",
             private: true,
-            dependencies: { [definition.package]: definition.version },
+            dependencies: { [source.npm]: source.version },
           }),
         );
         runtime.status = "installing";
@@ -692,12 +747,7 @@ export class HostedServers {
         if (locked.code !== 0) throw new HostedError("hosted_install_failed");
       }
       const digest = digestFile(join(dir, "package-lock.json"));
-      if (
-        definition.source !== "template" &&
-        existsSync(marker) &&
-        readFileSync(marker, "utf8") === digest
-      )
-        return;
+      if (existsSync(marker) && readFileSync(marker, "utf8") === digest) return;
       runtime.status = "installing";
       const installed = await this.exec(
         sandbox.install(dir, cache),
@@ -712,14 +762,11 @@ export class HostedServers {
     return work;
   }
   /** The executable of an installed npm package: its only bin, or the chosen one. */
-  private npmEntry(
-    row: Row,
-    definition: Extract<Definition, { source: "npm" }>,
-  ) {
+  private npmEntry(row: Row, source: Npm) {
     const dir = this.directory(row);
     const manifest = JSON.parse(
       readFileSync(
-        join(dir, "node_modules", definition.package, "package.json"),
+        join(dir, "node_modules", source.npm, "package.json"),
         "utf8",
       ),
     ) as { bin?: string | Record<string, string>; name: string };
@@ -728,11 +775,10 @@ export class HostedServers {
         ? { [manifest.name.split("/").at(-1)!]: manifest.bin }
         : (manifest.bin ?? {});
     const names = Object.keys(bins);
-    const chosen =
-      definition.bin ?? (names.length === 1 ? names[0] : undefined);
+    const chosen = source.bin ?? (names.length === 1 ? names[0] : undefined);
     const target = chosen ? bins[chosen] : undefined;
     if (!target) throw new HostedError("hosted_bin_required");
-    const entry = join("node_modules", definition.package, target);
+    const entry = join("node_modules", source.npm, target);
     if (!resolve(dir, entry).startsWith(dir + "/"))
       throw new HostedError("hosted_invalid");
     return entry;
@@ -744,14 +790,12 @@ export class HostedServers {
     runtime.error = undefined;
     runtime.status = "starting";
     const sandbox = await this.sandbox();
-    // Custom code runs only in Docker; the process runtime is for curated templates.
-    if (
-      !sandbox ||
-      (sandbox.kind === "process" && row.definition.source !== "template")
-    ) {
+    const definition = row.definition;
+    // An image needs Docker; without it only npm servers run, as processes.
+    if (!sandbox || (sandbox.kind === "process" && !isNpm(definition.source))) {
       if (runtime.generation !== generation) return;
       runtime.status = "failed";
-      runtime.error = "sandbox_unavailable";
+      runtime.error = sandbox ? "docker_required" : "sandbox_unavailable";
       return;
     }
     await this.ensureNetwork(sandbox);
@@ -773,35 +817,24 @@ export class HostedServers {
     }
     if (runtime.generation !== generation || this.closing) return;
     runtime.status = "starting";
-    const definition = row.definition;
     const secretValues = this.secretsOf(row);
     let program: Parameters<Sandbox["run"]>[0]["program"];
-    let memoryMb = 512;
     const port = (args: string[], value: number) =>
       args.map((a) => a.replaceAll("{port}", String(value)));
     try {
-      if (definition.source === "template") {
-        const template = HOSTED_TEMPLATES[definition.template];
-        memoryMb = template.memoryMb;
-        program = {
-          kind: "node",
-          entry: template.entry,
-          args: port(template.args, row.port),
-        };
-      } else if (definition.source === "npm") {
-        program = {
-          kind: "node",
-          entry: this.npmEntry(row, definition),
-          args: port(definition.args, row.port),
-        };
-      } else {
-        program = {
-          kind: "image",
-          image: definition.image,
-          containerPort: definition.port,
-          args: port(definition.args, definition.port),
-        };
-      }
+      const source = definition.source;
+      program = isNpm(source)
+        ? {
+            kind: "node",
+            entry: this.npmEntry(row, source),
+            args: port(definition.args, row.port),
+          }
+        : {
+            kind: "image",
+            image: source.image,
+            containerPort: source.port,
+            args: port(definition.args, source.port),
+          };
     } catch (error) {
       runtime.status = "failed";
       runtime.error =
@@ -811,17 +844,12 @@ export class HostedServers {
       return;
     }
     // Values go through a private file, never the command line other users could read.
-    const env =
-      definition.source === "template"
-        ? (HOSTED_TEMPLATES[definition.template].env ?? []).map(
-            (item): [string, string] => [item.name, item.value],
-          )
-        : definition.env
-            .map((item) => [
-              item.name,
-              item.secret ? secretValues[item.name] : item.value,
-            ])
-            .filter((pair): pair is [string, string] => pair[1] !== undefined);
+    const env = [
+      ...Object.entries(definition.env),
+      ...definition.secrets
+        .map((name) => [name, secretValues[name]])
+        .filter((pair): pair is [string, string] => !!pair[1]),
+    ];
     // A process gets them in its own environment instead.
     const file = sandbox.kind === "docker" && env.length > 0;
     if (file)
@@ -836,7 +864,7 @@ export class HostedServers {
       // Real path: the permission model compares the paths Node resolves.
       dir: realpathSync(this.directory(row)),
       port: row.port,
-      memoryMb,
+      memoryMb: definition.memoryMb,
       program,
       env: Object.fromEntries(env),
       ...(file ? { envFile: this.envFile(row) } : {}),

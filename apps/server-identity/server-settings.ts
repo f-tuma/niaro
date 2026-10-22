@@ -4,7 +4,7 @@ import {
   ServerSettingsSchema,
   type ServerSettings,
 } from "../../packages/protocol/server-settings";
-import { PluginSettingsSchema } from "../server-plugins/registry";
+import { ProfilePluginSettingsSchema } from "../server-plugins/registry";
 import type { ServerConfig } from "../reference-server/config";
 import { IdentityError } from "./error";
 
@@ -13,7 +13,7 @@ export function serverSettingsDefaults(config: ServerConfig): ServerSettings {
   const identity = config.administration?.identity;
   return ServerSettingsSchema.parse({
     name: config.name,
-    timeZone: PluginSettingsSchema.parse(config.plugins ?? {}).timeZone,
+    timeZone: ProfilePluginSettingsSchema.parse(config.plugins ?? {}).timeZone,
     meetings: identity?.meetings ?? {},
     hubScheduler: identity?.hub.scheduler ?? {},
     integrationOrigins: identity?.integrationOrigins ?? [],

@@ -5,7 +5,8 @@
     "noUncheckedIndexedAccess": true,
     "types": ["node", "jest"],
     "paths": {
-      "@admin/*": ["./apps/server-admin/web/*"]
+      "@admin/*": ["./apps/server-admin/web/*"],
+      "@niaro/plugin-sdk": ["./packages/plugin-sdk/index.ts"]
     }
   },
   "include": [
@@ -13,6 +14,7 @@
     "apps/**/*.tsx",
     "packages/**/*.ts",
     "packages/**/*.tsx",
+    "plugins/**/*.ts",
     "modules/**/*.ts",
     "tests/**/*.ts",
     "tests/**/*.tsx",

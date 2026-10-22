@@ -11,6 +11,8 @@ export const AuditAction = z.enum([
   "hosted.server_changed",
   "server.settings_changed",
   "server.settings_imported",
+  /** An owner saved, reset, deleted or created a plugin's files. */
+  "server.plugin_changed",
   "catalog.ai_changed",
   "catalog.routing_changed",
   "catalog.service_changed",
@@ -97,6 +99,9 @@ export const AuditDetails = z.strictObject({
     .enum(["created", "updated", "enabled", "disabled", "archived"])
     .optional(),
   skillOwner: z.enum(["personal", "workspace"]).optional(),
+  pluginEvent: z
+    .enum(["saved", "reset", "deleted", "created", "refused"])
+    .optional(),
   processVersion: z
     .number()
     .int()

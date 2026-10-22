@@ -108,8 +108,9 @@ contains no message contents or keys (`docker compose logs niaro`).
 - Deleting a personal process cannot be undone; a personal process cannot be
   converted into a company one.
 - Inside the container, hosted MCP servers run without Docker as confined Node
-  processes: only the prepared templates (Microsoft 365), no custom servers
-  ([without Docker](self-hosting.md#without-docker)).
+  processes: npm definitions only (Microsoft 365 or a custom package), no images
+  ([without Docker](self-hosting.md#without-docker)); other servers run as their
+  own compose service ([hosted MCP servers](hosted-servers.md#own-compose-service)).
 - Voice transcription and read-aloud do not count toward usage limits (they are
   billed by audio length).
 - A workspace without a model set in the catalog uses the older simplified

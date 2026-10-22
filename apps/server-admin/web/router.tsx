@@ -15,6 +15,7 @@ import {
   RoutingPage,
 } from "./catalog-providers";
 import { PluginsPage } from "./plugins-page";
+import { PluginFilesPage } from "./plugin-files-page";
 import { AuthProvidersPage } from "./auth-providers";
 import { Accounts, Workspaces } from "./identity-pages";
 import { AuditPage } from "./audit-page";
@@ -109,6 +110,7 @@ export const router = createRouter({
     page("/skills/$skillId", SkillAdminPage),
     page("/plugins", PluginsPage),
     page("/plugins/$pluginId", PluginsPage),
+    page("/plugins/$pluginId/files", PluginFilesPage),
     page("/routing", RoutingPage),
     page("/usage", UsageLimitsPage),
     page("/providers", ProvidersPage),

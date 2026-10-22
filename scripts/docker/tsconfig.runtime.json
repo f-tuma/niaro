@@ -13,7 +13,10 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "target": "ESNext",
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@niaro/plugin-sdk": ["./packages/plugin-sdk/index.ts"]
+    }
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts"]
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "plugins/**/*.ts"]
 }

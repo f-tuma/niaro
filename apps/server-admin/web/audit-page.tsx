@@ -64,6 +64,7 @@ export const auditActions: Record<AuditEntry["action"], keyof Copy> = {
   "hosted.server_changed": "auditHostedServer",
   "server.settings_changed": "auditServerSettings",
   "server.settings_imported": "auditServerSettingsImported",
+  "server.plugin_changed": "auditPluginFiles",
   "catalog.ai_changed": "auditCatalogAi",
   "catalog.routing_changed": "auditCatalogRouting",
   "catalog.service_changed": "auditCatalogService",
@@ -611,6 +612,21 @@ function AuditDetail({ entry }: { entry: AuditEntry }) {
             archived: "auditSkillArchived",
           } as const
         )[d.skillEvent]
+      ],
+    ]);
+  if (d.pluginEvent)
+    items.push([
+      copy.auditPluginEvent,
+      copy[
+        (
+          {
+            saved: "auditPluginSaved",
+            reset: "auditPluginReset",
+            deleted: "auditPluginDeleted",
+            created: "auditPluginCreated",
+            refused: "auditPluginRefused",
+          } as const
+        )[d.pluginEvent]
       ],
     ]);
   if (d.skillOwner)

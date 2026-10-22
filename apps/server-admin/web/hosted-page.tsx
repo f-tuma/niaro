@@ -1,26 +1,33 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, ScrollText, Server } from "lucide-react";
+import { ChevronDown, Plus, ScrollText, Server } from "lucide-react";
 import { z } from "zod";
 import {
   HostedServersSchema,
-  type HostedDefinitionInput,
+  type HostedDefinition,
   type HostedServer,
-  type HostedTemplateId,
 } from "../../../packages/protocol/hosted";
-import { CustomServer } from "./hosted-custom";
+import { AddServerSheet, SecretsSheet, type AddChoice } from "./hosted-custom";
 import { useAdmin } from "./context";
 import { useConsoleScope } from "./console-scope";
 import { api, ApiError } from "./lib/api";
+import { downloadFile } from "./lib/download";
 import { PageHeader } from "@admin/components/console/page";
 import { StatusBadge, type Tone } from "@admin/components/console/status";
 import { ConfirmAction, MoreActions } from "@admin/components/console/forms";
 import { EntityIcon } from "@admin/components/console/entity-icon";
 import { Card } from "@admin/components/ui/card";
+import { Badge } from "@admin/components/ui/badge";
 import { Button } from "@admin/components/ui/button";
 import { Alert, AlertDescription } from "@admin/components/ui/alert";
 import { Skeleton } from "@admin/components/ui/skeleton";
-import { DropdownMenuItem } from "@admin/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@admin/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -51,9 +58,10 @@ import {
 
 const en = {
   title: "Hosted servers",
-  add: "Run",
+  add: "Add server",
+  custom: "Custom",
+  needsDocker: "Needs Docker",
   empty: "No hosted servers",
-  emptyHint: "Run one, then add it as a service.",
   installing: "Installing",
   starting: "Starting",
   running: "Running",
@@ -62,6 +70,8 @@ const en = {
   start: "Start",
   stop: "Stop",
   restart: "Restart",
+  secrets: "Secrets",
+  export: "Export",
   remove: "Remove",
   removeTitle: "Remove the hosted server?",
   removeHint:
@@ -72,17 +82,18 @@ const en = {
   noLogs: "No output yet.",
   more: "More actions",
   restarts: "restarts",
-  version: "Version",
+  image: "Image",
   notManager: "Only organization owners and admins manage hosted servers.",
   error: "The request failed. Reload and try again.",
   exists: "This server is already running for the organization.",
   noSandbox:
     "Docker is not available to this server, so hosted servers cannot run.",
-  processRuntime: "Without Docker: processes of this server",
+  processRuntime: "Without Docker: npm servers run as processes of this server",
   limit: "The server limit has been reached.",
   errors: {
     install_failed: "Installation failed. Check the log.",
     sandbox_unavailable: "Docker is not available.",
+    docker_required: "Images need Docker, which this server doesn't have.",
     bin_required: "Choose the package's executable.",
     crashed: "It crashed repeatedly and was stopped.",
     not_ready: "It did not start listening in time.",
@@ -91,9 +102,10 @@ const en = {
 };
 const cs: typeof en = {
   title: "Hostované servery",
-  add: "Spustit",
+  add: "Přidat server",
+  custom: "Vlastní",
+  needsDocker: "Potřebuje Docker",
   empty: "Žádné hostované servery",
-  emptyHint: "Spusť ho a pak ho přidej jako službu.",
   installing: "Instaluje se",
   starting: "Spouští se",
   running: "Běží",
@@ -102,6 +114,8 @@ const cs: typeof en = {
   start: "Spustit",
   stop: "Zastavit",
   restart: "Restartovat",
+  secrets: "Tajné hodnoty",
+  export: "Exportovat",
   remove: "Odstranit",
   removeTitle: "Odstranit hostovaný server?",
   removeHint:
@@ -112,17 +126,18 @@ const cs: typeof en = {
   noLogs: "Zatím žádný výstup.",
   more: "Další akce",
   restarts: "restartů",
-  version: "Verze",
+  image: "Image",
   notManager: "Hostované servery spravují vlastníci a správci organizace.",
   error: "Požadavek selhal. Načti stránku znovu a zkus to znovu.",
   exists: "Tento server pro organizaci už běží.",
   noSandbox:
     "Tento server nemá přístup k Dockeru, hostované servery proto nemohou běžet.",
-  processRuntime: "Bez Dockeru: běží jako procesy serveru",
+  processRuntime: "Bez Dockeru: npm servery běží jako procesy serveru",
   limit: "Byl dosažen limit počtu serverů.",
   errors: {
     install_failed: "Instalace selhala. Podívej se do logu.",
     sandbox_unavailable: "Docker není dostupný.",
+    docker_required: "Image potřebuje Docker, který tento server nemá.",
     bin_required: "Vyber spustitelný soubor balíčku.",
     crashed: "Opakovaně padal, a proto byl zastaven.",
     not_ready: "Nezačal včas naslouchat.",
@@ -160,23 +175,29 @@ export function useHostedServers(organizationId?: string) {
         : false,
   });
 }
+export type HostedCommandInput =
+  | { type: "create"; builtin: string; secrets: Record<string, string> }
+  | {
+      type: "createCustom";
+      definition: HostedDefinition;
+      secrets: Record<string, string>;
+    }
+  | {
+      type: "secrets";
+      id: string;
+      revision: number;
+      secrets: Record<string, string>;
+    }
+  | {
+      type: "start" | "stop" | "restart" | "remove";
+      id: string;
+      revision: number;
+    };
 export function useHostedCommand(organizationId?: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (
-      input:
-        | { type: "create"; template: HostedTemplateId }
-        | {
-            type: "createCustom";
-            name: string;
-            definition: HostedDefinitionInput;
-          }
-        | {
-            type: "start" | "stop" | "restart" | "remove";
-            id: string;
-            revision: number;
-          },
-    ) => api("identity/hosted/command", { organizationId, ...input }),
+    mutationFn: (input: HostedCommandInput) =>
+      api("identity/hosted/command", { organizationId, ...input }),
     onSettled: () =>
       Promise.all([
         client.invalidateQueries({ queryKey: ["admin", "hosted"] }),
@@ -194,6 +215,22 @@ export function HostedStatus({ server }: { server: HostedServer }) {
     <StatusBadge tone={tones[server.status]}>{copy[server.status]}</StatusBadge>
   );
 }
+/** The package and version, or the image and the start of its digest. */
+export function sourceLabel(definition: HostedDefinition) {
+  const source = definition.source;
+  if ("npm" in source) return `${source.npm}@${source.version}`;
+  const [image, digest] = source.image.split("@");
+  return `${image}@${digest!.slice(0, 19)}`;
+}
+/** The definition as a file another server can import; it holds no secret values. */
+export function exportDefinition(definition: HostedDefinition) {
+  const slug =
+    definition.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "server";
+  downloadFile(`${slug}.mcp.json`, `${JSON.stringify(definition, null, 2)}\n`);
+}
 
 export function HostedPage() {
   const copy = useHostedCopy();
@@ -202,6 +239,8 @@ export function HostedPage() {
   const query = useHostedServers(organizationId);
   const command = useHostedCommand(organizationId);
   const [logs, setLogs] = useState<HostedServer | null>(null);
+  const [adding, setAdding] = useState<AddChoice | null>(null);
+  const [secrets, setSecrets] = useState<HostedServer | null>(null);
   const failure =
     command.error instanceof ApiError
       ? command.error.code === "hosted_exists"
@@ -213,31 +252,51 @@ export function HostedPage() {
         ? copy.error
         : null;
   const value = query.data;
+  const docker = value?.sandbox !== "process";
   const available =
-    value?.templates.filter(
-      (t) => !value.servers.some((s) => s.template === t.id),
+    value?.builtins.filter(
+      (b) => !value.servers.some((s) => s.builtin === b.id),
     ) ?? [];
-  const actions = value?.canManage ? (
-    <>
-      {/* Custom code runs only in Docker. */}
-      {value.allowCustom && value.sandbox === "docker" && organizationId && (
-        <CustomServer organizationId={organizationId} />
-      )}
-      {available.map((template) => (
-        <Button
-          key={template.id}
-          variant="outline"
-          disabled={command.isPending}
-          onClick={() =>
-            command.mutate({ type: "create", template: template.id })
-          }
-        >
-          <Plus data-icon="inline-start" aria-hidden="true" />
-          {copy.add} {template.name}
-        </Button>
-      ))}
-    </>
-  ) : null;
+  const actions =
+    value?.canManage && organizationId ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button>
+            <Plus data-icon="inline-start" aria-hidden="true" />
+            {copy.add}
+            <ChevronDown data-icon="inline-end" aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-48">
+          {available.map((builtin) => {
+            const image = !("npm" in builtin.definition.source);
+            return (
+              <DropdownMenuItem
+                key={builtin.id}
+                disabled={image && !docker}
+                onSelect={() => setAdding({ builtin })}
+              >
+                {builtin.definition.name}
+                {image && !docker && (
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {copy.needsDocker}
+                  </span>
+                )}
+              </DropdownMenuItem>
+            );
+          })}
+          {value.allowCustom && (
+            <>
+              {available.length > 0 && <DropdownMenuSeparator />}
+              <DropdownMenuItem onSelect={() => setAdding("custom")}>
+                {copy.custom}
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : null;
+  const addable = available.length > 0 || !!value?.allowCustom;
   return (
     <>
       <PageHeader
@@ -248,7 +307,7 @@ export function HostedPage() {
             ? copy.processRuntime
             : undefined
         }
-        actions={value?.servers.length ? actions : undefined}
+        actions={value?.servers.length && addable ? actions : undefined}
       />
       {failure && (
         <Alert variant="destructive">
@@ -280,7 +339,7 @@ export function HostedPage() {
             </EmptyMedia>
             <EmptyTitle>{copy.empty}</EmptyTitle>
           </EmptyHeader>
-          {actions && <EmptyContent>{actions}</EmptyContent>}
+          {addable && actions && <EmptyContent>{actions}</EmptyContent>}
         </Empty>
       ) : (
         <Card variant="list">
@@ -292,17 +351,18 @@ export function HostedPage() {
                 </EntityIcon>
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>{server.name}</ItemTitle>
+                <ItemTitle>
+                  {server.definition.name}
+                  {!("npm" in server.definition.source) && (
+                    <Badge variant="outline">{copy.image}</Badge>
+                  )}
+                </ItemTitle>
                 <ItemDescription>
                   <span className="flex min-w-0 flex-wrap items-center gap-x-3">
                     <code className="truncate font-mono" title={server.url}>
                       {server.url}
                     </code>
-                    <span>
-                      {server.source === "template"
-                        ? `${copy.version} ${server.version}`
-                        : `${server.artifact} ${server.version.slice(0, 19)}`}
-                    </span>
+                    <span>{sourceLabel(server.definition)}</span>
                     {server.restarts > 0 && (
                       <span>
                         {server.restarts} {copy.restarts}
@@ -325,7 +385,7 @@ export function HostedPage() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      aria-label={`${copy.logs}: ${server.name}`}
+                      aria-label={`${copy.logs}: ${server.definition.name}`}
                       onClick={() => setLogs(server)}
                     >
                       <ScrollText aria-hidden="true" />
@@ -336,6 +396,7 @@ export function HostedPage() {
                 <ServerActions
                   server={server}
                   busy={command.isPending}
+                  onSecrets={() => setSecrets(server)}
                   run={(type) =>
                     command.mutate({
                       type,
@@ -349,6 +410,21 @@ export function HostedPage() {
           ))}
         </Card>
       )}
+      {organizationId && value && (
+        <>
+          <AddServerSheet
+            choice={adding}
+            organizationId={organizationId}
+            docker={docker}
+            onClose={() => setAdding(null)}
+          />
+          <SecretsSheet
+            server={secrets}
+            organizationId={organizationId}
+            onClose={() => setSecrets(null)}
+          />
+        </>
+      )}
       <HostedLogs
         server={logs}
         organizationId={organizationId}
@@ -361,10 +437,12 @@ function ServerActions({
   server,
   busy,
   run,
+  onSecrets,
 }: {
   server: HostedServer;
   busy: boolean;
   run: (type: "start" | "stop" | "restart" | "remove") => void;
+  onSecrets: () => void;
 }) {
   const copy = useHostedCopy();
   const [confirm, setConfirm] = useState(false);
@@ -385,6 +463,15 @@ function ServerActions({
             {copy.start}
           </DropdownMenuItem>
         )}
+        {server.definition.secrets.length > 0 && (
+          <DropdownMenuItem disabled={busy} onSelect={onSecrets}>
+            {copy.secrets}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onSelect={() => exportDefinition(server.definition)}>
+          {copy.export}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"
           disabled={busy}
@@ -441,7 +528,7 @@ function HostedLogs({
     <Sheet open={!!server} onOpenChange={(open) => !open && onClose()}>
       <SheetContent size="lg">
         <SheetHeader>
-          <SheetTitle>{server?.name}</SheetTitle>
+          <SheetTitle>{server?.definition.name}</SheetTitle>
           <SheetDescription>{copy.logsHint}</SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">

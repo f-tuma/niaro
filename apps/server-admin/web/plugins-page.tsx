@@ -1,7 +1,14 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { CalendarClock, Brain, Puzzle, RotateCcw } from "lucide-react";
+import {
+  CalendarClock,
+  Brain,
+  FileCode,
+  Plus,
+  Puzzle,
+  RotateCcw,
+} from "lucide-react";
 import {
   WorkspacePluginsSchema,
   type WorkspacePlugins,
@@ -55,6 +62,25 @@ import { api, ApiError } from "./lib/api";
 import { publishPluginSettings } from "./lib/plugin-query";
 import { PluginPreview } from "./plugin-preview";
 import { MemoryPluginPanel } from "./memory-panel";
+import { AddPluginSheet } from "./plugin-files-page";
+import { PluginSettingsForm } from "./plugin-settings-form";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
+} from "@admin/components/ui/item";
+
+function PluginIcon({ id }: { id: string }) {
+  return id === "datetime" ? (
+    <CalendarClock aria-hidden="true" />
+  ) : id === "memory" ? (
+    <Brain aria-hidden="true" />
+  ) : (
+    <Puzzle aria-hidden="true" />
+  );
+}
 
 const zones = (() => {
   try {
@@ -121,7 +147,8 @@ function PluginState({
 export function PluginsPage() {
   const { pluginId } = useParams({ strict: false });
   const scope = useConsoleScope();
-  const { data } = useAdmin();
+  const { data, language } = useAdmin();
+  const [adding, setAdding] = useState(false);
   const copy = usePluginsCopy(),
     common = useCatalogCopy();
   const errors = [scope.identity.error, scope.detail.error];
@@ -130,11 +157,12 @@ export function PluginsPage() {
   );
   const error = authorityError ?? errors.find(Boolean);
   const { query: plugins } = useWorkspacePlugins(
-    pluginId ? scope.organization?.id : undefined,
+    scope.organization?.id,
     scope.workspace?.id,
     scope.organization?.role !== "member",
   );
   const plugin = plugins.data?.plugins.find((p) => p.id === pluginId);
+  const editing = plugins.data?.editing;
   return (
     <>
       <PageHeader
@@ -143,17 +171,17 @@ export function PluginsPage() {
             ? copy.dateTime
             : pluginId === "memory"
               ? copy.memory
-              : copy.title
+              : pluginId && plugin
+                ? plugin.name[language]
+                : pluginId
+                  ? pluginId
+                  : copy.title
         }
         back={pluginId ? { to: "/plugins", label: copy.title } : undefined}
         media={
-          pluginId === "datetime" ? (
+          pluginId ? (
             <EntityIcon size="lg">
-              <CalendarClock aria-hidden="true" />
-            </EntityIcon>
-          ) : pluginId === "memory" ? (
-            <EntityIcon size="lg">
-              <Brain aria-hidden="true" />
+              <PluginIcon id={pluginId} />
             </EntityIcon>
           ) : undefined
         }
@@ -163,7 +191,32 @@ export function PluginsPage() {
             <PluginState plugin={plugin} settings={plugins.data.settings} />
           )
         }
+        actions={
+          editing?.allowed &&
+          (pluginId ? (
+            <Button variant="outline" asChild>
+              <Link to="/plugins/$pluginId/files" params={{ pluginId }}>
+                <FileCode data-icon="inline-start" aria-hidden="true" />
+                {copy.files}
+              </Link>
+            </Button>
+          ) : (
+            !editing.disabled && (
+              <Button onClick={() => setAdding(true)}>
+                <Plus data-icon="inline-start" aria-hidden="true" />
+                {copy.addPlugin}
+              </Button>
+            )
+          ))
+        }
       />
+      {scope.organization && editing?.allowed && !editing.disabled && (
+        <AddPluginSheet
+          organizationId={scope.organization.id}
+          open={adding}
+          onOpenChange={setAdding}
+        />
+      )}
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>
@@ -225,6 +278,7 @@ function WorkspacePluginPanel({
   const { pluginId } = useParams({ strict: false });
   const common = useCatalogCopy();
   const copy = usePluginsCopy();
+  const { language } = useAdmin();
   const client = useQueryClient();
   const { key, query } = useWorkspacePlugins(
     organizationId,
@@ -289,7 +343,7 @@ function WorkspacePluginPanel({
                   });
                 }}
               />
-            ) : (
+            ) : pluginId === "datetime" ? (
               <PluginForm
                 current={query.data}
                 refreshFailed={refreshFailed || query.isError}
@@ -301,6 +355,23 @@ function WorkspacePluginPanel({
                   });
                 }}
               />
+            ) : (
+              <div className="grid items-start gap-8 xl:grid-cols-2">
+                <PluginSettingsForm
+                  current={query.data}
+                  plugin={
+                    query.data.plugins.find((plugin) => plugin.id === pluginId)!
+                  }
+                  refreshFailed={refreshFailed || query.isError}
+                  reload={async () => (await query.refetch()).isSuccess}
+                  saved={async (value) => {
+                    await publishPluginSettings(client, key, value);
+                    void client.invalidateQueries({
+                      queryKey: ["admin", "audit"],
+                    });
+                  }}
+                />
+              </div>
             )}
           </>
         ) : (
@@ -313,42 +384,85 @@ function WorkspacePluginPanel({
           </>
         )
       ) : query.data.plugins.length ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {query.data.plugins.map((plugin) => (
-            <Card key={plugin.id} variant="interactive">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <EntityIcon>
-                    {plugin.id === "memory" ? (
-                      <Brain aria-hidden="true" />
-                    ) : (
-                      <CalendarClock aria-hidden="true" />
-                    )}
-                  </EntityIcon>
-                  <PluginState plugin={plugin} settings={query.data.settings} />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <CardTitle>
-                    <Link
-                      to="/plugins/$pluginId"
-                      params={{ pluginId: plugin.id }}
-                      className="block truncate outline-none after:absolute after:inset-0"
-                    >
-                      {plugin.id === "memory" ? copy.memory : copy.dateTime}
-                    </Link>
-                  </CardTitle>
-                  {plugin.id === "datetime" && (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {query.data.plugins.map((plugin) => (
+              <Card key={plugin.id} variant="interactive">
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-3">
+                    <EntityIcon>
+                      <PluginIcon id={plugin.id} />
+                    </EntityIcon>
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      {plugin.source !== "built-in" && (
+                        <Badge variant="outline">
+                          {plugin.source === "override"
+                            ? copy.override
+                            : copy.operator}
+                        </Badge>
+                      )}
+                      <PluginState
+                        plugin={plugin}
+                        settings={query.data.settings}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <CardTitle>
+                      <Link
+                        to="/plugins/$pluginId"
+                        params={{ pluginId: plugin.id }}
+                        className="block truncate outline-none after:absolute after:inset-0"
+                      >
+                        {plugin.id === "memory"
+                          ? copy.memory
+                          : plugin.id === "datetime"
+                            ? copy.dateTime
+                            : plugin.name[language]}
+                      </Link>
+                    </CardTitle>
                     <span className="truncate text-sm text-muted-foreground">
-                      {query.data.settings.timeZone}
+                      {plugin.id === "datetime"
+                        ? query.data.settings.timeZone
+                        : plugin.description[language]}
                     </span>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          {query.data.problems.length > 0 && (
+            <Section
+              title={copy.invalidPlugins}
+              count={query.data.problems.length}
+            >
+              <Card variant="list">
+                {query.data.problems.map((problem) => (
+                  <Item key={problem.directory} variant="row" size="row">
+                    <ItemContent>
+                      <ItemTitle>{problem.directory}</ItemTitle>
+                      <ItemDescription>{problem.message}</ItemDescription>
+                    </ItemContent>
+                    {query.data.editing.allowed && problem.id && (
+                      <ItemActions>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link
+                            to="/plugins/$pluginId/files"
+                            params={{ pluginId: problem.id }}
+                          >
+                            {copy.files}
+                          </Link>
+                        </Button>
+                      </ItemActions>
+                    )}
+                  </Item>
+                ))}
+              </Card>
+            </Section>
+          )}
+        </>
       ) : (
         <Empty variant="outline">
           <EmptyHeader>

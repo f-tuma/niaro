@@ -19,4 +19,4 @@ Commit 8ef4022 retired personal service connections: every call used the adminis
 
 Tokens stay sealed with AES-GCM per workspace, service and user, and are never returned by an API. Changing the service URL, the OAuth configuration or the sign-in method invalidates connections and pending consents. A service without OpenID Connect or Twenty-style user claims cannot be connected personally yet, because its tokens do not prove which account granted access. GitHub sign-in methods are refused as a source for this reason.
 
-Hosted MCP servers (curated templates with pinned lockfiles, supervised loopback processes) and service templates build on this mechanism without changing it; see [hosted MCP servers](../self-hosting.md#hosted-mcp-servers).
+Hosted MCP servers (definitions with pinned lockfiles, supervised loopback processes) build on this mechanism without changing it; see [hosted MCP servers](../hosted-servers.md).

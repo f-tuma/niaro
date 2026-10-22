@@ -1,0 +1,21 @@
+{
+  "id": "datetime",
+  "version": 1,
+  "name": { "en": "Date & time", "cs": "Datum a čas" },
+  "description": {
+    "en": "Works out exact dates and times on the server, so the model never does calendar arithmetic.",
+    "cs": "Spočítá přesné datum a čas na serveru, model tak kalendář nepočítá sám."
+  },
+  "effect": "pure",
+  "tools": [
+    {
+      "name": "internal_datetime_resolve",
+      "title": {
+        "en": "Calculate a date and time",
+        "cs": "Spočítat datum a čas"
+      },
+      "access": "read",
+      "approval": "none"
+    }
+  ]
+}

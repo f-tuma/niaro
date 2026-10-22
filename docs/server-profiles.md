@@ -23,7 +23,7 @@ In the unchanged app, pair to `http://localhost:8794/v1/a` with the one-use code
 
 The schema is `apps/reference-server/config.ts`, version 1. Unknown fields/providers, inline credentials, unsupported versions, malformed origins, invalid session limits and an unused CRM adapter without a model interpreter are rejected.
 
-Optional `plugins: { "enabled": ["datetime"], "timeZone": "Europe/Prague" }` configures [internal tools for account-backed chat](internal-plugins.md). Defaults are `datetime` enabled and UTC; `enabled: []` disables them. Settings take effect on restart. This timezone is independent of legacy adapter model profiles.
+Optional `plugins: { "enabled": ["datetime"], "timeZone": "Europe/Prague" }` configures [internal tools for account-backed chat](internal-plugins.md). Defaults are `datetime` enabled and UTC; `enabled: []` disables them. Settings take effect on restart. This timezone is independent of legacy adapter model profiles. Operator plugins load from `<administration.identity.directory>/plugins/`; `administration.identity.pluginEditing: false` (or `NIARO_PLUGIN_EDITING=0`) makes them read-only in the console. See [plugins](plugins.md).
 
 ```json
 {

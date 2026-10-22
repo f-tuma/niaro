@@ -132,6 +132,7 @@ Tests use synthetic data, local transports and isolated servers. Live provider, 
 ## Documentation
 
 - [Self-hosting, HTTPS and backups](docs/self-hosting.md)
+- [Hosted MCP servers: definitions, runtimes and compose services](docs/hosted-servers.md)
 - [Services, actions, models and limits](docs/service-catalog.md)
 - [Custom service process definitions and version registry](docs/service-processes.md)
 - [Compose task-specific cards: protocol, server SDK and style guidance](docs/composable-cards.md)

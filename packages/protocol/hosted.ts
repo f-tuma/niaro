@@ -2,9 +2,9 @@
 import { z } from "zod";
 import { IdentityId } from "./identity";
 
-/** MCP servers that Agent Server can install and run itself, always inside a sandbox. */
-export const HostedTemplateId = z.enum(["microsoft-365"]);
-export type HostedTemplateId = z.infer<typeof HostedTemplateId>;
+/** A built-in definition shipped with the server, e.g. microsoft-365. */
+export const HostedBuiltinId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/);
+export type HostedBuiltinId = z.infer<typeof HostedBuiltinId>;
 export const HostedServerId = z.string().regex(/^hs_[a-f0-9]{24}$/);
 export const HostedStatus = z.enum([
   "installing",
@@ -39,49 +39,89 @@ export const HostedArgs = z
       .regex(/^[^\0\r\n]*$/),
   )
   .max(40);
-export const HostedEnv = z
-  .array(
-    z.strictObject({
-      name: z.string().regex(/^[A-Z_][A-Z0-9_]{0,63}$/),
-      /** Secret values are stored encrypted and never returned. */
-      value: z.string().max(4096).optional(),
-      secret: z.boolean(),
-    }),
-  )
-  .max(30)
-  .refine(
-    (items) => new Set(items.map((item) => item.name)).size === items.length,
-  );
-export const HostedDefinitionInput = z.discriminatedUnion("source", [
-  z.strictObject({
-    source: z.literal("npm"),
-    package: NpmPackage,
-    version: NpmVersion,
-    /** One of the package's executables; defaults to its only one. */
-    bin: z.string().max(100).optional(),
-    args: HostedArgs.refine((args) => args.some((a) => a.includes("{port}")), {
-      message: "The arguments must include {port}",
-    }),
-    env: HostedEnv,
-  }),
-  z.strictObject({
-    source: z.literal("image"),
-    image: ImageReference,
-    /** The port the server listens on inside the container. */
-    port: z.number().int().min(1).max(65535),
-    args: HostedArgs,
-    env: HostedEnv,
-  }),
-]);
-export type HostedDefinitionInput = z.infer<typeof HostedDefinitionInput>;
+/** Variables that could widen a confined process or replace its own settings. */
+const RESERVED_ENV = /^(?:PATH|HOME|TMPDIR|NODE_.*|LD_.*|DYLD_.*)$/;
+export const HostedEnvName = z
+  .string()
+  .regex(/^[A-Z_][A-Z0-9_]{0,63}$/, "UPPER_CASE")
+  .refine((name) => !RESERVED_ENV.test(name), "Reserved variable");
+export const HostedEnvValue = z
+  .string()
+  .max(4096)
+  .regex(/^[^\0\r\n]*$/);
+export const HOSTED_DEFINITION_VERSION = 1;
+/**
+ * One hosted MCP server, compose-like: what to run (an npm package at an exact
+ * version, or an image by digest), its arguments, fixed variables and the names
+ * of secret variables. Secret values are entered in administration, never here.
+ * Built-in servers are definitions in this same format.
+ */
+export const HostedDefinition = z
+  .strictObject({
+    version: z.literal(HOSTED_DEFINITION_VERSION),
+    name: z.string().trim().min(1).max(100),
+    source: z.union([
+      z.strictObject({
+        npm: NpmPackage,
+        version: NpmVersion,
+        /** One of the package's executables; defaults to its only one. */
+        bin: z.string().max(100).optional(),
+      }),
+      z.strictObject({
+        image: ImageReference,
+        /** The port the server listens on inside the container. */
+        port: z.number().int().min(1).max(65535),
+      }),
+    ]),
+    args: HostedArgs.default([]),
+    env: z
+      .record(HostedEnvName, HostedEnvValue)
+      .refine((env) => Object.keys(env).length <= 30, "At most 30 variables")
+      .default({}),
+    secrets: z.array(HostedEnvName).max(30).default([]),
+    memoryMb: z.number().int().min(128).max(4096).default(512),
+    /** The MCP endpoint's path on the server. */
+    path: z
+      .string()
+      .max(200)
+      .regex(/^\/[A-Za-z0-9._~/-]*$/)
+      .default("/mcp"),
+  })
+  .superRefine((value, ctx) => {
+    if ("npm" in value.source && !value.args.some((a) => a.includes("{port}")))
+      ctx.addIssue({
+        code: "custom",
+        path: ["args"],
+        message: "The arguments must include {port}",
+      });
+    if (new Set(value.secrets).size !== value.secrets.length)
+      ctx.addIssue({
+        code: "custom",
+        path: ["secrets"],
+        message: "Secret names must be unique",
+      });
+    for (const name of value.secrets)
+      if (name in value.env)
+        ctx.addIssue({
+          code: "custom",
+          path: ["secrets"],
+          message: `${name} is both a variable and a secret`,
+        });
+  });
+export type HostedDefinition = z.infer<typeof HostedDefinition>;
+/** A definition as written: the fields with defaults may be left out. */
+export type HostedDefinitionInput = z.input<typeof HostedDefinition>;
+/** Secret values by name; only names the definition declares. */
+export const HostedSecretValues = z
+  .record(HostedEnvName, HostedEnvValue)
+  .refine((values) => Object.keys(values).length <= 30);
 export const HostedServerSchema = z.strictObject({
   id: HostedServerId,
-  source: z.enum(["template", "npm", "image"]),
-  template: HostedTemplateId.optional(),
-  name: z.string().max(100),
-  /** Package or image and its exact version or digest. */
-  artifact: z.string().max(400),
-  version: z.string().max(80),
+  builtin: HostedBuiltinId.optional(),
+  /** Its definition, as exported: secret names only. */
+  definition: HostedDefinition,
+  /** Secret names with a stored value. */
+  secretsSet: z.array(z.string()).max(30),
   enabled: z.boolean(),
   status: HostedStatus,
   /** The MCP endpoint to use as a service URL; reachable only from this server. */
@@ -89,45 +129,42 @@ export const HostedServerSchema = z.strictObject({
   revision: z.number().int().positive(),
   error: z.string().max(200).optional(),
   restarts: z.number().int().nonnegative(),
-  env: z
-    .array(
-      z.strictObject({
-        name: z.string(),
-        secret: z.boolean(),
-        value: z.string().optional(),
-      }),
-    )
-    .max(30),
-  args: HostedArgs,
 });
 export type HostedServer = z.infer<typeof HostedServerSchema>;
-export const HostedTemplateSchema = z.strictObject({
-  id: HostedTemplateId,
-  name: z.string(),
-  version: z.string(),
-  package: z.string(),
+export const HostedBuiltinSchema = z.strictObject({
+  id: HostedBuiltinId,
+  definition: HostedDefinition,
 });
 export const HostedServersSchema = z.strictObject({
   organizationId: IdentityId,
   canManage: z.boolean(),
-  /** The operator's server profile decides; the console can never turn it on. */
+  /** Custom definitions; the operator can turn them off in the server profile. */
   allowCustom: z.boolean(),
-  /** process: no Docker, templates run as Node processes of the server. */
+  /** process: no Docker, npm servers run as Node processes of the server. */
   sandbox: z.enum(["docker", "process", "unavailable"]),
-  templates: z.array(HostedTemplateSchema).max(20),
+  builtins: z.array(HostedBuiltinSchema).max(20),
   servers: z.array(HostedServerSchema).max(20),
 });
 export const HostedCommand = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("create"),
     organizationId: IdentityId,
-    template: HostedTemplateId,
+    builtin: HostedBuiltinId,
+    secrets: HostedSecretValues.default({}),
   }),
   z.strictObject({
     type: z.literal("createCustom"),
     organizationId: IdentityId,
-    name: z.string().trim().min(1).max(100),
-    definition: HostedDefinitionInput,
+    definition: HostedDefinition,
+    secrets: HostedSecretValues.default({}),
+  }),
+  /** Replaces the given secret values; the others stay. */
+  z.strictObject({
+    type: z.literal("secrets"),
+    organizationId: IdentityId,
+    id: HostedServerId,
+    revision: z.number().int().positive(),
+    secrets: HostedSecretValues,
   }),
   z.strictObject({
     type: z.enum(["start", "stop", "restart", "remove"]),

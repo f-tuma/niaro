@@ -109,12 +109,6 @@ import {
 import { useAdmin } from "./context";
 import { ServiceAccess } from "./service-access";
 import { ServiceAuthentication } from "./service-auth";
-import {
-  Microsoft365Setup,
-  ServiceTemplates,
-  twentyPreset,
-  type ServiceTemplate,
-} from "./service-templates";
 import { WorkspaceRolePicker } from "./workspace-roles";
 import { ServiceAvatar } from "./service-avatar";
 import { ServiceActionList } from "./service-action-list";
@@ -330,7 +324,6 @@ function AddService({ state }: { state: CatalogState }) {
   const navigate = useNavigate(),
     copy = useServiceSetupCopy();
   const search = addServiceSearchSchema.parse(useSearch({ strict: false }));
-  const [template, setTemplate] = useState<ServiceTemplate | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -340,19 +333,13 @@ function AddService({ state }: { state: CatalogState }) {
   }, []);
   const open = (id: string, result?: AddResult) => {
     if (!mounted.current) return;
-    const incomplete = result?.personalSignInConfigured === false;
     void navigate({
       to: "/services/$serviceId",
       params: { serviceId: id },
       search: {
         ...(search.mode === "assistant" ? { setup: "assistant" as const } : {}),
         // Connecting is done; the next step is choosing actions.
-        tab: incomplete
-          ? "access"
-          : search.mode === "assistant"
-            ? "processes"
-            : "actions",
-        ...(incomplete ? { setupIssue: "sign-in-incomplete" as const } : {}),
+        tab: search.mode === "assistant" ? "processes" : "actions",
         ...(result?.signIn ? { signIn: result.signIn } : {}),
       },
     });
@@ -416,46 +403,23 @@ function AddService({ state }: { state: CatalogState }) {
               data-service-setup={search.mode}
               className="flex min-w-0 flex-col gap-6"
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <ToggleGroup
-                  type="single"
-                  variant="outline"
-                  value={search.mode}
-                  aria-label={copy.setupMode}
-                  onValueChange={(mode) => {
-                    if (mode === "assistant" || mode === "manual")
-                      chooseMode(mode);
-                  }}
-                >
-                  <ToggleGroupItem value="assistant">
-                    {copy.assistant}
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="manual">
-                    {copy.manual}
-                  </ToggleGroupItem>
-                </ToggleGroup>
-                {template && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setTemplate(null)}
-                  >
-                    {copy.changeConnection}
-                  </Button>
-                )}
-              </div>
-              {!template ? (
-                <ServiceTemplates onChoose={setTemplate} />
-              ) : template === "microsoft-365" ? (
-                <Microsoft365Setup state={state} onSaved={open} />
-              ) : (
-                <ServiceForm
-                  key={template}
-                  state={state}
-                  preset={template === "twenty" ? twentyPreset : undefined}
-                  onSaved={open}
-                />
-              )}
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                className="self-start"
+                value={search.mode}
+                aria-label={copy.setupMode}
+                onValueChange={(mode) => {
+                  if (mode === "assistant" || mode === "manual")
+                    chooseMode(mode);
+                }}
+              >
+                <ToggleGroupItem value="assistant">
+                  {copy.assistant}
+                </ToggleGroupItem>
+                <ToggleGroupItem value="manual">{copy.manual}</ToggleGroupItem>
+              </ToggleGroup>
+              <ServiceForm state={state} onSaved={open} />
             </div>
           )
         ) : (
@@ -506,8 +470,6 @@ export function ServiceDetailPage() {
 
 /** What adding a service found out, for the result page. */
 export type AddResult = {
-  /** A sign-in method setup that could not be saved. */
-  personalSignInConfigured?: boolean;
   /** The automatic OAuth probe of an MCP service. */
   signIn?: SignInOutcome;
 };
@@ -527,14 +489,11 @@ function probeOutcome(status: unknown): SignInOutcome {
 function ServiceForm({
   state,
   service,
-  preset,
   onSaved,
   onCancel,
 }: {
   state: CatalogState;
   service?: Service;
-  /** A template's starting values for a new service. */
-  preset?: Partial<z.infer<typeof ServiceSettings>>;
   onSaved: (id: string, result?: AddResult) => void;
   /** Editing happens in a sheet; its footer cancels. */
   onCancel?: () => void;
@@ -551,7 +510,6 @@ function ServiceForm({
           iconSource: "favicon",
           auth: { type: "bearer" },
           enabled: true,
-          ...preset,
         },
   );
   const [value, setValue] = useState(initial);
@@ -1047,22 +1005,6 @@ function ServiceDetail({
           )}
         </Alert>
       )}
-      {search.setupIssue === "sign-in-incomplete" && canManage && (
-        <Alert variant="destructive">
-          <AlertDescription>{setupCopy.signInIncomplete}</AlertDescription>
-          {tab !== "access" && (
-            <AlertAction>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setTab("access")}
-              >
-                {setupCopy.completeSignIn}
-              </Button>
-            </AlertAction>
-          )}
-        </Alert>
-      )}
       <Tabs value={tab} onValueChange={setTab}>
         <div className="-mx-4 overflow-x-auto overflow-y-hidden border-b px-4 pt-1 pb-px md:mx-0 md:px-0">
           <TabsList variant="line">
@@ -1234,15 +1176,6 @@ function ServiceDetail({
                 key={`${state.target.workspaceId}:${service.id}`}
                 state={state}
                 service={service}
-                onConfigured={() => {
-                  if (mounted.current)
-                    void navigate({
-                      to: "/services/$serviceId",
-                      params: { serviceId: service.id },
-                      search: { ...search, setupIssue: undefined },
-                      replace: true,
-                    });
-                }}
               />
             )}
           </div>
