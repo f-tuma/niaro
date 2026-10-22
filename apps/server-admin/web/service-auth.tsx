@@ -101,7 +101,12 @@ const en = {
     "This connection request expired or belongs to another session. Start again from the card in chat.",
   refresh: "Refresh",
   missingModel: "Enable a decision model in Routing first.",
-  https: "Personal OAuth requires an HTTPS service URL.",
+  https:
+    "The service's own OAuth needs an HTTPS address. Sign in with an organization sign-in method instead.",
+  providerUnavailable:
+    "The sign-in method is off, or it isn't Microsoft or Google.",
+  providerRequired: "Choose a sign-in method.",
+  clientRequired: "Enter the client ID with the secret.",
   mismatch:
     "You signed in with a different account than the one linked to your profile. Sign in with your own account and try again.",
   finish: "Connect service account",
@@ -161,7 +166,12 @@ const cs: typeof en = {
     "Připojení vypršelo nebo patří jiné relaci. Začni znovu z karty v chatu.",
   refresh: "Obnovit",
   missingModel: "Nejdřív zapni rozhodovací model v přiřazení modelů.",
-  https: "Osobní OAuth vyžaduje HTTPS adresu služby.",
+  https:
+    "Vlastní OAuth služby potřebuje HTTPS adresu. Přihlas se raději přihlašovací metodou organizace.",
+  providerUnavailable:
+    "Přihlašovací metoda je vypnutá, nebo to není Microsoft ani Google.",
+  providerRequired: "Vyber přihlašovací metodu.",
+  clientRequired: "Zadej ID klienta spolu s tajným klíčem.",
   mismatch:
     "Přihlásil ses jiným účtem, než jaký máš propojený s profilem. Přihlas se vlastním účtem a zkus to znovu.",
   finish: "Připojit účet služby",
@@ -188,12 +198,19 @@ function returnedError(code: string, copy: typeof en) {
   if (code === "auth_provider_account_conflict") return copy.otherLinked;
   return copy.denied;
 }
-function issue(error: unknown, copy: typeof en) {
+/** The server's refusal in one line; a save names what to change. */
+export function oauthIssue(error: unknown, copy: typeof en) {
   if (error instanceof ApiError) {
     if (error.code === "service_oauth_state_invalid") return copy.invalidState;
     if (error.code === "catalog_model_required") return copy.missingModel;
     if (error.code === "service_oauth_https_required") return copy.https;
     if (error.code === "service_oauth_account_mismatch") return copy.mismatch;
+    if (error.code === "auth_provider_unavailable")
+      return copy.providerUnavailable;
+    if (error.code === "service_oauth_client_required")
+      return copy.clientRequired;
+    // The settings failed validation: a personal sign-in without its method.
+    if (error.code === "identity_invalid_input") return copy.providerRequired;
     if (error.status === 409) return copy.conflict;
   }
   return error instanceof ApiError && error.code
@@ -273,7 +290,7 @@ export function ServiceAuthentication({
       await client.invalidateQueries({ queryKey: ["admin", "audit"] });
       return controller.signal.aborted ? undefined : result;
     } catch (e) {
-      if (!controller.signal.aborted) setError(issue(e, copy));
+      if (!controller.signal.aborted) setError(oauthIssue(e, copy));
     } finally {
       if (!controller.signal.aborted) setBusy(false);
       request.current = null;
@@ -302,7 +319,7 @@ export function ServiceAuthentication({
       {(error || query.isError) && (
         <Alert variant="destructive">
           <AlertDescription>
-            {error ?? issue(query.error, copy)}
+            {error ?? oauthIssue(query.error, copy)}
           </AlertDescription>
           <AlertAction>
             <Button
@@ -814,7 +831,7 @@ export function ServiceConnect() {
             setDetails(HandoffDetails.parse(value));
         })
         .catch((e) => {
-          if (!controller.signal.aborted) setError(issue(e, copy));
+          if (!controller.signal.aborted) setError(oauthIssue(e, copy));
         });
     }
     return () => {
@@ -865,7 +882,7 @@ export function ServiceConnect() {
         window.location.assign(nextURL.href);
       }
     } catch (e) {
-      if (!controller.signal.aborted) setError(issue(e, copy));
+      if (!controller.signal.aborted) setError(oauthIssue(e, copy));
     } finally {
       if (!controller.signal.aborted) setBusy(false);
       request.current = null;

@@ -941,6 +941,9 @@ export class ServiceCatalogStore {
             ...(input.patch.approval !== undefined
               ? { approval: input.patch.approval }
               : {}),
+            ...(input.patch.effect !== undefined
+              ? { effect: input.patch.effect }
+              : {}),
             policy: {
               ...settings.policy,
               roles: input.patch.roles ?? settings.policy.roles,

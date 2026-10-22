@@ -218,6 +218,54 @@ test("definitions are versioned, exact and pinned; built-ins use the same format
   );
 });
 
+test("a definition may say how its service is set up; Microsoft 365 asks for personal Microsoft sign-in", () => {
+  const parsed = HostedDefinition.parse(
+    custom({
+      onboarding: {
+        icon: "calendar",
+        description: "TEST tracker issues",
+        signIn: { provider: "google", scopes: ["tracker.read"] },
+      },
+    }),
+  );
+  assert.deepEqual(parsed.onboarding, {
+    icon: "calendar",
+    description: "TEST tracker issues",
+    signIn: {
+      provider: "google",
+      requiredFor: "all",
+      scopes: ["tracker.read"],
+    },
+  });
+  // Every part is optional; the definition stays valid without it.
+  assert(HostedDefinition.safeParse(custom({ onboarding: {} })).success);
+  const bad = [
+    { icon: "rocket" },
+    { description: "" },
+    { signIn: { provider: "github" } },
+    { signIn: { provider: "microsoft", requiredFor: "none" } },
+    { signIn: { provider: "microsoft", scopes: ["Mail.Read Mail.Send"] } },
+    { signIn: { provider: "microsoft", scopes: ['Mail"Read'] } },
+    { signIn: { provider: "microsoft", clientSecret: "x" } },
+    { command: "sh -c id" },
+  ];
+  for (const onboarding of bad)
+    assert(
+      !HostedDefinition.safeParse(custom({ onboarding } as never)).success,
+      JSON.stringify(onboarding),
+    );
+  assert.deepEqual(template.onboarding, {
+    icon: "mail",
+    description:
+      "Mail and calendar of each person's own Microsoft 365 account.",
+    signIn: {
+      provider: "microsoft",
+      requiredFor: "all",
+      scopes: ["Calendars.ReadWrite", "Mail.ReadWrite", "Mail.Send"],
+    },
+  });
+});
+
 test("a built-in definition installs once from its lockfile and runs sandboxed on a trusted loopback port", async () => {
   process.env.AGENT_TEST_SECRET = "must-not-leak";
   const h = harness();

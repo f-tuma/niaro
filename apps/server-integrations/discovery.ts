@@ -409,6 +409,8 @@ export class McpSession {
     warnings: string[];
     issues?: Issue[];
     remaining?: string[];
+    /** Tools the server labels read-only (`readOnlyHint`): a hint, not applied. */
+    readOnly?: string[];
     choices?: {
       name: string;
       description: string;
@@ -419,6 +421,7 @@ export class McpSession {
     const actions: DiscoveredAction[] = [];
     const warnings: string[] = [];
     const issues: Issue[] = [];
+    const readOnly: string[] = [];
     let cursor: string | undefined;
     const seen = new Set<string>();
     for (let page = 0; page < 10; page++) {
@@ -432,21 +435,26 @@ export class McpSession {
           if (!name || seen.has(name))
             throw new IntegrationError("integration_response_invalid");
           seen.add(name);
-          const inputSchema = object(tool.inputSchema);
-          schemaValidator(inputSchema);
-          actions.push({
-            ...ActionSettings.parse({
-              name: text(tool.title, name, 100),
-              description: text(tool.description, "", 2000),
-              inputSchema,
-              binding: { type: "mcp", name },
-              effect: "write",
-              approval: "always",
-              enabled: false,
-              policy: { roles: [], users: [] },
-            }),
-            sourceKey: `mcp:${name}`,
-          });
+          // A later request asks for the rest by name; the others are skipped.
+          if (!toolNames || toolNames.includes(name)) {
+            const inputSchema = object(tool.inputSchema);
+            schemaValidator(inputSchema);
+            actions.push({
+              ...ActionSettings.parse({
+                name: text(tool.title, name, 100),
+                description: text(tool.description, "", 2000),
+                inputSchema,
+                binding: { type: "mcp", name },
+                effect: "write",
+                approval: "always",
+                enabled: false,
+                policy: { roles: [], users: [] },
+              }),
+              sourceKey: `mcp:${name}`,
+            });
+            if (object(tool.annotations).readOnlyHint === true)
+              readOnly.push(name);
+          }
         } catch (error) {
           issues.push(discoveryIssue(name, error));
           warnings.push(name);
@@ -463,8 +471,7 @@ export class McpSession {
         ) {
           return this.discoverTwenty(toolNames);
         }
-        if (toolNames) throw new IntegrationError("integration_input_invalid");
-        return { actions, warnings, issues };
+        return { actions, warnings, issues, readOnly };
       }
       if (
         typeof result.nextCursor !== "string" ||

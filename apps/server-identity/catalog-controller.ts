@@ -7,6 +7,7 @@ import {
   DiscoveryRequest,
   ModelDiscoveryRequest,
   ServiceIconRequest,
+  ServiceProbeRequest,
 } from "../../packages/protocol/service-catalog";
 import { ServiceCatalogStore, type CatalogActor } from "./service-catalog";
 import { InferenceBudgetCommandSchema } from "../../packages/protocol/inference-budget";
@@ -535,12 +536,33 @@ export class CatalogController {
             if (legacy?.sourceKey) action.sourceKey = legacy.sourceKey;
           }
         }
-        const freshActions = discovery.actions.filter(
+        let freshActions = discovery.actions.filter(
           (action) =>
             !service.actions.some(
               (saved) => saved.sourceKey === action.sourceKey,
             ),
         );
+        // Asked for in slices: this request describes and imports the first
+        // few new tools, the rest come back as a continuation.
+        let later: string[] = [];
+        if (
+          input.limit &&
+          freshActions.length > input.limit &&
+          !("remaining" in discovery && discovery.remaining?.length) &&
+          freshActions.every(
+            (action) =>
+              action.binding.type === "mcp" && !action.binding.catalogTool,
+          )
+        ) {
+          const deferred = new Set(freshActions.slice(input.limit));
+          later = [...deferred].map((action) =>
+            action.binding.type === "mcp" ? action.binding.name : "",
+          );
+          freshActions = freshActions.slice(0, input.limit);
+          discovery.actions = discovery.actions.filter(
+            (action) => !deferred.has(action),
+          );
+        }
         if (service.actions.length + freshActions.length > 1000)
           throw new IdentityError(409, "identity_limit");
         let enriched = false;
@@ -653,15 +675,36 @@ export class CatalogController {
               outcome: "succeeded",
               details: {},
             });
+            const remaining =
+              "remaining" in discovery && discovery.remaining?.length
+                ? discovery.remaining
+                : later;
+            const hinted = new Set(
+              ("readOnly" in discovery ? (discovery.readOnly ?? []) : []).map(
+                (name) => `mcp:${name}`,
+              ),
+            );
+            const readOnly = hinted.size
+              ? this.store
+                  .service(input.workspaceId, input.serviceId)
+                  .actions.filter(
+                    (action) =>
+                      action.effect === "write" &&
+                      !!action.sourceKey &&
+                      hinted.has(action.sourceKey),
+                  )
+                  .map((action) => action.id)
+              : [];
             return {
               ...result,
               warnings: discovery.warnings,
               ...(discovery.issues?.length ? { issues: discovery.issues } : {}),
               enriched,
-              ...("remaining" in discovery && discovery.remaining?.length
+              ...(readOnly.length ? { readOnly } : {}),
+              ...(remaining.length
                 ? {
                     next: {
-                      toolNames: discovery.remaining,
+                      toolNames: remaining,
                       revision: this.store.service(
                         input.workspaceId,
                         input.serviceId,
@@ -673,6 +716,51 @@ export class CatalogController {
             };
           });
         });
+      }
+      if (path === "/probe") {
+        const input = ServiceProbeRequest.parse(payload);
+        const prepared = await this.prepare(input, context);
+        const { service, key } = await context.serial(async () => ({
+          service: this.store.service(input.workspaceId, input.serviceId),
+          key: this.store.credential(input.workspaceId, input.serviceId),
+        }));
+        // A missing key is a setup step of its own, not an unreachable address.
+        if (service.auth.type !== "none" && !key)
+          return { status: "failed", error: "catalog_key_required" };
+        const check = (start?: () => void) =>
+          this.check(input, prepared, context, () => {}, start);
+        const headers = authHeaders(service.auth, key);
+        try {
+          if (service.protocol === "mcp")
+            await new McpSession(
+              this.transport,
+              service.url,
+              headers,
+              signal,
+              check,
+            ).initialize();
+          else {
+            const response = await this.transport({
+              url: service.url,
+              headers,
+              signal,
+              beforeDispatch: check,
+            });
+            if (response.status === 401 || response.status === 403)
+              return { status: "sign_in" };
+            if (response.status >= 500)
+              return { status: "failed", error: "integration_provider_failed" };
+          }
+          return { status: "ok" };
+        } catch (error) {
+          if (signal.aborted || error instanceof IdentityError) throw error;
+          if (!(error instanceof IntegrationError))
+            return { status: "failed", error: "integration_unavailable" };
+          const http = error.failure?.httpStatus;
+          return http === 401 || http === 403
+            ? { status: "sign_in" }
+            : { status: "failed", error: error.code };
+        }
       }
       if (path === "/models") {
         const input = ModelDiscoveryRequest.parse(payload),

@@ -74,6 +74,11 @@ const en = {
   selectedActions: "Selected",
   selectAllActions: "Select all matching actions",
   importingActions: "Importing actions",
+  describingActions: "Describing actions",
+  inBackground: "Close, keep going",
+  readOnlyFound:
+    "Labelled read-only by the server: {n}. Overview widgets use only reads.",
+  markReads: "Mark as reads",
   processedActions: "Processed",
   importPaused: "Import interrupted",
   continueImport: "Continue import",
@@ -356,6 +361,11 @@ const cs: Record<keyof typeof en, string> = {
   selectedActions: "Vybráno",
   selectAllActions: "Vybrat všechny odpovídající akce",
   importingActions: "Načítám akce",
+  describingActions: "Popisuju akce",
+  inBackground: "Zavřít, běží dál",
+  readOnlyFound:
+    "Server označil jen pro čtení: {n}. Widgety přehledu používají jen čtení.",
+  markReads: "Označit jako čtení",
   processedActions: "Zpracováno",
   importPaused: "Načítání přerušeno",
   continueImport: "Pokračovat v načítání",

@@ -971,7 +971,9 @@ export class ClientSession {
       const error = (value as { error?: unknown } | null)?.error;
       throw new Error(
         typeof error === "string" &&
-        /^(hub|process|catalog|identity|auth)_[a-z_]+$/.test(error)
+        /^(?:(?:hub|process|catalog|identity|auth)_[a-z_]+|connection_required|model_unavailable|service_unavailable)$/.test(
+          error,
+        )
           ? error
           : "hub_load_failed",
       );
@@ -1227,10 +1229,20 @@ export class ClientSession {
     }
   }
   /** What the person can tag with "@" right now; a server without the
-   * directory answers mentions_unavailable and the client hides tagging. */
-  async readMentions(signal?: AbortSignal): Promise<MentionDirectory> {
+   * directory answers mentions_unavailable and the client hides tagging.
+   * `hub`: only the services overview widgets can read; a server that does
+   * not know the filter answers the whole directory instead. */
+  async readMentions(
+    signal?: AbortSignal,
+    purpose?: "hub",
+  ): Promise<MentionDirectory> {
     if (!this.authorized) await this.authorize();
-    const { response, value } = await this.json("mentions", { signal });
+    let { response, value } = await this.json(
+      purpose ? `mentions?for=${purpose}` : "mentions",
+      { signal },
+    );
+    if (purpose && response.status === 400)
+      ({ response, value } = await this.json("mentions", { signal }));
     if (response.status === 404 || response.status === 406)
       throw new Error("mentions_unavailable");
     if (!response.ok) throw new Error("connection_failed");

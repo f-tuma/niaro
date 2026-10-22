@@ -145,6 +145,19 @@ const en = {
     catalog_model_required: "An administrator hasn't set up an AI model yet.",
     other: "Couldn't refresh.",
   },
+  /** Why an AI widget can't fill, with the step that fixes it. */
+  fix: {
+    connect: "Your account isn't connected to the service.",
+    noModel: "The overview has no AI model.",
+    noReadable: "No service the overview can read yet.",
+    unreadable: "The overview can't read the chosen service.",
+    askAdmin: "Ask an administrator.",
+    connectAction: "Connect account",
+    routingAction: "Model routing",
+    serviceAction: "Open service",
+    servicesAction: "Services",
+  },
+  sourcesNone: "No service can be read by the overview yet.",
 };
 export type HubCopy = typeof en;
 const cs: HubCopy = {
@@ -290,6 +303,18 @@ const cs: HubCopy = {
     catalog_model_required: "Správce zatím nenastavil AI model.",
     other: "Nepodařilo se obnovit.",
   },
+  fix: {
+    connect: "Nemáš ke službě připojený účet.",
+    noModel: "Přehled nemá AI model.",
+    noReadable: "Zatím tu není služba, kterou přehled umí číst.",
+    unreadable: "Vybranou službu přehled číst neumí.",
+    askAdmin: "Ozvi se správci.",
+    connectAction: "Připojit účet",
+    routingAction: "Přiřazení modelů",
+    serviceAction: "Otevřít službu",
+    servicesAction: "Služby",
+  },
+  sourcesNone: "Zatím tu není služba, kterou přehled umí číst.",
 };
 export const hubCopy = { en, cs };
 export function useHubCopy(): HubCopy {
@@ -322,4 +347,56 @@ export function hubErrorText(copy: HubCopy, code: string | undefined) {
   )
     return errors.unavailable;
   return errors.other;
+}
+
+/** What fixes a failed AI widget: the app's own connect flow, or a page of
+ * the administration (a separate app, so a plain link). */
+export type HubFix =
+  | { kind: "connect"; serviceId?: string }
+  | {
+      kind: "admin";
+      href: string;
+      label: "routingAction" | "serviceAction" | "servicesAction";
+    };
+/**
+ * A failed AI widget (or a refused widget change) in one line, with the step
+ * that fixes it when there is one. Codes without a fix read as `hubErrorText`.
+ */
+export function hubWidgetProblem(
+  copy: HubCopy,
+  code: string | undefined,
+  context: { sources: { id: string }[]; isAdmin: boolean },
+): { text: string; fix?: HubFix } {
+  const only = context.sources.length === 1 ? context.sources[0]!.id : null;
+  const admin = (text: string, fix: HubFix) =>
+    context.isAdmin ? { text, fix } : { text: `${text} ${copy.fix.askAdmin}` };
+  switch (code) {
+    case "connection_required":
+      return {
+        text: copy.fix.connect,
+        fix: { kind: "connect", ...(only ? { serviceId: only } : {}) },
+      };
+    case "model_unavailable":
+    case "catalog_model_required":
+      return admin(copy.fix.noModel, {
+        kind: "admin",
+        href: "/admin/routing",
+        label: "routingAction",
+      });
+    case "service_unavailable":
+    case "hub_source_unavailable":
+      return admin(
+        code === "service_unavailable"
+          ? copy.fix.noReadable
+          : copy.fix.unreadable,
+        only
+          ? {
+              kind: "admin",
+              href: `/admin/services/${encodeURIComponent(only)}`,
+              label: "serviceAction",
+            }
+          : { kind: "admin", href: "/admin/services", label: "servicesAction" },
+      );
+  }
+  return { text: hubErrorText(copy, code) };
 }

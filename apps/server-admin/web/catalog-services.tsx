@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Link,
   Navigate,
@@ -16,9 +17,7 @@ import {
 } from "lucide-react";
 import { z } from "zod";
 import {
-  ActionDiscoveryResponse,
   DiscoveryChoice,
-  DiscoveryContinuation,
   ActionSettings,
   ServiceIcon,
   ServiceSettings,
@@ -121,6 +120,17 @@ import { ServiceProcesses } from "./process-design-page";
 import { designEn, designCs } from "./process-design-copy";
 import { IdentityId } from "../../../packages/protocol/identity";
 import { ServiceSetupOverview } from "./service-setup-overview";
+import { api } from "./lib/api";
+import { Progress } from "@admin/components/ui/progress";
+import {
+  clearReadOnly,
+  discoveryKey,
+  markReadOnly,
+  readOnlyActions,
+  resetDiscovery,
+  runDiscovery,
+  useDiscoveryJob,
+} from "./service-discovery";
 import {
   addServiceSearchSchema,
   serviceDetailSearchSchema,
@@ -1195,34 +1205,20 @@ function Discovery({
   close: () => void;
 }) {
   const { copy } = state;
+  const client = useQueryClient();
+  const key = discoveryKey(state.target.workspaceId, service.id);
+  const job = useDiscoveryJob(key);
   const [documentUrl, setDocumentUrl] = useState("");
-  const [enrich, setEnrich] = useState(false);
-  const [result, setResult] = useState<z.infer<
-    typeof ActionDiscoveryResponse
-  > | null>(null);
-  const [choices, setChoices] = useState<
-    z.infer<typeof DiscoveryChoice>[] | null
-  >(null);
+  const [enrich, setEnrich] = useState(job.running ? job.enrich : false);
+  const choices = job.choices?.list ?? null;
   const [selected, setSelected] = useState<string[]>([]);
-  const [previewRevision, setPreviewRevision] = useState<number | null>(null);
-  const stale = choices !== null && previewRevision !== service.revision;
+  const stale = !!job.choices && job.choices.revision !== service.revision;
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
-  const [processing, setProcessing] = useState(false);
-  const [continuation, setContinuation] = useState<z.infer<
-    typeof DiscoveryContinuation
-  > | null>(null);
-  const [progress, setProgress] = useState<{
-    done: number;
-    total: number;
-  } | null>(null);
-  const run = useRef(0);
-  useEffect(
-    () => () => {
-      run.current++;
-    },
-    [],
-  );
+  const processing = job.running;
+  const continuation = job.continuation;
+  const progress = job.progress;
+  const result = job.result;
   const imported = (choice: z.infer<typeof DiscoveryChoice>) =>
     choice.existing ||
     service.actions.some(
@@ -1237,61 +1233,27 @@ function Discovery({
         .toLocaleLowerCase()
         .includes(search.toLocaleLowerCase()),
   );
-  async function discover(e: FormEvent) {
+  // Each request goes out on its own; the job outlives this sheet.
+  function discover(e: FormEvent) {
     e.preventDefault();
-    const current = ++run.current;
-    setProcessing(true);
-    let next = continuation;
-    let aggregate: z.infer<typeof ActionDiscoveryResponse> =
-      continuation && result
-        ? result
-        : { added: 0, existing: 0, warnings: [] as string[], enriched: false };
-    let done = continuation ? (progress?.done ?? 0) : 0;
-    const total = continuation
-      ? (progress?.total ?? continuation.toolNames.length)
-      : selected.length;
-    if (!continuation) {
-      setResult(null);
-      setProgress(total ? { done: 0, total } : null);
-    }
-    try {
-      do {
-        const response = await state.mutate("discover", {
-          serviceId: service.id,
-          revision: previewRevision ?? service.revision,
-          ...(documentUrl ? { documentUrl } : {}),
-          enrich,
-          ...(choices ? { toolNames: selected } : {}),
-          ...(next ?? {}),
-        });
-        if (current !== run.current || !response) return;
-        const parsed = ActionDiscoveryResponse.parse(response);
-        if (parsed.choices) {
-          setChoices(parsed.choices);
-          setPreviewRevision(service.revision);
-          setSelected([]);
-          setContinuation(null);
-          return;
-        }
-        aggregate = {
-          added: aggregate.added + parsed.added,
-          existing: aggregate.existing + parsed.existing,
-          warnings: [...aggregate.warnings, ...parsed.warnings],
-          issues: [...(aggregate.issues ?? []), ...(parsed.issues ?? [])],
-          enriched: aggregate.enriched || parsed.enriched,
-        };
-        done += parsed.added + parsed.existing + parsed.warnings.length;
-        setResult(aggregate);
-        setChoices(null);
-        setSelected([]);
-        setPreviewRevision(null);
-        if (total) setProgress({ done, total });
-        next = parsed.next ?? null;
-        setContinuation(next);
-      } while (next);
-    } finally {
-      if (current === run.current) setProcessing(false);
-    }
+    state.setError(null);
+    if (!continuation && !choices) resetDiscovery(key);
+    void runDiscovery(key, {
+      send: (body) =>
+        api("identity/catalog/discover", { ...state.target, ...body }),
+      body: {
+        serviceId: service.id,
+        revision: job.choices?.revision ?? service.revision,
+        ...(documentUrl ? { documentUrl } : {}),
+        ...(choices ? { toolNames: selected } : {}),
+      },
+      enrich,
+      ...(choices ? { total: selected.length } : {}),
+      resume: !!continuation,
+      onBatch: () =>
+        client.invalidateQueries({ queryKey: ["admin", "catalog"] }),
+    });
+    setSelected([]);
   }
   const pending = state.busy || processing;
   const selectable = visible?.filter((choice) => !imported(choice)) ?? [];
@@ -1299,7 +1261,7 @@ function Discovery({
     <Sheet
       open
       onOpenChange={(open) => {
-        if (!open && !pending) close();
+        if (!open && !state.busy) close();
       }}
     >
       <SheetContent size="lg">
@@ -1316,9 +1278,11 @@ function Discovery({
             disabled={pending}
             className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4"
           >
-            {state.error && (
+            {(state.error || (!!job.error && !processing)) && (
               <Alert variant="destructive" className="mb-4">
-                <AlertDescription>{state.error}</AlertDescription>
+                <AlertDescription>
+                  {state.error ?? catalogIssue(job.error, copy)}
+                </AlertDescription>
               </Alert>
             )}
             <FieldGroup>
@@ -1472,12 +1436,20 @@ function Discovery({
                   className="text-sm text-muted-foreground tabular-nums"
                 >
                   {processing
-                    ? copy.importingActions
+                    ? job.enrich
+                      ? copy.describingActions
+                      : copy.importingActions
                     : progress.done < progress.total
                       ? copy.importPaused
                       : copy.processedActions}
                   : {progress.done} / {progress.total}
                 </p>
+              )}
+              {progress && processing && (
+                <Progress
+                  aria-label={copy.importingActions}
+                  value={Math.round((progress.done / progress.total) * 100)}
+                />
               )}
               {result && (
                 <div role="status" className="flex flex-col gap-3">
@@ -1524,16 +1496,24 @@ function Discovery({
                   )}
                 </div>
               )}
+              {!processing && job.readOnly.length > 0 && (
+                <ReadOnlyHint
+                  state={state}
+                  service={service}
+                  ids={job.readOnly}
+                  onDone={() => clearReadOnly(key)}
+                />
+              )}
             </FieldGroup>
           </fieldset>
           <SheetFooter>
             <Button
               type="button"
               variant="ghost"
-              disabled={pending}
+              disabled={state.busy}
               onClick={close}
             >
-              {copy.cancel}
+              {processing ? copy.inBackground : copy.cancel}
             </Button>
             <SubmitButton
               pending={pending}
@@ -1551,6 +1531,45 @@ function Discovery({
         </form>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** The server's read-only labels, applied only when an administrator says so. */
+function ReadOnlyHint({
+  state,
+  service,
+  ids,
+  onDone,
+}: {
+  state: CatalogState;
+  service: Service;
+  ids: string[];
+  onDone: () => void;
+}) {
+  const { copy } = state;
+  const count = readOnlyActions(service, ids).length;
+  if (!count) return null;
+  return (
+    <Alert data-read-only-hint>
+      <AlertDescription>
+        {copy.readOnlyFound.replace("{n}", String(count))}
+      </AlertDescription>
+      <AlertAction>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={state.busy}
+          onClick={() =>
+            void markReadOnly(state, service, ids).then((saved) => {
+              if (saved) onDone();
+            })
+          }
+        >
+          {copy.markReads}
+        </Button>
+      </AlertAction>
+    </Alert>
   );
 }
 

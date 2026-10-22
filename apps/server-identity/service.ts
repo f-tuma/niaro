@@ -2149,14 +2149,36 @@ export class IdentityService {
       };
     });
   }
-  /** What this person can tag with "@" right now: usable services, ready processes and skills. */
+  /** What this person can tag with "@" right now: usable services, ready
+   * processes and skills. For the hub: only the services overview widgets can
+   * read (enabled reads that run without approval). */
   mobileMentions(
     header: string | undefined,
     workspaceId: string,
     serverId: string,
+    purpose?: "hub",
   ): Promise<MentionDirectory> {
     return this.serial(async () => {
       const { actor, scope } = this.appActor(header, workspaceId, serverId);
+      if (purpose === "hub")
+        return MentionDirectorySchema.parse({
+          profile: MENTIONS_PROFILE,
+          items: hubReadableServices(
+            this.catalog.store,
+            actor.organizationId,
+            actor.workspaceId,
+            { userId: actor.userId, role: actor.role },
+          )
+            .slice(0, 300)
+            .map((service) => ({
+              kind: "service" as const,
+              id: service.id,
+              name: service.name.slice(0, 120),
+              ...(service.description
+                ? { description: service.description.slice(0, 300) }
+                : {}),
+            })),
+        });
       return this.mentionDirectory(actor, scope);
     });
   }

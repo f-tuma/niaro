@@ -53,8 +53,9 @@ jest.mock("@tanstack/react-router", () => {
     useRouterState: () => "/",
   };
 });
+let mockAdmin = false;
 jest.mock("../apps/server-admin/web/app/context", () => ({
-  useApp: () => ({ language: "cs" }),
+  useApp: () => ({ language: "cs", isAdmin: mockAdmin }),
   useAppSession: () => {
     throw new Error("Pass the session directly");
   },
@@ -339,6 +340,7 @@ const mounted: (() => void)[] = [];
 afterEach(() => {
   mounted.splice(0).forEach((unmount) => unmount());
   mockNavigate.mockReset();
+  mockAdmin = false;
 });
 async function render(element: React.ReactElement) {
   const client = new QueryClient({
@@ -391,6 +393,8 @@ test("an empty overview offers one way in; the gallery adds a calendar from its 
   await settle();
   const form = byTestId(openSheet(root), "hub-widget-form")[0]!;
   expect(form.props["data-type"]).toBe("calendar");
+  // Sources are the services the overview can read, not every mention.
+  expect(session.readMentions).toHaveBeenCalledWith(expect.anything(), "hub");
   const brief = form.find((node) => node.props["data-host"] === "Textarea");
   expect(brief.props.value).toBe(hubWidgetDefinition("calendar")!.brief!.cs);
   await act(async () =>
@@ -805,4 +809,159 @@ test("waiting approvals and questions come from the app's own chats; unknown typ
   ]);
   expect(rows[0]!.findByType("a").props.href).toBe("/chat/conv-a");
   expect(text(root)).toContain(copy.unknownType);
+});
+
+const failed = (error: string) => ({
+  status: "failed" as const,
+  startedAt: "2026-10-16T07:00:00.000Z",
+  producedAt: null,
+  error,
+});
+const mail = [{ id: "svc-mail", name: "Mail" }];
+const problems = () =>
+  dashboard([
+    widgetItem(
+      "connect",
+      "inbox",
+      { sources: mail },
+      {
+        result: failed("connection_required"),
+        layout: { x: 0, y: 0, w: 4, h: 4 },
+      },
+    ),
+    widgetItem(
+      "model",
+      "list",
+      {},
+      {
+        result: failed("model_unavailable"),
+        layout: { x: 4, y: 0, w: 4, h: 4 },
+      },
+    ),
+    widgetItem(
+      "source",
+      "list",
+      { sources: mail },
+      {
+        result: failed("hub_source_unavailable"),
+        layout: { x: 8, y: 0, w: 4, h: 4 },
+      },
+    ),
+  ]);
+const hrefs = (node: ReactTestInstance) =>
+  node.findAllByType("a").map((link) => link.props.href as string);
+
+test("a failed widget says why in one line and offers the fix; administration links only for admins", async () => {
+  const { session } = fakeSession(problems());
+  let root = await render(<HubDashboardView session={session} />);
+  let [connect, model, source] = byTestId(root, "widget-error");
+  expect(text(connect!)).toContain(copy.fix.connect);
+  expect(text(connect!)).toContain(copy.fix.connectAction);
+  expect(hrefs(connect!)).toEqual(["/connections/svc-mail"]);
+  expect(text(model!)).toBe(`${copy.fix.noModel} ${copy.fix.askAdmin}`);
+  expect(hrefs(model!)).toEqual([]);
+  expect(text(source!)).toBe(`${copy.fix.unreadable} ${copy.fix.askAdmin}`);
+  expect(hrefs(source!)).toEqual([]);
+  mounted.splice(0).forEach((unmount) => unmount());
+
+  mockAdmin = true;
+  root = await render(
+    <HubDashboardView session={fakeSession(problems()).session} />,
+  );
+  [connect, model, source] = byTestId(root, "widget-error");
+  expect(hrefs(connect!)).toEqual(["/connections/svc-mail"]);
+  expect(text(model!)).toContain(copy.fix.noModel);
+  expect(text(model!)).not.toContain(copy.fix.askAdmin);
+  expect(hrefs(model!)).toEqual(["/admin/routing"]);
+  expect(text(source!)).toContain(copy.fix.serviceAction);
+  expect(hrefs(source!)).toEqual(["/admin/services/svc-mail"]);
+});
+
+test("a change the overview refuses explains the source; a conflict is retried once on its own", async () => {
+  mockAdmin = true;
+  const { session, commands } = fakeSession(
+    dashboard([
+      widgetItem("list", "list", {}, { layout: { x: 0, y: 0, w: 4, h: 4 } }),
+    ]),
+  );
+  const send = session.sendHubCommand as jest.Mock;
+  const original = send.getMockImplementation()!;
+  const root = await render(<HubDashboardView session={session} />);
+  const refresh = () =>
+    act(async () =>
+      byTestId(root, "hub-widget")[0]!
+        .findAll(
+          (node) =>
+            node.type === "button" && node.props["aria-label"] === copy.refresh,
+        )[0]!
+        .props.onClick(),
+    );
+  // Someone changed the overview at the same moment: once more, silently.
+  send.mockImplementationOnce(async () => {
+    throw new Error("hub_conflict");
+  });
+  await refresh();
+  await settle();
+  expect(send).toHaveBeenCalledTimes(1 + 1);
+  expect(commands.at(-1)).toMatchObject({ type: "refresh", itemIds: ["list"] });
+  expect(byTestId(root, "hub-error")).toHaveLength(0);
+  // Refused twice: then it says so.
+  send.mockImplementation(async () => {
+    throw new Error("hub_conflict");
+  });
+  await refresh();
+  await settle();
+  expect(byTestId(root, "hub-error")).toHaveLength(1);
+  expect(text(byTestId(root, "hub-error")[0]!)).toContain(copy.changeFailed);
+  send.mockImplementation(original);
+
+  // Adding a widget with a source the overview can't read.
+  send.mockImplementationOnce(async () => {
+    throw new Error("hub_source_unavailable");
+  });
+  await act(async () => button(root, copy.edit).props.onClick());
+  await settle();
+  await act(async () => button(root, copy.add).props.onClick());
+  await settle();
+  const inbox = byTestId(
+    byTestId(openSheet(root), "hub-gallery")[0]!,
+    "gallery-type",
+  ).find((card) => card.props["data-type"] === "inbox")!;
+  await act(async () => inbox.findAllByType("button")[0]!.props.onClick());
+  await settle();
+  const form = byTestId(openSheet(root), "hub-widget-form")[0]!;
+  const sources = form.find(
+    (node) =>
+      node.props["data-host"] === "ToggleGroup" &&
+      node.props["aria-label"] === copy.sourcesLabel,
+  );
+  await act(async () => sources.props.onValueChange(["svc-crm"]));
+  await act(async () => form.props.onSubmit({ preventDefault() {} }));
+  await settle();
+  const error = byTestId(root, "hub-error")[0]!;
+  expect(text(error)).toContain(copy.fix.unreadable);
+  expect(hrefs(error)).toEqual(["/admin/services/svc-crm"]);
+});
+
+test("without a readable service the widget form says so and points admins to the services", async () => {
+  mockAdmin = true;
+  const { session } = fakeSession(dashboard([]));
+  (session.readMentions as jest.Mock).mockImplementation(async () => ({
+    profile: "agent-mentions/1",
+    items: [],
+  }));
+  const root = await render(<HubDashboardView session={session} />);
+  await act(async () => button(root, copy.editOverview).props.onClick());
+  await settle();
+  await act(async () => button(root, copy.add).props.onClick());
+  await settle();
+  const inbox = byTestId(
+    byTestId(openSheet(root), "hub-gallery")[0]!,
+    "gallery-type",
+  ).find((card) => card.props["data-type"] === "inbox")!;
+  await act(async () => inbox.findAllByType("button")[0]!.props.onClick());
+  await settle();
+  const none = byTestId(openSheet(root), "hub-sources-none")[0]!;
+  expect(text(none)).toContain(copy.sourcesNone);
+  expect(hrefs(none)).toEqual(["/admin/services"]);
 });

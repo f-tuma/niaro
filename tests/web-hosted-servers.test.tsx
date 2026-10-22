@@ -27,6 +27,10 @@ jest.mock("../apps/server-admin/web/context", () => ({
     data: { authentication: { principalId: "usr_TEST" } },
   }),
 }));
+jest.mock("@tanstack/react-router", () => ({
+  useNavigate: () => jest.fn(),
+  Link: () => null,
+}));
 jest.mock("../apps/server-admin/web/console-scope", () => ({
   useConsoleScope: () => ({
     organization: { id: "org_TEST", name: "TEST", role: "owner" },

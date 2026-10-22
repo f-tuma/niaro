@@ -3847,13 +3847,18 @@ test("bulk action patch rejects empty, duplicate and unsupported edits", () => {
     patch: { enabled: false },
   };
   assert.equal(CatalogCommand.safeParse(base).success, true);
+  // Marking reads in bulk (the server's read-only labels) is supported.
+  assert.equal(
+    CatalogCommand.safeParse({ ...base, patch: { effect: "read" } }).success,
+    true,
+  );
   for (const change of [
     { patch: {} },
     { patch: { enabled: undefined } },
     { actions: [] },
     { actions: [...base.actions, ...base.actions] },
     { patch: { roles: ["member", "member"] } },
-    { patch: { effect: "read" } },
+    { patch: { effect: "execute" } },
     { patch: { users: [] } },
     { patch: { roles: ["root"] } },
   ])
@@ -9390,5 +9395,161 @@ test("agent: a card superseded after dispatch preserves the known write result a
       h.db.close();
       rmSync(root, { recursive: true, force: true });
     }
+  }
+});
+
+/** A plain MCP server: `count` tools, the even ones labelled read-only. */
+function mcpTransport(count: number, status = 200): IntegrationTransport {
+  return async (req) => {
+    await req.beforeDispatch?.(() => {});
+    const body = req.body as { id?: number; method: string };
+    const result =
+      body.method === "initialize"
+        ? { protocolVersion: "2025-06-18", capabilities: { tools: {} } }
+        : body.method === "tools/list"
+          ? {
+              tools: Array.from({ length: count }, (_, i) => ({
+                name: `tool_${i}`,
+                inputSchema: { type: "object", properties: {} },
+                ...(i % 2 ? {} : { annotations: { readOnlyHint: true } }),
+              })),
+            }
+          : {};
+    return {
+      status,
+      headers: { "content-type": "application/json" },
+      text:
+        status === 200
+          ? JSON.stringify({ jsonrpc: "2.0", id: body.id, result })
+          : '{"error":"unauthorized"}',
+    };
+  };
+}
+const mcpService = (h: ReturnType<typeof harness>) =>
+  h.command({
+    type: "saveService",
+    revision: 0,
+    settings: {
+      name: "TEST MCP",
+      url: "https://mcp.example.test/mcp",
+      protocol: "mcp",
+      icon: "mail",
+      auth: { type: "none" },
+      enabled: true,
+    },
+  });
+
+test("MCP discovery imports in slices with progress and reports read-only labels without applying them", async () => {
+  const h = harness(mcpTransport(12));
+  try {
+    const serviceId = mcpService(h);
+    const discover = async (body: object) =>
+      ActionDiscoveryResponse.parse(
+        await h.controller.handle(
+          "POST",
+          new URL("http://localhost/admin/api/identity/catalog/discover"),
+          { ...target, serviceId, ...body },
+          h.context,
+          signal(),
+        ),
+      );
+    let result = await discover({ revision: 1, limit: 5 });
+    assert.equal(result.added, 5);
+    // The rest comes back as a continuation: 5 imported of 12.
+    assert.equal(result.next?.toolNames.length, 7);
+    const sizes = [result.added];
+    const readOnly = new Set(result.readOnly);
+    while (result.next) {
+      result = await discover({ ...result.next, limit: 5 });
+      sizes.push(result.added);
+      for (const id of result.readOnly ?? []) readOnly.add(id);
+    }
+    assert.deepEqual(sizes, [5, 5, 2]);
+    const actions = h.store.service(target.workspaceId, serviceId).actions;
+    assert.equal(actions.length, 12);
+    // A hint only: everything still arrives as a disabled write.
+    assert(actions.every((a) => a.effect === "write" && !a.enabled));
+    assert.deepEqual(
+      [...readOnly].sort(),
+      actions
+        .filter((a) => Number(a.sourceKey!.slice(9)) % 2 === 0)
+        .map((a) => a.id)
+        .sort(),
+    );
+    // Discovering again imports nothing and still names the labelled writes.
+    const again = await discover({
+      revision: h.store.service(target.workspaceId, serviceId).revision,
+    });
+    assert.equal(again.added, 0);
+    assert.equal(again.existing, 12);
+    assert.equal(again.next, undefined);
+    assert.equal(again.readOnly?.length, 6);
+    // The administrator marks them as reads in one command.
+    const service = h.store.service(target.workspaceId, serviceId);
+    h.command({
+      type: "updateActions",
+      serviceId,
+      serviceRevision: service.revision,
+      actions: service.actions
+        .filter((a) => again.readOnly!.includes(a.id))
+        .map(({ id, revision }) => ({ id, revision })),
+      patch: { effect: "read" },
+    });
+    const marked = h.store.service(target.workspaceId, serviceId).actions;
+    assert.equal(marked.filter((a) => a.effect === "read").length, 6);
+    const last = await discover({
+      revision: h.store.service(target.workspaceId, serviceId).revision,
+    });
+    assert.equal(last.readOnly, undefined);
+  } finally {
+    h.db.close();
+  }
+});
+
+test("the address probe tells an answer, a sign-in request and a failure apart", async () => {
+  const probe = async (transport: IntegrationTransport) => {
+    const h = harness(transport);
+    try {
+      const serviceId = mcpService(h);
+      return await h.controller.handle(
+        "POST",
+        new URL("http://localhost/admin/api/identity/catalog/probe"),
+        { ...target, serviceId },
+        h.context,
+        signal(),
+      );
+    } finally {
+      h.db.close();
+    }
+  };
+  assert.deepEqual(await probe(mcpTransport(1)), { status: "ok" });
+  assert.deepEqual(await probe(mcpTransport(1, 401)), { status: "sign_in" });
+  assert.deepEqual(await probe(mcpTransport(1, 500)), {
+    status: "failed",
+    error: "integration_provider_failed",
+  });
+  assert.deepEqual(
+    await probe(async () => {
+      throw new IntegrationError("integration_origin_denied", 403);
+    }),
+    { status: "failed", error: "integration_origin_denied" },
+  );
+  // Members cannot probe.
+  const h = harness(mcpTransport(1));
+  try {
+    const serviceId = mcpService(h);
+    h.setRole("member");
+    await assert.rejects(
+      h.controller.handle(
+        "POST",
+        new URL("http://localhost/admin/api/identity/catalog/probe"),
+        { ...target, serviceId },
+        h.context,
+        signal(),
+      ),
+      /identity_forbidden/,
+    );
+  } finally {
+    h.db.close();
   }
 });

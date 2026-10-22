@@ -6,7 +6,7 @@ The console is served by the same Node process at `/admin/`. The client contains
 
 1. **People / Workspaces:** create a company and workspace; add members and workspace access. Choose the current company/workspace once in the sidebar.
 2. **Services → Add service:** choose **Configure with assistant** or **Configure manually**, then save the service's name, purpose, API/MCP URL and authentication in the service form. Both use the same form; the assistant path continues into the native process designer after the connection is saved. The icon defaults to the website favicon; choose **Custom symbol** to override it. Keys are write-only and encrypted in the identity database.
-3. **Discover actions:** read OpenAPI or MCP tools. Twenty MCP first shows its searchable action catalogue with category filters and **Select all matching actions**. Choose any number from the catalogue; the server processes the selection in bounded batches and the console automatically continues, showing cumulative progress. Optional AI enrichment improves new names/descriptions using the assigned model. Imported actions are disabled drafts with no grants and confirmation required. Existing actions are not overwritten on rediscovery.
+3. **Discover actions:** read OpenAPI or MCP tools. Twenty MCP first shows its searchable action catalogue with category filters and **Select all matching actions**. Choose any number from the catalogue; the server processes the selection in bounded batches and the console automatically continues, showing cumulative progress. Optional AI enrichment improves new names/descriptions using the assigned model; the console then asks for five new actions per request and shows "Describing actions: n of m" between them. Discovery runs in the background of the console: closing the sheet or leaving the service keeps it going, and the service's setup checklist shows the same progress. Imported actions are disabled drafts with no grants and confirmation required. Existing actions are not overwritten on rediscovery. An MCP tool labelled `readOnlyHint` still arrives as a write; the result offers **Mark as reads** for those tools, an explicit administrator choice.
 4. **Action editor:** edit name, description, binding, JSON input schema, effect, confirmation policy, enabled state and access. Grant organization/workspace roles or individual users; an explicit user denial wins. Services also have an Access gate that must pass before any action grant. Create and assign custom roles in Settings → Workspaces → Roles. Delete only after reviewing the inline confirmation.
 5. **AI providers:** add an OpenAI-compatible endpoint and key; choose models from its catalog or enter an ID manually. Tool support is imported when declared by the provider; otherwise an administrator must verify and enable it explicitly. Models and credentials belong to the company, and only owners/admins can change them.
 6. **Model routing:** choose the workspace router, speech transcription, optional Decision mode and per-service models. The router chooses an authorized service; that service's model chooses an action and prepares its arguments. Changing the selection changes the actual outgoing model ID.
@@ -36,8 +36,87 @@ model quality.
 
 Paused services stay paused; the assistant cannot implicitly enable them.
 Personal sign-in (e.g. for a [hosted](hosted-servers.md) Microsoft 365 server) is
-set up on the service's **Access** tab after it is saved. Existing connections
-need no migration.
+set up on the service's **Access** tab after it is saved, or with one click from
+the setup checklist. Existing connections need no migration.
+
+### Setup checklist
+
+Administrators see **Setup** at the top of the overview: one row per step, each
+_done_, _needs action_, _failed_ or _waiting_ for an earlier step, with one line
+saying why and the button that fixes it.
+
+| Step         | Done when                                                                                       | Fix offered                                                                                     |
+| ------------ | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Address      | `catalog/probe` reached it (an MCP `initialize`, or any HTTP answer below 500 for OpenAPI)      | Edit connection; Settings when the origin is not allowed                                        |
+| Sign-in      | none, a stored shared key, or personal sign-in with an enabled method / the service's own OAuth | Edit connection; Add sign-in method (fields, redirect URL and permissions listed); Use _method_ |
+| Actions      | the service has actions; shows "Describing actions: n of m" while discovery runs                | Discover actions; Continue after an interrupted import                                          |
+| Access       | some actions are on and at least one read can run unattended (what overview widgets use)        | Choose actions; Find reads / Mark as reads for MCP read-only labels                             |
+| Your account | (personal sign-in only) the administrator's own account is connected                            | Connect, in the app's Connections                                                               |
+| Test         | an enabled read without required inputs answered                                                | Test (runs it once, shows the result or the reason)                                             |
+
+A hosted server's definition can carry the sign-in it needs (`onboarding`); the
+checklist then names the missing method, for example "Needs a Microsoft sign-in
+method", until it exists, and **Use _method_** saves the personal sign-in.
+A refused sign-in save shows the server's reason (no method chosen, the method
+is off or not OpenID, the service's own OAuth needs HTTPS) instead of a generic
+failure.
+
+## Guide: add an MCP service
+
+1. **Services → Add service → Configure manually**, protocol MCP, the server's
+   URL (`https://…/mcp`). A private or plain-HTTP address must be listed first in
+   **Settings → Origins → Integration origins**. A hosted server needs none of
+   this: its row has **Create service** ([Hosted servers](hosted-servers.md)).
+2. Authentication: the server's shared key (Bearer or an `X-…` header), or
+   _None_ when each person signs in with their own account (step 4).
+3. On the service's overview, follow **Setup**: the address answers, then
+   **Discover actions**. Leave "Name new actions with AI" off for a quick
+   import; with it on, progress shows while each slice is described.
+4. Personal sign-in: **Access** tab, _When to require_ "For every action",
+   _Sign-in with_ an organization sign-in method (Microsoft or Google) or the
+   service's own OAuth (HTTPS only), and the permissions to request.
+5. **Actions** tab: turn on what the assistant may use and who may use it.
+   Overview widgets read only reads that run without approval: mark the
+   service's read tools as reads (**Mark as reads** after discovery, or the
+   action editor's effect).
+6. **Test** in the checklist runs one read; under personal sign-in connect your
+   own account first (the checklist links to the app's Connections).
+
+## Guide: connect Microsoft 365
+
+Microsoft 365 runs as a built-in [hosted server](hosted-servers.md); each person
+reads their own mail and calendar with their own Microsoft account.
+
+1. **Hosted server.** Administration → Hosted → Add server → Microsoft 365,
+   wait for _Running_ (the first start installs the pinned package).
+2. **Microsoft Entra app registration** (entra.microsoft.com → App
+   registrations → New registration), single tenant:
+   - Platform _Web_, redirect URIs (both, on your public address):
+     `https://<server>/admin/auth/callback/<sign-in method id>` (shown when you
+     add the sign-in method in step 3) and `https://<server>/admin/service-connect`.
+   - Certificates & secrets → New client secret; copy its value.
+   - API permissions → Microsoft Graph → Delegated: `openid`, `profile`,
+     `email`, `offline_access`, `User.Read`, `Mail.ReadWrite`, `Mail.Send`,
+     `Calendars.ReadWrite`; grant admin consent for the tenant.
+   - Note the Application (client) ID and the Directory (tenant) ID.
+3. **Sign-in method.** Administration → Sign-in methods → Add → Microsoft:
+   client ID, client secret, tenant ID, enabled. Copy its callback URL into the
+   app registration (step 2).
+4. **Service.** Back in Hosted, the server's row → **Create service**. With the
+   Microsoft method in place, the service is created with personal sign-in for
+   every action and the Graph permissions `Calendars.ReadWrite Mail.ReadWrite
+Mail.Send`; otherwise its checklist says "Needs a Microsoft sign-in method"
+   and, once the method exists, **Use _method_** finishes it.
+5. **Actions.** Setup → **Discover actions**, then **Mark as reads** for the
+   tools the server labels read-only (list mail, list events, …), and turn on
+   the actions people may use (**Actions** tab).
+6. **Connect.** Each person opens Connections in the app (or the checklist's
+   **Connect**) and signs in with Microsoft; **Test** in the checklist then
+   reads their mail.
+7. **First widget.** In the app's Overview → Edit → Add → _Inbox_ or
+   _Calendar_; Microsoft 365 is offered as a source once it has reads. A widget
+   that cannot fill says why and offers the fix (connect the account, a model
+   for the overview, the service) — see [Hub](hub.md#when-a-widget-cant-fill).
 
 Owners/admins manage processes. A person who can open the console through a
 different organization but is only a member of this workspace sees its permitted
@@ -56,7 +135,7 @@ acceptance is claimed. See the [process contract and QA](service-processes.md#se
 
 The desktop sidebar and section header stay visible while the page scrolls. On phones, company/workspace selection and navigation move into the menu drawer. New page navigation starts at the top; browser Back uses the router's saved scroll position. Supplemental explanations use focusable help buttons (hover, keyboard focus or tap); errors and confirmation consequences stay visible.
 
-- **Services → Actions:** search by name, description or API binding, filter enabled/paused actions, and page through 25 rows at a time. Select the page or all matching actions; selections survive filtering and paging. **Edit selected** changes only the fields explicitly chosen: enabled state, confirmation policy or allowed roles. Individual user overrides and action bindings remain unchanged. The server checks the service and every selected action revision before applying the entire batch in one transaction. A stale selection changes nothing; use **Reload saved version** and select again. Only owners/admins can submit these edits.
+- **Services → Actions:** search by name, description or API binding, filter enabled/paused actions, and page through 25 rows at a time. Select the page or all matching actions; selections survive filtering and paging. **Edit selected** changes only the fields explicitly chosen: enabled state, confirmation policy or allowed roles (the command also takes the effect, which **Mark as reads** uses; an HTTP action other than GET stays a write). Individual user overrides and action bindings remain unchanged. The server checks the service and every selected action revision before applying the entire batch in one transaction. A stale selection changes nothing; use **Reload saved version** and select again. Only owners/admins can submit these edits.
 - Individual actions and provider models open in a side panel with a scrolling form and visible save controls. Closing returns focus to the originating item, or to search when that item is no longer present. Validation errors are displayed inside the panel.
 - **AI providers:** search and page through saved models. Select multiple models to enable/pause them. These existing per-model commands run sequentially; a failure stops the queue and leaves unfinished models selected. Completed changes remain saved. This differs from the atomic action batch.
 - **People / Workspaces:** search names and email addresses, filter account roles, and expand membership only for the workspace being edited. Select/clear the visible members, then explicitly save. Partial failures retain completed changes and keep the remaining draft. Administrators' inherited workspace access is not edited here.
@@ -88,7 +167,7 @@ The resolver reuses pinned-address transport, HTTPS/private-origin policy and ca
 
 - OpenAPI **3.0/3.1 JSON**, relative HTTP paths, GET/POST/PUT/PATCH/DELETE, scalar path/query parameters and JSON bodies. The configured API base must agree with the document's server URL. An explicit document URL must remain under the same origin and base path.
 - Local `$ref` expansion with cycle/depth/node/byte bounds. Unsupported operations are reported and skipped. YAML, external refs, callbacks, server variables, multipart bodies and arbitrary documentation scraping are not implemented.
-- Remote MCP **Streamable HTTP**, protocol `2025-06-18`, initialize/initialized, paginated tools/list and tools/call; JSON and bounded SSE responses. No local stdio processes, command installation, sampling or MCP OAuth flow. Tool annotations do not grant permission or bypass approval.
+- Remote MCP **Streamable HTTP**, protocol `2025-06-18`, initialize/initialized, paginated tools/list and tools/call; JSON and bounded SSE responses. No local stdio processes, command installation, sampling or MCP OAuth flow. Tool annotations do not grant permission or bypass approval: `readOnlyHint` is reported to the administrator (`readOnly` in the discovery response) and applied only through **Mark as reads**.
 - Twenty MCP's progressive catalogue is recognized by its server identity and catalogue tools. Discovery calls `get_tool_catalog` and `learn_tools` for metadata only. A saved action pins a concrete `catalogTool` within `execute_tool`; user/model arguments cannot replace that target. General MCP discovery stays on `tools/list`.
 - Local canonical JSON Pointer refs (`$defs`/`definitions`) support recursive MCP filters with schema/input depth, size, node and validation-work bounds. Remote refs, ambiguous URI fragments and recursion without consuming input are rejected. Unsupported/missing schemas return typed per-action reasons and a bounded schema path, shown in a collapsible EN/CS summary. Raw compiler errors and schema values are never included in these diagnostics.
 - API authentication: none, Bearer or a custom `X-…` header. Provider authentication: Bearer. OAuth credentials for individual services require a future adapter.

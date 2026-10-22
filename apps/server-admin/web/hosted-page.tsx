@@ -1,12 +1,23 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Plus, ScrollText, Server } from "lucide-react";
 import { z } from "zod";
 import {
   HostedServersSchema,
   type HostedDefinition,
+  type HostedOnboarding,
   type HostedServer,
 } from "../../../packages/protocol/hosted";
+import { CatalogSchema } from "../../../packages/protocol/service-catalog";
+import { AuthProvidersSchema } from "../../../packages/protocol/auth-providers";
+import { IdentityId } from "../../../packages/protocol/identity";
+import {
+  applySignIn,
+  hostedOnboarding,
+  onboardingSettings,
+  signInProvider,
+} from "./service-onboarding";
 import { AddServerSheet, SecretsSheet, type AddChoice } from "./hosted-custom";
 import { useAdmin } from "./context";
 import { useConsoleScope } from "./console-scope";
@@ -77,6 +88,9 @@ const en = {
   removeHint:
     "The process stops and its files are deleted. Services using its address stop working.",
   cancel: "Cancel",
+  createService: "Create service",
+  openService: "Open service",
+  serviceFailed: "The service couldn't be created. Try again.",
   logs: "Log",
   logsHint: "Last 200 lines, tokens redacted",
   noLogs: "No output yet.",
@@ -121,6 +135,9 @@ const cs: typeof en = {
   removeHint:
     "Proces se zastaví a jeho soubory se smažou. Služby s jeho adresou přestanou fungovat.",
   cancel: "Zrušit",
+  createService: "Vytvořit službu",
+  openService: "Otevřít službu",
+  serviceFailed: "Službu se nepodařilo vytvořit. Zkus to znovu.",
   logs: "Log",
   logsHint: "Posledních 200 řádků, tokeny skryté",
   noLogs: "Zatím žádný výstup.",
@@ -205,6 +222,87 @@ export function useHostedCommand(organizationId?: string) {
       ]),
   });
 }
+/** The current workspace's services, on the catalog page's own cache entry. */
+function useWorkspaceServices(enabled: boolean) {
+  const scope = useConsoleScope(),
+    { data } = useAdmin();
+  const target = {
+    organizationId: scope.organization?.id ?? "",
+    workspaceId: scope.workspace?.id ?? "",
+  };
+  const query = useQuery({
+    queryKey: [
+      "admin",
+      "catalog",
+      data.authentication.principalId,
+      target.organizationId,
+      target.workspaceId,
+      scope.organization?.role,
+    ],
+    queryFn: async ({ signal }) =>
+      CatalogSchema.parse(
+        await api(
+          `identity/catalog?${new URLSearchParams(target)}`,
+          undefined,
+          signal,
+        ),
+      ),
+    enabled: enabled && !!target.organizationId && !!target.workspaceId,
+  });
+  return { target, services: query.data?.services };
+}
+/**
+ * Adds the catalog MCP service for a running hosted server: its name, URL
+ * and the definition's onboarding (icon, purpose and, when the organization
+ * has the sign-in method it names, personal sign-in). Resolves to its id.
+ */
+async function createHostedService(
+  target: { organizationId: string; workspaceId: string },
+  server: HostedServer,
+  onboarding: HostedOnboarding | undefined,
+) {
+  const saved = await api("identity/catalog/command", {
+    ...target,
+    type: "saveService",
+    revision: 0,
+    settings: {
+      name: server.definition.name,
+      url: server.url,
+      protocol: "mcp",
+      icon: onboarding?.icon ?? "plug",
+      iconSource: onboarding?.icon ? "custom" : "favicon",
+      auth: { type: "none" },
+      enabled: true,
+      ...(onboarding?.description
+        ? { description: onboarding.description }
+        : {}),
+    },
+  });
+  const id = IdentityId.parse(z.object({ id: z.unknown() }).parse(saved).id);
+  const signIn = onboarding?.signIn;
+  if (signIn) {
+    const providers = AuthProvidersSchema.parse(
+      await api("identity/auth-providers/list", {
+        organizationId: target.organizationId,
+      }),
+    ).providers;
+    const provider = signInProvider(signIn, providers);
+    // Without the sign-in method the service page says what is missing.
+    if (provider) {
+      // The address's own OAuth probe runs after saving; join it first so
+      // the sign-in saves on the configuration it leaves.
+      await api("identity/catalog/oauth/auto", {
+        ...target,
+        serviceId: id,
+      }).catch(() => undefined);
+      const settings = onboardingSettings(signIn, provider);
+      const result = await applySignIn(target, id, settings);
+      if (!result.ok && result.code === "service_oauth_conflict")
+        await applySignIn(target, id, settings);
+    }
+  }
+  return id;
+}
 export function useHostedCopy() {
   return useAdmin().language === "cs" ? cs : en;
 }
@@ -241,8 +339,25 @@ export function HostedPage() {
   const [logs, setLogs] = useState<HostedServer | null>(null);
   const [adding, setAdding] = useState<AddChoice | null>(null);
   const [secrets, setSecrets] = useState<HostedServer | null>(null);
-  const failure =
-    command.error instanceof ApiError
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  const workspace = useWorkspaceServices(!!query.data?.canManage);
+  const create = useMutation({
+    mutationFn: (server: HostedServer) =>
+      createHostedService(
+        workspace.target,
+        server,
+        hostedOnboarding(server, query.data?.builtins ?? []),
+      ),
+    // A service saved before a later step failed still shows on the row.
+    onSettled: () =>
+      client.invalidateQueries({ queryKey: ["admin", "catalog"] }),
+    onSuccess: (serviceId) =>
+      void navigate({ to: "/services/$serviceId", params: { serviceId } }),
+  });
+  const failure = create.error
+    ? copy.serviceFailed
+    : command.error instanceof ApiError
       ? command.error.code === "hosted_exists"
         ? copy.exists
         : command.error.code === "hosted_limit"
@@ -380,6 +495,15 @@ export function HostedPage() {
               <ItemActions className="max-sm:ml-10 max-sm:basis-full">
                 <HostedStatus server={server} />
                 <span className="flex-1 sm:hidden" />
+                {server.status === "running" && workspace.services && (
+                  <ServiceLink
+                    service={workspace.services.find(
+                      (s) => s.url === server.url,
+                    )}
+                    busy={create.isPending}
+                    onCreate={() => create.mutate(server)}
+                  />
+                )}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -431,6 +555,29 @@ export function HostedPage() {
         onClose={() => setLogs(null)}
       />
     </>
+  );
+}
+/** The catalog service for a running server: open it, or create it. */
+function ServiceLink({
+  service,
+  busy,
+  onCreate,
+}: {
+  service?: { id: string };
+  busy: boolean;
+  onCreate: () => void;
+}) {
+  const copy = useHostedCopy();
+  return service ? (
+    <Button variant="outline" size="sm" asChild>
+      <Link to="/services/$serviceId" params={{ serviceId: service.id }}>
+        {copy.openService}
+      </Link>
+    </Button>
+  ) : (
+    <Button variant="outline" size="sm" disabled={busy} onClick={onCreate}>
+      {copy.createService}
+    </Button>
   );
 }
 function ServerActions({

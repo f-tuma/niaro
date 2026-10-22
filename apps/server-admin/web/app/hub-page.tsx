@@ -10,6 +10,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Pencil,
+  PlugZap,
   Plus,
   RefreshCw,
   Settings2,
@@ -97,7 +98,13 @@ import {
 import { plural } from "../lib/plural";
 import { useApp, useAppSession } from "./context";
 import { UNSAVED_DRAFT, draftKey, saveDraft } from "./chat-store";
-import { hubErrorText, useHubCopy, type HubCopy } from "./hub-copy";
+import {
+  hubErrorText,
+  hubWidgetProblem,
+  useHubCopy,
+  type HubCopy,
+  type HubFix,
+} from "./hub-copy";
 import HubChart from "./hub-chart";
 import {
   HubGallery,
@@ -153,7 +160,7 @@ export function HubPage() {
  * resizes and sets up widgets.
  */
 export function HubDashboardView({ session }: { session: ClientSession }) {
-  const { language } = useApp();
+  const { language, isAdmin } = useApp();
   const copy = useHubCopy();
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -177,7 +184,11 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
     id: string;
     focus: "name" | "view";
   } | null>(null);
-  const [changeError, setChangeError] = useState<string | null>(null);
+  /** A refused change, with the sources it named (for the fix's link). */
+  const [changeError, setChangeError] = useState<{
+    code: string;
+    sources: { id: string }[];
+  } | null>(null);
   /** The widget shown large in a dialog, by id. */
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const change = useMutation({
@@ -186,10 +197,23 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
         ...command,
         profile: HUB_PROFILE_V3,
       } as HubDashboardV3Command),
+    // Someone else changed the overview at the same moment: once more on the new state.
+    retry: (count, error) =>
+      count < 1 && /^hub_(?:conflict|changed)$/.test(error.message),
+    retryDelay: 0,
     onMutate: () => setChangeError(null),
     onSuccess: (view) => client.setQueryData(key, view),
-    onError: (error) => {
-      setChangeError(error instanceof Error ? error.message : "hub_failed");
+    onError: (error, command) => {
+      const sources =
+        command.type === "add" && "widget" in command
+          ? (command.widget?.sources ?? [])
+          : command.type === "setWidget"
+            ? (command.sources ?? [])
+            : [];
+      setChangeError({
+        code: error instanceof Error ? error.message : "hub_failed",
+        sources: sources.map((id) => ({ id })),
+      });
       // A refused layout or view shows the stored one again.
       void client.invalidateQueries({ queryKey: key });
     },
@@ -338,13 +362,7 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
     <section aria-label={copy.overview} className="flex flex-col gap-6">
       {header}
       {changeError && (
-        <Alert variant="destructive" data-testid="hub-error">
-          <AlertDescription>
-            {changeError in copy.errors
-              ? hubErrorText(copy, changeError)
-              : copy.changeFailed}
-          </AlertDescription>
-        </Alert>
+        <ChangeProblem copy={copy} error={changeError} isAdmin={isAdmin} />
       )}
       {!items.length && !editing ? (
         <Empty data-testid="hub-empty">
@@ -970,6 +988,80 @@ function RefreshButton({
   );
 }
 
+/** The step that fixes a failed widget: the app's connect flow, or the
+ * administration page (another app, so a plain link). */
+function FixAction({ fix, copy }: { fix: HubFix; copy: HubCopy }) {
+  return (
+    <Button variant="outline" size="sm" className="self-start" asChild>
+      {fix.kind === "connect" ? (
+        fix.serviceId ? (
+          <Link
+            to="/connections/$serviceId"
+            params={{ serviceId: fix.serviceId }}
+          >
+            <PlugZap data-icon="inline-start" aria-hidden="true" />
+            {copy.fix.connectAction}
+          </Link>
+        ) : (
+          <Link to="/connections">
+            <PlugZap data-icon="inline-start" aria-hidden="true" />
+            {copy.fix.connectAction}
+          </Link>
+        )
+      ) : (
+        <a href={fix.href}>{copy.fix[fix.label]}</a>
+      )}
+    </Button>
+  );
+}
+
+/** Why a widget couldn't fill, in one muted line, and the fix beside it. */
+function WidgetProblem({
+  problem,
+  copy,
+}: {
+  problem: ReturnType<typeof hubWidgetProblem>;
+  copy: HubCopy;
+}) {
+  if (!problem.fix && problem.text === copy.errors.other) return null;
+  return (
+    <div className="flex flex-col gap-2" data-testid="widget-error">
+      <p className="text-sm text-muted-foreground">{problem.text}</p>
+      {problem.fix && <FixAction fix={problem.fix} copy={copy} />}
+    </div>
+  );
+}
+
+/** A refused overview change; widget sources get the same fix as a fill. */
+function ChangeProblem({
+  copy,
+  error,
+  isAdmin,
+}: {
+  copy: HubCopy;
+  error: { code: string; sources: { id: string }[] };
+  isAdmin: boolean;
+}) {
+  const problem = hubWidgetProblem(copy, error.code, {
+    sources: error.sources,
+    isAdmin,
+  });
+  return (
+    <Alert variant="destructive" data-testid="hub-error">
+      <AlertDescription>
+        {problem.fix || error.code in copy.errors
+          ? problem.text
+          : copy.changeFailed}
+      </AlertDescription>
+      {problem.fix && (
+        <AlertAction>
+          <FixAction fix={problem.fix} copy={copy} />
+        </AlertAction>
+      )}
+    </Alert>
+  );
+}
+
 /** A widget of a registered type: its renderer shows the data the server filled. */
 function TypedWidget({
   item,
@@ -989,7 +1081,7 @@ function TypedWidget({
   onAskAbout: (name: string, detail?: string) => void;
 }) {
   const copy = useHubCopy();
-  const { language } = useApp();
+  const { language, isAdmin } = useApp();
   const widget = item.widget!;
   const definition = hubWidgetDefinition(widget.type);
   const renderer = widgetRenderer(widget.type);
@@ -1013,15 +1105,15 @@ function TypedWidget({
         <p className="text-sm text-muted-foreground">{copy.unknownType}</p>
       ) : (
         <>
-          {status === "failed" &&
-            hubErrorText(copy, result?.error) !== copy.errors.other && (
-              <p
-                data-testid="widget-error"
-                className="text-sm text-muted-foreground"
-              >
-                {hubErrorText(copy, result?.error)}
-              </p>
-            )}
+          {status === "failed" && (
+            <WidgetProblem
+              problem={hubWidgetProblem(copy, result?.error, {
+                sources: widget.sources,
+                isAdmin,
+              })}
+              copy={copy}
+            />
+          )}
           {data !== null && Body ? (
             <Body
               data={data}

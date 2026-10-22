@@ -284,6 +284,7 @@ export const CatalogCommand = z.discriminatedUnion("type", [
       .strictObject({
         enabled: z.boolean().optional(),
         approval: z.enum(["always", "never"]).optional(),
+        effect: z.enum(["read", "write"]).optional(),
         roles: z
           .array(OrganizationRole)
           .max(3)
@@ -396,6 +397,9 @@ export const ActionDiscoveryResponse = z.strictObject({
   enriched: z.boolean(),
   choices: z.array(DiscoveryChoice).max(1000).optional(),
   next: DiscoveryContinuation.optional(),
+  /** Saved write actions whose MCP tool the server labels read-only. A hint
+   * from the server, never applied on its own; an administrator may mark them. */
+  readOnly: z.array(IdentityId).max(1000).optional(),
 });
 export const DiscoveryRequest = CatalogTarget.extend({
   serviceId: IdentityId,
@@ -408,6 +412,22 @@ export const DiscoveryRequest = CatalogTarget.extend({
     .min(1)
     .max(1000)
     .refine((names) => new Set(names).size === names.length)
+    .optional(),
+  /** MCP: describe and import at most this many new actions now; the rest
+   * come back as `next`, so the console can show progress between requests. */
+  limit: z.number().int().min(1).max(1000).optional(),
+});
+/** Whether the service's address answers, with its shared credential. */
+export const ServiceProbeRequest = CatalogTarget.extend({
+  serviceId: IdentityId,
+});
+export const ServiceProbeResponse = z.strictObject({
+  /** ok: it answered; sign_in: it answered and wants a person's account;
+   * failed: it did not answer, `error` says why in one code. */
+  status: z.enum(["ok", "sign_in", "failed"]),
+  error: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]{0,63}$/)
     .optional(),
 });
 export const ModelDiscoveryRequest = CatalogTarget.extend({

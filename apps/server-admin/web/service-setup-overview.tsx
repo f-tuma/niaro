@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { z } from "zod";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, ListChecks, Pencil, Workflow } from "lucide-react";
+import { ChevronRight, Pencil, Workflow } from "lucide-react";
 import type {
   Service,
   ServiceAction,
@@ -43,6 +43,7 @@ import { useAdmin } from "./context";
 import { designCs, designEn } from "./process-design-copy";
 import { useWorkspaceProcesses } from "./service-process-overview";
 import { useServiceSetupCopy, serviceTabSchema } from "./service-setup-copy";
+import { ServiceChecklist } from "./service-checklist";
 
 /** How many actions and processes the overview previews before "View all". */
 const preview = 5;
@@ -89,40 +90,38 @@ export function ServiceSetupOverview({
             (id) => workspaceRoles.find((r) => r.id === id)?.name ?? id,
           ),
         ].join(", ") || catalog.noAccess;
-  // The one thing still missing before the service is useful, in setup order.
+  // The setup checklist covers the connection; then the first process.
   const next =
-    !canManage || !service.enabled
-      ? null
-      : !service.actions.length
-        ? {
-            icon: <ListChecks />,
-            title: copy.stepDiscover,
-            label: catalog.discover,
-            run: onDiscover,
-          }
-        : !enabled.length
-          ? {
-              icon: <ListChecks />,
-              title: copy.stepEnable,
-              label: copy.chooseActions,
-              run: () => onTab("actions"),
-            }
-          : processes && !processes.length
-            ? {
-                icon: <Workflow />,
-                title: copy.stepProcess,
-                label: copy.createProcess,
-                run: onCreateProcess,
-                // The header's assistant button turns secondary once actions are on.
-                primary: true,
-              }
-            : null;
+    canManage &&
+    service.enabled &&
+    enabled.length &&
+    processes &&
+    !processes.length
+      ? {
+          icon: <Workflow />,
+          title: copy.stepProcess,
+          label: copy.createProcess,
+          run: onCreateProcess,
+          // The header's assistant button turns secondary once actions are on.
+          primary: true,
+        }
+      : null;
   return (
     <div
       data-service-overview
       className="grid min-w-0 gap-8 xl:grid-cols-3 xl:gap-12"
     >
       <div className="flex min-w-0 flex-col gap-8 xl:col-span-2">
+        {canManage && (
+          <ServiceChecklist
+            state={state}
+            service={service}
+            who={accessLabel}
+            onEditConnection={onEditConnection}
+            onDiscover={onDiscover}
+            onTab={onTab}
+          />
+        )}
         {next && <NextStep {...next} />}
         <Section
           title={copy.purpose}
@@ -203,7 +202,7 @@ export function ServiceSetupOverview({
               <EmptyHeader>
                 <EmptyTitle>{catalog.noActions}</EmptyTitle>
               </EmptyHeader>
-              {canManage && !next && (
+              {canManage && (
                 <EmptyContent>
                   <Button variant="outline" onClick={onDiscover}>
                     {catalog.discover}

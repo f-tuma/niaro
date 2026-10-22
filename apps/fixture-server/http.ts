@@ -956,7 +956,14 @@ export function createFixtureServer(
       if (route === "mentions") {
         if (!accountWorkspace || !identity?.mobileMentions)
           return respond(404, { error: "not_found" });
-        if ([...url.searchParams.keys()].length)
+        // for=hub: only the services overview widgets can read.
+        const keys = [...url.searchParams.keys()];
+        const purpose = url.searchParams.get("for");
+        if (
+          keys.some((key) => key !== "for") ||
+          keys.length > 1 ||
+          (purpose !== null && purpose !== "hub")
+        )
           return respond(400, { error: "invalid_payload" });
         if (req.method !== "GET")
           return respond(405, { error: "method_not_allowed" });
@@ -966,6 +973,7 @@ export function createFixtureServer(
             req.headers.authorization,
             workspace,
             auth.serverId,
+            purpose === "hub" ? "hub" : undefined,
           ),
         );
       }

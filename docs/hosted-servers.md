@@ -53,6 +53,30 @@ An image instead of a package:
 | `secrets`        | no         | Names of secret variables. Their values are entered in administration, stored encrypted (AES-256-GCM, key derived from the identity `secret`) and passed as environment variables. A name left empty is not passed.         |
 | `memoryMb`       | no         | 128–4096, default 512. The container's hard limit, or the process's heap limit.                                                                                                                                             |
 | `path`           | no         | The MCP endpoint path, default `/mcp`. The service URL is `http://127.0.0.1:<port><path>`.                                                                                                                                  |
+| `onboarding`     | no         | How its service is set up, below. Only prefills; administrators change everything afterwards.                                                                                                                               |
+
+`onboarding` describes the catalog service **Create service** makes for the
+server:
+
+```json
+"onboarding": {
+  "icon": "mail",
+  "description": "Mail and calendar of each person's own Microsoft 365 account.",
+  "signIn": {
+    "provider": "microsoft",
+    "requiredFor": "all",
+    "scopes": ["Calendars.ReadWrite", "Mail.ReadWrite", "Mail.Send"]
+  }
+}
+```
+
+| Field                | Meaning                                                                                                                          |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `icon`               | The service icon: `plug`, `database`, `users`, `calendar`, `mail`, `code`, `folder` or `search`. Without it the favicon is used. |
+| `description`        | The service's purpose, at most 500 characters; the assistant routes by it.                                                       |
+| `signIn.provider`    | `microsoft` or `google`: each person signs in with their own account through an organization sign-in method of this kind.        |
+| `signIn.requiredFor` | `all` (default) or `writes`: which actions use the person's account.                                                             |
+| `signIn.scopes`      | Delegated permissions to request, at most 30; the sign-in scopes are added on their own.                                         |
 
 Reserved names cannot be used in `env` or `secrets`: `PATH`, `HOME`, `TMPDIR`
 and everything starting with `NODE_`, `LD_` or `DYLD_` (they could load code
@@ -78,12 +102,16 @@ nothing there):
 - **⋯ → Secrets** sets new values; an empty field keeps the stored one. Saving
   restarts the server.
 
-Then copy the server's URL into **Services → Add service** (protocol MCP). The
-hosted server's loopback origin is trusted automatically while it exists; it is
-reachable only from Niaro itself. For Microsoft 365 choose authentication
-_None_ (the hosted server holds no key) and set up personal sign-in on the
-service's **Access** tab with a Microsoft sign-in method and the Microsoft Graph
-permissions `Calendars.ReadWrite Mail.ReadWrite Mail.Send`.
+Once a server runs, its row offers **Create service**: it adds the MCP service
+for the current workspace with the server's name and URL, authentication _None_
+(the hosted server holds no key) and the definition's `onboarding`, then opens
+the service. When the definition asks for personal sign-in and the organization
+has an enabled sign-in method of that kind, the service's sign-in is set up too
+(for Microsoft 365: Microsoft, every action, `Calendars.ReadWrite
+Mail.ReadWrite Mail.Send`); otherwise the service's setup checklist says what is
+missing. A server that already has a service shows **Open service** instead.
+Nobody types the loopback URL: the hosted server's origin is trusted
+automatically while it exists and is reachable only from Niaro itself.
 
 **Who may add custom servers.** Custom definitions run code you chose on this
 machine, so the operator decides in the server profile. They are on by default
@@ -225,3 +253,32 @@ networks, sidecars).
 
 The container's isolation, updates and backups are yours: Niaro does not
 supervise it, show its log or keep its secrets.
+
+## Docker images on Dokploy
+
+The Niaro container has no Docker socket on purpose (access to Docker is
+root on the host), so on Dokploy hosted servers run as processes and image
+definitions are unavailable. Dokploy is itself a container platform: run an
+image MCP server as its own Dokploy application next to Niaro and connect it
+by URL.
+
+1. **Create Service → Application** in the same Dokploy project. Under
+   **General → Provider** choose _Docker_ and the image pinned by digest
+   (`ghcr.io/example/tracker-mcp@sha256:<64 hex>`). Its arguments, if any,
+   go in **Advanced → Run command**.
+2. **Environment**: the server's variables and secrets. Dokploy keeps them;
+   Niaro never sees them.
+3. Add **no domain** and publish **no port**: Dokploy attaches applications to
+   `dokploy-network`, the network Niaro's `compose.dokploy.yml` joins, so Niaro
+   reaches it by the application's **App Name** (shown under General, e.g.
+   `tracker-mcp-x1y2z3`) and nobody else can. To keep it in Niaro's compose
+   project instead, add it as a second service there on `dokploy-network`, as
+   in [Own compose service](#own-compose-service).
+4. Allow its origin: **Administration → Settings → Origins → Integration
+   origins**, add `http://<app-name>:<port>` (no path), save and restart
+   Niaro.
+5. **Services → Add service**, protocol MCP, URL
+   `http://<app-name>:<port>/mcp`, then follow the service's setup checklist.
+
+Dokploy restarts, updates and logs the application; Niaro does not supervise
+it.

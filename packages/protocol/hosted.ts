@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-redeclare -- Each schema deliberately shares its inferred TypeScript type name. */
 import { z } from "zod";
 import { IdentityId } from "./identity";
+import { ServiceIcon } from "./service-catalog";
+import { OAuthScope } from "./service-oauth";
 
 /** A built-in definition shipped with the server, e.g. microsoft-365. */
 export const HostedBuiltinId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/);
@@ -49,6 +51,25 @@ export const HostedEnvValue = z
   .string()
   .max(4096)
   .regex(/^[^\0\r\n]*$/);
+/**
+ * How a service for the server is set up: the catalog icon and purpose, and the
+ * personal sign-in each person completes with their own account. Prefills
+ * only; administrators can change everything afterwards.
+ */
+export const HostedOnboarding = z.strictObject({
+  icon: ServiceIcon.optional(),
+  description: z.string().trim().min(1).max(500).optional(),
+  signIn: z
+    .strictObject({
+      /** The kind of organization sign-in method the accounts come from. */
+      provider: z.enum(["microsoft", "google"]),
+      requiredFor: z.enum(["writes", "all"]).default("all"),
+      /** Delegated permissions; the sign-in scopes are added on their own. */
+      scopes: z.array(OAuthScope).max(30).default([]),
+    })
+    .optional(),
+});
+export type HostedOnboarding = z.infer<typeof HostedOnboarding>;
 export const HOSTED_DEFINITION_VERSION = 1;
 /**
  * One hosted MCP server, compose-like: what to run (an npm package at an exact
@@ -86,6 +107,7 @@ export const HostedDefinition = z
       .max(200)
       .regex(/^\/[A-Za-z0-9._~/-]*$/)
       .default("/mcp"),
+    onboarding: HostedOnboarding.optional(),
   })
   .superRefine((value, ctx) => {
     if ("npm" in value.source && !value.args.some((a) => a.includes("{port}")))

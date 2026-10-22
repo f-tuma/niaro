@@ -515,17 +515,18 @@ function WidgetForm({
   onSubmit: (value: FormValue) => void;
 }) {
   const copy = useHubCopy();
-  const { language } = useApp();
+  const { language, isAdmin } = useApp();
   const formId = useId();
   const [value, setValue] = useState(initial);
   const ai = definition.fill === "ai";
   const Config = widgetRenderer(definition.type)?.Config;
+  // Only services the overview can read: choosing another one is refused.
   const services = useQuery({
     queryKey: ["app", "hub-sources", session.identityKey],
     enabled: ai,
     retry: false,
     staleTime: 60_000,
-    queryFn: ({ signal }) => session.readMentions(signal),
+    queryFn: ({ signal }) => session.readMentions(signal, "hub"),
   });
   const choices = (services.data?.items ?? []).filter(
     (item) => item.kind === "service",
@@ -624,6 +625,22 @@ function WidgetForm({
                 ))}
               </ToggleGroup>
               <FieldDescription>{copy.sourcesHint}</FieldDescription>
+            </Field>
+          )}
+          {ai && services.isSuccess && !choices.length && (
+            <Field data-testid="hub-sources-none">
+              <FieldLabel>{copy.sourcesLabel}</FieldLabel>
+              <FieldDescription>{copy.sourcesNone}</FieldDescription>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  asChild
+                >
+                  <a href="/admin/services">{copy.fix.servicesAction}</a>
+                </Button>
+              )}
             </Field>
           )}
           {editing && ai && (

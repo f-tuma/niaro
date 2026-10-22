@@ -110,8 +110,10 @@ sizes).
 ### How an AI widget is filled
 
 A typed widget stores `{type, version, brief, config, sources, data, recipe,
-requested}`; `sources` are services the person pointed it at (picked from the
-`@` mentions directory), a hint that narrows where it reads, never a grant.
+requested}`; `sources` are services the person pointed it at (picked from
+`GET /v1/:workspace/mentions?for=hub`, the services `hubReadableServices`
+lists now, same schema as the `@` directory), a hint that narrows where it
+reads, never a grant.
 A refresh (`apps/server-identity/hub-fill.ts`, run by `HubRunner` under the
 person's live credential, `IdentityService.hubFill`) is:
 
@@ -159,6 +161,28 @@ Failures keep the last good data and show a short reason:
 `hub_fill_invalid`, `hub_fill_no_data` (nothing was read),
 `hub_fill_failed`, `hub_source_unavailable`, `service_unavailable`,
 `connection_required` (a personal service needs sign-in), budget codes.
+
+#### When a widget can't fill
+
+Overview widgets read only **enabled read actions that run without approval**.
+An MCP server's tools are imported as changes that ask first (its
+`readOnlyHint` is not trusted), so a new MCP service is not readable until an
+administrator marks its reads as _Read_ (the service's setup offers to apply
+the server's read-only labels). The widget (or the alert above the grid, for
+a refused add or change) shows one line and the step that fixes it
+(`hubWidgetProblem`, `apps/server-admin/web/app/hub-copy.ts`):
+
+| Code                                          | The person sees                                | Fix                                                                                                     |
+| --------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `connection_required`                         | Your account isn't connected to the service    | **Connect account**: `/connections/<service>` (one source) or `/connections`                            |
+| `model_unavailable`, `catalog_model_required` | The overview has no AI model                   | Admins: **Model routing** (`/admin/routing`); others: "Ask an administrator"                            |
+| `service_unavailable`                         | No service the overview can read yet           | Admins: **Services** (`/admin/services`); others: "Ask an administrator"                                |
+| `hub_source_unavailable`                      | The overview can't read the chosen service     | Admins: **Open service** (`/admin/services/<id>`); others: "Ask an administrator"                       |
+| `hub_fill_no_data`, `hub_fill_failed`         | The assistant found nothing / couldn't read it | Refresh, or change the request                                                                          |
+| `hub_conflict`, `hub_changed`                 | nothing at first                               | The change is sent once more on its own; a second refusal says "The overview didn't change. Try again." |
+
+The widget form offers only readable services as sources; with none it says
+so, and admins get a link to the services.
 
 ### Opening an item
 

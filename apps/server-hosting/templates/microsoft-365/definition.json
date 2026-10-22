@@ -16,5 +16,14 @@
   "env": { "MS365_MCP_BODY_FORMAT": "html" },
   "secrets": [],
   "memoryMb": 512,
-  "path": "/mcp"
+  "path": "/mcp",
+  "onboarding": {
+    "icon": "mail",
+    "description": "Mail and calendar of each person's own Microsoft 365 account.",
+    "signIn": {
+      "provider": "microsoft",
+      "requiredFor": "all",
+      "scopes": ["Calendars.ReadWrite", "Mail.ReadWrite", "Mail.Send"]
+    }
+  }
 }
