@@ -19,7 +19,15 @@ if (!files.length) {
 }
 const result = spawnSync(
   process.execPath,
-  ["--import", "tsx", "--test", `--test-shard=${shard}`, ...files],
+  [
+    "--import",
+    "tsx",
+    "--test",
+    `--test-shard=${shard}`,
+    // A hung test fails with its name instead of the job's time limit.
+    "--test-timeout=480000",
+    ...files,
+  ],
   { stdio: "inherit" },
 );
 process.exit(result.status ?? 1);
