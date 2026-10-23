@@ -25,6 +25,27 @@ import {
 } from "./agent-trust/harness";
 
 const sentinel = "TEST_PRIVATE_NATIVE_ARGUMENT_CREDENTIAL";
+/** Provider requests without the arguments of the model's own valid tool
+ * calls: a run shows those back to the model, nothing else may carry them. */
+const withoutOwnCalls = (requests: unknown[]) =>
+  (requests as { messages?: unknown[] }[]).map((request) => ({
+    ...request,
+    messages: request.messages?.map((message) => {
+      const m = message as {
+        role?: string;
+        tool_calls?: { function: Record<string, unknown> }[];
+      };
+      return m.role === "assistant" && m.tool_calls
+        ? {
+            ...m,
+            tool_calls: m.tool_calls.map((call) => ({
+              ...call,
+              function: { ...call.function, arguments: "{}" },
+            })),
+          }
+        : m;
+    }),
+  }));
 const rejection = (
   body: Parameters<Parameters<TrustHarness["onChat"]>[0]>[0],
 ) => toolResults(body).find((result) => result.error === "invalid_arguments");
@@ -227,6 +248,63 @@ async function assertPrivateRejection(
       "Malformed argument data must stay out of journals, transcript, later provider requests and Loops DTOs",
     );
 }
+
+test("the model sees the arguments it sent in this run, and earlier turns' calls only as a note", async () => {
+  const h = createTrustHarness();
+  try {
+    const assistantCalls = (
+      body: Parameters<Parameters<TrustHarness["onChat"]>[0]>[0],
+    ) =>
+      (body.messages ?? []).flatMap((message) =>
+        message.role === "assistant"
+          ? ((
+              message as {
+                tool_calls?: {
+                  function: { name: string; arguments: string };
+                }[];
+              }
+            ).tool_calls ?? [])
+          : [],
+      );
+    let step = 0;
+    h.onChat((body) => {
+      step++;
+      if (step === 1)
+        return h.call("find_actions", {
+          service: "TEST Calendar and contacts",
+          need: "find contact",
+        });
+      // Its own earlier call comes back exactly as sent, never as {}.
+      const calls = assistantCalls(body);
+      assert.equal(calls.length, 1);
+      assert.deepEqual(JSON.parse(calls[0]!.function.arguments), {
+        service: "TEST Calendar and contacts",
+        need: "find contact",
+      });
+      return { content: "TEST done" };
+    });
+    await h.send("Find Jane Test in CRM");
+    // Stored history stays opaque.
+    const state = h.commandState();
+    const stored = (await h.nativeInvocations(state.threadId)).filter(
+      (call) => call.toolName === "find_actions",
+    );
+    assert.deepEqual(stored[0]!.args, {});
+    // The next turn gets no call to copy: a note names it instead.
+    h.onChat((body) => {
+      assert.equal(assistantCalls(body).length, 0);
+      assert((body.messages ?? []).every((message) => message.role !== "tool"));
+      assert.match(
+        JSON.stringify(body.messages),
+        /Earlier tool calls, not kept in history: find_actions/,
+      );
+      return { content: "TEST greeting" };
+    });
+    await h.send("TEST ordinary greeting");
+  } finally {
+    await h.close();
+  }
+});
 
 test("native argument compiler is strict, nonmutating and fails closed for unsupported schemas", () => {
   const validate = nativeToolValidator({
@@ -1309,7 +1387,9 @@ for (const [reserved, propertySchema, value] of reservedBusinessProperties) {
           assert.deepEqual(Object.keys(parameters.properties), [
             "niaroBusinessInput",
           ]);
-          assert(!JSON.stringify(probe.requests).includes(sentinel));
+          assert(
+            !JSON.stringify(withoutOwnCalls(probe.requests)).includes(sentinel),
+          );
           const inspected = await probe.runtime.inspect({
             threadId: probe.input(schema).threadId,
             resourceId: probe.input(schema).resourceId,

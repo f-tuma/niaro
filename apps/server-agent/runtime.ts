@@ -392,10 +392,27 @@ function historicalResult(value: unknown) {
   };
 }
 
-/** On-read projection also covers pre-migration memory rows and restored checkpoint history. */
+/**
+ * The note that replaces an earlier turn's tool calls in the prompt. History
+ * keeps no tool arguments (privacy), and a call shown with empty arguments
+ * is one the model copies, so earlier calls are named, never replayed.
+ */
+const EARLIER_CALLS_NOTE = (calls: string[]) =>
+  `[Earlier tool calls, not kept in history: ${[...new Set(calls)].join(", ")}. Their arguments and results are gone; call a tool again with complete arguments when you need its result.]`;
+
+/**
+ * What the provider sees of the conversation. Calls of this run show the
+ * arguments the model actually sent (`currentInputs`): stored history is
+ * opaque, and a call replayed as `{}` teaches the model to send `{}`. Calls of
+ * earlier turns become a short note, their results dropped with them, unless
+ * a result belongs to the current turn (a resumed approval). On-read
+ * projection also covers pre-migration memory rows and restored checkpoint
+ * history.
+ */
 function projectProviderHistory(
   prompt: NativePrompt,
   messageList?: MessageList,
+  currentInputs: ReadonlyMap<string, unknown> = new Map(),
 ): NativePrompt {
   const privateSegments = new Set<number>();
   let segment = -1;
@@ -433,38 +450,100 @@ function projectProviderHistory(
     )
       privateSegments.add(segments[index]!);
   }
-  return prompt.map((message, index) => {
+  // A result in the current turn keeps its call, whenever it was made.
+  const answeredNow = new Set<string>();
+  for (const [index, message] of prompt.entries())
+    if (message.role === "tool" && segments[index] === latestSegment)
+      for (const part of message.content)
+        if (part.type === "tool-result") answeredNow.add(part.toolCallId);
+  const earlier = new Set<string>();
+  for (const [index, message] of prompt.entries())
+    if (message.role === "assistant" && segments[index]! < latestSegment)
+      for (const part of message.content)
+        if (
+          part.type === "tool-call" &&
+          !currentInputs.has(part.toolCallId) &&
+          !answeredNow.has(part.toolCallId)
+        )
+          earlier.add(part.toolCallId);
+  // How each replaced call ended, from its opaque receipt, for the note.
+  const outcomes = new Map<string, string>();
+  for (const message of prompt)
+    if (message.role === "tool")
+      for (const part of message.content)
+        if (part.type === "tool-result" && earlier.has(part.toolCallId)) {
+          const value =
+            part.output.type === "json"
+              ? historicalResult(part.output.value)
+              : {};
+          const status =
+            "status" in value && typeof value.status === "string"
+              ? value.status
+              : undefined;
+          if (status) outcomes.set(part.toolCallId, status);
+        }
+  const projected: NativePrompt = [];
+  for (const [index, message] of prompt.entries()) {
     const historicalPrivate =
       segments[index]! < latestSegment &&
       (!messageList || privateSegments.has(segments[index]!));
-    if (message.role === "assistant")
-      return {
-        ...message,
-        content: message.content.map((part) => {
-          if (part.type === "tool-call") return { ...part, input: {} };
-          if (
-            historicalPrivate &&
+    if (message.role === "assistant") {
+      const content: typeof message.content = [];
+      const replaced: string[] = [];
+      for (const part of message.content) {
+        if (part.type === "tool-call" && earlier.has(part.toolCallId)) {
+          const outcome = outcomes.get(part.toolCallId);
+          replaced.push(
+            outcome ? `${part.toolName} (${outcome})` : part.toolName,
+          );
+          continue;
+        }
+        if (part.type === "tool-call") {
+          content.push({
+            ...part,
+            input: currentInputs.has(part.toolCallId)
+              ? (currentInputs.get(part.toolCallId) ?? {})
+              : {},
+          });
+          continue;
+        }
+        content.push(
+          historicalPrivate &&
             (part.type === "text" || part.type === "reasoning")
-          )
-            return { ...part, text: "[Prior private response withheld]" };
-          return part;
-        }),
-      };
-    if (message.role === "tool" && historicalPrivate)
-      return {
-        ...message,
-        content: message.content.map((part) => ({
-          ...part,
-          output: {
-            type: "json" as const,
-            value: historicalResult(
-              part.output.type === "json" ? part.output.value : undefined,
-            ),
-          },
-        })),
-      };
-    return message;
-  });
+            ? { ...part, text: "[Prior private response withheld]" }
+            : part,
+        );
+      }
+      if (replaced.length)
+        content.push({ type: "text", text: EARLIER_CALLS_NOTE(replaced) });
+      if (content.length) projected.push({ ...message, content });
+      continue;
+    }
+    if (message.role === "tool") {
+      const content = message.content
+        .filter(
+          (part) =>
+            part.type !== "tool-result" || !earlier.has(part.toolCallId),
+        )
+        .map((part) =>
+          historicalPrivate && part.type === "tool-result"
+            ? {
+                ...part,
+                output: {
+                  type: "json" as const,
+                  value: historicalResult(
+                    part.output.type === "json" ? part.output.value : undefined,
+                  ),
+                },
+              }
+            : part,
+        );
+      if (content.length) projected.push({ ...message, content });
+      continue;
+    }
+    projected.push(message);
+  }
+  return projected;
 }
 function newOwner(storageUrl: string): Owner {
   const storage = new LibSQLStore({
@@ -674,6 +753,10 @@ export function createNativeAgentRuntime(storageUrl: string) {
     // null before tool.execute. Retain the supplied JSON before those adaptations.
     const suppliedInputs = new Map<string, { name: string; input: unknown }>();
     const suppliedCallIds = new Set<string>();
+    // What the model sent for each valid call it made in this run, shown back
+    // to it in later steps. Stored history keeps none of it, and a call
+    // restored from a checkpoint stays opaque: its authority is re-derived.
+    const promptInputs = new Map<string, unknown>();
     const definitionsByName = new Map(
       input.definitions.map((tool) => [tool.name, tool]),
     );
@@ -755,6 +838,9 @@ export function createNativeAgentRuntime(storageUrl: string) {
             typeof original !== "object" ||
             Array.isArray(original)) ||
         validation?.valid === false;
+      // Only a valid call is shown back with its arguments; a rejected one
+      // may carry anything and keeps the opaque form beside its error.
+      if (!invalid) promptInputs.set(call.toolCallId, original);
       // A durable rejection marker survives a crash before execute without
       // storing malformed inputs or accepting cleaned empty arguments on replay.
       const safeCall = definition
@@ -1153,7 +1239,9 @@ export function createNativeAgentRuntime(storageUrl: string) {
         }
       },
       processLLMRequest({ prompt, messageList }) {
-        return { prompt: projectProviderHistory(prompt, messageList) };
+        return {
+          prompt: projectProviderHistory(prompt, messageList, promptInputs),
+        };
       },
     } satisfies Processor;
     const verification = {
@@ -1505,6 +1593,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
       throw fatal ?? error;
     } finally {
       suppliedInputs.clear();
+      promptInputs.clear();
       suppliedCallIds.clear();
       try {
         await owner.memory.settled();

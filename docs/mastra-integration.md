@@ -109,9 +109,22 @@ generation pins across turns, without copying the transcript. Every dispatch
 revalidates it. A new task rotates to a fresh native thread when old authority
 expires, changes or is unmapped; an explicit pending continuation keeps its exact
 thread and fails before attachment. Capacity never silently drops a dependency.
-Jev receives human-authored history and freshly authorized evidence. Native
-provider history projects tool arguments as opaque and withholds old private or
-unmarked assistant text; server-marked public conversation remains available.
+Jev receives human-authored history and freshly authorized evidence. Stored
+native history keeps tool arguments opaque (`{}`). What the provider sees is
+projected on every model call (`projectProviderHistory`):
+
+- A valid call the model made in the current run shows the arguments it
+  actually sent. A call replayed as `{}` is one the model copies, which made
+  later calls fail validation until the step limit.
+- A rejected call stays opaque beside its error, and a call restored from a
+  checkpoint stays opaque: its authority is derived again.
+- Earlier turns' calls are not replayed: each assistant message's calls
+  become one note naming them and how they ended (for example
+  `find_actions (succeeded)`), and their results are dropped with them, unless
+  a result belongs to the current turn (a resumed approval).
+- Old private or unmarked assistant text is withheld; server-marked public
+  conversation remains available.
+
 This projection also covers old native rows without modifying executable calls.
 An answered clarification retains its exact server question as bounded business
 InputRequest metadata. Current authority guards its transient projection into

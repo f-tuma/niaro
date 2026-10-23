@@ -23,7 +23,7 @@ function checkpointMessages(value: unknown): MastraDBMessage[] {
   });
 }
 
-test("valid thread authority still projects unmarked legacy native rows without losing call/result pairs or public conversation", async () => {
+test("valid thread authority still projects unmarked legacy native rows, naming earlier calls in a note and keeping public conversation", async () => {
   const h = createTrustHarness();
   let storage: LibSQLStore | undefined;
   try {
@@ -126,21 +126,28 @@ test("valid thread authority still projects unmarked legacy native rows without 
       ),
       "Server-stamped public assistant history remains available",
     );
-    const call = captured.messages
-      .flatMap((message) => message.tool_calls ?? [])
-      .find((call) => call.id === callId);
-    assert(call, "Projection must retain the historical native tool call ID");
-    assert.deepEqual(JSON.parse(call.function.arguments), {});
-    const result = captured.messages.find(
-      (message) => message.role === "tool" && message.tool_call_id === callId,
+    // An earlier turn's call is never replayed with empty arguments the model
+    // could copy: the pair becomes a note with the call's name and outcome.
+    assert(
+      !captured.messages
+        .flatMap((message) => message.tool_calls ?? [])
+        .some((call) => call.id === callId),
+      "Projection must not replay an earlier call without its arguments",
     );
-    assert(result, "Projection must retain the exact paired result ID");
-    assert.deepEqual(JSON.parse(result.content!), {
-      operationId: "a".repeat(64),
-      status: "succeeded",
-      effect: "write",
-      toolResult: true,
-    });
+    assert(
+      !captured.messages.some(
+        (message) => message.role === "tool" && message.tool_call_id === callId,
+      ),
+      "Its result goes with it",
+    );
+    assert(
+      captured.messages.some((message) =>
+        /Earlier tool calls, not kept in history: [^\]]*\(succeeded\)/.test(
+          message.content ?? "",
+        ),
+      ),
+      "A note names the earlier call and how it ended",
+    );
     assert.equal(h.network.length, 0);
   } finally {
     await storage?.close();
