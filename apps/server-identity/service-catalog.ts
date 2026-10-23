@@ -384,6 +384,7 @@ export class ServiceCatalogStore {
     id: string,
     capability:
       | "tools"
+      | "chat"
       | "audioInput"
       | "audioOutput"
       | "decision"
@@ -399,7 +400,9 @@ export class ServiceCatalogStore {
         ? model.kind === capability
         : capability === "tools"
           ? (model.kind === "chat" || model.kind === "router") && model.tools
-          : model.kind === "chat" && model[capability];
+          : capability === "chat"
+            ? model.kind === "chat" || model.kind === "router"
+            : model.kind === "chat" && model[capability];
     const openRouter =
       value.provider.url.replace(/\/$/, "") === "https://openrouter.ai/api/v1";
     if (
@@ -459,6 +462,21 @@ export class ServiceCatalogStore {
           zeroDataRetention: route.zeroDataRetention,
         }
       : undefined;
+  }
+  /**
+   * The model of the web plugin's searches: the organization's chat model
+   * with this model ID (for example "openai/gpt-4o-mini") on an OpenRouter
+   * provider, or the workspace's chat model when the ID is empty. The
+   * decision model answers through another API and cannot search.
+   */
+  resolveWebSearch(orgId: string, workspaceId: string, model: string) {
+    const id = model
+      ? this.rows(orgId, "model").find(
+          (row) => this.readModel(orgId, row).model === model,
+        )?.id
+      : this.routing(workspaceId).modelId;
+    if (!id) throw new IdentityError(409, "catalog_model_unavailable");
+    return this.model(orgId, id, "chat");
   }
   resolveDecision(orgId: string, workspaceId: string) {
     const route = this.routing(workspaceId).decision;

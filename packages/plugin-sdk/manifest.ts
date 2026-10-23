@@ -61,8 +61,12 @@ export const ToolManifestSchema = z.strictObject({
 });
 export type ToolManifest = z.infer<typeof ToolManifestSchema>;
 
-/** Host capabilities a plugin may ask for. Only memory exists today. */
-export const PluginCapability = z.enum(["memory"]);
+/**
+ * Host capabilities a plugin may ask for. memory: the person's saved memory
+ * (the memory plugin only). web: public web pages and web search through the
+ * server's guarded transport and the workspace's model (see docs/web.md).
+ */
+export const PluginCapability = z.enum(["memory", "web"]);
 
 export const PluginManifestSchema = z
   .strictObject({
@@ -75,8 +79,9 @@ export const PluginManifestSchema = z
      * pure: tools compute a result from their input and the turn's clock.
      * context: tools work with the person's saved context through a host
      * capability (memory).
+     * network: tools read the public web through the host's web capability.
      */
-    effect: z.enum(["pure", "context"]),
+    effect: z.enum(["pure", "context", "network"]),
     capabilities: z.array(PluginCapability).max(1).default([]),
     tools: z.array(ToolManifestSchema).min(1).max(10),
     settings: z
@@ -108,10 +113,15 @@ export const PluginManifestSchema = z
       issue("effect context goes with the memory capability, pure without", [
         "effect",
       ]);
+    if (
+      (manifest.effect === "network") !==
+      manifest.capabilities.includes("web")
+    )
+      issue("effect network goes with the web capability", ["effect"]);
     const prefix =
-      manifest.effect === "pure"
-        ? `internal_${manifest.id.replaceAll("-", "_")}_`
-        : "memory_";
+      manifest.effect === "context"
+        ? "memory_"
+        : `internal_${manifest.id.replaceAll("-", "_")}_`;
     manifest.tools.forEach((tool, index) => {
       if (!tool.name.startsWith(prefix) || tool.name.length <= prefix.length)
         issue(`Tool names of this plugin start with ${prefix}`, [
@@ -119,8 +129,13 @@ export const PluginManifestSchema = z
           index,
           "name",
         ]);
-      if (manifest.effect === "pure" && tool.access !== "read")
-        issue("Pure tools only read", ["tools", index, "access"]);
+      if (manifest.effect !== "context" && tool.access !== "read")
+        issue(
+          manifest.effect === "pure"
+            ? "Pure tools only read"
+            : "Network tools only read",
+          ["tools", index, "access"],
+        );
     });
   });
 export type PluginManifest = z.infer<typeof PluginManifestSchema>;

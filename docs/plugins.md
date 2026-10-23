@@ -1,8 +1,9 @@
 # Plugins
 
 A plugin gives the assistant's agent tools that run on the server: a
-calculation the model must not do itself (date & time), or a way to work with
-the person's saved context (memory). A plugin is two files in a directory:
+calculation the model must not do itself (date & time), a way to work with
+the person's saved context (memory), or a read of the public web (web). A
+plugin is two files in a directory:
 
 ```
 plugins/datetime/
@@ -10,11 +11,13 @@ plugins/datetime/
   index.ts      how its tools work
 ```
 
-The server ships two plugins, `datetime` and `memory`, in `plugins/` of the
-repository and the image. They are the reference examples: read
+The server ships three plugins, `datetime`, `memory` and `web`, in `plugins/`
+of the repository and the image. They are the reference examples: read
 [`plugins/datetime/index.ts`](../plugins/datetime/index.ts) for a pure
-calculation and [`plugins/memory/index.ts`](../plugins/memory/index.ts) for
-write tools that need the person's explicit command. An owner can open,
+calculation, [`plugins/memory/index.ts`](../plugins/memory/index.ts) for
+write tools that need the person's explicit command and
+[`plugins/web/index.ts`](../plugins/web/index.ts) for read tools that reach
+the web through a host capability ([The web](web.md)). An owner can open,
 change and add plugins in **Administration → Plugins**, or put them in the
 server's data directory.
 
@@ -74,6 +77,12 @@ change to the server itself. See [Security](#security).
   `ctx.memory`, which the server backs with the memory store (one transaction
   per change, retries return the first result, revisions, retention, erasure;
   see [ADR 016](adr/016-scoped-agent-memory.md)).
+- **Network plugins** (`"effect": "network"`) read the public web through
+  the host's `web` capability, `ctx.web` (see below and [The web](web.md)).
+  Their tools are reads and return any JSON object, also as a promise. The
+  host counts their calls per agent run (8 searches, 12 reads), adds the
+  untrusted-web-content note to every result and keeps the results private,
+  like service reads: they are not replayed into later turns.
 - Tool results are data for the model, never permission. A plugin result
   does not approve an action; external writes keep their own approval.
 
@@ -88,6 +97,9 @@ change to the server itself. See [Security](#security).
   administrator turns one on in Administration → Plugins → the plugin. Name
   it in `plugins.enabled` to have it on for workspaces on the server's
   defaults.
+- **Web** is a built-in that is available in every workspace and starts
+  off, like an operator plugin, whatever `plugins.enabled` says; name it
+  there to have it on for workspaces on the server's defaults.
 - An override replaces the built-in in every workspace where it is on.
 - Deleting a plugin removes it from every workspace; a saved workspace list
   naming it simply ignores it.
@@ -182,21 +194,22 @@ saves in `.staging/`). At most 50 operator plugins load.
 | `version`      | yes      | Whole number ≥ 1. Raise it when the tools behave differently; receipts record it.                                                                                      |
 | `name`         | yes      | `{ "en", "cs" }`, shown in the console.                                                                                                                                |
 | `description`  | yes      | `{ "en", "cs" }`, one sentence for the plugin's card.                                                                                                                  |
-| `effect`       | yes      | `pure` (computes) or `context` (works with saved context; needs a capability).                                                                                         |
-| `capabilities` | no       | `["memory"]` for the memory plugin only.                                                                                                                               |
+| `effect`       | yes      | `pure` (computes), `context` (works with saved context; needs `memory`) or `network` (reads the public web; needs `web`).                                              |
+| `capabilities` | no       | `["memory"]` for the memory plugin only; `["web"]` for a network plugin.                                                                                               |
 | `tools`        | yes      | 1–10 tools: `name`, `title` `{ en, cs }`, `access` (`read`, `write`), `approval` (`none`, `explicit_command`).                                                         |
 | `settings`     | no       | Up to 20 fields by key (`camelCase`): `type` `boolean` / `integer` (`min`, `max`) / `string` (`maxLength` ≤ 500, optional `options`); `label` `{ en, cs }`; `default`. |
 
 Rules checked at load:
 
-- Tool names are unique and, for a pure plugin, start with
+- Tool names are unique and, for a pure or network plugin, start with
   `internal_<id with - as _>_` (for `word-count`: `internal_word_count_`).
   Memory's tools start with `memory_`. So a plugin cannot shadow a server
   tool such as `ask_user` or an `action_…`.
-- `write` goes with `explicit_command`, `read` with `none`. Pure tools are
-  read-only.
+- `write` goes with `explicit_command`, `read` with `none`. Pure and network
+  tools are read-only.
 - `context` goes with the `memory` capability, and only the plugin `memory`
-  has it.
+  has it. `network` goes with the `web` capability; any plugin may declare
+  it.
 - An override keeps the built-in's effect and every one of its tool names
   (the server and its prompts rely on them); it may add tools.
 - Unknown fields are an error.
@@ -241,26 +254,48 @@ checker (`tsconfig.json` `paths`).
 
 ### SDK reference (`packages/plugin-sdk`)
 
-| Export                                                                                   | What it is                                                                                                                                                                           |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `definePlugin({ tools })`                                                                | The plugin definition. Returns it unchanged.                                                                                                                                         |
-| `defineTool({ name, description, input, run })`                                          | One tool. `input` is a zod schema; the server validates the model's arguments with it and generates the JSON schema the model sees from it. `run(input, ctx)` gets the parsed input. |
-| `resolved(values)`                                                                       | A pure tool's result: `{ status: "resolved", values }`.                                                                                                                              |
-| `z`                                                                                      | zod 4, the same instance the server uses.                                                                                                                                            |
-| `PluginSdk`, `ToolContext`, `PureToolResult`, `MemoryCapability`, `PluginManifestSchema` | Types, and the manifest schema the server validates with.                                                                                                                            |
+| Export                                                                                                    | What it is                                                                                                                                                                           |
+| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `definePlugin({ tools })`                                                                                 | The plugin definition. Returns it unchanged.                                                                                                                                         |
+| `defineTool({ name, description, input, run })`                                                           | One tool. `input` is a zod schema; the server validates the model's arguments with it and generates the JSON schema the model sees from it. `run(input, ctx)` gets the parsed input. |
+| `resolved(values)`                                                                                        | A pure tool's result: `{ status: "resolved", values }`.                                                                                                                              |
+| `z`                                                                                                       | zod 4, the same instance the server uses.                                                                                                                                            |
+| `PluginSdk`, `ToolContext`, `PureToolResult`, `MemoryCapability`, `WebCapability`, `PluginManifestSchema` | Types, and the manifest schema the server validates with.                                                                                                                            |
 
 `ToolContext` (`ctx`):
 
-| Field                     | Value                                                                                                |
-| ------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `pluginId`                | The plugin's id.                                                                                     |
-| `now`                     | The turn's reference instant (ISO, UTC). A retried turn keeps it.                                    |
-| `timeZone`                | The person's IANA zone for the turn: the device's, else the workspace default.                       |
-| `settings`                | This workspace's values of the plugin's settings (frozen).                                           |
-| `workspaceId`, `personId` | Whom the agent works for.                                                                            |
-| `request`                 | Context tools: the person's latest message (`text`, `commandId`, `conversationId`).                  |
-| `memory`                  | Context tools of the memory plugin: `search`, `remember`, `forget`, `revise`.                        |
-| `log`                     | `info` / `warn` / `error(message, details?)` → operator log `plugin_log`. Never log message content. |
+| Field                     | Value                                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pluginId`                | The plugin's id.                                                                                                                           |
+| `now`                     | The turn's reference instant (ISO, UTC). A retried turn keeps it.                                                                          |
+| `timeZone`                | The person's IANA zone for the turn: the device's, else the workspace default.                                                             |
+| `settings`                | This workspace's values of the plugin's settings (frozen).                                                                                 |
+| `workspaceId`, `personId` | Whom the agent works for.                                                                                                                  |
+| `request`                 | Context tools: the person's latest message (`text`, `commandId`, `conversationId`).                                                        |
+| `memory`                  | Context tools of the memory plugin: `search`, `remember`, `forget`, `revise`.                                                              |
+| `web`                     | Network tools (capability `web`): `search({ query, limit, freshness?, model?, engine?, zeroDataRetention? })` and `fetch(url)`; see below. |
+| `log`                     | `info` / `warn` / `error(message, details?)` → operator log `plugin_log`. Never log message content.                                       |
+
+### The web capability (`ctx.web`)
+
+Only a plugin whose `plugin.json` declares `"effect": "network"` and
+`"capabilities": ["web"]` gets it. It is the way to the server's guarded
+transport and the workspace's models; use it instead of Node's own network
+modules, which bypass every check below.
+
+- `fetch(url)` reads one public page and resolves to `{ url, finalUrl,
+contentType, title, text, truncated }`: HTML already converted to text with
+  `[text](url)` links, at most 100,000 characters. Public addresses only,
+  each of at most 3 redirects re-checked, 15 s, 2 MB, only HTML, plain text,
+  Markdown and JSON.
+- `search({ query, limit })` runs one OpenRouter web search with the
+  workspace's chat model (or `model`, a model ID of the organization's AI
+  models), paid from the run's inference budget, and resolves to `{ results:
+[{ title, url, snippet, date? }], model }`.
+- A refused or failed call throws; the host turns it into `{ error: "web_…" }`
+  for the model, so a tool does not need to catch. Per agent run the host
+  allows 8 searches and 12 fetches over all network plugins and logs counts,
+  never content (`web_search`, `web_read`).
 
 Results:
 
@@ -270,7 +305,8 @@ Results:
   the date and time reasons, which stops the action flow and asks the
   person. A promise, a nested value or a longer string is an error the model
   sees as `invalid_plugin_arguments`.
-- **Context tools** return any JSON object, also as a promise.
+- **Context and network tools** return any JSON object, also as a promise
+  (a network tool's result at most 60,000 characters as JSON).
 - Throwing (including a failed input validation) is a failed call; the model
   is told, the turn goes on.
 
@@ -367,8 +403,11 @@ The repository's own tests: `tests/plugins.node.ts` (manifest rules, loading,
 overrides, invalid plugins, files), `tests/plugin-files-http.node.ts` (the
 console API: owner only, validation, reset, audit, the switch, a tool reaching
 the agent), `tests/server-plugins.test.ts` (date arithmetic),
-`tests/memory-runtime.node.ts` and the memory suites, and
-`tests/web-plugin-files.test.tsx` (the editor page).
+`tests/memory-runtime.node.ts` and the memory suites,
+`tests/web-plugin.node.ts` (the web plugin: addresses, redirects, conversion,
+search mapping, caps, privacy), `tests/web-plugin-files.test.tsx` (the editor
+page) and `tests/web-plugin-web-settings.test.tsx` (the web plugin's
+settings).
 
 ## Security
 
@@ -380,6 +419,8 @@ What the server enforces for every plugin, edited or not:
   pure calls per message; pure results are flat, bounded values.
 - Write tools are declared, need `explicit_command`, and exist only with the
   memory capability, whose store keeps attribution, revisions and erasure.
+- The web capability reaches public addresses only, within its limits, and
+  marks its results as untrusted, private context.
 - Per-workspace enablement under the profile's allowlist; settings validated
   against the declaration.
 - A plugin result never approves an external action.
@@ -404,8 +445,9 @@ edited memory plugin could also drop its explicit-command check. Therefore:
   use top-level `await`.
 - Node keeps every saved version of a module in memory until the server
   restarts (each save imports a fresh copy).
-- No general key-value store and no network or secret capability for
-  plugins yet; write tools exist only for memory.
+- No general key-value store and no secret capability for plugins yet; the
+  only network access through the server is the read-only web capability;
+  write tools exist only for memory.
 - Only date & time shows a progress row in the chat; the console's run
   timeline shows other plugins' calls as unknown tools, without arguments.
 - The chat runtimes kept for replaying older commands offer only date & time.

@@ -14,14 +14,15 @@ import {
   type PluginSettings,
   type ProfilePluginSettingsSchema,
 } from "../server-plugins/registry";
-import { pluginCatalog } from "../server-plugins/catalog";
+import { OPT_IN_PLUGINS, pluginCatalog } from "../server-plugins/catalog";
 import { IdentityError } from "./error";
 import type { z } from "zod";
 
 /**
  * Workspace overrides can narrow the operator's allowlist, never widen it.
- * A plugin is available when the profile enables it, or when the operator
- * added it to the data directory (it starts off in every workspace).
+ * A plugin is available when the profile enables it, when the operator
+ * added it to the data directory, or when it is an opt-in built-in (web);
+ * the last two start off in every workspace.
  */
 export class WorkspacePluginStore {
   private profile: z.input<typeof ProfilePluginSettingsSchema>;
@@ -47,7 +48,9 @@ export class WorkspacePluginStore {
     const plugin = pluginCatalog().plugins.get(id);
     return (
       !!plugin &&
-      (plugin.source === "operator" || this.defaults.enabled.includes(id))
+      (plugin.source === "operator" ||
+        OPT_IN_PLUGINS.has(id) ||
+        this.defaults.enabled.includes(id))
     );
   }
   read(workspaceId: string) {

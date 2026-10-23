@@ -219,6 +219,7 @@ test("plugin files: owners edit plugins in the console, validated, audited and s
         [
           ["datetime", "built-in"],
           ["memory", "built-in"],
+          ["web", "built-in"],
         ],
       );
       assert.equal(state.problems.length, 1);

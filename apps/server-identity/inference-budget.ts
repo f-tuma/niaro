@@ -360,6 +360,8 @@ export class InferenceBudgetStore {
     priorInference = 0,
     caps?: InferenceRunCaps,
     inputTokens?: number | null,
+    /** A fee the provider adds on top of tokens (web search results). */
+    feeMicros = 0,
   ) {
     const current = this.assertReady(runId, target, priorInference, caps);
     if (caps && current.calls >= caps.maxModelCalls)
@@ -383,9 +385,13 @@ export class InferenceBudgetStore {
     // The reservation is this request's own estimate (never below the floor,
     // never above the price ceiling) plus the full output ceiling. It stays
     // the call's upper bound: the request fits it and output is clamped.
-    const reservation = price
+    const tokensOnly = price
       ? callReservation(price, inputTokens ?? 0)
       : undefined;
+    const reservation = tokensOnly && {
+      ...tokensOnly,
+      cost: tokensOnly.cost + feeMicros,
+    };
     if (
       enforce &&
       (current.accountedTokens + reservation!.tokens >
@@ -410,6 +416,7 @@ export class InferenceBudgetStore {
     priorInference = 0,
     caps?: InferenceRunCaps,
     inputTokens?: number | null,
+    feeMicros = 0,
   ) {
     const { price, tokens, cost, enforce } = this.assertCanReserve(
       runId,
@@ -418,6 +425,7 @@ export class InferenceBudgetStore {
       priorInference,
       caps,
       inputTokens,
+      feeMicros,
     );
     const id = randomUUID();
     this.db
@@ -489,6 +497,35 @@ export class InferenceBudgetStore {
   }
 }
 
+/**
+ * The most OpenRouter's web plugin can add to a call: Exa bills $4 per 1000
+ * results; a provider's native search is billed per call and reserved at a
+ * conservative $0.05. Settlement then uses the cost the provider reports.
+ */
+export function webSearchFeeMicros(body: unknown): number {
+  const plugins =
+    body && typeof body === "object" && "plugins" in body
+      ? (body as { plugins?: unknown }).plugins
+      : undefined;
+  if (!Array.isArray(plugins)) return 0;
+  let fee = 0;
+  for (const plugin of plugins) {
+    if (!plugin || typeof plugin !== "object") continue;
+    const web = plugin as {
+      id?: unknown;
+      engine?: unknown;
+      max_results?: unknown;
+    };
+    if (web.id !== "web") continue;
+    const results =
+      typeof web.max_results === "number" && web.max_results > 0
+        ? Math.min(Math.ceil(web.max_results), 100)
+        : 5;
+    fee += web.engine === "exa" ? results * 4_000 : 50_000;
+  }
+  return fee;
+}
+
 /** A gateway timeout may hide a completion the upstream model already generated. */
 const gatewayTimeouts = new Set([408, 504, 524]);
 /** One wrapper serves SDK chat and raw decision responses before their parsers/abort checks. */
@@ -537,6 +574,7 @@ export function budgetedInferenceTransport(
         priorInference(),
         caps,
         inputTokens,
+        webSearchFeeMicros(request.body),
       );
     }).catch((error: unknown) => {
       // A budget refusal before dispatch; authorization failures stay quiet.

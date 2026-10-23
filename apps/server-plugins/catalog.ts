@@ -17,6 +17,8 @@ import dateTimeManifest from "../../plugins/datetime/plugin.json";
 import dateTimeModule from "../../plugins/datetime/index";
 import memoryManifest from "../../plugins/memory/plugin.json";
 import memoryModule from "../../plugins/memory/index";
+import webManifest from "../../plugins/web/plugin.json";
+import webModule from "../../plugins/web/index";
 
 /**
  * The plugins this server runs. Built-in plugins (plugins/ in the repository
@@ -133,6 +135,7 @@ const builtIns = new Map<string, LoadedPlugin>(
     [
       [dateTimeManifest, dateTimeModule],
       [memoryManifest, memoryModule],
+      [webManifest, webModule],
     ] as const
   ).map(([manifest, module]) => {
     const plugin = preparePlugin(manifest, module, "built-in");
@@ -140,6 +143,13 @@ const builtIns = new Map<string, LoadedPlugin>(
   }),
 );
 let current: PluginCatalog = { plugins: new Map(builtIns), problems: [] };
+
+/**
+ * Built-in plugins that every workspace may turn on and that start off, like
+ * an operator's plugin, whether or not the profile names them: web reaches
+ * outside the server and costs searches, so each workspace decides.
+ */
+export const OPT_IN_PLUGINS: ReadonlySet<string> = new Set(["web"]);
 
 /** The plugins in force. Before loadPlugins, the built-in ones. */
 export function pluginCatalog(): PluginCatalog {

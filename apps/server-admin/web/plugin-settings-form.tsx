@@ -70,7 +70,7 @@ export function PluginDetails({ plugin }: { plugin: Plugin }) {
           },
           {
             label: copy.execution,
-            value: plugin.effect === "pure" ? copy.pure : copy.context,
+            value: copy[plugin.effect],
           },
           {
             label: copy.source,

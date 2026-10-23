@@ -36,6 +36,7 @@ import type { ActionFailure } from "../../packages/protocol/action-failure";
 import type { ServiceAnswer } from "../server-identity/catalog-runtime";
 import type { NiaroModelSelection } from "../server-integrations/mastra-model";
 import type { DispatchGuard } from "../server-integrations/transport";
+import { privateInternalTool } from "../server-plugins/registry";
 import {
   inspectNativeAgentCheckpoint,
   proveNativeAgentQuestionCheckpoint,
@@ -303,6 +304,8 @@ const guardedTool = (name: string) =>
   name.startsWith("skill_") ||
   // Meeting notes and transcripts are private like service reads.
   name.startsWith("meeting_") ||
+  // So are web pages and search results; only pure plugins' values are not.
+  privateInternalTool(name) ||
   name === "ask_user";
 type NativePrompt = Parameters<
   NonNullable<Processor["processLLMRequest"]>

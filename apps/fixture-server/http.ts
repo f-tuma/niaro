@@ -1196,7 +1196,6 @@ export function createFixtureServer(
                 // Delivery declarations (messageDeliveryPath): times, generated UI.
                 "messages",
                 "ui",
-                "results",
               ];
         if (
           new Set(keys).size !== keys.length ||

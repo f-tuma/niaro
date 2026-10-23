@@ -1,0 +1,67 @@
+{
+  "id": "web",
+  "version": 1,
+  "name": { "en": "Web", "cs": "Web" },
+  "description": {
+    "en": "Searches the web and reads public pages, so the assistant can answer from current sources.",
+    "cs": "Hledá na webu a čte veřejné stránky, aby asistent mohl odpovídat z aktuálních zdrojů."
+  },
+  "effect": "network",
+  "capabilities": ["web"],
+  "tools": [
+    {
+      "name": "internal_web_search",
+      "title": { "en": "Search the web", "cs": "Hledat na webu" },
+      "access": "read",
+      "approval": "none"
+    },
+    {
+      "name": "internal_web_read",
+      "title": { "en": "Read a web page", "cs": "Přečíst webovou stránku" },
+      "access": "read",
+      "approval": "none"
+    }
+  ],
+  "settings": {
+    "searchModel": {
+      "type": "string",
+      "label": {
+        "en": "Search model (model ID from AI models; empty: the chat model)",
+        "cs": "Model pro hledání (ID modelu z AI modelů; prázdné: model chatu)"
+      },
+      "default": "",
+      "maxLength": 200
+    },
+    "engine": {
+      "type": "string",
+      "label": { "en": "Search engine", "cs": "Vyhledávač" },
+      "default": "exa",
+      "options": ["exa", "native", "auto"]
+    },
+    "results": {
+      "type": "integer",
+      "label": { "en": "Results per search", "cs": "Výsledků na hledání" },
+      "default": 5,
+      "min": 1,
+      "max": 8
+    },
+    "readChars": {
+      "type": "integer",
+      "label": {
+        "en": "Page text (characters)",
+        "cs": "Text stránky (znaky)"
+      },
+      "default": 12000,
+      "min": 1000,
+      "max": 40000
+    },
+    "zeroDataRetention": {
+      "type": "boolean",
+      "label": {
+        "en": "Zero data retention providers only",
+        "cs": "Jen poskytovatelé bez uchování dat"
+      },
+      "default": true
+    }
+  }
+}

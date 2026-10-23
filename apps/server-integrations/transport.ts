@@ -22,6 +22,13 @@ export type TransportRequest = {
   bodyEncoding?: "json" | "form";
   signal?: AbortSignal;
   beforeDispatch?: DispatchGuard;
+  /**
+   * A page of the public web (the web plugin's reads): http or https, public
+   * addresses only even for an origin trusted in Settings → Origins, and a
+   * redirect is returned (status and Location) instead of refused, so the
+   * caller checks the next address before it follows.
+   */
+  publicWeb?: boolean;
 };
 export type TransportResponse = {
   status: number;
@@ -59,9 +66,16 @@ export function createTransport(
 ): IntegrationTransport {
   return async (input) => {
     const url = new URL(input.url);
-    validateEndpoint(url.origin + url.pathname, trustedOrigins);
+    if (input.publicWeb) {
+      if (
+        !["http:", "https:"].includes(url.protocol) ||
+        url.username ||
+        url.password
+      )
+        throw new IntegrationError("integration_url_invalid");
+    } else validateEndpoint(url.origin + url.pathname, trustedOrigins);
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
-    const trusted = trustedOrigins.includes(url.origin);
+    const trusted = !input.publicWeb && trustedOrigins.includes(url.origin);
     const timeout = AbortSignal.timeout(
       Math.min(input.timeoutMs ?? 20000, MAX_TRANSPORT_TIMEOUT_MS),
     );
@@ -142,6 +156,21 @@ export function createTransport(
           (res) => {
             const chunks: Buffer[] = [];
             let size = 0;
+            const status = res.statusCode ?? 0;
+            if (
+              input.publicWeb &&
+              status >= 300 &&
+              status < 400 &&
+              typeof res.headers.location === "string"
+            ) {
+              res.destroy();
+              resolve({
+                status,
+                headers: { location: res.headers.location },
+                text: "",
+              });
+              return;
+            }
             if (
               ((res.statusCode ?? 0) >= 300 && (res.statusCode ?? 0) < 400) ||
               (res.headers["content-encoding"] &&

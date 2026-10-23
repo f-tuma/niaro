@@ -50,7 +50,7 @@ export const WorkspacePluginsSchema = WorkspaceTarget.extend({
       z.strictObject({
         id: InternalPluginId,
         version: z.number().int().positive(),
-        effect: z.enum(["pure", "context"]),
+        effect: z.enum(["pure", "context", "network"]),
         tools: z.array(z.string().min(1).max(128)).max(20),
         available: z.boolean(),
         name: LocalizedText,

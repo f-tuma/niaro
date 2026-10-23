@@ -285,6 +285,7 @@ export default ({ definePlugin, defineTool, resolved, z }: PluginSdk) =>
     [
       ["datetime", "override"],
       ["memory", "built-in"],
+      ["web", "built-in"],
       ["word-count", "operator"],
     ],
   );

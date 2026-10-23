@@ -5,6 +5,7 @@ import {
   CalendarClock,
   Brain,
   FileCode,
+  Globe,
   Plus,
   Puzzle,
   RotateCcw,
@@ -77,6 +78,8 @@ function PluginIcon({ id }: { id: string }) {
     <CalendarClock aria-hidden="true" />
   ) : id === "memory" ? (
     <Brain aria-hidden="true" />
+  ) : id === "web" ? (
+    <Globe aria-hidden="true" />
   ) : (
     <Puzzle aria-hidden="true" />
   );
