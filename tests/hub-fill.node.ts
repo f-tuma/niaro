@@ -15,6 +15,7 @@ import { ServiceCatalogStore } from "../apps/server-identity/service-catalog";
 import { IdentityError } from "../apps/server-identity/error";
 import type { InferenceRunCaps } from "../apps/server-identity/inference-budget";
 import {
+  ServiceStatus,
   createTrustHarness,
   type ModelRequest,
   type TrustHarness,
@@ -291,6 +292,33 @@ test("a recipe is replayed without the agent, and offered as a hint when it hold
       },
     }).result;
     assert.equal(stale.mode, "agent");
+  } finally {
+    await h.close();
+  }
+});
+
+test("a service that refuses access fails the fill with that reason, not a generic one", async () => {
+  const h = createTrustHarness();
+  try {
+    const { readId, fill } = setup(h);
+    h.onService(({ path }) =>
+      path.endsWith("/contacts")
+        ? new ServiceStatus(403, { error: { code: "ErrorAccessDenied" } })
+        : undefined,
+    );
+    h.onChat((body) => {
+      const outputs = toolOutputs(body);
+      if (!isCollect(body)) return listAnswer;
+      if (!outputs.length)
+        return h.call("find_actions", {
+          service: "TEST Calendar and contacts",
+          need: "contacts",
+        });
+      if (outputs.length === 1)
+        return h.call("read", { action: readId, input: { name: "Jane" } });
+      return { content: "TEST done" };
+    });
+    await assert.rejects(fill().result, code("service_access_denied"));
   } finally {
     await h.close();
   }

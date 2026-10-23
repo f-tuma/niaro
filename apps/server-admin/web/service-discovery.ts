@@ -5,6 +5,7 @@ import {
   type DiscoveryChoice,
   type DiscoveryContinuation,
   type Service,
+  twentyReadTool,
 } from "../../../packages/protocol/service-catalog";
 import type { CatalogState } from "./catalog-shared";
 
@@ -167,14 +168,22 @@ export async function runDiscovery(
   }
 }
 
-/** The write actions among `ids` the server labels read-only. */
+/** The write actions the server labels read-only: `ids` from the last
+ * discovery (readOnlyHint), and Twenty's record reads by their stored names. */
 export function readOnlyActions(service: Service, ids: string[]) {
   return service.actions.filter(
-    (action) => ids.includes(action.id) && action.effect === "write",
+    (action) =>
+      action.effect === "write" &&
+      (ids.includes(action.id) ||
+        (action.binding.type === "mcp" &&
+          !!action.binding.catalogTool &&
+          twentyReadTool(action.binding.catalogTool))),
   );
 }
-/** Marks the server's read-only labels as reads: an administrator's choice,
- * one command for all of them. Resolves to the command's result. */
+/** Marks the server's read-only labels as reads that run without approval
+ * and turns them on: an administrator's choice, one command for all of them.
+ * Actions nobody was granted yet get the service's audience, so the reads
+ * are usable right away. Resolves to the command's result. */
 export function markReadOnly(
   state: CatalogState,
   service: Service,
@@ -182,11 +191,31 @@ export function markReadOnly(
 ) {
   const actions = readOnlyActions(service, ids);
   if (!actions.length) return Promise.resolve(undefined);
+  const ungranted = actions.every(
+    ({ policy }) =>
+      !policy.roles.length &&
+      !policy.users.length &&
+      !policy.workspaceRoles?.length,
+  );
+  const audience = service.access ?? {
+    roles: ["owner", "admin", "member"] as const,
+    workspaceRoles: [],
+  };
   return state.mutate("command", {
     type: "updateActions",
     serviceId: service.id,
     serviceRevision: service.revision,
     actions: actions.map(({ id, revision }) => ({ id, revision })),
-    patch: { effect: "read" },
+    patch: {
+      effect: "read",
+      approval: "never",
+      enabled: true,
+      ...(ungranted
+        ? {
+            roles: [...audience.roles],
+            workspaceRoles: [...audience.workspaceRoles],
+          }
+        : {}),
+    },
   });
 }

@@ -9,6 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createServer } from "node:http";
 import {
   ActionBinding,
+  twentyReadTool,
   ActionDiscoveryResponse,
   DiscoveryRequest,
   CatalogCommand,
@@ -3004,6 +3005,7 @@ function twentyTransport(
     badLearn?: boolean;
     inputSchemaFor?: (name: string) => Record<string, unknown>;
     before?: (name: string) => void;
+    catalog?: Record<string, { name: string; description: string }[]>;
   } = {},
 ) {
   const calls: { name: string; args: unknown }[] = [];
@@ -3072,7 +3074,7 @@ function twentyTransport(
           {
             type: "text",
             text: JSON.stringify({
-              catalog: {
+              catalog: options.catalog ?? {
                 DATABASE_CRUD: Array.from({ length: 360 }, (_, i) => ({
                   name: `find_${i}`,
                   description: `TEST operation ${i}`,
@@ -3115,6 +3117,53 @@ function twentyTransport(
     },
   };
 }
+test("Twenty discovery hints its record reads by name, without applying them", async () => {
+  const entry = (name: string) => ({ name, description: "TEST" });
+  const fake = twentyTransport({
+    catalog: {
+      DATABASE_CRUD: [
+        entry("find_many_people"),
+        entry("find_one_company"),
+        entry("group_by_notes"),
+        entry("create_one_person"),
+        entry("delete_many_people"),
+      ],
+      // Only record reads count: a metadata lookup keeps its default.
+      METADATA: [entry("find_one_field")],
+    },
+  });
+  const session = new McpSession(
+    fake.transport,
+    "https://mcp.example.test",
+    {},
+  );
+  await session.initialize();
+  const names = [
+    "find_many_people",
+    "find_one_company",
+    "group_by_notes",
+    "create_one_person",
+    "delete_many_people",
+    "find_one_field",
+  ];
+  const imported = await session.discover(names);
+  assert.equal(imported.actions.length, names.length);
+  assert.deepEqual(
+    [...("readOnly" in imported ? (imported.readOnly ?? []) : [])].sort(),
+    [
+      "execute_tool:find_many_people",
+      "execute_tool:find_one_company",
+      "execute_tool:group_by_notes",
+    ],
+  );
+  for (const action of imported.actions) {
+    assert.equal(action.effect, "write");
+    assert.equal(action.enabled, false);
+  }
+  assert.equal(twentyReadTool("find_many_people"), true);
+  assert.equal(twentyReadTool("find_many_people; delete"), false);
+  assert.equal(twentyReadTool("update_many_people"), false);
+});
 test("Twenty discovery previews the full catalog, learns only selected schemas, and pins execution", async () => {
   const fake = twentyTransport();
   const session = new McpSession(

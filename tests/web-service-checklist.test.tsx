@@ -289,6 +289,72 @@ test("personal sign-in through a method, connection and overview reads", () => {
   expect(steps.connected).toMatchObject({ state: "waiting" });
 });
 
+test("a sign-in without the definition's permissions, Twenty's reads and reads nobody may use", () => {
+  // The service's sign-in uses the method but asks only for the sign-in.
+  let steps = byId(
+    setupSteps(
+      input({
+        signIn,
+        oauth: oauth({
+          requiredFor: "all",
+          source: "provider",
+          authProviderId: provider.id,
+          scopes: ["Calendars.ReadWrite"],
+        }),
+        providers: [provider],
+      }),
+      setupEn,
+    ),
+  );
+  expect(steps.signIn).toMatchObject({
+    state: "action",
+    reason:
+      "The sign-in doesn't ask for Mail.ReadWrite, so the service will refuse access",
+    fix: { kind: "addScopes" },
+  });
+  // Twenty's record reads arrive as switched-off writes: one fix turns them on.
+  const twenty = (name: string): Service["actions"][number] => ({
+    ...action(name, "write", false),
+    binding: { type: "mcp", name: "execute_tool", catalogTool: name },
+  });
+  steps = byId(
+    setupSteps(
+      input({
+        service: service([
+          twenty("find_many_people"),
+          twenty("group_by_notes"),
+          twenty("delete_one_person"),
+        ]),
+      }),
+      setupEn,
+    ),
+  );
+  expect(steps.access).toMatchObject({
+    state: "action",
+    reason: "No action is on",
+    fix: { kind: "markReads", label: "Turn on reads (2)" },
+  });
+  // Reads that are on but granted to nobody reach neither the agent nor widgets.
+  const read = { ...action("list", "read"), approval: "never" as const };
+  steps = byId(setupSteps(input({ service: service([read]) }), setupEn));
+  expect(steps.access).toMatchObject({
+    state: "action",
+    reason: "Reads on: 1, but nobody may use them",
+    fix: { kind: "actionsTab" },
+  });
+  steps = byId(
+    setupSteps(
+      input({
+        service: service([
+          { ...read, policy: { roles: ["member"], users: [] } },
+        ]),
+      }),
+      setupEn,
+    ),
+  );
+  expect(steps.access).toMatchObject({ state: "done" });
+});
+
 test("address failures, a missing key and discovery progress", () => {
   let steps = byId(setupSteps(input({ probe: null }), setupEn));
   expect(steps.address.state).toBe("running");

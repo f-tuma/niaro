@@ -4,6 +4,7 @@ import {
   type Service,
   type ServiceAction,
   type DiscoveryIssue,
+  twentyReadTool,
 } from "../../packages/protocol/service-catalog";
 import {
   IntegrationError,
@@ -409,7 +410,7 @@ export class McpSession {
     warnings: string[];
     issues?: Issue[];
     remaining?: string[];
-    /** Tools the server labels read-only (`readOnlyHint`): a hint, not applied. */
+    /** Tools the server labels read-only (`readOnlyHint`, Twenty's read names): a hint, not applied. */
     readOnly?: string[];
     choices?: {
       name: string;
@@ -544,6 +545,10 @@ export class McpSession {
     const actions: DiscoveredAction[] = [],
       warnings: string[] = [];
     const issues: Issue[] = [];
+    // Twenty names its record reads find_many_, find_one_ and group_by_: a
+    // hint like readOnlyHint, applied only when an administrator says so.
+    const readOnly: string[] = [];
+    const category = new Map(choices.map((c) => [c.name, c.category]));
     const pending = toolNames.slice(0, 20);
     // The server chooses batch sizes; the console can select the entire catalogue.
     for (let offset = 0; offset < pending.length; offset += 4) {
@@ -588,6 +593,8 @@ export class McpSession {
             }),
             sourceKey: `mcp:execute_tool:${name}`,
           });
+          if (category.get(name) === "DATABASE_CRUD" && twentyReadTool(name))
+            readOnly.push(`execute_tool:${name}`);
         } catch (error) {
           issues.push(discoveryIssue(name, error));
           warnings.push(name);
@@ -598,6 +605,7 @@ export class McpSession {
       actions,
       warnings,
       issues,
+      readOnly,
       remaining: toolNames.slice(pending.length),
     };
   }

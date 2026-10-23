@@ -141,6 +141,7 @@ const en = {
     hub_fill_limit: "The assistant hit its step limit.",
     hub_fill_no_data: "The assistant found nothing to read for this.",
     hub_fill_failed: "The assistant couldn't read the data.",
+    service_access_denied: "The service refused access.",
     hub_widget_invalid: "This widget's settings don't fit. Edit it.",
     catalog_model_required: "An administrator hasn't set up an AI model yet.",
     other: "Couldn't refresh.",
@@ -151,6 +152,8 @@ const en = {
     noModel: "The overview has no AI model.",
     noReadable: "No service the overview can read yet.",
     unreadable: "The overview can't read the chosen service.",
+    denied:
+      "The service refused access: its sign-in doesn't ask for the permissions it needs, or its key may not read this.",
     askAdmin: "Ask an administrator.",
     connectAction: "Connect account",
     routingAction: "Model routing",
@@ -299,6 +302,7 @@ const cs: HubCopy = {
     hub_fill_limit: "Asistent narazil na limit kroků.",
     hub_fill_no_data: "Asistent k tomuhle zadání nic nenačetl.",
     hub_fill_failed: "Asistent data nenačetl.",
+    service_access_denied: "Služba odmítla přístup.",
     hub_widget_invalid: "Widget je nastavený špatně. Uprav zadání.",
     catalog_model_required: "Správce zatím nenastavil AI model.",
     other: "Nepodařilo se obnovit.",
@@ -308,6 +312,8 @@ const cs: HubCopy = {
     noModel: "Přehled nemá AI model.",
     noReadable: "Zatím tu není služba, kterou přehled umí číst.",
     unreadable: "Vybranou službu přehled číst neumí.",
+    denied:
+      "Služba odmítla přístup: její přihlášení nežádá potřebná oprávnění, nebo její klíč tohle číst nesmí.",
     askAdmin: "Ozvi se správci.",
     connectAction: "Připojit účet",
     routingAction: "Přiřazení modelů",
@@ -383,6 +389,17 @@ export function hubWidgetProblem(
         href: "/admin/routing",
         label: "routingAction",
       });
+    case "service_access_denied":
+      return admin(
+        copy.fix.denied,
+        only
+          ? {
+              kind: "admin",
+              href: `/admin/services/${encodeURIComponent(only)}`,
+              label: "serviceAction",
+            }
+          : { kind: "admin", href: "/admin/services", label: "servicesAction" },
+      );
     case "service_unavailable":
     case "hub_source_unavailable":
       return admin(

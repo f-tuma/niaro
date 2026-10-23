@@ -111,6 +111,13 @@ export const toolResults = (body: ModelRequest): Record<string, any>[] => {
 };
 
 /** Isolated, file-backed production stores; every transport call stays in this function. */
+/** A scripted service answer with an HTTP status other than 200. */
+export class ServiceStatus {
+  constructor(
+    readonly status: number,
+    readonly body: unknown,
+  ) {}
+}
 export function createTrustHarness(
   options: {
     writeApproval?: "always" | "never";
@@ -346,6 +353,12 @@ export function createTrustHarness(
       search: url.searchParams,
       body: req.body,
     });
+    if (scripted instanceof ServiceStatus)
+      return {
+        status: scripted.status,
+        headers: {},
+        text: JSON.stringify(scripted.body),
+      };
     if (scripted !== undefined) return json(scripted);
     if (url.pathname.endsWith("/contacts")) {
       const contacts = options.contacts;

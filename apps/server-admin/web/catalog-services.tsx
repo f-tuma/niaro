@@ -1496,7 +1496,7 @@ function Discovery({
                   )}
                 </div>
               )}
-              {!processing && job.readOnly.length > 0 && (
+              {!processing && (
                 <ReadOnlyHint
                   state={state}
                   service={service}

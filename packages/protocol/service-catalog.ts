@@ -89,6 +89,21 @@ export const ActionBinding = z.discriminatedUnion("type", [
       (binding) => !binding.catalogTool || binding.name === "execute_tool",
     ),
 ]);
+/** Whether a Twenty catalog tool reads records, by the name grammar Twenty
+ * documents (find_many_, find_one_, group_by_). A hint, never applied alone. */
+export function twentyReadTool(name: string) {
+  return /^(find_many|find_one|group_by)_[a-z0-9_]+$/.test(name);
+}
+/** Whether a provider's failure message says it refused the credential or
+ * its permissions (HTTP 401/403), not that the request itself was wrong. */
+export function providerDenied(message: string | undefined) {
+  return (
+    !!message &&
+    /\b(401|403)\b|forbidden|unauthori[sz]ed|access ?(is )?denied|insufficient (privileges|scope)/i.test(
+      message,
+    )
+  );
+}
 export const ActionPolicy = z
   .strictObject({
     roles: z.array(OrganizationRole).max(3),

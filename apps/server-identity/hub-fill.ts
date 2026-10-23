@@ -14,6 +14,7 @@ import {
   HUB_ITEM_TEXT_MAX,
   type HubItemDetail,
 } from "../../packages/protocol/hub";
+import { providerDenied } from "../../packages/protocol/service-catalog";
 import { schemaValidator } from "../server-integrations/schema";
 import { IntegrationError } from "../server-integrations/transport";
 import { IdentityError } from "./error";
@@ -375,6 +376,17 @@ async function readableFor(
   return services;
 }
 
+/** Whether the service itself refused the key or the account's permissions
+ * (HTTP 401/403, or an MCP tool reporting one), not our own policy. */
+function serviceDenied(failure: StoredInvocation["failure"]) {
+  return (
+    failure?.stage === "provider_response" &&
+    (failure.httpStatus === 401 ||
+      failure.httpStatus === 403 ||
+      failure.kind === "permission" ||
+      providerDenied(failure.message))
+  );
+}
 type ReadResult = {
   service: string;
   action: string;
@@ -457,7 +469,9 @@ function createReadRun(
       const code =
         receipt.status === "awaiting_approval"
           ? "approval_required"
-          : (receipt.failure?.code ?? "action_failed");
+          : serviceDenied(receipt.failure)
+            ? "service_access_denied"
+            : (receipt.failure?.code ?? "action_failed");
       failures.push(code);
       return { error: code };
     }
@@ -667,6 +681,10 @@ export async function runHubFill(
   if (!results.length) {
     if (failures.includes("connection_required"))
       throw new IdentityError(409, "connection_required");
+    // The service refused the key or the account's permissions: a setup
+    // problem the person can be told about, not the assistant's failure.
+    if (failures.includes("service_access_denied"))
+      throw new IdentityError(409, "service_access_denied");
     throw new IdentityError(
       409,
       failures[0] ? "hub_fill_failed" : "hub_fill_no_data",
@@ -824,7 +842,9 @@ export async function runHubOpen(
   const failed = (status: number, fallback: string) =>
     run.failures.includes("connection_required")
       ? new IdentityError(409, "connection_required")
-      : new IdentityError(status, fallback);
+      : run.failures.includes("service_access_denied")
+        ? new IdentityError(409, "service_access_denied")
+        : new IdentityError(status, fallback);
   // The learned read first: same action at the same revisions, still readable.
   if (recipe) {
     const found = run.actions.get(recipe.actionId);

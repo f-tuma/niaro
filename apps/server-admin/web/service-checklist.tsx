@@ -12,6 +12,7 @@ import {
 import type { z } from "zod";
 import {
   ServiceProbeResponse,
+  providerDenied,
   type Service,
 } from "../../../packages/protocol/service-catalog";
 import type { AuthProvidersSchema } from "../../../packages/protocol/auth-providers";
@@ -39,6 +40,7 @@ import { oauthIssue, useServiceAuthCopy } from "./service-auth";
 import {
   clearReadOnly,
   markReadOnly,
+  readOnlyActions,
   discoveryKey,
   runDiscovery,
   useDiscoveryJob,
@@ -69,6 +71,7 @@ export type StepFix =
   | "continue"
   | "actionsTab"
   | "markReads"
+  | "addScopes"
   | "findReads"
   | "connect"
   | "test";
@@ -170,22 +173,31 @@ export function setupSteps(
     steps.push({ id: "signIn", state: "running", reason: copy.checking });
   else if (personal && settings?.source === "provider")
     steps.push(
-      provider?.enabled
+      provider?.enabled && missingScopes(settings, signIn).length
         ? {
             id: "signIn",
-            state: "done",
-            reason: fill(copy.personalProvider, { name: provider.name }),
-          }
-        : {
-            id: "signIn",
             state: "action",
-            reason: provider
-              ? fill(copy.providerOff, { name: provider.name })
-              : fill(copy.providerMissing, {
-                  kind: signIn ? kindName[signIn.provider] : "",
-                }),
-            fix: { kind: "providers", label: copy.addProvider },
-          },
+            reason: fill(copy.scopesMissing, {
+              scopes: missingScopes(settings, signIn).join(" "),
+            }),
+            fix: { kind: "addScopes", label: copy.addScopes },
+          }
+        : provider?.enabled
+          ? {
+              id: "signIn",
+              state: "done",
+              reason: fill(copy.personalProvider, { name: provider.name }),
+            }
+          : {
+              id: "signIn",
+              state: "action",
+              reason: provider
+                ? fill(copy.providerOff, { name: provider.name })
+                : fill(copy.providerMissing, {
+                    kind: signIn ? kindName[signIn.provider] : "",
+                  }),
+              fix: { kind: "providers", label: copy.addProvider },
+            },
     );
   else if (personal)
     steps.push(
@@ -267,9 +279,19 @@ export function setupSteps(
   const reads = enabled.filter(
     (a) => a.effect === "read" && (personal || a.approval === "never"),
   );
-  const hinted = job.readOnly.some((id) =>
-    service.actions.some((a) => a.id === id && a.effect === "write"),
+  // Reads nobody was granted are on, yet neither the agent nor widgets get them.
+  const granted = reads.filter(
+    ({ policy }) =>
+      personal ||
+      policy.roles.length ||
+      policy.workspaceRoles?.length ||
+      policy.users.some((user) => user.access === "allow"),
   );
+  const hinted = readOnlyActions(service, job.readOnly).length;
+  const markReads = {
+    kind: "markReads",
+    label: fill(copy.markReadsCount, { n: hinted }),
+  } as const;
   steps.push(
     !service.actions.length
       ? { id: "access", state: "waiting", reason: copy.afterActions }
@@ -278,28 +300,37 @@ export function setupSteps(
             id: "access",
             state: "action",
             reason: copy.noneEnabled,
-            fix: { kind: "actionsTab", label: copy.chooseActions },
+            fix: hinted
+              ? markReads
+              : { kind: "actionsTab", label: copy.chooseActions },
           }
-        : !reads.length
+        : reads.length && !granted.length
           ? {
               id: "access",
               state: "action",
-              reason: fill(copy.noReads, { n: enabled.length }),
-              fix: hinted
-                ? { kind: "markReads", label: copy.markReads }
-                : service.protocol === "mcp"
-                  ? { kind: "findReads", label: copy.findReads }
-                  : { kind: "actionsTab", label: copy.chooseActions },
+              reason: fill(copy.noGrant, { n: reads.length }),
+              fix: { kind: "actionsTab", label: copy.chooseWho },
             }
-          : {
-              id: "access",
-              state: "done",
-              reason: fill(copy.accessDone, {
-                n: enabled.length,
-                reads: reads.length,
-                who: input.who,
-              }),
-            },
+          : !reads.length
+            ? {
+                id: "access",
+                state: "action",
+                reason: fill(copy.noReads, { n: enabled.length }),
+                fix: hinted
+                  ? markReads
+                  : service.protocol === "mcp"
+                    ? { kind: "findReads", label: copy.findReads }
+                    : { kind: "actionsTab", label: copy.chooseActions },
+              }
+            : {
+                id: "access",
+                state: "done",
+                reason: fill(copy.accessDone, {
+                  n: enabled.length,
+                  reads: granted.length,
+                  who: input.who,
+                }),
+              },
   );
 
   if (personal) {
@@ -352,6 +383,16 @@ export function setupSteps(
             },
   );
   return steps;
+}
+
+/** The permissions the hosted server's definition asks for that the
+ * service's sign-in doesn't request. */
+function missingScopes(
+  settings: OAuthStatus["config"]["settings"],
+  signIn: HostedSignIn | undefined,
+) {
+  const requested = new Set(settings.scopes ?? []);
+  return (signIn?.scopes ?? []).filter((scope) => !requested.has(scope));
 }
 
 const icons: Record<SetupStep["id"], ReactNode> = {
@@ -467,8 +508,13 @@ export function ServiceChecklist({
         input: {},
         requestId: crypto.randomUUID(),
         approve: false,
-      })) as { status?: string; result?: unknown };
+      })) as {
+        status?: string;
+        result?: unknown;
+        failure?: { message?: string };
+      };
       const ok = receipt.status === "succeeded";
+      const message = receipt.failure?.message;
       setTest({
         status: "done",
         ok,
@@ -476,7 +522,11 @@ export function ServiceChecklist({
           ? fill(copy.testOk, { action: action.name })
           : fill(copy.testFailed, {
               action: action.name,
-              reason: String(receipt.status ?? "?"),
+              reason: providerDenied(message)
+                ? copy.testDenied
+                : message
+                  ? message.slice(0, 200)
+                  : String(receipt.status ?? "?"),
             }),
         result: receipt.result,
       });
@@ -493,6 +543,22 @@ export function ServiceChecklist({
         }),
       });
     }
+  }
+  async function addScopes() {
+    const settings = oauth.data?.config.settings;
+    if (!settings) return;
+    setBusy(true);
+    setError(null);
+    const saved = await applySignIn(target, service.id, {
+      ...settings,
+      scopes: [
+        ...new Set([...(settings.scopes ?? []), ...(signIn?.scopes ?? [])]),
+      ],
+    });
+    if (!saved.ok)
+      setError(oauthIssue(new ApiError(400, saved.code), authCopy));
+    await refresh();
+    setBusy(false);
   }
   async function adoptProvider() {
     const provider =
@@ -558,6 +624,8 @@ export function ServiceChecklist({
         return button(() => discover(false));
       case "applySignIn":
         return button(() => void adoptProvider());
+      case "addScopes":
+        return button(() => void addScopes());
       case "test":
         return button(() => void runTest());
       case "markReads":

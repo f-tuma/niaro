@@ -77,7 +77,7 @@ const en = {
   describingActions: "Describing actions",
   inBackground: "Close, keep going",
   readOnlyFound:
-    "Labelled read-only by the server: {n}. Overview widgets use only reads.",
+    "Labelled read-only by the server: {n}. Marking turns them on as reads without approval, for whoever may use the service; overview widgets use only reads.",
   markReads: "Mark as reads",
   processedActions: "Processed",
   importPaused: "Import interrupted",
@@ -364,7 +364,7 @@ const cs: Record<keyof typeof en, string> = {
   describingActions: "Popisuju akce",
   inBackground: "Zavřít, běží dál",
   readOnlyFound:
-    "Server označil jen pro čtení: {n}. Widgety přehledu používají jen čtení.",
+    "Server označil jen pro čtení: {n}. Označení je zapne jako čtení bez schvalování pro všechny, kdo smí službu používat; widgety přehledu používají jen čtení.",
   markReads: "Označit jako čtení",
   processedActions: "Zpracováno",
   importPaused: "Načítání přerušeno",

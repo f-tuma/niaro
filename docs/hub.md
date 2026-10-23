@@ -160,7 +160,9 @@ model (`catalog_model_required` without one).
 Failures keep the last good data and show a short reason:
 `hub_fill_invalid`, `hub_fill_no_data` (nothing was read),
 `hub_fill_failed`, `hub_source_unavailable`, `service_unavailable`,
-`connection_required` (a personal service needs sign-in), budget codes.
+`connection_required` (a personal service needs sign-in),
+`service_access_denied` (the service answered 401/403 or reported a refused
+credential or permission for every read), budget codes.
 
 #### When a widget can't fill
 
@@ -172,14 +174,15 @@ the server's read-only labels). The widget (or the alert above the grid, for
 a refused add or change) shows one line and the step that fixes it
 (`hubWidgetProblem`, `apps/server-admin/web/app/hub-copy.ts`):
 
-| Code                                          | The person sees                                | Fix                                                                                                     |
-| --------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `connection_required`                         | Your account isn't connected to the service    | **Connect account**: `/connections/<service>` (one source) or `/connections`                            |
-| `model_unavailable`, `catalog_model_required` | The overview has no AI model                   | Admins: **Model routing** (`/admin/routing`); others: "Ask an administrator"                            |
-| `service_unavailable`                         | No service the overview can read yet           | Admins: **Services** (`/admin/services`); others: "Ask an administrator"                                |
-| `hub_source_unavailable`                      | The overview can't read the chosen service     | Admins: **Open service** (`/admin/services/<id>`); others: "Ask an administrator"                       |
-| `hub_fill_no_data`, `hub_fill_failed`         | The assistant found nothing / couldn't read it | Refresh, or change the request                                                                          |
-| `hub_conflict`, `hub_changed`                 | nothing at first                               | The change is sent once more on its own; a second refusal says "The overview didn't change. Try again." |
+| Code                                          | The person sees                                 | Fix                                                                                                        |
+| --------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `connection_required`                         | Your account isn't connected to the service     | **Connect account**: `/connections/<service>` (one source) or `/connections`                               |
+| `model_unavailable`, `catalog_model_required` | The overview has no AI model                    | Admins: **Model routing** (`/admin/routing`); others: "Ask an administrator"                               |
+| `service_unavailable`                         | No service the overview can read yet            | Admins: **Services** (`/admin/services`); others: "Ask an administrator"                                   |
+| `hub_source_unavailable`                      | The overview can't read the chosen service      | Admins: **Open service** (`/admin/services/<id>`); others: "Ask an administrator"                          |
+| `service_access_denied`                       | The service refused access (permissions or key) | Admins: **Open service** (its checklist names missing sign-in permissions); others: "Ask an administrator" |
+| `hub_fill_no_data`, `hub_fill_failed`         | The assistant found nothing / couldn't read it  | Refresh, or change the request                                                                             |
+| `hub_conflict`, `hub_changed`                 | nothing at first                                | The change is sent once more on its own; a second refusal says "The overview didn't change. Try again."    |
 
 The widget form offers only readable services as sources; with none it says
 so, and admins get a link to the services.
