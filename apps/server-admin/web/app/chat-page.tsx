@@ -419,11 +419,26 @@ export function ChatConversation({
   const [atEnd, setAtEnd] = useState(true);
   // The home page above a new chat reads from the top.
   const homeShown = useRef(false);
+  // Content the person opened by hand grows in place: following the end
+  // would pull what they clicked away from under the pointer.
+  const holdScroll = useRef(false);
+  const holdScrollOnce = () => {
+    holdScroll.current = true;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        holdScroll.current = false;
+      }),
+    );
+  };
   useEffect(() => {
     const scroller = scrollRef.current;
     const content = contentRef.current;
     if (!scroller || !content || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
+      if (holdScroll.current) {
+        holdScroll.current = false;
+        return;
+      }
       if (following.current && !homeShown.current)
         scroller.scrollTop = scroller.scrollHeight;
     });
@@ -1321,6 +1336,7 @@ export function ChatConversation({
               {progressVisible && (
                 <AssistantMessage label={copy.assistant}>
                   <ProgressView
+                    onToggle={holdScrollOnce}
                     activity={state.activity}
                     connection={state.activityConnection}
                     failed={!!state.error?.startsWith("model_")}

@@ -898,6 +898,7 @@ export function ProgressView({
   failed,
   onRetry,
   retryDisabled,
+  onToggle,
 }: {
   activity: RequestActivity | null;
   connection: "waiting" | "live" | "unavailable";
@@ -905,6 +906,8 @@ export function ProgressView({
   failed: boolean;
   onRetry?: () => void;
   retryDisabled: boolean;
+  /** Called before the steps open or close, so the transcript stays put. */
+  onToggle?: () => void;
 }) {
   const { copy, tr } = useChatCopy();
   const [open, setOpen] = useState(false);
@@ -932,7 +935,10 @@ export function ProgressView({
         type="button"
         aria-expanded={open}
         disabled={!rows.length}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          onToggle?.();
+          setOpen((value) => !value);
+        }}
         className="group flex items-center gap-1.5 self-start rounded-sm text-muted-foreground outline-offset-4 hover:text-foreground focus-visible:outline-2 disabled:cursor-default"
       >
         {stopped && <CircleAlert aria-hidden="true" className="size-4" />}
