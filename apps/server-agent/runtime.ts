@@ -397,6 +397,18 @@ function historicalResult(value: unknown) {
  * keeps no tool arguments (privacy), and a call shown with empty arguments
  * is one the model copies, so earlier calls are named, never replayed.
  */
+/** Arguments longer than this (a whole process proposal) are not repeated in
+ * later steps: the request would outgrow its budget. A named marker, unlike
+ * `{}`, is no call shape to copy. */
+const PROMPT_INPUT_MAX_CHARS = 4000;
+function promptInput(input: unknown) {
+  const size = JSON.stringify(input)?.length ?? 0;
+  return size <= PROMPT_INPUT_MAX_CHARS
+    ? input
+    : {
+        niaroOmitted: `The arguments of this earlier call (${size} characters) are not repeated. Send complete arguments when you call a tool.`,
+      };
+}
 const EARLIER_CALLS_NOTE = (calls: string[]) =>
   `[Earlier tool calls, not kept in history: ${[...new Set(calls)].join(", ")}. Their arguments and results are gone; call a tool again with complete arguments when you need its result.]`;
 
@@ -840,7 +852,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
         validation?.valid === false;
       // Only a valid call is shown back with its arguments; a rejected one
       // may carry anything and keeps the opaque form beside its error.
-      if (!invalid) promptInputs.set(call.toolCallId, original);
+      if (!invalid) promptInputs.set(call.toolCallId, promptInput(original));
       // A durable rejection marker survives a crash before execute without
       // storing malformed inputs or accepting cleaned empty arguments on replay.
       const safeCall = definition

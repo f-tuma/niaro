@@ -115,7 +115,9 @@ projected on every model call (`projectProviderHistory`):
 
 - A valid call the model made in the current run shows the arguments it
   actually sent. A call replayed as `{}` is one the model copies, which made
-  later calls fail validation until the step limit.
+  later calls fail validation until the step limit. Arguments over 4,000
+  characters (a whole process proposal) are replaced by a named
+  `niaroOmitted` marker, so a request does not outgrow its budget.
 - A rejected call stays opaque beside its error, and a call restored from a
   checkpoint stays opaque: its authority is derived again.
 - Earlier turns' calls are not replayed: each assistant message's calls
