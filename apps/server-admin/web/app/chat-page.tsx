@@ -983,6 +983,13 @@ export function ChatConversation({
           {cardDocumentText(result.document)}
         </p>,
       );
+    // Only a write waiting for the person's decision is a card; anything
+    // else an action did, the answer tells in words, like any AI chat.
+    if (
+      result?.type === "service.action" &&
+      result.status !== "awaiting_approval"
+    )
+      return m.text.trim() || m.ui ? answer(m) : null;
     if (result?.type === "service.action")
       return answer(
         m,
@@ -1021,6 +1028,13 @@ export function ChatConversation({
       : undefined;
     if (anchored && anchors.get(anchored.id) === m.id) {
       referencedWork.add(anchored.id);
+      // A finished action needs no card: the answer says what happened.
+      if (
+        anchored.native?.action &&
+        !anchored.native.process &&
+        isTerminalNativeWork(anchored)
+      )
+        return m.text.trim() || m.ui ? answer(m) : null;
       return answer(m, renderWork(anchored), false);
     }
     return answer(m);
@@ -1216,6 +1230,8 @@ export function ChatConversation({
             target.scrollHeight - target.clientHeight - target.scrollTop < 80;
           setAtEnd(following.current);
         }}
+        // Both edges keep the gutter, so the column centres like the composer.
+        data-chat-scroller
         className="min-h-0 flex-1 overflow-y-auto"
       >
         <div
@@ -1418,6 +1434,11 @@ export function ChatConversation({
         </div>
       </div>
       <div className="relative bg-background">
+        {/* The transcript fades out behind the composer as it scrolls. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-full mx-auto h-10 max-w-4xl bg-linear-to-t from-background to-transparent"
+        />
         {!atEnd && hasConversation && !showHome && (
           <div className="pointer-events-none absolute inset-x-0 bottom-full flex justify-center pb-3">
             <Button

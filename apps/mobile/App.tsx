@@ -103,6 +103,7 @@ import {
   Button,
   Notice,
   ActionToast,
+  FadeEdge,
   Group,
   Icon,
   IconTile,
@@ -1443,6 +1444,15 @@ export function Workspace({
           <Text selectable>{cardDocumentText(m.result.document)}</Text>
         </AssistantMessage>
       );
+    // Only a write waiting for the person's decision is a card; anything
+    // else an action did, the answer tells in words, like any AI chat.
+    if (
+      m.result?.type === "service.action" &&
+      m.result.status !== "awaiting_approval"
+    )
+      return m.text.trim() || m.ui ? (
+        <AssistantMessage key={m.id}>{answer(m)}</AssistantMessage>
+      ) : null;
     if (m.result?.type === "service.action") {
       const result = m.result;
       return (
@@ -1482,6 +1492,16 @@ export function Workspace({
       workMessageAnchors.get(m.workItemId) === m.id
     ) {
       referencedWork.add(m.workItemId);
+      const anchored = work.find((w) => w.id === m.workItemId);
+      // A finished action needs no card: the answer says what happened.
+      if (
+        anchored?.native?.action &&
+        !anchored.native.process &&
+        isTerminalNativeWork(anchored)
+      )
+        return m.text.trim() || m.ui ? (
+          <AssistantMessage key={m.id}>{answer(m)}</AssistantMessage>
+        ) : null;
       return (
         <View
           key={m.id}
@@ -2300,6 +2320,7 @@ export function Workspace({
         {/* Without a server there is nobody to write to; the intro offers Connect. */}
         {section === "chat" && session ? (
           <View testID="screen-footer" style={styles.footer}>
+            <FadeEdge />
             {processAnnouncement.notice ? (
               <ProcessCommandNoticeView
                 language={language}

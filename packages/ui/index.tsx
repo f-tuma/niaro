@@ -21,6 +21,7 @@ import {
 } from "react-native";
 import Svg, {
   Path,
+  Rect,
   Defs,
   LinearGradient as SvgGradient,
   Stop,
@@ -196,6 +197,33 @@ export function Text({
         style,
       ]}
     />
+  );
+}
+/** Content fading into the canvas above a fixed footer, as it scrolls. */
+export function FadeEdge({ height = 24 }: { height?: number }) {
+  return (
+    <View
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: "100%",
+        height,
+      }}
+    >
+      <Svg width="100%" height={height}>
+        <Defs>
+          <SvgGradient id="fade-edge" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={t.color.background} stopOpacity={0} />
+            <Stop offset="1" stopColor={t.color.background} stopOpacity={1} />
+          </SvgGradient>
+        </Defs>
+        <Rect width="100%" height={height} fill="url(#fade-edge)" />
+      </Svg>
+    </View>
   );
 }
 export function Surface(props: ViewProps) {

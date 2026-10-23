@@ -460,3 +460,39 @@
     flex: 1;
   }
 }
+/* The chat's "Thinking" line: a light sweeping across muted text. */
+[data-thinking] {
+  background: linear-gradient(
+      90deg,
+      var(--muted-foreground) 0%,
+      var(--muted-foreground) 35%,
+      var(--foreground) 50%,
+      var(--muted-foreground) 65%,
+      var(--muted-foreground) 100%
+    )
+    0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-sweep 2s linear infinite;
+}
+@keyframes thinking-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-thinking] {
+    animation: none;
+    color: var(--muted-foreground);
+    background: none;
+  }
+}
+/* Both edges keep the scrollbar gutter, so the chat column centres exactly
+   like the composer below it. */
+[data-chat-scroller] {
+  scrollbar-gutter: stable both-edges;
+}

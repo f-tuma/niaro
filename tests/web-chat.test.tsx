@@ -597,6 +597,45 @@ test("approving a prepared write resolves exactly that operation in its chat", a
   expect(sent[0]!.commandId).toBe(sent[0]!.idempotencyKey);
 });
 
+test("a finished action shows only the answer's words, no receipt card", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [
+      user("m-1", "Jak jsou na tom weby?"),
+      {
+        id: "m-2",
+        role: "assistant",
+        text: "Návštěvnost za týden vzrostla o 12 %.",
+        result: {
+          ...approval,
+          title: "Get Session Breakdown",
+          status: "succeeded",
+          effect: "read",
+          fields: [],
+          inputJson: "",
+        },
+      },
+      {
+        id: "m-3",
+        role: "assistant",
+        text: "",
+        result: { ...approval, operationId: "op-2", status: "failed" },
+      },
+    ],
+  };
+  const { session } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  expect(text(root)).toContain("Návštěvnost za týden vzrostla o 12 %.");
+  for (const id of ["service-action-op-1", "service-action-op-2"])
+    expect(
+      root.findAll((node) => node.props["data-testid"] === id),
+    ).toHaveLength(0);
+  expect(text(root)).not.toContain("Get Session Breakdown");
+});
+
 test("a task's native approval carries the work item and the revision it was shown at", async () => {
   const conversation: Conversation = {
     id: "conv-1",

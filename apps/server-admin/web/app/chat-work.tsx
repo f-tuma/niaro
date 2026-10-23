@@ -1,9 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import {
   Calendar,
-  Check,
+  ChevronRight,
   CircleAlert,
-  CircleDashed,
   Clock,
   MessageSquare,
   RefreshCw,
@@ -887,28 +886,10 @@ const statusLabels = {
   unknown: "progressUnconfirmed",
   needs_input: "progressNeedsInput",
 } as const;
-function StepIcon({ status }: { status: StepStatus }) {
-  return status === "succeeded" ? (
-    <Check aria-hidden="true" className="size-3.5 text-success" />
-  ) : status === "failed" ? (
-    <X aria-hidden="true" className="size-3.5 text-destructive" />
-  ) : status === "needs_input" ? (
-    <CircleAlert aria-hidden="true" className="size-3.5 text-info" />
-  ) : status === "running" ? (
-    <span className="text-muted-foreground">
-      <Spinner className="size-3.5" />
-    </span>
-  ) : (
-    <CircleDashed
-      aria-hidden="true"
-      className="size-3.5 text-muted-foreground"
-    />
-  );
-}
-
 /**
- * What the assistant is doing right now, from the server's bounded stages.
- * Uncertain delivery offers a safe resend of the same command.
+ * What the assistant is doing right now, as one "Thinking" line like an AI
+ * chat; the server's bounded stages open beneath it on request. Uncertain
+ * delivery offers a safe resend of the same command.
  */
 export function ProgressView({
   activity,
@@ -926,15 +907,15 @@ export function ProgressView({
   retryDisabled: boolean;
 }) {
   const { copy, tr } = useChatCopy();
+  const [open, setOpen] = useState(false);
   const unknown = interrupted || connection === "unavailable";
+  const stopped = unknown || failed || activity?.status === "failed";
   const title =
     failed || activity?.status === "failed"
       ? "progressFailed"
       : unknown
         ? "progressUnknown"
-        : activity?.status === "succeeded"
-          ? "progressComplete"
-          : "progressTitle";
+        : "progressThinking";
   const rows =
     activity?.steps.flatMap((step) => [
       { ...step, calls: 1 },
@@ -945,18 +926,29 @@ export function ProgressView({
       data-testid="request-progress"
       role="status"
       aria-live="polite"
-      className="flex flex-col gap-2 text-sm"
+      className="flex flex-col gap-1.5 text-sm"
     >
-      <span className="flex items-center gap-2 text-muted-foreground">
-        {unknown || failed ? (
-          <CircleAlert aria-hidden="true" className="size-4" />
-        ) : (
-          <Spinner className="size-4" />
+      <button
+        type="button"
+        aria-expanded={open}
+        disabled={!rows.length}
+        onClick={() => setOpen((value) => !value)}
+        className="group flex items-center gap-1.5 self-start rounded-sm text-muted-foreground outline-offset-4 hover:text-foreground focus-visible:outline-2 disabled:cursor-default"
+      >
+        {stopped && <CircleAlert aria-hidden="true" className="size-4" />}
+        <span data-thinking={stopped ? undefined : ""}>{tr(title)}</span>
+        {rows.length > 0 && (
+          <ChevronRight
+            aria-hidden="true"
+            className="size-3.5 transition-transform group-aria-expanded:rotate-90"
+          />
         )}
-        {tr(title)}
-      </span>
+      </button>
       {rows.length > 0 && (
-        <ul className="flex flex-col gap-1 border-l pl-3 text-xs text-muted-foreground">
+        <ul
+          hidden={!open}
+          className="flex flex-col gap-1 border-l pl-3 text-xs text-muted-foreground"
+        >
           {rows.map((step) => {
             const status: StepStatus =
               unknown && step.status === "running" ? "unknown" : step.status;
@@ -969,11 +961,17 @@ export function ProgressView({
               <li
                 key={step.id}
                 data-testid={`progress-step-${step.id}-${status}`}
-                className="flex items-center gap-2"
+                data-status={status}
+                className="data-[status=pending]:opacity-50 data-[status=running]:text-foreground"
               >
-                <StepIcon status={status} />
-                <span>{label}</span>
-                <span className="sr-only">{tr(statusLabels[status])}</span>
+                {label}
+                {status === "failed" ||
+                status === "needs_input" ||
+                status === "unknown" ? (
+                  <span> · {tr(statusLabels[status])}</span>
+                ) : (
+                  <span className="sr-only">{tr(statusLabels[status])}</span>
+                )}
               </li>
             );
           })}

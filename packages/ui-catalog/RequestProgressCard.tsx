@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Animated, Easing, StyleSheet, View } from "react-native";
+import { Animated, Easing, Pressable, StyleSheet, View } from "react-native";
 import type { Language } from "../protocol";
 import type { RequestActivity } from "../protocol/activity";
 import { translate } from "../i18n";
 import { tokens as t } from "../design-tokens";
-import { Button, Icon, Row, Surface, Text } from "../ui";
+import { Button, Icon, Text } from "../ui";
 import { nativeMotion, useReducedMotion } from "../ui/motion";
 
 type StepStatus =
@@ -14,66 +14,58 @@ type StepStatus =
   | "failed"
   | "unknown"
   | "needs_input";
-function StepIcon({ status }: { status: StepStatus }) {
+
+/** "Thinking" that breathes while the assistant works; still otherwise. */
+function ThinkingLabel({
+  live,
+  children,
+}: {
+  live: boolean;
+  children: string;
+}) {
   const reduced = useReducedMotion();
-  const [rotation] = useState(() => new Animated.Value(0));
+  const [opacity] = useState(() => new Animated.Value(1));
   useEffect(() => {
-    rotation.setValue(0);
-    if (status !== "running" || reduced) return;
+    opacity.setValue(1);
+    if (!live || reduced) return;
     const animation = Animated.loop(
-      Animated.timing(rotation, {
-        toValue: 1,
-        duration: 1200,
-        easing: Easing.linear,
-        useNativeDriver: nativeMotion,
-        isInteraction: false,
-      }),
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.4,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: nativeMotion,
+          isInteraction: false,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: nativeMotion,
+          isInteraction: false,
+        }),
+      ]),
     );
     animation.start();
     return () => animation.stop();
-  }, [status, reduced, rotation]);
+  }, [live, reduced, opacity]);
   return (
-    <View
-      style={styles.icon}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+    <Animated.View
+      testID={live ? "progress-thinking" : undefined}
+      style={{ opacity }}
     >
-      {status === "succeeded" ? (
-        <View style={styles.done}>
-          <Icon name="check" size={12} color={t.color.text.inverse} />
-        </View>
-      ) : status === "failed" ? (
-        <Icon name="close" size={18} color={t.color.status.error} />
-      ) : status === "needs_input" ? (
-        <Icon name="info" size={18} color={t.color.action.primary} />
-      ) : (
-        <Animated.View
-          testID={`progress-icon-${status}`}
-          style={[
-            styles.ring,
-            status === "running" && {
-              borderColor: t.color.accent.softBlue,
-              borderTopColor: t.color.action.primary,
-              borderRightColor: t.color.action.primary,
-            },
-            {
-              transform: [
-                {
-                  rotate: rotation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "360deg"],
-                  }),
-                },
-              ],
-            },
-          ]}
-        />
-      )}
-    </View>
+      <Text role="rowLabel" tone="secondary">
+        {children}
+      </Text>
+    </Animated.View>
   );
 }
 
-/** The server selects known stages only; this card owns every label and visual. */
+/**
+ * What the assistant is doing, as one "Thinking" line like an AI chat. The
+ * server selects known stages only; they open beneath it on request, and this
+ * view owns every label.
+ */
 export function RequestProgressCard({
   activity,
   language,
@@ -105,16 +97,18 @@ export function RequestProgressCard({
   voice?: boolean;
 }) {
   const tr = translate(language);
+  const [open, setOpen] = useState(false);
   const unknown = interrupted || connection === "unavailable";
-  const live = !unknown && activity?.status === "running";
+  const stopped = unknown || failed || activity?.status === "failed";
+  const live = !stopped && (voice || activity?.status !== "succeeded");
   const title =
     failed || activity?.status === "failed"
       ? "progressFailed"
       : unknown
         ? "progressUnknown"
-        : activity?.status === "succeeded" && !voice
-          ? "progressComplete"
-          : "progressTitle";
+        : voice
+          ? "progressVoice"
+          : "progressThinking";
   const labels = {
     understanding: "progressUnderstanding",
     crm: "progressCrm",
@@ -135,82 +129,57 @@ export function RequestProgressCard({
     inputs: "progressInputs",
     execute: "progressExecute",
   } as const;
-  const rows = activity?.steps.flatMap((step) => [
-    { ...step, calls: 1 },
-    ...(step.id === "understanding" ? (activity.tools ?? []) : []),
-  ]);
+  const rows =
+    activity?.steps.flatMap((step) => [
+      { ...step, calls: 1 },
+      ...(step.id === "understanding" ? (activity.tools ?? []) : []),
+    ]) ?? [];
   return (
-    <Surface testID="request-progress" style={styles.card}>
-      <Text role="rowTitle" accessibilityRole="header">
-        {tr(title)}
-      </Text>
-      <View
-        style={styles.steps}
+    <View testID="request-progress" style={styles.card}>
+      <Pressable
+        testID="progress-toggle"
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open, busy: live }}
         accessibilityLiveRegion="polite"
-        accessibilityState={{ busy: !!live }}
+        disabled={!rows.length}
+        onPress={() => setOpen((value) => !value)}
+        style={styles.title}
       >
-        {activity ? (
-          rows!.map((step) => {
+        {stopped ? (
+          <Icon name="alert" size={16} color={t.color.text.secondary} />
+        ) : null}
+        <ThinkingLabel live={live}>{tr(title)}</ThinkingLabel>
+        {rows.length ? (
+          <View style={open ? styles.chevronOpen : undefined}>
+            <Icon name="chevron" size={14} color={t.color.text.secondary} />
+          </View>
+        ) : null}
+      </Pressable>
+      {open && rows.length ? (
+        <View style={styles.steps}>
+          {rows.map((step) => {
             const status: StepStatus =
               unknown && step.status === "running" ? "unknown" : step.status;
             const workflow =
-              step.id === "understanding" ? activity.workflow : undefined;
+              step.id === "understanding" ? activity?.workflow : undefined;
             const label = workflow
               ? tr(workflowLabels[workflow.stage])
               : `${tr(labels[step.id])}${step.calls > 1 ? ` · ${step.calls}×` : ""}`;
             return (
-              <Row
+              <Text
                 key={step.id}
                 testID={`progress-step-${step.id}-${status}`}
-                style={styles.step}
-                accessible
+                role="caption"
+                tone={status === "running" ? undefined : "secondary"}
                 accessibilityLabel={`${label}. ${tr(statuses[status])}`}
+                style={status === "pending" ? styles.pending : undefined}
               >
-                <StepIcon status={status} />
-                <Text role="caption" style={styles.label}>
-                  {label}
-                </Text>
-                <Text
-                  role="caption"
-                  style={{
-                    color:
-                      status === "succeeded"
-                        ? t.color.status.success
-                        : status === "running"
-                          ? t.color.action.primary
-                          : t.color.text.secondary,
-                  }}
-                >
-                  {tr(statuses[status])}
-                </Text>
-              </Row>
+                {`${label} · ${tr(statuses[status])}`}
+              </Text>
             );
-          })
-        ) : voice ? null : (
-          <Row style={styles.step}>
-            <StepIcon status={unknown ? "unknown" : "running"} />
-            <Text role="caption" style={styles.label}>
-              {tr("progressWaiting")}
-            </Text>
-          </Row>
-        )}
-        {voice ? (
-          <Row
-            testID="progress-step-voice-running"
-            style={styles.step}
-            accessible
-            accessibilityLabel={`${tr("progressVoice")}. ${tr("progressRunning")}`}
-          >
-            <StepIcon status="running" />
-            <Text role="caption" style={styles.label}>
-              {tr("progressVoice")}
-            </Text>
-            <Text role="caption" style={{ color: t.color.action.primary }}>
-              {tr("progressRunning")}
-            </Text>
-          </Row>
-        ) : null}
-      </View>
+          })}
+        </View>
+      ) : null}
       {unknown ? (
         <Text role="caption" tone="secondary">
           {tr(failed ? "progressFailedHint" : "progressUnavailable")}
@@ -239,35 +208,25 @@ export function RequestProgressCard({
           disabled={retryDisabled}
         />
       ) : null}
-    </Surface>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { gap: t.spacing.md },
-  steps: { gap: 10 },
+  card: { gap: t.spacing.sm, alignItems: "flex-start" },
+  title: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minHeight: 32,
+  },
+  chevronOpen: { transform: [{ rotate: "90deg" }] },
+  steps: {
+    gap: 6,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: t.color.text.disabled,
+    paddingLeft: t.spacing.md,
+  },
+  pending: { opacity: 0.6 },
   action: { alignSelf: "flex-start", marginLeft: -14, marginVertical: -4 },
-  step: { gap: t.spacing.sm, alignItems: "center" },
-  label: { flex: 1, minWidth: 0 },
-  icon: {
-    width: 20,
-    height: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ring: {
-    width: 17,
-    height: 17,
-    borderRadius: t.radius.pill,
-    borderWidth: 2,
-    borderColor: t.color.text.disabled,
-  },
-  done: {
-    width: 18,
-    height: 18,
-    borderRadius: t.radius.pill,
-    backgroundColor: t.color.status.success,
-    alignItems: "center",
-    justifyContent: "center",
-  },
 });

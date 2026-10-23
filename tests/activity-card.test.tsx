@@ -9,12 +9,16 @@ import {
 import type { ActivityWorkflow } from "../packages/protocol/activity";
 import { translate } from "../packages/i18n";
 
+/** The steps open beneath the "Thinking" line on request. */
+const expand = () => fireEvent.press(screen.getByTestId("progress-toggle"));
+
 test.each(["en", "cs"] as const)(
   "%s progress is passive, labelled, and distinguishes each step",
   (language) => {
     render(
       <RequestProgressCard activity={requestActivity()} language={language} />,
     );
+    expand();
     const tr = translate(language);
     expect(
       screen.getByLabelText(`${tr("progressCrm")}. ${tr("progressRunning")}`),
@@ -29,9 +33,9 @@ test.each(["en", "cs"] as const)(
         `${tr("progressPreparing")}. ${tr("progressPending")}`,
       ),
     ).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(
-      screen.getAllByTestId("progress-icon-running", {
+      screen.getAllByTestId("progress-thinking", {
         includeHiddenElements: true,
       }),
     ).toHaveLength(1);
@@ -82,17 +86,18 @@ test("stale progress stops animation without claiming success or failure", () =>
       connection="unavailable"
     />,
   );
+  expand();
   expect(
-    screen.queryByTestId("progress-icon-running", {
+    screen.queryByTestId("progress-thinking", {
       includeHiddenElements: true,
     }),
   ).toBeNull();
   expect(screen.getByTestId("progress-step-crm-unknown")).toBeTruthy();
-  expect(screen.getByText("Hotovo")).toBeTruthy();
+  expect(screen.getByText(/· Hotovo$/)).toBeTruthy();
   expect(screen.getByText("Výsledek není potvrzený")).toBeTruthy();
   rerender(<RequestProgressCard activity={null} language="en" interrupted />);
   expect(
-    screen.queryByTestId("progress-icon-running", {
+    screen.queryByTestId("progress-thinking", {
       includeHiddenElements: true,
     }),
   ).toBeNull();
@@ -105,6 +110,7 @@ test.each(["en", "cs"] as const)(
     const { rerender } = render(
       <RequestProgressCard activity={pluginActivity()} language={language} />,
     );
+    expand();
     expect(
       screen.getByLabelText(
         `${tr("progressDatetime")}. ${tr("progressRunning")}`,
@@ -138,7 +144,7 @@ test.each(["en", "cs"] as const)(
     );
     expect(screen.getByTestId("progress-step-datetime-unknown")).toBeTruthy();
     expect(screen.queryByTestId("progress-step-datetime-running")).toBeNull();
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
   },
 );
 test("server-reported failure leaves future work pending", () => {
@@ -146,10 +152,11 @@ test("server-reported failure leaves future work pending", () => {
   activity.status = "failed";
   activity.steps[1]!.status = "failed";
   render(<RequestProgressCard activity={activity} language="en" />);
+  expand();
   expect(screen.getByText("Request interrupted")).toBeTruthy();
-  expect(screen.getByText("Next")).toBeTruthy();
+  expect(screen.getByText(/· Next$/)).toBeTruthy();
   expect(
-    screen.queryByTestId("progress-icon-running", {
+    screen.queryByTestId("progress-thinking", {
       includeHiddenElements: true,
     }),
   ).toBeNull();
@@ -223,6 +230,7 @@ test.each(["en", "cs"] as const)(
     const { rerender } = render(
       <RequestProgressCard activity={workflowActivity()} language={language} />,
     );
+    expand();
     const stages = [
       ["service", "progressService"],
       ["action", "progressAction"],
@@ -236,8 +244,10 @@ test.each(["en", "cs"] as const)(
         screen.getByLabelText(`${tr(key)}. ${tr("progressRunning")}`),
       ).toBeTruthy();
       expect(screen.getAllByTestId(/^progress-step-/)).toHaveLength(2);
-      expect(screen.queryByText(tr("progressUnderstanding"))).toBeNull();
-      expect(screen.queryByRole("button")).toBeNull();
+      expect(
+        screen.queryByText(new RegExp(`^${tr("progressUnderstanding")}`)),
+      ).toBeNull();
+      expect(screen.getAllByRole("button")).toHaveLength(1);
     }
     rerender(
       <RequestProgressCard
@@ -281,13 +291,14 @@ test.each(["failed", "succeeded", "unavailable"] as const)(
         connection={state === "unavailable" ? "unavailable" : "live"}
       />,
     );
+    expand();
     expect(
       screen.getByTestId(
         `progress-step-understanding-${state === "unavailable" ? "unknown" : state}`,
       ),
     ).toBeTruthy();
     expect(
-      screen.queryByTestId("progress-icon-running", {
+      screen.queryByTestId("progress-thinking", {
         includeHiddenElements: true,
       }),
     ).toBeNull();
