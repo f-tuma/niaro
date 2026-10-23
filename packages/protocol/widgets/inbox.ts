@@ -71,7 +71,7 @@ export const inboxWidget = defineWidget({
             {
               id: "AAMkAGE1-sample-1",
               from: "Jana Nováková",
-              subject: "Cenová nabídka – potvrzení",
+              subject: "Cenová nabídka",
               receivedAt: hour(1),
               summary: "Čeká na potvrzení ceny do pátku.",
               importance: "high" as const,
@@ -81,7 +81,7 @@ export const inboxWidget = defineWidget({
             {
               id: "AAMkAGE1-sample-2",
               from: "Petr Svoboda",
-              subject: "Schůzka příští týden",
+              subject: "Termín schůzky",
               receivedAt: hour(3),
               summary: "Navrhuje úterý nebo středu dopoledne.",
               importance: "normal" as const,
@@ -96,7 +96,7 @@ export const inboxWidget = defineWidget({
             {
               id: "AAMkAGE1-sample-1",
               from: "Jane Smith",
-              subject: "Quote – confirmation",
+              subject: "Price quote",
               receivedAt: hour(1),
               summary: "Waits for the price to be confirmed by Friday.",
               importance: "high" as const,
@@ -106,7 +106,7 @@ export const inboxWidget = defineWidget({
             {
               id: "AAMkAGE1-sample-2",
               from: "Peter Brown",
-              subject: "Meeting next week",
+              subject: "Meeting time",
               receivedAt: hour(3),
               summary: "Suggests Tuesday or Wednesday morning.",
               importance: "normal" as const,

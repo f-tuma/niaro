@@ -13,6 +13,7 @@ import {
   WidgetRows,
   WidgetToolbar,
   matchesQuery,
+  rowLimit,
 } from "./shared";
 import { defineRenderer } from "./types";
 
@@ -52,7 +53,7 @@ export default defineRenderer<Data, Config>({
     const t = text[language];
     const [selected, setSelected] = useState<number | null>(null);
     const [query, setQuery] = useState("");
-    const all = data.items.slice(0, config.count);
+    const all = data.items.slice(0, rowLimit(config.count, preview));
     const items = all
       .map((item, index) => ({ item, index }))
       .filter(({ item }) =>

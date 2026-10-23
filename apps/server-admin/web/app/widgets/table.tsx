@@ -26,11 +26,13 @@ import {
   WidgetFooter,
   WidgetToolbar,
   matchesQuery,
+  rowLimit,
 } from "./shared";
 import { defineRenderer } from "./types";
 
 type Data = z.infer<typeof tableWidget.data>;
 type Config = z.infer<typeof tableWidget.config>;
+const PREVIEW_COLUMNS = 3;
 type Cell = Data["rows"][number][number];
 type Sort = { column: number; direction: "asc" | "desc" };
 
@@ -101,14 +103,20 @@ export default defineRenderer<Data, Config>({
     });
     const all = useMemo(
       () =>
-        data.rows.slice(0, config.count).map((cells, index) => ({
-          cells,
-          link: data.rowLinks?.[index] ?? null,
-        })),
-      [data, config.count],
+        data.rows
+          .slice(0, rowLimit(config.count, preview))
+          .map((cells, index) => ({
+            cells,
+            link: data.rowLinks?.[index] ?? null,
+          })),
+      [data, config.count, preview],
     );
+    // The gallery's narrow preview fits a few columns, without links.
+    const columns = preview
+      ? data.columns.slice(0, PREVIEW_COLUMNS)
+      : data.columns;
     // A column is numeric when every filled cell in it is a number.
-    const numeric = data.columns.map((_, column) => {
+    const numeric = columns.map((_, column) => {
       const filled = all
         .map((row) => row.cells[column])
         .filter((value) => value !== null && value !== undefined);
@@ -127,7 +135,7 @@ export default defineRenderer<Data, Config>({
         ),
       );
     }, [all, query, sort]);
-    const hasLinks = all.some((row) => row.link);
+    const hasLinks = !preview && all.some((row) => row.link);
     const tools = !preview && (all.length > 5 || expanded);
     if (!all.length) return <Nothing>{t.nothing}</Nothing>;
     const copy = async () => {
@@ -169,7 +177,7 @@ export default defineRenderer<Data, Config>({
           <Table scroll={!preview}>
             <TableHeader sticky={!preview}>
               <TableRow>
-                {data.columns.map((column, index) => {
+                {columns.map((column, index) => {
                   const active = sort?.column === index ? sort.direction : null;
                   const Icon =
                     active === "asc"
@@ -223,7 +231,7 @@ export default defineRenderer<Data, Config>({
             <TableBody>
               {rows.map((row, index) => (
                 <TableRow key={index} data-testid="table-row">
-                  {data.columns.map((_, column) => {
+                  {columns.map((_, column) => {
                     const value = row.cells[column];
                     return (
                       <TableCell

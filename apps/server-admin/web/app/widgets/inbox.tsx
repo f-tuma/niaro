@@ -24,6 +24,7 @@ import {
   WidgetRows,
   WidgetToolbar,
   formatWhen,
+  rowLimit,
 } from "./shared";
 import { EmailDoc, LinkedText } from "./email-doc";
 import { defineRenderer, type WidgetAsk, type WidgetLanguage } from "./types";
@@ -286,6 +287,7 @@ function Row({
   language,
   selected,
   summary,
+  preview,
   ...props
 }: {
   email: Email;
@@ -293,6 +295,8 @@ function Row({
   selected: boolean;
   /** The card shows the gist under the subject; the reader's list doesn't. */
   summary?: boolean;
+  /** The gallery's narrow preview: the sender and subject, no badge. */
+  preview?: boolean;
 } & Omit<ComponentProps<"button">, "title">) {
   const t = text[language];
   const unread = email.unreadFlag === true;
@@ -311,7 +315,7 @@ function Row({
       }
       title={email.from}
       badge={
-        email.importance === "high" ? (
+        email.importance === "high" && !preview ? (
           <StatusBadge tone="warning">{t.high}</StatusBadge>
         ) : undefined
       }
@@ -330,7 +334,7 @@ function Row({
           )}
         </>
       }
-      gist={summary ? email.summary || undefined : undefined}
+      gist={summary && !preview ? email.summary || undefined : undefined}
     />
   );
 }
@@ -395,7 +399,7 @@ export default defineRenderer<Data, Config>({
       expanded && item ? (lastSelection.get(item.id) ?? null) : null,
     );
     const all = data.emails
-      .slice(0, config.count)
+      .slice(0, rowLimit(config.count, preview))
       .map((email, index) => ({ email, key: keyOf(email, index) }));
     const flagged = all.some(({ email }) => email.unreadFlag !== undefined);
     const emails = all.filter(({ email }) => passes(email, filter));
@@ -458,6 +462,7 @@ export default defineRenderer<Data, Config>({
               email={email}
               language={language}
               summary={!expanded}
+              preview={preview}
               selected={expanded ? shown?.key === key : open}
               onClick={() => select(open && !expanded ? null : key)}
             />
@@ -511,7 +516,7 @@ export default defineRenderer<Data, Config>({
     if (!expanded)
       return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
-          {toolbar}
+          {!preview && toolbar}
           {empty ?? list}
         </div>
       );

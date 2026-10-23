@@ -282,6 +282,18 @@ export function WidgetFooter({
   );
 }
 
+/**
+ * The gallery's preview box has a fixed height and shows whole rows only:
+ * a list widget's preview stops at this many.
+ */
+export const PREVIEW_ROWS = 2;
+/** How many rows a widget shows: its setting, or fewer in the preview. */
+export const rowLimit = (
+  count: number,
+  preview?: boolean,
+  rows = PREVIEW_ROWS,
+) => (preview ? Math.min(count, rows) : count);
+
 /** The rows of a widget, divided. */
 export function WidgetRows({ children }: { children: ReactNode }) {
   return (
@@ -646,15 +658,19 @@ export const formatDay = (date: Date, language: WidgetLanguage) =>
     day: "numeric",
     month: "numeric",
   });
-/** "10/17 9:00 AM" for prepared requests. */
-export const formatWhen = (value: string, language: WidgetLanguage) => {
+/** "10/17 9:00 AM" for prepared requests; "10/17" without the time. */
+export const formatWhen = (
+  value: string,
+  language: WidgetLanguage,
+  time = true,
+) => {
   const when = parseWhen(value);
   if (!when.valid) return value;
   const day = when.date.toLocaleDateString(language, {
     day: "numeric",
     month: "numeric",
   });
-  return when.dateOnly ? day : `${day} ${formatTime(value, language)}`;
+  return when.dateOnly || !time ? day : `${day} ${formatTime(value, language)}`;
 };
 export const dayKey = (date: Date) =>
   `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;

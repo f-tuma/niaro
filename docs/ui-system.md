@@ -119,3 +119,8 @@ same corner.
 - **Dialog height**: tools (lists, calendar, chart, table) fill the dialog;
   a figure (KPI, briefing) keeps its natural height.
 - **Empty**: one muted sentence, centred in the pane it belongs to.
+- **Preview** (the gallery's "Add widget"): a miniature of the sample data
+  in a fixed-height box, whole rows only: at most two rows (`rowLimit`), no
+  toolbar, badges or gist where they would crowd a narrow row, a table with
+  three columns and no links, a calendar with three hours around its first
+  entries and one-line blocks. Sample strings are short enough to fit.

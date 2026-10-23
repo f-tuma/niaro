@@ -50,7 +50,7 @@ export const followupsWidget = defineWidget({
       ? {
           items: [
             {
-              who: "Jana Nováková (Acme)",
+              who: "Jana (Acme)",
               reason: "Nabídka bez odpovědi 10 dní",
               priority: "high" as const,
             },
@@ -61,7 +61,7 @@ export const followupsWidget = defineWidget({
           items: [
             {
               who: "Jane Smith (Acme)",
-              reason: "Proposal without an answer for 10 days",
+              reason: "Proposal unanswered for 10 days",
               priority: "high" as const,
             },
             { who: "Peter Brown", reason: "Promised documents by Friday" },

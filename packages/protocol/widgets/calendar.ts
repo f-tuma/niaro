@@ -102,7 +102,7 @@ export const calendarWidget = defineWidget({
       {
         title: language === "cs" ? "Porada týmu" : "Team meeting",
         start: at(0, 9),
-        end: at(0, 9, 45),
+        end: at(0, 10),
         location: language === "cs" ? "Zasedačka" : "Meeting room",
         organizer: "Jana Nováková",
         attendees: ["Jana Nováková", "Petr Svoboda"],
@@ -111,8 +111,8 @@ export const calendarWidget = defineWidget({
       },
       {
         title: language === "cs" ? "Volání s dodavatelem" : "Supplier call",
-        start: at(0, 9, 30),
-        end: at(0, 10),
+        start: at(0, 10, 30),
+        end: at(0, 11, 30),
         status: "tentative" as const,
       },
       {

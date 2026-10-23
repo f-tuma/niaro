@@ -46,6 +46,7 @@ import {
   layoutDays,
   minutesSinceMidnight,
   openingHour,
+  startOfDay,
   viewOfRange,
   type CalendarDay,
   type CalendarEntry,
@@ -411,17 +412,25 @@ function EntryPane({
   );
 }
 
+/**
+ * How much of an entry the gallery's small preview writes: the title and
+ * start on one line (one day), the title (a few days) or nothing (a week).
+ */
+type Compact = "line" | "title" | "bare";
+
 function EventBlock({
   placed,
   day,
   layout,
   language,
+  compact,
   ...props
 }: {
   placed: CalendarPlaced;
   day: CalendarDay;
   layout: CalendarLayout;
   language: WidgetLanguage;
+  compact?: Compact;
 } & ComponentProps<"button">) {
   const { entry, lane, lanes } = placed;
   const top = gridPercent(placed.startMin, layout);
@@ -446,11 +455,24 @@ function EventBlock({
       className="absolute top-(--cal-top) left-(--cal-left) flex h-(--cal-height) w-(--cal-width) min-w-0 flex-col overflow-hidden rounded-md border-l-2 border-primary bg-primary/15 px-1.5 py-1 text-left text-xs leading-tight hover:bg-primary/25 aria-[current=true]:ring-2 aria-[current=true]:ring-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none data-[status=declined]:border-muted-foreground data-[status=declined]:bg-muted data-[status=declined]:text-muted-foreground data-[status=declined]:line-through data-[status=tentative]:border-dashed data-[status=tentative]:bg-primary/5"
       style={vars}
     >
-      <span className="truncate font-medium">{entry.title}</span>
-      <span className="truncate text-muted-foreground tabular-nums">
-        {spanOf(entry, language)}
-        {entry.location && ` · ${entry.location}`}
-      </span>
+      {compact === "line" ? (
+        <span className="flex min-w-0 items-baseline gap-1">
+          <span className="truncate font-medium">{entry.title}</span>
+          <span className="shrink-0 text-muted-foreground tabular-nums">
+            {timeOf(entry.start, language)}
+          </span>
+        </span>
+      ) : compact === "title" ? (
+        <span className="truncate font-medium">{entry.title}</span>
+      ) : compact === "bare" ? null : (
+        <>
+          <span className="truncate font-medium">{entry.title}</span>
+          <span className="truncate text-muted-foreground tabular-nums">
+            {spanOf(entry, language)}
+            {entry.location && ` · ${entry.location}`}
+          </span>
+        </>
+      )}
     </button>
   );
 }
@@ -491,8 +513,13 @@ function TaskMarker({
 
 function AllDayChip({
   entry,
+  bare,
   ...props
-}: { entry: CalendarEntry } & ComponentProps<"button">) {
+}: {
+  entry: CalendarEntry;
+  /** A bar without its title (a week in the gallery's preview). */
+  bare?: boolean;
+} & ComponentProps<"button">) {
   const Icon =
     entry.kind === "task" ? (entry.done ? CircleCheck : Circle) : null;
   return (
@@ -503,15 +530,17 @@ function AllDayChip({
       data-kind={entry.kind}
       data-status={entry.status ?? "none"}
       data-done={entry.done === true}
-      className="flex min-w-0 items-center gap-1 rounded-sm border-l-2 border-primary bg-primary/10 px-1 text-left text-xs leading-tight hover:bg-primary/20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none data-[done=true]:line-through data-[kind=task]:border-muted-foreground data-[kind=task]:bg-muted data-[status=declined]:border-muted-foreground data-[status=declined]:bg-muted data-[status=declined]:text-muted-foreground data-[status=declined]:line-through data-[status=tentative]:border-dashed data-[status=tentative]:bg-primary/5"
+      data-bare={bare === true}
+      aria-label={bare ? entry.title : undefined}
+      className="flex min-w-0 items-center gap-1 rounded-sm border-l-2 border-primary bg-primary/10 px-1 text-left text-xs leading-tight hover:bg-primary/20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none data-[done=true]:line-through data-[kind=task]:border-muted-foreground data-[kind=task]:bg-muted data-[status=declined]:border-muted-foreground data-[status=declined]:bg-muted data-[status=declined]:text-muted-foreground data-[status=declined]:line-through data-[status=tentative]:border-dashed data-[status=tentative]:bg-primary/5 data-[bare=true]:h-4"
     >
-      {Icon && (
+      {!bare && Icon && (
         <Icon
           aria-hidden="true"
           className="size-3 shrink-0 text-muted-foreground"
         />
       )}
-      <span className="truncate">{entry.title}</span>
+      {!bare && <span className="truncate">{entry.title}</span>}
     </button>
   );
 }
@@ -554,6 +583,42 @@ function HourField({
   );
 }
 
+/** Hours in the gallery's preview: three, two under a row of all-day chips. */
+const PREVIEW_HOURS = 3;
+
+/**
+ * The gallery's preview: a few whole hours from the first timed entry of the
+ * shown days, and only the entries that fit in them, so nothing is cut off.
+ */
+function previewOf(entries: CalendarEntry[], days: Date[], config: Config) {
+  const keys = new Set(days.map(isoDate));
+  const timed = entries.filter(
+    (entry) => !entry.allDay && keys.has(isoDate(entry.start)),
+  );
+  const allDay = entries.some(
+    (entry) =>
+      entry.allDay &&
+      days.some(
+        (day) => startOfDay(entry.start) <= day && day <= startOfDay(entry.end),
+      ),
+  );
+  const hours = allDay ? PREVIEW_HOURS - 1 : PREVIEW_HOURS;
+  const first = Math.min(...timed.map((entry) => entry.start.getHours()));
+  const from = Math.min(
+    Number.isFinite(first) ? first : config.dayStart,
+    24 - hours,
+  );
+  const window = { from, to: from + hours };
+  const fits = (entry: CalendarEntry) => {
+    if (entry.allDay) return true;
+    if (!keys.has(isoDate(entry.start))) return false;
+    const end = new Date(entry.start);
+    end.setHours(window.to, 0, 0, 0);
+    return entry.start.getHours() >= window.from && entry.end <= end;
+  };
+  return { window, entries: entries.filter(fits) };
+}
+
 export default defineRenderer<Data, Config>({
   type: "calendar",
   icon: CalendarDays,
@@ -585,24 +650,14 @@ export default defineRenderer<Data, Config>({
     const shown = calendarDays(config.range, view, now);
     const focused = focus ? shown.filter((day) => isoDate(day) === focus) : [];
     // The grid runs the whole day and opens on the working hours; the
-    // gallery's small preview shows a short window from its first entry.
-    const firstHour = Math.min(
-      ...entries
-        .filter((entry) => !entry.allDay)
-        .map((entry) => entry.start.getHours()),
-    );
-    const window = preview
-      ? {
-          from: Number.isFinite(firstHour)
-            ? Math.min(Math.max(config.dayStart, firstHour), config.dayEnd - 1)
-            : config.dayStart,
-          to: config.dayEnd,
-        }
-      : { from: 0, to: 24 };
+    // gallery's small preview shows a few hours from its first entry, with
+    // only the entries that fit in them whole.
+    const days = focused.length ? focused : shown;
+    const small = preview ? previewOf(entries, days, config) : null;
     const layout = layoutDays(
-      entries,
-      focused.length ? focused : shown,
-      window,
+      small?.entries ?? entries,
+      days,
+      small?.window ?? { from: 0, to: 24 },
       now,
     );
     const hours = Array.from(
@@ -616,6 +671,13 @@ export default defineRenderer<Data, Config>({
         : null;
     const hasAllDay = layout.days.some((day) => day.allDay.length);
     const multi = layout.days.length > 1;
+    const compact: Compact | undefined = !preview
+      ? undefined
+      : !multi
+        ? "line"
+        : layout.days.length <= 3
+          ? "title"
+          : "bare";
 
     // Open on the current hour (or the first entry); once, when laid out.
     const scroller = useRef<HTMLDivElement>(null);
@@ -653,6 +715,7 @@ export default defineRenderer<Data, Config>({
       <div
         data-testid="calendar"
         data-large={expanded === true}
+        data-preview={preview === true}
         className="group/cal flex min-h-0 min-w-0 flex-1 flex-col gap-1"
       >
         <WidgetToolbar
@@ -710,9 +773,11 @@ export default defineRenderer<Data, Config>({
               onClick={() => setFocus(day.key)}
               className="flex min-w-0 flex-1 items-baseline justify-center gap-1 rounded-md py-1 text-xs text-muted-foreground enabled:hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[today=true]:font-semibold data-[today=true]:text-primary"
             >
-              <span className="truncate">
-                {day.date.toLocaleDateString(language, { weekday: "short" })}
-              </span>
+              {compact !== "bare" && (
+                <span className="truncate">
+                  {day.date.toLocaleDateString(language, { weekday: "short" })}
+                </span>
+              )}
               <span className="font-medium tabular-nums">
                 {day.date.getDate()}
               </span>
@@ -741,7 +806,7 @@ export default defineRenderer<Data, Config>({
                     selected={isSelected(entry)}
                     {...detailProps}
                   >
-                    <AllDayChip entry={entry} />
+                    <AllDayChip entry={entry} bare={compact === "bare"} />
                   </EntryDetail>
                 ))}
               </div>
@@ -751,14 +816,14 @@ export default defineRenderer<Data, Config>({
         <div
           ref={scroller}
           data-testid="calendar-grid"
-          className="min-h-0 flex-1 overflow-y-auto"
+          className="min-h-0 flex-1 overflow-y-auto group-data-[preview=true]/cal:overflow-hidden group-data-[preview=true]/cal:pt-2"
         >
           <div className="flex">
             <div className="w-10 shrink-0">
               {hours.map((hour) => (
                 <div
                   key={hour}
-                  className="relative h-10 group-data-[large=true]/cal:h-14"
+                  className="relative h-10 group-data-[large=true]/cal:h-14 group-data-[preview=true]/cal:h-8"
                 >
                   <span className="absolute -top-2 right-1 text-xs text-muted-foreground tabular-nums">
                     {hour}:00
@@ -778,7 +843,7 @@ export default defineRenderer<Data, Config>({
                   <div
                     key={hour}
                     aria-hidden="true"
-                    className="h-10 border-t group-data-[large=true]/cal:h-14"
+                    className="h-10 border-t group-data-[large=true]/cal:h-14 group-data-[preview=true]/cal:h-8"
                   />
                 ))}
                 {day.events.map((placed) => (
@@ -796,6 +861,7 @@ export default defineRenderer<Data, Config>({
                       day={day}
                       layout={layout}
                       language={language}
+                      compact={compact}
                     />
                   </EntryDetail>
                 ))}

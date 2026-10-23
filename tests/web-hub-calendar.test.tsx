@@ -355,7 +355,37 @@ test("nothing planned keeps the grid and says so once; the preview has no contro
   const { root: preview } = render({ preview: true });
   expect(byTestId(preview, "calendar-view")).toHaveLength(0);
   expect(hostOf(preview, "Popover")).toHaveLength(0);
-  expect(byTestId(preview, "calendar-event")).toHaveLength(3);
+  // Three hours from the first entry, with only the entries that fit whole,
+  // each on one line: the title and its start.
+  expect(byTestId(preview, "calendar")[0]!.props["data-preview"]).toBe(true);
+  expect(text(byTestId(preview, "calendar-grid")[0]!)).toMatch(
+    /^9:0010:0011:00/,
+  );
+  const events = byTestId(preview, "calendar-event");
+  expect(events.map((event) => text(event))).toEqual([
+    "Porada týmu9:00",
+    "Volání s dodavatelem9:30",
+  ]);
+  expect(byTestId(preview, "calendar-task")).toHaveLength(0);
+});
+
+test("a week in the preview: two hours under the all-day row, bars without titles", () => {
+  const { root } = render({ preview: true, config: config({ range: "week" }) });
+  expect(byTestId(root, "calendar-day")).toHaveLength(7);
+  const grid = text(byTestId(root, "calendar-grid")[0]!);
+  expect(grid.startsWith("9:0010:00")).toBe(true);
+  expect(grid).not.toContain("11:00");
+  const chips = byTestId(root, "calendar-chip");
+  expect(chips.map((chip) => chip.props["aria-label"])).toEqual([
+    "Faktura",
+    "Veletrh",
+  ]);
+  for (const chip of chips) {
+    expect(chip.props["data-bare"]).toBe(true);
+    expect(text(chip)).toBe("");
+  }
+  for (const event of byTestId(root, "calendar-event"))
+    expect(text(event)).toBe("");
 });
 
 test("the model: a date-only end of an all-day event is exclusive, tasks follow the config, lanes close when a cluster ends", () => {

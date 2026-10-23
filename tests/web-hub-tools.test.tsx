@@ -15,6 +15,7 @@ import {
   type HubWidgetState,
 } from "../packages/protocol/hub";
 import { hubWidgetDefinition } from "../packages/protocol/widgets";
+import { widgetRenderer } from "../apps/server-admin/web/app/widgets";
 import { HubDashboardView } from "../apps/server-admin/web/app/hub-page";
 import { hubCopy } from "../apps/server-admin/web/app/hub-copy";
 import {
@@ -880,4 +881,75 @@ test("the reader renders a message's tree itself: links, rules, lists and images
   expect(byTestId(dialog, "email-doc-images")).toHaveLength(0);
   // An indexed body came at once: no loading word was shown.
   expect(byTestId(dialog, "inbox-status")).toHaveLength(0);
+});
+
+/** A widget's body as the gallery's preview renders it. */
+async function preview(type: string, data: unknown) {
+  const Body = widgetRenderer(type)!.Body;
+  return render(
+    <Body
+      preview
+      item={null}
+      language="cs"
+      ask={() => {}}
+      data={data}
+      config={
+        hubWidgetDefinition(type)!.defaultConfig as Record<string, unknown>
+      }
+    />,
+  );
+}
+
+test("the gallery's preview shows whole rows only: a few rows, the inbox without badges, the table narrow and without links", async () => {
+  const inboxPreview = await preview("inbox", inbox().widget!.data);
+  expect(byTestId(inboxPreview, "inbox-email")).toHaveLength(2);
+  expect(byTestId(inboxPreview, "widget-toolbar")).toHaveLength(0);
+  expect(hostOf(inboxPreview, "StatusBadge")).toHaveLength(0);
+  expect(text(inboxPreview)).toContain("Jana Nováková");
+  expect(text(inboxPreview)).toContain("Cenová nabídka");
+  expect(text(inboxPreview)).not.toContain("Čeká na potvrzení ceny.");
+
+  const items = Array.from({ length: 5 }, (_, index) => ({
+    title: `Řádek ${index + 1}`,
+    detail: "Detail",
+  }));
+  const listPreview = await preview("list", { items });
+  expect(byTestId(listPreview, "list-item")).toHaveLength(2);
+
+  const briefingPreview = await preview("briefing", {
+    summary: "Krátce.",
+    highlights: items.map((item) => ({ text: item.title })),
+  });
+  expect(byTestId(briefingPreview, "briefing-highlight")).toHaveLength(2);
+
+  const meetingsPreview = await preview("meetings", {
+    meetings: [1, 2, 3].map((index) => ({
+      id: `00000000-0000-4000-8000-00000000000${index}`,
+      title: `Porada ${index}`,
+      recordedAt: "2026-10-17T09:30:00",
+      status: "ready",
+      summary: "",
+      tasks: 0,
+    })),
+  });
+  const meetings = byTestId(meetingsPreview, "meeting-item");
+  expect(meetings).toHaveLength(1);
+  // The date without the time: the narrow row keeps room for the title.
+  expect(text(meetings[0]!)).not.toContain(":");
+
+  const tablePreview = await preview("table", {
+    columns: ["A", "B", "C", "D", "E"],
+    rows: Array.from({ length: 4 }, (_, row) =>
+      ["a", "b", "c", "d", "e"].map((cell) => `${cell}${row}`),
+    ),
+    rowLinks: Array.from(
+      { length: 4 },
+      (_, row) => `https://crm.example/${row}`,
+    ),
+  });
+  expect(byTestId(tablePreview, "table-row")).toHaveLength(2);
+  expect(hostOf(tablePreview, "TableHead").map(text)).toEqual(["A", "B", "C"]);
+  expect(hostOf(tablePreview, "Table")[0]!.props.scroll).toBe(false);
+  expect(tablePreview.findAll((node) => node.type === "a")).toHaveLength(0);
+  expect(byTestId(tablePreview, "table-copy")).toHaveLength(0);
 });

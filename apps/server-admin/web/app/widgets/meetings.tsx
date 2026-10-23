@@ -9,6 +9,7 @@ import {
   WidgetRowContent,
   WidgetRows,
   formatWhen,
+  rowLimit,
   widgetRowClass,
 } from "./shared";
 import { defineRenderer } from "./types";
@@ -41,7 +42,8 @@ export default defineRenderer<Data, Config>({
   icon: AudioLines,
   Body: ({ data, config, language, preview }) => {
     const t = text[language];
-    const meetings = data.meetings.slice(0, config.count);
+    // A meeting takes three lines: the preview has room for one.
+    const meetings = data.meetings.slice(0, rowLimit(config.count, preview, 1));
     if (!meetings.length) return <Nothing>{t.nothing}</Nothing>;
     return (
       <WidgetRows>
@@ -64,10 +66,11 @@ export default defineRenderer<Data, Config>({
                   </StatusBadge>
                 ) : undefined
               }
-              trailing={formatWhen(meeting.recordedAt, language)}
+              // The preview's narrow row keeps its lines for the text.
+              trailing={formatWhen(meeting.recordedAt, language, !preview)}
               detail={
                 meeting.tasks > 0 ? (
-                  <span className="text-xs text-muted-foreground">
+                  <span className="min-w-0 truncate text-xs text-muted-foreground">
                     <span className="tabular-nums">
                       {t.tasks(meeting.tasks)}
                     </span>

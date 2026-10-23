@@ -9,6 +9,7 @@ import {
   SourceLink,
   WidgetRowContent,
   WidgetRows,
+  rowLimit,
   widgetRowClass,
 } from "./shared";
 import { defineRenderer } from "./types";
@@ -44,6 +45,10 @@ export default defineRenderer<Data, Config>({
     const t = text[language];
     if (!data.summary && !data.highlights.length)
       return <Nothing>{t.nothing}</Nothing>;
+    const highlights = data.highlights.slice(
+      0,
+      rowLimit(data.highlights.length, preview),
+    );
     return (
       <div className="flex min-w-0 flex-col gap-3">
         {data.summary && (
@@ -51,9 +56,9 @@ export default defineRenderer<Data, Config>({
             <Markdown text={data.summary} />
           </div>
         )}
-        {data.highlights.length > 0 && (
+        {highlights.length > 0 && (
           <WidgetRows>
-            {data.highlights.map((highlight, index) => (
+            {highlights.map((highlight, index) => (
               <li key={index} data-testid="briefing-highlight">
                 <div className={widgetRowClass}>
                   <WidgetRowContent
@@ -63,10 +68,15 @@ export default defineRenderer<Data, Config>({
                         className="size-1.5 rounded-full bg-primary"
                       />
                     }
+                    // The preview keeps each highlight to one line.
                     title={
-                      <span className="whitespace-normal">
-                        {highlight.text}
-                      </span>
+                      preview ? (
+                        highlight.text
+                      ) : (
+                        <span className="whitespace-normal">
+                          {highlight.text}
+                        </span>
+                      )
                     }
                     trailing={
                       <span className="flex items-center gap-1">

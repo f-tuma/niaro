@@ -49,13 +49,10 @@ export const meetingsWidget = defineWidget({
         status: "ready" as const,
         summary:
           language === "cs"
-            ? "Domluvili jsme ceník a termín dodání."
-            : "Agreed on the price list and delivery date.",
+            ? "Ceník i termín domluveny."
+            : "Prices and delivery agreed.",
         tasks: 2,
-        next:
-          language === "cs"
-            ? "Poslat upravený ceník"
-            : "Send the updated price list",
+        next: language === "cs" ? "Poslat ceník" : "Send prices",
       },
     ],
   }),

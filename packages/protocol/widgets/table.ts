@@ -45,16 +45,11 @@ export const tableWidget = defineWidget({
   sample: (language) => ({
     columns:
       language === "cs"
-        ? ["Obchod", "Firma", "Fáze", "Hodnota"]
-        : ["Deal", "Company", "Stage", "Value"],
+        ? ["Obchod", "Fáze", "Hodnota"]
+        : ["Deal", "Stage", "Value"],
     rows: [
-      ["ERP", "Acme", language === "cs" ? "Nabídka" : "Proposal", 480000],
-      [
-        "Web",
-        "Beta",
-        language === "cs" ? "Vyjednávání" : "Negotiation",
-        220000,
-      ],
+      ["ERP", language === "cs" ? "Nabídka" : "Proposal", 480000],
+      ["Web", language === "cs" ? "Jednání" : "Talks", 220000],
     ],
     rowLinks: ["https://crm.example/deals/1", null],
   }),

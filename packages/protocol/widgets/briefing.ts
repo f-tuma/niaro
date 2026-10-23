@@ -46,19 +46,17 @@ export const briefingWidget = defineWidget({
   sample: (language) =>
     language === "cs"
       ? {
-          summary:
-            "Dnes máš dvě schůzky a jednu nabídku k odeslání. Jana čeká na potvrzení ceny.",
+          summary: "Dvě schůzky a jedna nabídka k odeslání.",
           highlights: [
-            { text: "Potvrdit cenu Janě do pátku", source: "E-mail" },
-            { text: "Ve 12:00 oběd s klientem", source: "Kalendář" },
+            { text: "Potvrdit cenu Janě", source: "E-mail" },
+            { text: "Oběd s klientem ve 12", source: "Kalendář" },
           ],
         }
       : {
-          summary:
-            "Two meetings today and one proposal to send. Jane waits for a price confirmation.",
+          summary: "Two meetings and one proposal to send today.",
           highlights: [
-            { text: "Confirm the price to Jane by Friday", source: "Email" },
-            { text: "Lunch with a client at 12:00", source: "Calendar" },
+            { text: "Confirm Jane's price", source: "Email" },
+            { text: "Client lunch at 12:00", source: "Calendar" },
           ],
         },
 });
