@@ -97,6 +97,18 @@ test("real isolated HTTP history negotiates explicitly, pages authorized chats, 
         (await json(port, `/v1/a/${details}`, a)).body,
       ).conversation.id,
     ).toBe("TEST-A");
+    // The apps declare message times and generated UI on every history read.
+    for (const declared of [
+      "&messages=agent-message-time/1",
+      "&ui=agent-openui/1",
+      "&ui=agent-openui/1&messages=agent-message-time/1",
+    ])
+      expect((await json(port, `/v1/a/${details}${declared}`, a)).status).toBe(
+        200,
+      );
+    expect((await json(port, `/v1/a/${details}&unknown=1`, a)).status).toBe(
+      400,
+    );
     expect((await json(port, `/v1/b/${details}`, b)).status).toBe(404);
     expect((await json(port, `/v1/a/${details}`, other)).status).toBe(404);
     expect((await json(port, `/v1/b/${details}`, a)).status).toBe(403);

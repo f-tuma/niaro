@@ -144,7 +144,7 @@ export const BarChart: View<{
               <Bar
                 key={index}
                 dataKey={`s${index}`}
-                fill={`var(--color-s${index})`}
+                fill={HUES[index % HUES.length]}
                 stackId={stackId}
                 radius={end ? (horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]) : 0}
                 isAnimationActive={false}
@@ -198,7 +198,7 @@ export const LineChart: View<{ labels: string[]; series: unknown[] }> = ({
               key={index}
               dataKey={`s${index}`}
               type="monotone"
-              stroke={`var(--color-s${index})`}
+              stroke={HUES[index % HUES.length]}
               strokeWidth={2}
               dot={false}
               connectNulls

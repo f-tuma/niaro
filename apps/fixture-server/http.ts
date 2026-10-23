@@ -1188,7 +1188,16 @@ export function createFixtureServer(
         const allowed =
           route === "conversations"
             ? ["profile", "after", "state"]
-            : ["profile", "after", "conversationId", "revision", "messages"];
+            : [
+                "profile",
+                "after",
+                "conversationId",
+                "revision",
+                // Delivery declarations (messageDeliveryPath): times, generated UI.
+                "messages",
+                "ui",
+                "results",
+              ];
         if (
           new Set(keys).size !== keys.length ||
           keys.some((k) => !allowed.includes(k))

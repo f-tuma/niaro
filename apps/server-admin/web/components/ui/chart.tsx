@@ -1,4 +1,5 @@
 import * as React from "react";
+import { getNonce } from "get-nonce";
 import { cn } from "cn";
 import * as RechartsPrimitive from "recharts";
 import type { TooltipValueType } from "recharts";
@@ -89,6 +90,8 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
 
   return (
     <style
+      // The page's CSP admits styles by nonce (set from the page in index.tsx).
+      nonce={getNonce()}
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)
           .map(
