@@ -36,7 +36,6 @@ import { turnClock, TimeZone } from "../server-plugins/datetime";
 import { createProgressiveRuntime } from "./progressive-runtime";
 import { AgentTurn, createAgentRuntime } from "./agent-runtime";
 import type { AgentMemory } from "./agent-memory";
-import { CardDocumentSchema } from "../../packages/protocol/card-document";
 import {
   presentActionFailure,
   ACTION_FAILURE_INSTRUCTIONS,
@@ -74,7 +73,8 @@ const Turn = z.strictObject({
     .strictObject({
       reply: z.string().max(2000),
       result: ServiceResultSchema.optional(),
-      card: CardDocumentSchema.optional(),
+      /** Retired: a card composed by an earlier version; never shown. */
+      card: z.unknown().optional(),
     })
     .optional(),
 });

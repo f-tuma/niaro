@@ -7,7 +7,8 @@ import { translate } from "../../packages/i18n";
 import type { Scope, Language } from "../../packages/protocol";
 import type { ActivityTool } from "../../packages/protocol/activity";
 import { ServiceResultSchema } from "../../packages/protocol/service-result";
-import { CardDocumentSchema } from "../../packages/protocol/card-document";
+import { GeneratedUiSchema } from "../../packages/protocol/generative-ui";
+import { GENERATIVE_UI_LIBRARY_ID } from "../../packages/openui-library/spec";
 import { MemorySourceSchema } from "../../packages/protocol/memory";
 import {
   HumanTaskContentSchema,
@@ -74,11 +75,13 @@ import {
   failureToolResult,
   ACTION_FAILURE_INSTRUCTIONS,
 } from "./failure-presentation";
+import { generativeUiInstructions } from "../../packages/openui-library/prompt";
 import {
-  composeCard,
-  COMPOSE_CARD_TOOL,
-  CARD_COMPOSITION_INSTRUCTIONS,
-} from "../server-cards/composer";
+  checkProgram,
+  programText,
+  programTitle,
+  splitReply,
+} from "../../packages/openui-library/program";
 import {
   LoopTraceSchema,
   newLoopTrace,
@@ -328,7 +331,9 @@ const ThreadAuthority = z.strictObject({
 const Answer = z.strictObject({
   reply: z.string().max(2000),
   result: ServiceResultSchema.optional(),
-  card: CardDocumentSchema.optional(),
+  /** Retired: a model-composed card of an earlier version; never shown. */
+  card: z.unknown().optional(),
+  ui: GeneratedUiSchema.optional(),
   processOffer: ProcessOfferResultSchema.optional(),
   connection: ServiceConnectionCardSchema.optional(),
   skillProposal: SkillProposalResultSchema.optional(),
@@ -512,7 +517,8 @@ export const DomainCommandSchema = z.strictObject({
     })
     .optional(),
   legacyQuestion: LegacyQuestionSchema.optional(),
-  card: CardDocumentSchema.optional(),
+  /** Retired: a model-composed card of an earlier version; never read. */
+  card: z.unknown().optional(),
   processOffer: ProcessOfferResultSchema.optional(),
   /** A personal process the designer drafted in this turn; nothing is saved
    * until the person presses "Save and turn on" on its card. */
@@ -525,6 +531,8 @@ export const DomainCommandSchema = z.strictObject({
   checked: z.boolean().default(false),
   failureRepair: z.boolean().default(false),
   lookupRepair: z.boolean().default(false),
+  /** The answer's UI program was refused once and the model was asked again. */
+  uiRepair: z.boolean().optional(),
   toolProblems: z
     .array(
       z.strictObject({
@@ -845,7 +853,6 @@ const builtins = [
     },
     ["question"],
   ),
-  definition(COMPOSE_CARD_TOOL),
 ];
 const humanTaskCreate = objectTool(
   "human_task_create",
@@ -1900,8 +1907,6 @@ export function createMastraDomain(
         next: "Finish now with one short sentence: the skill is ready below and is saved only when the person saves it there. Do not repeat its content.",
       };
     }
-    /** Cards this run could not compose; after two, the agent answers in text. */
-    let cardFailures = 0;
     async function createHumanTask(raw: unknown, toolCallId: string) {
       const content = HumanTaskContentSchema.parse(raw);
       const inputHash = digest(content);
@@ -2128,7 +2133,6 @@ export function createMastraDomain(
         });
         const diagnostic = structuredClone(saved);
         diagnostic.pending = undefined;
-        diagnostic.card = undefined;
         diagnostic.taskTracked = true;
         diagnostic.terminalCandidate = publish
           ? undefined
@@ -2735,7 +2739,13 @@ export function createMastraDomain(
         ? `${confirmed}${action} „${rejected.action}“ neprošel kontrolou návaznosti a nebyl odeslán. Jeho provedení ani dokončení celého zadání není potvrzené.`
         : `${confirmed}${action} “${rejected.action}” did not pass the consistency check and was not sent. Its execution and completion of the overall request are not confirmed.`;
     }
-    async function finalize(reply: string): Promise<DomainFinalize> {
+    async function finalize(output: string): Promise<DomainFinalize> {
+      // The answer's text and its one UI program travel apart. The program is
+      // admitted here, before it is checked, stored or delivered; system
+      // answers (approvals, questions, sign-in, offers) never carry one.
+      const split = splitReply(output);
+      const admitted = split.program ? checkProgram(split.program) : undefined;
+      let reply = split.text;
       if (state.pending?.kind === "approval" && state.pending.operationId) {
         state.answer = await resultCard(
           state.pending.operationId,
@@ -2754,7 +2764,6 @@ export function createMastraDomain(
       // A missing personal sign-in ends the turn with the sign-in card; the
       // request is sent again once the person has connected.
       if (state.connection) {
-        state.card = undefined;
         state.answer = {
           reply: (
             reply.trim() ||
@@ -2773,7 +2782,6 @@ export function createMastraDomain(
         state.skillProposal &&
         !(await receipts()).some((receipt) => receipt.effect === "write")
       ) {
-        state.card = undefined;
         state.answer = {
           reply: (
             reply.trim() ||
@@ -2794,7 +2802,6 @@ export function createMastraDomain(
         !(await receipts()).some((receipt) => receipt.effect === "write")
       ) {
         const proposal = state.processProposal;
-        state.card = undefined;
         state.answer = {
           reply: (
             reply.trim() ||
@@ -2819,7 +2826,6 @@ export function createMastraDomain(
       // Offering a saved process is a complete answer on its own: the person
       // decides whether to run it, so there is no service result to check.
       if (state.processOffer && !(await receipts()).length) {
-        state.card = undefined;
         state.answer = {
           reply: (
             reply.trim() ||
@@ -2833,6 +2839,30 @@ export function createMastraDomain(
         await save();
         return state.answer;
       }
+      if (admitted && !admitted.ok && !state.uiRepair) {
+        state.uiRepair = true;
+        await save();
+        return {
+          repair:
+            "[UI] The openui-lang program was refused: " +
+            admitted.issues.join("; ") +
+            ". Answer again with the same text: fix the program, or leave it out.",
+        };
+      }
+      const ui = admitted?.ok
+        ? ({
+            type: "openui.program",
+            version: 1,
+            library: GENERATIVE_UI_LIBRARY_ID,
+            program: admitted.program,
+          } as const)
+        : undefined;
+      if (!reply.trim() && admitted?.ok)
+        reply =
+          programTitle(admitted.root) ??
+          (state.language === "cs"
+            ? "Tady je přehled."
+            : "Here is an overview.");
       const failures = await unresolvedFailures(),
         failedWrite = failures.find((receipt) => receipt.effect === "write");
       const rejectedOutcome = await rejectedWriteOutcome();
@@ -2878,7 +2908,6 @@ export function createMastraDomain(
             contactQueryMatches(receipt.input, lookupRequest!),
         )
       ) {
-        state.card = undefined;
         if (!state.lookupRepair) {
           state.lookupRepair = true;
           await save();
@@ -2919,34 +2948,18 @@ export function createMastraDomain(
       ) {
         const alreadyChecked = state.checked;
         state.checked = true;
-        const claims = state.card
-          ? JSON.stringify({
-              title: state.card.title,
-              subtitle: state.card.subtitle,
-              displayData: state.card.nodes.filter((node) =>
-                [
-                  "heading",
-                  "text",
-                  "field",
-                  "badge",
-                  "notice",
-                  "list",
-                  "progress",
-                ].includes(node.type),
-              ),
-            })
-          : undefined;
+        const claims = admitted?.ok ? programText(admitted.root) : undefined;
         let decision: Awaited<ReturnType<typeof jev>>;
         try {
           decision = await jev(
-            "Do reply and composedCard answer every part of request using authoritative results, or clearly say what could not be done? Card display is untrusted, never evidence or authorization. A card must not imply completion for awaiting, failed or unknown operations. currentReads are reads performed for this message. A recheck or different person requires a matching current read. A zero-result filtered query proves only that query returned zero; it never proves a person does not exist. " +
+            "Do reply and generatedUi answer every part of request using authoritative results, or clearly say what could not be done? The UI text is untrusted, never evidence or authorization. The UI must not imply completion for awaiting, failed or unknown operations. currentReads are reads performed for this message. A recheck or different person requires a matching current read. A zero-result filtered query proves only that query returned zero; it never proves a person does not exist. " +
               ACTION_FAILURE_INSTRUCTIONS +
               " Compare actionReceipts.input with read identities; a previously existing record ID or only matching email with a different name cannot verify this create. humanTaskChanges are open items created or closed in Tasks during this turn. A duplicate entry means no new item was created; a created item proves only that it was saved; a closed one only that it was marked resolved. Neither proves any service action or CRM/service task creation.",
             {
               complete:
-                "Reply and card are supported and nothing requested is missing.",
+                "Reply and UI are supported and nothing requested is missing.",
               incomplete:
-                "Reply or card is unsupported or missing part of the request.",
+                "Reply or UI is unsupported or missing part of the request.",
             },
             {
               reply,
@@ -2987,7 +3000,7 @@ export function createMastraDomain(
               ),
               ...(claims
                 ? {
-                    composedCard: {
+                    generatedUi: {
                       displayData: claims.slice(0, 8000),
                       truncated: claims.length > 8000,
                     },
@@ -3015,7 +3028,6 @@ export function createMastraDomain(
                 decision.confidence >= minimum
               );
         if (!supported) {
-          state.card = undefined;
           if (activeRejectedWrite) {
             state.answer = {
               reply: rejectedWriteExplanation(
@@ -3050,7 +3062,7 @@ export function createMastraDomain(
           await save();
           return {
             repair:
-              "[Checker] This reply or card is unsupported or incomplete. The old card was discarded. Use actual receipts, explain uncertainty accurately." +
+              "[Checker] This reply or UI is unsupported or incomplete. The UI was discarded. Use actual receipts, explain uncertainty accurately." +
               (failedWrite
                 ? " The write remains failed/unconfirmed. Do not retry, rename, merge or update records. A different identity does not prove this create."
                 : ""),
@@ -3065,16 +3077,6 @@ export function createMastraDomain(
             .find((receipt) => receipt.status === "succeeded");
       const serviceResult =
         own && "id" in own ? await resultCard(own.id, state.language) : own;
-      const passive =
-        !failedWrite &&
-        state.card &&
-        (!serviceResult?.result ||
-          (!state.card.actions.length &&
-            !state.card.nodes.some((node) =>
-              ["button", "input"].includes(node.type),
-            )))
-          ? state.card
-          : undefined;
       const partialWrite = activeRejectedWrite
         ? rejectedWriteExplanation(activeRejectedWrite, priorSuccessfulWrite)
         : undefined;
@@ -3083,19 +3085,16 @@ export function createMastraDomain(
         !partialWrite && !serviceResult?.result && !failedWrite
           ? state.processOffer
           : undefined;
+      // A failed or partly refused write is explained in text alone: its UI
+      // was written before the outcome was known.
+      const shownUi = !failedWrite && !partialWrite ? ui : undefined;
       state.answer = {
         reply: (partialWrite ?? reply).slice(0, 2000),
         ...(offer ? { processOffer: offer } : {}),
         ...(!partialWrite && serviceResult?.result
-          ? {
-              result: {
-                ...serviceResult.result,
-                ...(passive ? { card: passive } : {}),
-              },
-            }
-          : !partialWrite && passive
-            ? { card: passive }
-            : {}),
+          ? { result: serviceResult.result }
+          : {}),
+        ...(shownUi ? { ui: shownUi } : {}),
       };
       finishLoopTrace(
         state,
@@ -3317,10 +3316,9 @@ export function createMastraDomain(
               ) +
               "\nBefore using services for a new request, check savedProcesses. If one clearly does what the latest message asks, call process_offer once with input taken from the message, then finish with a short reply and no service calls. Offer only a close match. If none fits, or the person declined a process or asked to do it without one, ignore savedProcesses and use services as usual. "
             : "") +
-          CARD_COMPOSITION_INSTRUCTIONS +
-          "\nCurrent card composition: " +
-          JSON.stringify({ composed: !!state.card }) +
-          ". After a successful composition, give the person a useful plain-text reply. Compose again only if verified content needs a correction; a card is not evidence that a service action succeeded.\n" +
+          "\n" +
+          generativeUiInstructions() +
+          "\n" +
           (memoryContent ? "\n" + memoryContent : "") +
           (memoryViews.size
             ? "\nCurrent authorized memory tool results: " +
@@ -3491,44 +3489,6 @@ export function createMastraDomain(
           status: "offered",
           prefilled: Object.keys(offer.data.input),
           next: "Finish now without calling services: say in one short sentence why this saved process fits. The offer card already lets the person open it or continue without it; do not describe those choices.",
-        };
-      }
-      if (name === "compose_card") {
-        let card: ReturnType<typeof composeCard>;
-        try {
-          card = composeCard(args, {
-            id: digest([key, "card", meta.toolCallId]),
-            revision: 1,
-          });
-        } catch (error) {
-          // The schema passed; the card's own rules did not (an unreachable
-          // node, an unknown child, a button without an action, the size).
-          cardFailures++;
-          const issues =
-            error instanceof z.ZodError
-              ? error.issues
-                  .slice(0, 5)
-                  .map((issue) =>
-                    [issue.path.join("."), issue.message]
-                      .filter(Boolean)
-                      .join(": "),
-                  )
-              : [];
-          return {
-            error: "invalid_card_document",
-            ...(issues.length ? { issues } : {}),
-            message:
-              cardFailures >= 2
-                ? "The card could not be composed twice. Do not call compose_card again in this run; answer in text."
-                : "Fix these problems and call compose_card again with the complete card, or answer in text.",
-          };
-        }
-        state.card = card;
-        await save();
-        return {
-          status: "composed",
-          cardId: card.id,
-          revision: card.revision,
         };
       }
       if (memory?.has?.(name) && memory.invoke) {
@@ -4038,7 +3998,6 @@ export function createMastraDomain(
       }
       state.pending = undefined;
       state.answer = undefined;
-      state.card = undefined;
       if (
         resolved.status === "succeeded" &&
         resolved.effect === "read" &&
@@ -4097,7 +4056,6 @@ export function createMastraDomain(
           // A business answer written before a failed native persistence tail
           // cannot bypass retirement proof on replay.
           state.answer = undefined;
-          state.card = undefined;
           state.taskTracked = true;
           if (state.trace) {
             state.trace.status = "running";
@@ -4202,7 +4160,6 @@ export function createMastraDomain(
               ...(outcome ? { operationId: outcome.id } : {}),
             };
             projected.pending = undefined;
-            projected.card = undefined;
             projected.taskTracked = true;
             projected.answer = {
               reply: uncertain
@@ -4316,7 +4273,6 @@ export function createMastraDomain(
         // A new free-form dictation must not implicitly answer an interrupted
         // question. An outstanding approval retains its existing operation.
         if (state.pending?.kind === "question") state.pending = undefined;
-        state.card = undefined;
         state.taskTracked = true;
         state.answer = {
           reply: [
@@ -4407,7 +4363,6 @@ export function createMastraDomain(
                 execution:
                   "The request could not be completed: the agent run failed. Not every part has a verified result.",
               }[reason];
-        state.card = undefined;
         state.taskTracked = true;
         state.terminalCandidate = reason;
         state.pending = undefined;
@@ -5153,7 +5108,6 @@ export function createMastraDomain(
               store.saveInvocation({ ...receipt, status: "rejected" });
           const cs = current.language === "cs";
           const value = structuredClone(current);
-          value.card = undefined;
           value.taskTracked = true;
           value.answer = {
             reply: uncertainId
@@ -5437,7 +5391,6 @@ export function createMastraDomain(
         };
         state.pending = undefined;
         state.answer = undefined;
-        state.card = undefined;
         state.processOffer = undefined;
         state.skillProposal = undefined;
         state.processProposal = undefined;
@@ -5447,6 +5400,7 @@ export function createMastraDomain(
         state.checked = false;
         state.failureRepair = false;
         state.lookupRepair = false;
+        state.uiRepair = undefined;
         state.currentStart = state.operations.length;
         state.workRevision++;
         const saved = DomainCommandSchema.parse(state);

@@ -24,6 +24,7 @@ import {
   type Snapshot,
 } from "../packages/protocol";
 import { CARD_PROFILE } from "../packages/protocol/card-document";
+import { GENERATIVE_UI_PROFILE } from "../packages/protocol/generative-ui";
 import {
   IdentityStateSchema,
   OrganizationDetailSchema,
@@ -126,34 +127,11 @@ test("native HTTP binds forms and approval to paired scope and replays after res
     let message: object;
     if (text === "TEST new chat") {
       message = { content: "TEST new chat started" };
-    } else if (text === "TEST compose a details form") {
-      message = current.some((entry) =>
-        entry.tool_calls?.some((tool) => tool.function.name === "compose_card"),
-      )
-        ? { content: "TEST details form ready" }
-        : call("compose_card", {
-            title: "TEST details",
-            nodes: [
-              {
-                id: "title",
-                type: "input",
-                label: "Title",
-                kind: "text",
-                required: true,
-              },
-              { id: "submit", type: "button", actionId: "continue" },
-            ],
-            root: ["title", "submit"],
-            actions: [
-              {
-                id: "continue",
-                label: "TEST continue",
-                kind: "submit",
-                variant: "primary",
-                fields: ["title"],
-              },
-            ],
-          });
+    } else if (text === "TEST show the details form") {
+      message = {
+        content:
+          'TEST details form ready\n\n```openui-lang\nroot = Stack([form])\nform = Form("details", [TextField("title", "Title", null, null, true)], Button("TEST continue", @ToAssistant("TEST continue")))\n```',
+      };
     } else if (
       toolResults({ ...body, messages: current }).some(
         (result) => result.effect === "write" && result.status === "succeeded",
@@ -210,7 +188,7 @@ test("native HTTP binds forms and approval to paired scope and replays after res
   async function mobile(token: string, workspaceId: string, command?: Command) {
     const path = command ? "commands" : "snapshot";
     const response = await fetch(
-      `${origin}/v1/${workspaceId}/${path}?cards=${encodeURIComponent(CARD_PROFILE)}`,
+      `${origin}/v1/${workspaceId}/${path}?cards=${encodeURIComponent(CARD_PROFILE)}&ui=${encodeURIComponent(GENERATIVE_UI_PROFILE)}`,
       {
         method: command ? "POST" : "GET",
         signal: AbortSignal.timeout(10000),
@@ -409,7 +387,7 @@ test("native HTTP binds forms and approval to paired scope and replays after res
       principal.accessToken,
       workspaceId,
       CommandSchema.parse({
-        ...command("TEST-http-form-public", "TEST compose a details form"),
+        ...command("TEST-http-form-public", "TEST show the details form"),
         idempotencyKey: "TEST-http-form-internal",
       }),
     );
@@ -434,34 +412,14 @@ test("native HTTP binds forms and approval to paired scope and replays after res
     );
     assert.equal(formState.aliases[0]?.commandId, "TEST-http-form-internal");
     assert.equal(formState.aliases[0]?.outerCommandId, "TEST-http-form-public");
-    const formMessage = formResult.snapshot.conversations[0]!.messages.findLast(
-      (message) => message.result?.type === "card.document",
-    )!;
-    assert(formMessage.result?.type === "card.document");
-    const document = formMessage.result.document;
-    const countBeforeStale = requests.length;
-    const stale = await mobile(
-      principal.accessToken,
-      workspaceId,
-      CommandSchema.parse({
-        type: "card.respond",
-        commandId: "TEST-http-stale",
-        idempotencyKey: "TEST-http-stale",
-        conversationId: "conversation-1",
-        messageId: formMessage.id,
-        cardId: document.id,
-        expectedCardRevision: document.revision + 1,
-        actionId: "continue",
-        values: { title: "TEST one item" },
-        language: "en",
-      }),
-    );
-    assert.equal(stale.status, 409);
+    // The answer's UI travels beside its text, admitted and normalized.
+    const formMessage = formResult.snapshot.conversations[0]!.messages.at(-1)!;
+    assert.equal(formMessage.text, "TEST details form ready");
+    assert.equal(formMessage.result, undefined);
     assert.equal(
-      CommandResultSchema.parse(stale.value).code,
-      "revision_conflict",
+      formMessage.ui?.program,
+      'root = Stack([form])\nform = Form("details", [TextField("title", "Title", null, null, true)], Button("TEST continue", @ToAssistant("TEST continue")))',
     );
-    assert.equal(requests.length, countBeforeStale);
     assert.equal(writes, 0);
 
     const proposal = await mobile(

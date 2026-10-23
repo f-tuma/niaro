@@ -24,7 +24,7 @@ const result = (overrides: Partial<ServiceResult> = {}): ServiceResult => ({
   ...overrides,
 });
 
-test("the typed builder composes an arbitrary data section and a form using one validator", () => {
+test("the typed builder composes an arbitrary passive data section", () => {
   const builder = new CardBuilder({
     id: "TEST-card",
     revision: 3,
@@ -49,28 +49,20 @@ test("the typed builder composes an arbitrary data section and a form using one 
     children: [participant, time],
     icon: "calendar",
   });
-  const answer = builder.add({
-    type: "input",
-    kind: "text",
-    label: "Agenda",
-    required: true,
-  });
-  builder.action({
-    id: "TEST-answer",
-    label: "Prepare the proposal",
-    kind: "submit",
-    variant: "primary",
-    fields: [answer],
-  });
+  builder.add({ type: "notice", text: "TEST room booked", tone: "info" });
   const card = builder.build();
   expect(CardDocumentSchema.safeParse(card).success).toBe(true);
   expect(card.id).toBe("TEST-card");
   expect(card.revision).toBe(3);
-  expect(card.root).toEqual(["node-3", "node-4", "node-5"]);
-  expect(card.actions[0]?.fields).toEqual([answer]);
+  expect(card.root).toEqual(["node-3", "node-4"]);
+  expect(card.actions).toEqual([]);
 });
 
-test("the builder cannot bypass graph or arbitrary-style validation", () => {
+test("the builder cannot bypass graph, passivity or arbitrary-style validation", () => {
+  const form = new CardBuilder({ id: "TEST-card", revision: 1, title: "Form" });
+  form.add({ type: "input", kind: "text", label: "Agenda" });
+  expect(() => form.build()).toThrow();
+
   const unreachable = new CardBuilder({
     id: "TEST-card",
     revision: 1,

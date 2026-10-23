@@ -12,6 +12,7 @@ import { ProcessWorkSchema } from "./process-work";
 import { ProcessOfferResultSchema } from "./process-offer";
 import { SkillProposalResultSchema } from "./skills";
 import { ProcessProposalResultSchema } from "./process-proposal";
+import { GeneratedUiSchema } from "./generative-ui";
 
 export const PROFILE = "agent-client/0.8-fixture" as const;
 const id = z
@@ -90,6 +91,9 @@ export const MessageSchema = z
     workItemId: id.optional(),
     inputRequestId: id.optional(),
     result: MessageResultSchema.optional(),
+    /** Generated UI beside the text. Delivered only to clients that ask for
+     * GENERATIVE_UI_PROFILE; the text stays a complete answer without it. */
+    ui: GeneratedUiSchema.optional(),
     humanTask: HumanTaskReferenceSchema.optional(),
     /** When the server stored the message. Delivered only to clients that ask
      * for MESSAGE_TIME_PROFILE; messages stored before it carry none. */
@@ -110,6 +114,10 @@ export const MessageSchema = z
   .refine(
     (message) => !message.humanTask || message.role === "user",
     "Only the person's message can bring an open item",
+  )
+  .refine(
+    (message) => !message.ui || message.role === "assistant",
+    "Only an assistant answer carries generated UI",
   );
 export const ConversationSchema = z.strictObject({
   ...base,

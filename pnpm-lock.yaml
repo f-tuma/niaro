@@ -167,6 +167,7 @@ overrides:
   '@storybook/react-native-ui-common': 10.4.0
   '@storybook/react-native-theming': 10.4.0
   '@storybook/react': 10.4.0
+  '@openuidev/devtools': '-'
 
 importers:
 
@@ -184,6 +185,9 @@ importers:
       '@niaro/server-agent':
         specifier: workspace:*
         version: link:apps/server-agent
+      '@openuidev/lang-core':
+        specifier: 1.0.1
+        version: 1.0.1(@modelcontextprotocol/sdk@1.30.1(supports-color@8.1.1)(zod@4.6.5))(zod@4.6.5)
       '@react-native-async-storage/async-storage':
         specifier: 2.2.0
         version: 2.2.0(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/jest-preset@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1))(@react-native/metro-config@0.87.1(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))
@@ -377,6 +381,9 @@ importers:
       '@fontsource-variable/manrope':
         specifier: 5.3.0
         version: 5.3.0
+      '@openuidev/react-lang':
+        specifier: 1.0.1
+        version: 1.0.1(@modelcontextprotocol/sdk@1.30.1(supports-color@8.1.1)(zod@4.6.5))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.6.5)
       '@tanstack/react-query':
         specifier: 5.103.2
         version: 5.103.2(react@19.2.3)
@@ -1930,6 +1937,31 @@ packages:
   '@opentelemetry/semantic-conventions@1.43.0':
     resolution: {integrity: sha512-eSYWTm620tTk45EKSedaUL8MFYI8hW164hIXsgIHyxu3VobUB3fFCu5t0hQby6OoWRPsG1KkKUG2M5UadiLiVg==}
     engines: {node: '>=14'}
+
+  '@openuidev/lang-core@1.0.1':
+    resolution: {integrity: sha512-4vBa7FRM6C4v4aCvBAmAtTgFWiEQiNTazG9h4Xy9fC6P/p6+9kZu4RdTyLToBEvdxrYn/gDy/PakEH8PU3lUcw==}
+    peerDependencies:
+      '@modelcontextprotocol/sdk': '>=1.0.0'
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/sdk':
+        optional: true
+
+  '@openuidev/observability@0.0.4':
+    resolution: {integrity: sha512-4fjIrWu3TqTlfDE/m7cG10CH1vV7wQk5GPwMOmXeF9vJtkg92dg4Bdk3AjKgud7H7Xypwwjgt52VcLGZCE2CJQ==}
+
+  '@openuidev/react-lang@1.0.1':
+    resolution: {integrity: sha512-jt5AKWyKe73BjD+bRC2kKerHCeAurI/D9KMQvbi736963D2lehpPGAvVGoxAN4MG6sM/7OOlfWvErQBPPPx30A==}
+    peerDependencies:
+      '@modelcontextprotocol/sdk': '>=1.0.0'
+      react: '*'
+      react-dom: '*'
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/sdk':
+        optional: true
+      react-dom:
+        optional: true
 
   '@oxc-parser/binding-android-arm-eabi@0.127.0':
     resolution: {integrity: sha512-0LC7ye4hvqbIKxAzThzvswgHLFu2AURKzYLeSVvLdu2TBOYWQDmHnTqPLeA597BcUCxiLqLsS4CJ5uoI5WYWCQ==}
@@ -4440,6 +4472,10 @@ packages:
 
   ci-info@3.9.0:
     resolution: {integrity: sha512-NIxF55hv4nSqQswkAeiOi1r83xy8JldOFDTWiug55KBu9Jnblncd2U6ViHmYgHf01TPZS77NJBhBMKdWj9HQMQ==}
+    engines: {node: '>=8'}
+
+  ci-info@4.4.0:
+    resolution: {integrity: sha512-77PSwercCZU2Fc4sX94eF8k8Pxte6JAwL4/ICZLFjJLqegs7kCuAsqqj/70NQF6TvDpgFjkubQB2FW2ZZddvQg==}
     engines: {node: '>=8'}
 
   cjs-module-lexer@1.4.3:
@@ -10505,6 +10541,25 @@ snapshots:
 
   '@opentelemetry/semantic-conventions@1.43.0': {}
 
+  '@openuidev/lang-core@1.0.1(@modelcontextprotocol/sdk@1.30.1(supports-color@8.1.1)(zod@4.6.5))(zod@4.6.5)':
+    dependencies:
+      ci-info: 4.4.0
+      zod: 4.6.5
+    optionalDependencies:
+      '@modelcontextprotocol/sdk': 1.30.1(supports-color@8.1.1)(zod@4.6.5)
+
+  '@openuidev/observability@0.0.4': {}
+
+  '@openuidev/react-lang@1.0.1(@modelcontextprotocol/sdk@1.30.1(supports-color@8.1.1)(zod@4.6.5))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.6.5)':
+    dependencies:
+      '@openuidev/lang-core': 1.0.1(@modelcontextprotocol/sdk@1.30.1(supports-color@8.1.1)(zod@4.6.5))(zod@4.6.5)
+      '@openuidev/observability': 0.0.4
+      react: 19.2.3
+      zod: 4.6.5
+    optionalDependencies:
+      '@modelcontextprotocol/sdk': 1.30.1(supports-color@8.1.1)(zod@4.6.5)
+      react-dom: 19.2.3(react@19.2.3)
+
   '@oxc-parser/binding-android-arm-eabi@0.127.0':
     optional: true
 
@@ -12961,6 +13016,8 @@ snapshots:
   ci-info@2.0.0: {}
 
   ci-info@3.9.0: {}
+
+  ci-info@4.4.0: {}
 
   cjs-module-lexer@1.4.3: {}
 

@@ -234,10 +234,7 @@ export function createNativeCatalogRuntime(
           ...current,
           workItemId: session.state.runId,
           reply: answer.reply,
-          result: {
-            ...current.result,
-            ...(answer.result.card ? { card: answer.result.card } : {}),
-          },
+          ...(answer.ui ? { ui: answer.ui } : {}),
         }
       : { ...current, workItemId: session.state.runId };
   }
@@ -342,17 +339,14 @@ export function createNativeCatalogRuntime(
             steps.set(event.toolCallId, step);
           } else if (event.type === "tool-end") {
             if (event.error) await restoreCommittedMutation();
-            // A card that could not be composed only changes how the reply
-            // looks; it is not an action an administrator has to check.
-            if (event.name !== "compose_card")
-              session.recordToolProblem(
-                actionLabels.get(event.name) ?? event.name,
-                event.invalidArguments
-                  ? "invalid_arguments"
-                  : event.error || event.unavailable
-                    ? "unavailable"
-                    : undefined,
-              );
+            session.recordToolProblem(
+              actionLabels.get(event.name) ?? event.name,
+              event.invalidArguments
+                ? "invalid_arguments"
+                : event.error || event.unavailable
+                  ? "unavailable"
+                  : undefined,
+            );
             const step = steps.get(event.toolCallId);
             const operationId =
               !event.unavailable &&

@@ -1,4 +1,5 @@
 import type { Conversation, DomainEvent, Snapshot } from "./index";
+import { GENERATIVE_UI_PROFILE } from "./generative-ui";
 
 type Message = Conversation["messages"][number];
 type MessageResult = NonNullable<Message["result"]>;
@@ -10,7 +11,8 @@ export const MESSAGE_TIME_PROFILE = "agent-message-time/1" as const;
  * Result types every client of the 0.8 profile parses. Anything newer reaches
  * only clients that name it in `results=` (as `type/version`); the others
  * receive the message's text, which every result carries as its fallback.
- * `card.document` keeps its own `cards=agent-card/1` negotiation on top.
+ * `card.document` keeps its own `cards=agent-card/1` negotiation on top;
+ * new answers no longer carry it, stored ones still read as text.
  */
 export const BASELINE_MESSAGE_RESULTS = [
   "crm.contacts/1",
@@ -34,10 +36,12 @@ const resultToken = (result: MessageResult) =>
 /** What a client asked for on a snapshot, events, commands or history read. */
 export type MessageDelivery = {
   times: boolean;
+  /** Generated UI on assistant answers (GENERATIVE_UI_PROFILE). */
+  ui: boolean;
   /** Declared result tokens besides the baseline; unknown ones are ignored. */
   results: ReadonlySet<string>;
 };
-/** Reads `messages=` and `results=`; anything malformed means "not asked". */
+/** Reads `messages=`, `results=` and `ui=`; anything malformed means "not asked". */
 export function messageDelivery(params: URLSearchParams): MessageDelivery {
   const declared = (params.get("results") ?? "")
     .split(",")
@@ -45,18 +49,20 @@ export function messageDelivery(params: URLSearchParams): MessageDelivery {
     .filter((token) => TOKEN.test(token));
   return {
     times: params.get("messages") === MESSAGE_TIME_PROFILE,
+    ui: params.get("ui") === GENERATIVE_UI_PROFILE,
     results: new Set(declared),
   };
 }
 /** Adds this client's declarations to a delivery path. */
 export function messageDeliveryPath(
   path: string,
-  support: { times?: boolean; results?: readonly string[] },
+  support: { times?: boolean; ui?: boolean; results?: readonly string[] },
 ) {
   const params = [
     ...(support.times
       ? [`messages=${encodeURIComponent(MESSAGE_TIME_PROFILE)}`]
       : []),
+    ...(support.ui ? [`ui=${encodeURIComponent(GENERATIVE_UI_PROFILE)}`] : []),
     ...(support.results?.length
       ? [
           `results=${support.results.map((token) => encodeURIComponent(token)).join(",")}`,
@@ -77,6 +83,10 @@ export function messageForClient<T extends Message>(
   let value = message;
   if (!delivery.times && value.createdAt !== undefined) {
     const { createdAt: _createdAt, ...plain } = value;
+    value = plain as T;
+  }
+  if (!delivery.ui && value.ui !== undefined) {
+    const { ui: _ui, ...plain } = value;
     value = plain as T;
   }
   if (value.result) {

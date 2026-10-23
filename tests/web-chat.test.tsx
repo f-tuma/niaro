@@ -39,6 +39,8 @@ jest.mock("@tanstack/react-router", () => {
     useRouterState: () => "/",
   };
 });
+// Generated charts draw with recharts, which Jest cannot parse.
+jest.mock("../apps/server-admin/web/app/generative-ui/charts", () => ({}));
 jest.mock("../apps/server-admin/web/app/context", () => ({
   useApp: () => ({ language: "cs" }),
   useAppSession: () => {
@@ -685,59 +687,132 @@ test("an archived chat opened by its address can be restored and then continues"
   expect(text(root)).toContain("Založ Jana");
 });
 
-test("only the latest card is actionable", async () => {
-  const card = {
-    type: "card.document" as const,
-    version: 1 as const,
-    document: {
-      id: "pick",
-      revision: 2,
-      title: "Vyber termín",
-      nodes: [{ id: "go", type: "button" as const, actionId: "confirm" }],
-      root: ["go"],
-      actions: [
-        {
-          id: "confirm",
-          label: "Potvrdit termín",
-          kind: "reply" as const,
-          variant: "primary" as const,
-        },
-      ],
-    },
-  };
-  const older: Conversation = {
+test("an answer's generated part follows its text and fills the composer, never sends", async () => {
+  const program = [
+    "root = Stack([t, b])",
+    't = Text("Mám dva termíny.")',
+    'b = Buttons([Button("Úterý", @ToAssistant("Potvrzuji úterý"), "primary")])',
+  ].join("\n");
+  const conversation: Conversation = {
     id: "conv-1",
     revision: 4,
     messages: [
-      { id: "m-1", role: "assistant", text: "Termíny:", result: card },
-      user("m-2", "Jiný"),
-      { id: "m-3", role: "assistant", text: "Dobře." },
+      user("m-1", "Kdy se sejdeme?"),
+      {
+        id: "m-2",
+        role: "assistant",
+        text: "Termíny:",
+        ui: {
+          type: "openui.program",
+          version: 1,
+          library: "niaro-ui@1",
+          program,
+        },
+      },
     ],
   };
-  const first = fakeSession(storeWith([older]), {
+  const { session, sent } = fakeSession(storeWith([conversation]), {
     "conv-1": { conversation: summary("conv-1") },
   });
-  const outdated = (await render(first.session, "conv-1")).root;
-  expect(button(outdated, "Potvrdit termín").props.disabled).toBe(true);
-  expect(text(outdated)).toContain(tr("cardOutdated"));
+  const root = (await render(session, "conv-1")).root;
+  const answer = root.find(
+    (node) => node.type === "article" && text(node).includes("Termíny:"),
+  );
+  // Depth-first order: the text, then the generated part.
+  const parts = answer.findAll(
+    (node) =>
+      typeof node.type === "string" &&
+      (node.props["data-host"] === "Markdown" ||
+        node.props["data-testid"] === "generated-ui"),
+  );
+  expect(
+    parts.map((part) => part.props["data-host"] ?? part.props["data-testid"]),
+  ).toEqual(["Markdown", "generated-ui"]);
+  expect(text(parts[1]!)).toContain("Mám dva termíny.");
+  await act(async () => button(answer, "Úterý").props.onClick());
+  expect(root.findByType("textarea").props.value).toBe("Potvrzuji úterý");
+  expect(sent).toEqual([]);
+});
 
-  const latest: Conversation = { ...older, messages: [older.messages[0]!] };
-  const second = fakeSession(storeWith([latest]), {
+test("a generated answer in an archived chat is shown but does nothing", async () => {
+  const conversation: Conversation = {
+    id: "archived-1",
+    revision: 4,
+    messages: [
+      {
+        id: "m-1",
+        role: "assistant",
+        text: "Hotovo.",
+        ui: {
+          type: "openui.program",
+          version: 1,
+          library: "niaro-ui@1",
+          program: 'root = Stack([Button("Další krok")])',
+        },
+      },
+    ],
+  };
+  const { session, sent } = fakeSession(storeWith([conversation]), {
+    "archived-1": { conversation: summary("archived-1", { readOnly: true }) },
+  });
+  const root = (await render(session, "archived-1")).root;
+  const next = button(root, "Další krok");
+  expect(next.props.disabled).toBe(true);
+  await act(async () => next.props.onClick());
+  expect(root.findAllByType("textarea")).toHaveLength(0);
+  expect(sent).toEqual([]);
+});
+
+test("a card composed by an earlier model reads as its text, with nothing to answer", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [
+      {
+        id: "m-1",
+        role: "assistant",
+        text: "Termíny:",
+        result: {
+          type: "card.document",
+          version: 1,
+          document: {
+            id: "pick",
+            revision: 2,
+            title: "Vyber termín",
+            nodes: [
+              {
+                id: "when",
+                type: "field",
+                label: "Úterý",
+                value: "10:00",
+              },
+              { id: "go", type: "button", actionId: "confirm" },
+            ],
+            root: ["when", "go"],
+            actions: [
+              {
+                id: "confirm",
+                label: "Potvrdit termín",
+                kind: "reply",
+                variant: "primary",
+              },
+            ],
+          },
+        },
+      },
+    ],
+  };
+  const { session, sent } = fakeSession(storeWith([conversation]), {
     "conv-1": { conversation: summary("conv-1") },
   });
-  const root = (await render(second.session, "conv-1")).root;
-  const action = button(root, "Potvrdit termín");
-  expect(action.props.disabled).toBe(false);
-  await act(async () => action.props.onClick());
-  expect(second.sent[0]).toMatchObject({
-    type: "card.respond",
-    conversationId: "conv-1",
-    messageId: "m-1",
-    cardId: "pick",
-    expectedCardRevision: 2,
-    actionId: "confirm",
-    values: {},
-  });
+  const root = (await render(session, "conv-1")).root;
+  expect(text(root)).toContain("Termíny:");
+  expect(text(root)).toContain("Vyber termín\nÚterý: 10:00");
+  expect(() => button(root, "Potvrdit termín")).toThrow();
+  expect(
+    root.findAll((node) => node.props["data-testid"] === "card-pick"),
+  ).toHaveLength(0);
+  expect(sent).toEqual([]);
 });
 
 test("a process offer opens the process or resends the request without one", async () => {

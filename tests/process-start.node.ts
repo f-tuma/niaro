@@ -10,7 +10,7 @@ import { assertProcessStartCardOrigin } from "../apps/server-identity/process-st
 import { serviceProcessRunIdentity } from "../apps/server-identity/service-process-journal";
 import { processCompilerVersion } from "../apps/server-agent/process-contract";
 import { FixtureEngine } from "../apps/fixture-server/engine";
-import { composeCard } from "../apps/server-cards/composer";
+import { CardDocumentSchema } from "../packages/protocol/card-document";
 import { resolveCardSubmission } from "../apps/server-cards/respond";
 import { CardResponseCommandSchema, CommandSchema } from "../packages/protocol";
 import { ProcessStartInputSchema } from "../packages/protocol/process-start";
@@ -483,32 +483,32 @@ test("input budget uses exact UTF-8 JSON bytes, including escaped values and key
 test("typed card submission uses frozen field paths and actual visible origin, not button prose", () =>
   isolated((h) => {
     const processId = h.activate(h.basic());
-    const card = composeCard(
-      {
-        title: "TEST inputs",
-        nodes: [
-          {
-            id: "person",
-            type: "input",
-            label: "TEST person",
-            kind: "text",
-            required: true,
-          },
-          { id: "go", type: "button", actionId: "start" },
-        ],
-        root: ["person", "go"],
-        actions: [
-          {
-            id: "start",
-            kind: "submit",
-            label: "TEST arbitrary label",
-            variant: "primary",
-            fields: ["person"],
-          },
-        ],
-      },
-      { id: "TEST-card", revision: 1 },
-    );
+    // A form stored with an answer before model-composed cards were retired.
+    const card = CardDocumentSchema.parse({
+      id: "TEST-card",
+      revision: 1,
+      title: "TEST inputs",
+      nodes: [
+        {
+          id: "person",
+          type: "input",
+          label: "TEST person",
+          kind: "text",
+          required: true,
+        },
+        { id: "go", type: "button", actionId: "start" },
+      ],
+      root: ["person", "go"],
+      actions: [
+        {
+          id: "start",
+          kind: "submit",
+          label: "TEST arbitrary label",
+          variant: "primary",
+          fields: ["person"],
+        },
+      ],
+    });
     const engine = new FixtureEngine(
       "TEST",
       undefined,
@@ -536,9 +536,13 @@ test("typed card submission uses frozen field paths and actual visible origin, n
         },
         expectedCursor: engine.snapshot().cursor,
         timeZone: "UTC",
-        card,
       },
     );
+    engine.data.snapshot.conversations[0]!.messages.at(-1)!.result = {
+      type: "card.document",
+      version: 1,
+      document: card,
+    };
     const snapshot = engine.snapshot(),
       message = snapshot.conversations[0]!.messages.at(-1)!;
     const response = CardResponseCommandSchema.parse({

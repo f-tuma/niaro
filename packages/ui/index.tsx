@@ -1126,16 +1126,20 @@ export function Toggle({
   value,
   onChange,
   accessibilityLabel,
+  disabled = false,
 }: {
   value: boolean;
   onChange: (value: boolean) => void;
   accessibilityLabel: string;
+  disabled?: boolean;
 }) {
   return (
     <Switch
       value={value}
       onValueChange={onChange}
+      disabled={disabled}
       accessibilityLabel={accessibilityLabel}
+      accessibilityState={disabled ? { disabled } : undefined}
       trackColor={{ false: t.color.fillPressed, true: t.color.action.primary }}
       thumbColor={t.color.surfaceRaised}
       {...(Platform.OS === "web"

@@ -11,7 +11,7 @@ The app never talks to a model provider or a company tool directly. It renders t
 **Assistant app** (`apps/mobile`, Expo / React Native)
 
 - Chat and push-to-talk voice input with a live voice visualizer; optional spoken replies.
-- Server-composed cards with headings, icons, grouped facts, responsive columns, forms and buttons; consistent client styling and explicit action approvals.
+- Answers that show their numbers, records, schedules and comparisons as generated UI (OpenUI Lang: metrics, tables, charts, lists, forms) in the app's own design; explicit action approvals.
 - Approvals are explicit, revision-bound and never implied by text or speech.
 - Browser-based account sign-in with a device session stored in secure storage.
 - A fresh chat after every launch and after long inactivity; history stays on the server.
@@ -135,7 +135,7 @@ Tests use synthetic data, local transports and isolated servers. Live provider, 
 - [Hosted MCP servers: definitions, runtimes and compose services](docs/hosted-servers.md)
 - [Services, actions, models and limits](docs/service-catalog.md)
 - [Custom service process definitions and version registry](docs/service-processes.md)
-- [Compose task-specific cards: protocol, server SDK and style guidance](docs/composable-cards.md)
+- [Generative UI in answers: output contract, component library and validation](docs/generative-ui.md)
 - [Agent loop trust scenarios, results and known gaps](docs/agent-trust.md)
 - [Server console and identity](docs/server-admin.md) · [Console design rules](apps/server-admin/DESIGN.md)
 - [App sign-in](docs/app-sign-in.md) · [Service authentication](docs/service-authentication.md)

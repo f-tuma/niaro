@@ -453,12 +453,6 @@ export const en = {
   requestInterrupted: "Stopped. Finished steps are kept.",
   requestInterruptFailed: "Couldn't confirm the stop. Try again.",
   cardUnavailable: "This card can't be shown.",
-  cardRequired: "Complete this field before sending.",
-  cardInvalidValue: "Check the value in this field.",
-  cardOn: "On",
-  cardOff: "Off",
-  cardUpdated: "Card updated. Check the values.",
-  cardOutdated: "From an earlier reply.",
   cardAdditionalContext: "Additional context",
   serviceWriteEffect: "Approving lets it change data.",
   serviceReadEffect: "Approving lets it read data.",
@@ -985,6 +979,12 @@ export const en = {
   audioPlaybackUnavailable:
     "Playback is not ready. The file may still be loading or may be unreadable.",
   audioPlaybackError: "The recording could not be played.",
+  generativeRequired: "Fill this in.",
+  generativeDate: "Use the YYYY-MM-DD format.",
+  generativeDateFormat: "YYYY-MM-DD",
+  generativeSortBy: "Sort by {column}",
+  generativeProgress: "{value} of {max}",
+  generativeOther: "Other",
 } as const;
 export type TranslationKey = keyof typeof en;
 export const cs: Record<TranslationKey, string> = {
@@ -1439,12 +1439,6 @@ export const cs: Record<TranslationKey, string> = {
   requestInterrupted: "Zastaveno. Hotové kroky zůstávají.",
   requestInterruptFailed: "Zastavení se nepotvrdilo. Zkus to znovu.",
   cardUnavailable: "Tuto kartu nelze zobrazit.",
-  cardRequired: "Před odesláním vyplň toto pole.",
-  cardInvalidValue: "Zkontroluj hodnotu v tomto poli.",
-  cardOn: "Zapnuto",
-  cardOff: "Vypnuto",
-  cardUpdated: "Karta se změnila. Zkontroluj hodnoty.",
-  cardOutdated: "Z dřívější odpovědi.",
   cardAdditionalContext: "Doplňující kontext",
   serviceWriteEffect: "Po potvrzení změní data.",
   serviceReadEffect: "Po potvrzení načte data.",
@@ -1975,6 +1969,12 @@ export const cs: Record<TranslationKey, string> = {
   audioPlaybackUnavailable:
     "Přehrávání není připravené. Soubor se může ještě načítat nebo může být nečitelný.",
   audioPlaybackError: "Záznam se nepodařilo přehrát.",
+  generativeRequired: "Vyplň tohle pole.",
+  generativeDate: "Zadej datum ve tvaru RRRR-MM-DD.",
+  generativeDateFormat: "RRRR-MM-DD",
+  generativeSortBy: "Seřadit podle: {column}",
+  generativeProgress: "{value} z {max}",
+  generativeOther: "Ostatní",
 };
 /** "12 messages" / "12 zpráv": a chat's message count in a list. */
 export function messageCount(language: Language, count: number) {

@@ -372,7 +372,7 @@ test("OpenAI invalid optional null yields a concrete private correction without 
   }
 });
 
-test("OpenAI CRM lookup repairs required input, rejects a broken card graph and completes after one composed card", async () => {
+test("OpenAI CRM lookup repairs required input, refuses a data-fetching UI program once and completes with the admitted program", async () => {
   const h = createTrustHarness();
   selectOpenAIModel(h);
   const tool = h.tool("Find contact");
@@ -405,14 +405,10 @@ test("OpenAI CRM lookup repairs required input, rejects a broken card graph and 
       },
     },
   });
-  const card = {
-    title: "Contact found",
-    nodes: [{ id: "name", type: "field", label: "Name", value: "Jane Test" }],
-    root: ["name"],
-    actions: [],
-  };
-  let composed = 0,
-    broken = 0;
+  const fixed =
+    'Jane Test was found in CRM.\n\n```openui-lang\nroot = Stack([Details([Detail("Name", "Jane Test"), Detail("Email", "jane@example.test")])])\n```';
+  let admitted = 0,
+    refused = 0;
   try {
     h.onChat((body) => {
       if (!body.tools?.some((entry) => entry.function.name === tool))
@@ -420,26 +416,30 @@ test("OpenAI CRM lookup repairs required input, rejects a broken card graph and 
           service: service.name,
           need: "find contact",
         });
+      assert(
+        body.messages?.some((message) =>
+          message.content?.includes("## Visual answers (OpenUI Lang)"),
+        ),
+      );
+      assert(
+        !body.tools?.some((entry) => entry.function.name === "compose_card"),
+      );
       const results = toolResults(body);
-      if (results.some((result) => result.status === "composed")) {
-        composed++;
-        assert(
-          body.messages?.some((message) =>
-            message.content?.includes(
-              'Current card composition: {"composed":true}',
-            ),
-          ),
-        );
-        return { content: "Jane Test was found in CRM." };
-      }
       if (results.some((result) => result.data?.contacts)) {
         if (
-          results.some((result) => result.error === "invalid_card_document")
+          JSON.stringify(body.messages).includes(
+            "The openui-lang program was refused",
+          )
         ) {
-          broken++;
-          return h.call("compose_card", card);
+          admitted++;
+          return { content: fixed };
         }
-        return h.call("compose_card", { ...card, root: ["missing"] });
+        refused++;
+        // Data fetching is not supported: the whole program is refused once.
+        return {
+          content:
+            'Jane Test was found in CRM.\n\n```openui-lang\nroot = Stack([Text(q.name)])\nq = Query("crm", {}, {name: ""})\n```',
+        };
       }
       const invalid = rejection(body);
       if (invalid) {
@@ -455,32 +455,25 @@ test("OpenAI CRM lookup repairs required input, rejects a broken card graph and 
     const delivery = await h.send("Find Jane Test in CRM");
     assert.equal(delivery.status, "accepted");
     assert.equal(h.network.length, 1);
-    assert.equal(composed, 1);
-    assert.equal(broken, 1);
+    assert.equal(refused, 1);
+    assert.equal(admitted, 1);
     const state = h.commandState();
     assert.equal(state.trace?.status, "succeeded");
     assert.equal(state.answer?.reply, "Jane Test was found in CRM.");
-    assert.equal(state.card?.title, card.title);
+    assert.equal(state.uiRepair, true);
+    assert.deepEqual(state.answer?.ui, {
+      type: "openui.program",
+      version: 1,
+      library: "niaro-ui@1",
+      program:
+        'root = Stack([Details([Detail("Name", "Jane Test"), Detail("Email", "jane@example.test")])])',
+    });
     assert.equal(state.toolProblems.length, 0);
     const invalid = state.trace?.steps.find(
       (step) => step.tool?.outcome === "invalid_arguments",
     );
     assert(
       invalid?.tool?.failure?.fields.some((field) => field.path === "/select"),
-    );
-    const invocations = await h.nativeInvocations(state.threadId);
-    const cards = invocations.filter(
-      (entry) => entry.toolName === "compose_card",
-    );
-    assert.equal(cards.length, 2);
-    // History keeps no card content, so the model is told how to change it.
-    assert.deepEqual(
-      { ...(cards.at(-1)?.result as Record<string, unknown>), note: undefined },
-      { status: "composed", revision: 1, note: undefined },
-    );
-    assert.match(
-      String((cards.at(-1)?.result as { note?: string })?.note),
-      /complete card/,
     );
     assert(
       !JSON.stringify(await h.nativeMessages(state.threadId)).includes(
@@ -526,7 +519,6 @@ for (const [label, name, args] of [
     { need: "calendar", suspendedToolCallId: sentinel },
   ],
   ["malformed ask_user", "ask_user", { question: { token: sentinel } }],
-  ["malformed compose_card", "compose_card", { card: { token: sentinel } }],
 ] as const) {
   test(`native rejects ${label} without invocation and gives one corrective failed trace`, async () => {
     const h = createTrustHarness();
@@ -545,14 +537,8 @@ for (const [label, name, args] of [
         kind: "validation",
         stage: "validation",
         retry: "correct_input",
-        // An empty card call gets told what a complete card needs.
-        ...(name === "compose_card"
-          ? { message: observed.failure.message }
-          : {}),
         fields: observed.failure.fields,
       });
-      if (name === "compose_card")
-        assert.match(String(observed.failure.message), /complete card/);
       assert(observed.failure.fields.length > 0);
       assert.equal(h.network.length, 0);
       assert.equal(h.commandState().operations.length, 0);

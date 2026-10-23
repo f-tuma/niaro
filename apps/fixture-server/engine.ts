@@ -1,6 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
-import type { CardDocument } from "../../packages/protocol/card-document";
+import {
+  GeneratedUiSchema,
+  type GeneratedUi,
+} from "../../packages/protocol/generative-ui";
 import { resolveCardResponse } from "../server-cards/respond";
 import { workCard } from "../server-cards/adapters";
 import {
@@ -77,7 +80,8 @@ export type Interpretation = {
   nativeRetryAuthorized?: boolean;
   timeZone: string;
   contactResult?: CrmContactResult;
-  card?: CardDocument;
+  /** The admitted UI program of a native answer, shown beside its text. */
+  ui?: GeneratedUi;
   processOffer?: import("../../packages/protocol/process-offer").ProcessOfferResult;
   skillProposal?: import("../../packages/protocol/skills").SkillProposalResult;
   processProposal?: import("../../packages/protocol/process-proposal").ProcessProposalResult;
@@ -632,6 +636,7 @@ export class FixtureEngine {
     workItemId?: string,
     inputRequestId?: string,
     result?: z.infer<typeof MessageResultSchema>,
+    ui?: GeneratedUi,
   ) {
     const conversation = this.conversation();
     if (
@@ -659,6 +664,9 @@ export class FixtureEngine {
         ? { humanTask: this.attachedTask.task }
         : {}),
       ...(result ? { result: MessageResultSchema.parse(result) } : {}),
+      ...(ui && role === "assistant"
+        ? { ui: GeneratedUiSchema.parse(ui) }
+        : {}),
       createdAt: new Date(this.now()).toISOString(),
     });
     conversation.messages = conversation.messages.slice(-500);
@@ -1188,7 +1196,7 @@ export class FixtureEngine {
           command.language === "cs" ? "Krok dokončen." : "Step completed.";
         if (!alreadyShown) {
           const nativeWork =
-            !interpretation.serviceResult && !interpretation.card
+            !interpretation.serviceResult && !interpretation.ui
               ? interpretation.nativeWork?.find(
                   (work) => work.id === interpretation.workItemId,
                 )
@@ -1200,6 +1208,7 @@ export class FixtureEngine {
             nativeWork?.id,
             nativeWork?.native?.question?.id,
             interpretation.serviceResult,
+            interpretation.ui,
           );
         }
       } else {
@@ -1395,7 +1404,7 @@ export class FixtureEngine {
         const nativeWork =
           !interpretation?.connectionResult &&
           !interpretation?.serviceResult &&
-          !interpretation?.card &&
+          !interpretation?.ui &&
           !interpretation?.processOffer &&
           !interpretation?.skillProposal &&
           !interpretation?.processProposal &&
@@ -1415,13 +1424,8 @@ export class FixtureEngine {
             interpretation?.processOffer ??
             interpretation?.skillProposal ??
             interpretation?.processProposal ??
-            (interpretation?.card
-              ? {
-                  type: "card.document",
-                  version: 1,
-                  document: interpretation.card,
-                }
-              : interpretation?.contactResult),
+            interpretation?.contactResult,
+          interpretation?.ui,
         );
         return this.result(command, "accepted", "accepted");
       }

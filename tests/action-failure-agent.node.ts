@@ -445,25 +445,15 @@ test("approval continuation keeps the specific failure in durable transcript wit
     assert(pending);
     assert.equal(dispatched(), 0);
     let received: Record<string, any> | undefined;
-    let composed = false;
     h.onChat((body) => {
       received = resultAfterApproval(body);
       assert(
         received,
         "The model must receive the server's observed action outcome",
       );
-      if (!composed) {
-        composed = true;
-        return h.call("compose_card", {
-          title: "TEST stale presentation",
-          nodes: [{ id: "stale", type: "text", text: "TEST old card detail" }],
-          root: ["stale"],
-          actions: [],
-        });
-      }
       return {
         content:
-          "The email was rejected by the service; verify whether the action happened before any retry.",
+          'The email was rejected by the service; verify whether the action happened before any retry.\n\n```openui-lang\nroot = Stack([Callout("TEST old card detail", "success")])\n```',
       };
     });
     const answer = await h
@@ -477,9 +467,9 @@ test("approval continuation keeps the specific failure in durable transcript wit
     assert.equal(answer.resolved?.status, "unknown");
     assert.equal(answer.result?.status, "unknown");
     assert(JSON.stringify(answer.result?.card).includes(validation.message!));
-    assert(
-      !JSON.stringify(answer.result?.card).includes("TEST old card detail"),
-    );
+    // An unknown write outcome is explained in text, never by its UI.
+    assert.equal(answer.ui, undefined);
+    assert(!JSON.stringify(answer).includes("TEST old card detail"));
     assert.equal(dispatched(), 1);
     const turn = saved(h);
     assert(

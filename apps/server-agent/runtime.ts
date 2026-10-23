@@ -294,15 +294,6 @@ type Owner = {
 const owners = new Map<string, Owner>();
 const agentId = (runId: string) =>
   "niaro-native-" + createHash("sha256").update(runId).digest("hex");
-/**
- * History keeps tool calls without their arguments (privacy), so an earlier
- * card reads as compose_card({}). These notes keep the model from copying it.
- */
-const COMPOSED_CARD_NOTE =
-  "The card is on screen. Its content is not kept in history, so an earlier call shows no arguments: to change the card, call compose_card again with a complete card (title, nodes, root, actions). Otherwise answer in one short sentence.";
-const CARD_RETRY_NOTE =
-  "compose_card needs a complete card in one call: title, nodes (at least one), root and actions, as its schema describes. Earlier calls appear without arguments in history; never copy them. If a card is not needed, answer in text instead.";
-
 const guardedTool = (name: string) =>
   name.startsWith("action_") ||
   name.startsWith("design_") ||
@@ -312,7 +303,6 @@ const guardedTool = (name: string) =>
   name.startsWith("skill_") ||
   // Meeting notes and transcripts are private like service reads.
   name.startsWith("meeting_") ||
-  name === "compose_card" ||
   name === "ask_user";
 type NativePrompt = Parameters<
   NonNullable<Processor["processLLMRequest"]>
@@ -856,7 +846,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
           description: envelopedToolInputs.has(definition.name)
             ? `${definition.description} Put the complete business argument object inside the required niaroBusinessInput property.`
             : definition.description,
-          // Provider compatibility must not turn optional service/card fields
+          // Provider compatibility must not turn optional service fields
           // into required nullable fields. The domain validates the original
           // schema and supplied JSON before any invocation or effect.
           strict: false,
@@ -888,42 +878,6 @@ export function createNativeAgentRuntime(storageUrl: string) {
                   return output;
                 if (definition.name.startsWith("memory_"))
                   return { toolResult: true };
-                if (definition.name === "compose_card") {
-                  if (
-                    output &&
-                    typeof output === "object" &&
-                    "status" in output &&
-                    output.status === "composed" &&
-                    "revision" in output &&
-                    Number.isSafeInteger(output.revision) &&
-                    Number(output.revision) > 0
-                  )
-                    return {
-                      status: "composed",
-                      revision: output.revision,
-                      note: COMPOSED_CARD_NOTE,
-                    };
-                  // Why it failed stays in history: earlier calls show no
-                  // arguments, so the reason is all the model can correct.
-                  const failed =
-                    output && typeof output === "object"
-                      ? (output as { issues?: unknown; message?: unknown })
-                      : {};
-                  return {
-                    error: "invalid_card_document",
-                    ...(Array.isArray(failed.issues)
-                      ? {
-                          issues: failed.issues
-                            .filter((issue) => typeof issue === "string")
-                            .slice(0, 5)
-                            .map((issue: string) => issue.slice(0, 300)),
-                        }
-                      : {}),
-                    ...(typeof failed.message === "string"
-                      ? { message: failed.message.slice(0, 300) }
-                      : {}),
-                  };
-                }
                 if (definition.name === "ask_user") {
                   if (
                     output &&
@@ -1027,9 +981,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
                         message:
                           "This tool declares an argument field reserved by native execution. Ask an administrator to update the action schema; do not repeat this call.",
                       }
-                    : definition.name === "compose_card"
-                      ? { message: CARD_RETRY_NOTE }
-                      : {}),
+                    : {}),
                   fields: validation.fields,
                 };
                 const output = { error: "invalid_arguments", failure };

@@ -1,5 +1,6 @@
 import {
   CardDocumentSchema,
+  cardDocumentText,
   cardFieldValueValid,
   type CardDocument,
 } from "../packages/protocol/card-document";
@@ -9,7 +10,6 @@ import {
   WorkItemSchema,
 } from "../packages/protocol";
 import { ServiceResultSchema } from "../packages/protocol/service-result";
-import { composeCard, COMPOSE_CARD_TOOL } from "../apps/server-cards/composer";
 import { resolveCardResponse } from "../apps/server-cards/respond";
 import { FixtureEngine } from "../apps/fixture-server/engine";
 import {
@@ -22,8 +22,12 @@ import {
   eventsWithoutCards,
 } from "../packages/protocol/card-delivery";
 
+// Answers no longer carry model-composed cards. These tests keep the
+// stored ones readable and their old form answers safely bound.
+const card = (raw: object, identity: { id: string; revision: number }) =>
+  CardDocumentSchema.parse({ ...raw, ...identity });
 const document = (): CardDocument =>
-  composeCard(
+  card(
     {
       title: "Prepare a review",
       icon: "calendar",
@@ -61,7 +65,7 @@ const document = (): CardDocument =>
     },
     { id: "TEST-card", revision: 2 },
   );
-const interpretation = (engine: FixtureEngine, card?: CardDocument) => ({
+const interpretation = (engine: FixtureEngine) => ({
   decision: {
     kind: "reply" as const,
     contactId: null,
@@ -72,15 +76,20 @@ const interpretation = (engine: FixtureEngine, card?: CardDocument) => ({
   },
   expectedCursor: engine.snapshot().cursor,
   timeZone: "UTC",
-  ...(card ? { card } : {}),
 });
+/** An answer as stored with its card before such cards were retired. */
+function storeCard(engine: FixtureEngine, stored: CardDocument) {
+  const message = engine.data.snapshot.conversations[0]!.messages.at(-1)!;
+  message.result = { type: "card.document", version: 1, document: stored };
+  return message;
+}
 function setup() {
   const engine = new FixtureEngine();
   engine.execute(
     messageCommand("Prepare a review", "en", "TEST-create"),
-    interpretation(engine, document()),
+    interpretation(engine),
   );
-  const message = engine.snapshot().conversations[0]!.messages.at(-1)!;
+  const message = storeCard(engine, document());
   const command = CommandSchema.parse({
     type: "card.respond",
     commandId: "TEST-answer",
@@ -97,7 +106,7 @@ function setup() {
   return { engine, command };
 }
 
-test("validated composition is data-only and supports unfamiliar layouts", () => {
+test("a stored card stays readable history as plain text", () => {
   expect(
     MessageResultSchema.parse({
       type: "card.document",
@@ -105,16 +114,31 @@ test("validated composition is data-only and supports unfamiliar layouts", () =>
       document: document(),
     }).type,
   ).toBe("card.document");
-  expect(COMPOSE_CARD_TOOL.function.parameters).toMatchObject({
-    type: "object",
-    additionalProperties: false,
-  });
-  expect(() =>
-    composeCard(
-      { ...document(), id: undefined, revision: undefined },
-      { id: "server-id", revision: 1 },
+  expect(
+    cardDocumentText(
+      card(
+        {
+          title: "TEST Review",
+          subtitle: "TEST Friday",
+          nodes: [
+            { id: "h", type: "heading", text: "TEST Agenda" },
+            { id: "f", type: "field", label: "Room", value: "TEST 4" },
+            {
+              id: "l",
+              type: "list",
+              items: [{ title: "TEST Budget", detail: "TEST Q3" }],
+            },
+            { id: "d", type: "divider" },
+          ],
+          root: ["h", "f", "l", "d"],
+          actions: [],
+        },
+        { id: "TEST-text", revision: 1 },
+      ),
     ),
-  ).toThrow();
+  ).toBe(
+    "TEST Review\nTEST Friday\nTEST Agenda\nRoom: TEST 4\nTEST Budget: TEST Q3",
+  );
 });
 
 test.each([
@@ -380,7 +404,7 @@ test("work summaries preserve an explicitly authored current revision instead of
   const engine = new FixtureEngine();
   engine.execute(messageCommand("Choose Peter", "en", "TEST-work"));
   const work = engine.data.snapshot.workItems[0]!;
-  const body = composeCard(
+  const body = card(
     {
       title: "TEST bespoke task summary",
       nodes: [

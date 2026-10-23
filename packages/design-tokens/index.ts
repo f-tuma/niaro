@@ -100,6 +100,20 @@ export const tokens = {
       amber: { background: "#FBEFD9", foreground: "#93560A" },
       rose: { background: "#FDE8EA", foreground: "#C42A35" },
     },
+    /**
+     * Chart series in this fixed order (identity, never rank), checked for
+     * colour-blind separation on white. Ink stays text tokens beside them.
+     */
+    chart: [
+      "#2F5BE7",
+      "#EB6834",
+      "#1BAF7A",
+      "#EDA100",
+      "#E87BA4",
+      "#008300",
+      "#6250D6",
+      "#E34948",
+    ],
   },
   typography: {
     /** Tab-root screen titles, left-aligned (iOS/Bolt large title). */

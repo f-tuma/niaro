@@ -96,6 +96,7 @@ export function useChatSession(
             processOutputs: true,
             messageResults: WEB_MESSAGE_RESULTS,
             messageTimes: true,
+            generativeUi: true,
           },
         );
         // One sync loop per session, whichever page needs it first.

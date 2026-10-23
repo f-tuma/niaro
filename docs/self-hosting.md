@@ -227,13 +227,9 @@ Encrypt backups and restrict access: operation parameters/results and conversati
 
 Before upgrading: back up, run `pnpm install --frozen-lockfile`, `npm run check`, `npm run admin:build`, stop the old process and start the new one. This update preserves old workflow data while upgrading the protocol to 0.6; update clients at the same time. Stored 0.2–0.5 sessions and client caches migrate without automatically retrying pending commands. An unknown write requires reconciliation with the external service, not deleting its receipt.
 
-## Composable cards
+## Generative UI
 
-The updated server offers `compose_card` to the model planner (`routing.planner: "model"`) and provides a typed `CardBuilder` for server integrations. New task layouts use the shipped primitives and do not require new client components. No extra dependency, provider or permission is required. Use [the card authoring guide](composable-cards.md) for the SDK, layout rules and confirmation boundary.
-
-Restart the server with the updated code and rebuild the app to use the new renderer. Updated clients request `agent-card/1` on workflow delivery and discovery; older clients keep their existing textual/service/workflow presentation. New card content persists with its normal message or entity and is replayed without calling the composer again. Keep useful textual answers for clients that have not negotiated cards.
-
-Run `pnpm run check`, `pnpm run build` and `pnpm run storybook:export`. In Storybook select **Workflow / Composable card** for EN/CS overview, forms, long text, read-only and invalid-document states. Use synthetic service data for confirmation checks; no live model or business operation is needed to exercise the renderer. Inspect both narrow mobile and wide browser layouts. Physical-device accessibility and live-model content quality need separate evaluation.
+Answers carry their visual part as an OpenUI Lang program ([generative UI](generative-ui.md)) instead of model-composed cards; the `compose_card` tool is gone. Nothing needs configuring: the instructions are generated locally from the shipped component library, models stay on the configured providers, and OpenUI's cloud and telemetry are not used. Run `pnpm install --frozen-lockfile` (it denies lang-core's telemetry postinstall), `npm run admin:build`, restart the server and rebuild the app. Older apps keep receiving the text answer; messages stored with old cards show their text.
 
 ## October 1 client and loop diagnostics update
 

@@ -289,3 +289,57 @@ export function cardFieldValueValid(
   if (field.kind === "time") return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
   return true;
 }
+/**
+ * The readable content of a stored model-composed card, in reading order:
+ * the title, then each heading, text and value. Answers no longer carry
+ * cards; history shows this text in place of the old card.
+ */
+export function cardDocumentText(document: {
+  title: string;
+  subtitle?: string;
+  nodes: CardNode[];
+  root: string[];
+}): string {
+  const nodes = new Map(document.nodes.map((node) => [node.id, node]));
+  const lines = [document.title, document.subtitle].filter(
+    (line): line is string => !!line,
+  );
+  const seen = new Set<string>();
+  const visit = (id: string) => {
+    const node = nodes.get(id);
+    if (!node || seen.has(id) || lines.length > 200) return;
+    seen.add(id);
+    switch (node.type) {
+      case "heading":
+      case "text":
+      case "notice":
+      case "code":
+        lines.push(node.text);
+        break;
+      case "field":
+        lines.push(`${node.label}: ${node.value}`);
+        break;
+      case "badge":
+        lines.push(node.label);
+        break;
+      case "progress":
+        lines.push(`${node.label}: ${node.value}/${node.total}`);
+        break;
+      case "list":
+        for (const item of node.items)
+          lines.push(
+            item.detail ? `${item.title}: ${item.detail}` : item.title,
+          );
+        break;
+      case "section":
+        if (node.title) lines.push(node.title);
+        break;
+      case "disclosure":
+        lines.push(node.label);
+        break;
+    }
+    if ("children" in node) node.children.forEach(visit);
+  };
+  document.root.forEach(visit);
+  return lines.join("\n");
+}

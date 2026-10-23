@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { createTrustHarness, toolResults } from "./harness";
-import { CardDocumentSchema } from "../../packages/protocol/card-document";
+import {
+  parseProgram,
+  programText,
+} from "../../packages/openui-library/program";
 import type { TrustScenario } from "./types";
 
 export type TrustQualityScenario = TrustScenario & {
@@ -258,15 +261,10 @@ export const trustQualityScenarios: TrustQualityScenario[] = fixtures.flatMap(
                 message.role === "assistant" && message.replyToCommandId,
             )
             .map((message) => {
-              const result = message.result as
-                | { type?: string; document?: unknown }
-                | undefined;
               return {
                 commandId: message.replyToCommandId,
                 text: message.text,
-                ...(result?.type === "card.document"
-                  ? { cardDocument: result.document }
-                  : {}),
+                ...(message.ui ? { ui: message.ui.program } : {}),
               };
             });
 
@@ -514,40 +512,21 @@ export const trustQualityScenarios: TrustQualityScenario[] = fixtures.flatMap(
           if (fixture.needsCard) {
             await score(
               "quality.card-claims.match-ground-truth",
-              "Any requested contact card exists and contains the authoritative email",
+              "Any requested contact card (generated UI) exists and contains the authoritative email",
               () => {
                 const cards = messages.flatMap((message) => {
                   if (message.replyToCommandId !== latest.commandId) return [];
-                  const result = message.result as
-                    | { type?: string; document?: unknown }
-                    | undefined;
-                  return result?.type === "card.document"
-                    ? [CardDocumentSchema.parse(result.document)]
-                    : [];
+                  const root = message.ui
+                    ? parseProgram(message.ui.program).root
+                    : null;
+                  return root ? [root] : [];
                 });
                 assert(
                   cards.length > 0,
                   "The requested contact card is missing",
                 );
                 const cardText = (card: (typeof cards)[number]) =>
-                  [
-                    card.title,
-                    card.subtitle,
-                    ...card.nodes.flatMap((node) =>
-                      node.type === "field"
-                        ? [node.label, node.value]
-                        : node.type === "heading" || node.type === "text"
-                          ? [node.text]
-                          : node.type === "list"
-                            ? node.items.flatMap((item) => [
-                                item.title,
-                                item.detail ?? "",
-                              ])
-                            : [],
-                    ),
-                  ]
-                    .join(" ")
-                    .toLocaleLowerCase();
+                  programText(card).toLocaleLowerCase();
                 const normalize = (value: string) =>
                   value
                     .normalize("NFD")
@@ -558,17 +537,9 @@ export const trustQualityScenarios: TrustQualityScenario[] = fixtures.flatMap(
                     (card) =>
                       normalize(cardText(card)).includes(
                         normalize(fixture.contacts[0]!.name),
-                      ) &&
-                      card.nodes.some(
-                        (node) =>
-                          node.type === "field" &&
-                          /e-?mail|email/u.test(
-                            node.label.toLocaleLowerCase(),
-                          ) &&
-                          node.value === fixture.expectedEmail,
-                      ),
+                      ) && cardText(card).includes(fixture.expectedEmail!),
                   ),
-                  "No correlated card contains both contact identity and authoritative email",
+                  "No correlated UI contains both contact identity and authoritative email",
                 );
                 const emails = cards.flatMap(
                   (card) =>
@@ -579,7 +550,7 @@ export const trustQualityScenarios: TrustQualityScenario[] = fixtures.flatMap(
                 assert(
                   emails.length > 0 &&
                     emails.every((email) => email === fixture.expectedEmail),
-                  "The contact card contains an unsupported email claim",
+                  "The contact UI contains an unsupported email claim",
                 );
                 if (fixture.forbiddenEmail)
                   assert(

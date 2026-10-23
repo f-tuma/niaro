@@ -25,7 +25,13 @@ export default defineConfig({
     proxy: { "^/admin/api/": apiProxy, "^/admin/auth/": apiProxy },
   },
   resolve: {
-    alias: { "@admin": fileURLToPath(new URL("./web", import.meta.url)) },
+    alias: {
+      "@admin": fileURLToPath(new URL("./web", import.meta.url)),
+      // react-lang mounts its inspector in development; it would load from a CDN.
+      "@openuidev/devtools": fileURLToPath(
+        new URL("./web/lib/openui-devtools-off.ts", import.meta.url),
+      ),
+    },
   },
   build: {
     outDir: "../../dist-admin",

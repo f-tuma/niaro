@@ -58,6 +58,14 @@ const en = {
   searchOlder: "Search older",
   renameChat: "Rename",
   chatName: "Chat name",
+  /** Generated answers (OpenUI). */
+  generated: {
+    sortBy: (column: string) => `Sort by ${column}`,
+    barChart: "Bar chart",
+    lineChart: "Line chart",
+    pieChart: "Pie chart",
+    other: "Other",
+  },
   /** A process drafted in chat (process.proposal). */
   proposal: {
     title: "New process",
@@ -182,6 +190,13 @@ const cs: ChatCopy = {
   searchOlder: "Hledat ve starších",
   renameChat: "Přejmenovat",
   chatName: "Název chatu",
+  generated: {
+    sortBy: (column: string) => `Seřadit podle ${column}`,
+    barChart: "Sloupcový graf",
+    lineChart: "Spojnicový graf",
+    pieChart: "Koláčový graf",
+    other: "Ostatní",
+  },
   proposal: {
     title: "Nový proces",
     personal: "Osobní",

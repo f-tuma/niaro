@@ -140,7 +140,8 @@ import type { VoiceDraft } from "../../packages/client-core/voice";
 import { Entrance, MotionProvider } from "../../packages/ui/motion";
 import { WorkItemSummary } from "../../packages/ui-catalog/WorkItemSummary";
 import { ServiceActionCard } from "../../packages/ui-catalog/ServiceActionCard";
-import { CardDocumentView } from "../../packages/ui-catalog/CardDocumentView";
+import { GenerativeUiView } from "../../packages/ui-catalog/GenerativeUiView";
+import { cardDocumentText } from "../../packages/protocol/card-document";
 import { ProcessOfferCard } from "../../packages/ui-catalog/ProcessOfferCard";
 import type { ProcessOfferResult } from "../../packages/protocol/process-offer";
 import { processProposalWebUrl } from "../../packages/protocol/process-proposal";
@@ -1295,6 +1296,29 @@ export function Workspace({
   const workMessageAnchors = store
     ? selectWorkMessageAnchors(store, conversationId, messages)
     : new Map<string, string>();
+  /** An answer's text, then its generated UI; system cards follow it. */
+  const answer = (m: (typeof messages)[number], text = true) => (
+    <>
+      {text && m.text ? (
+        <View style={styles.answer}>
+          <MarkdownText text={m.text} />
+        </View>
+      ) : null}
+      {m.role === "assistant" && m.ui ? (
+        <GenerativeUiView
+          program={m.ui.program}
+          language={language}
+          disabled={!!historySelection?.readOnly}
+          onFollowUp={(followUp) => {
+            // A follow-up is a new message the person reviews and sends.
+            setContext(undefined);
+            setDraft(followUp);
+            requestAnimationFrame(() => composerInput.current?.focus());
+          }}
+        />
+      ) : null}
+    </>
+  );
   const transcript = messages.map((m) => {
     if (
       heldReply &&
@@ -1336,11 +1360,7 @@ export function Workspace({
     if (m.result?.type === "service.connection") {
       return (
         <AssistantMessage key={m.id}>
-          {m.text ? (
-            <View style={styles.answer}>
-              <MarkdownText text={m.text} />
-            </View>
-          ) : null}
+          {answer(m)}
           {session ? (
             <ServiceConnection
               key={`${session.identityKey}:${m.result.serviceId}:${m.id}`}
@@ -1365,11 +1385,7 @@ export function Workspace({
       const current = messages.at(-1)?.id === m.id;
       return (
         <AssistantMessage key={m.id}>
-          {m.text ? (
-            <View style={styles.answer}>
-              <MarkdownText text={m.text} />
-            </View>
-          ) : null}
+          {answer(m)}
           <ProcessOfferCard
             offer={offer}
             language={language}
@@ -1394,11 +1410,7 @@ export function Workspace({
         : null;
       return (
         <AssistantMessage key={m.id}>
-          {m.text ? (
-            <View style={styles.answer}>
-              <MarkdownText text={m.text} />
-            </View>
-          ) : null}
+          {answer(m)}
           <Text role="caption" tone="secondary">
             {`${tr("processProposalTitle")}: ${m.result.name}`}
           </Text>
@@ -1417,85 +1429,25 @@ export function Workspace({
     if (m.result?.type === "skill.proposal")
       return (
         <AssistantMessage key={m.id}>
-          {m.text ? (
-            <View style={styles.answer}>
-              <MarkdownText text={m.text} />
-            </View>
-          ) : null}
+          {answer(m)}
           <Text role="caption" tone="secondary">
             {`${tr("skillProposalTitle")}: ${m.result.name}. ${tr("skillProposalMobile")}`}
           </Text>
         </AssistantMessage>
       );
-    if (m.result?.type === "card.document") {
-      const document = m.result.document;
-      const cardState =
-        state.commandStates[`${m.id}:${document.id}:${document.revision}`];
-      const current = messages.at(-1)?.id === m.id;
+    // Answers no longer compose cards; a stored one reads as its text.
+    if (m.result?.type === "card.document")
       return (
         <AssistantMessage key={m.id}>
-          {m.text ? (
-            <View style={styles.answer}>
-              <MarkdownText text={m.text} />
-            </View>
-          ) : null}
-          <CardDocumentView
-            document={document}
-            language={language}
-            disabled={
-              busy ||
-              !current ||
-              !online ||
-              !!historySelection?.readOnly ||
-              store?.stale ||
-              cardState === "sending" ||
-              cardState === "accepted" ||
-              cardState === "network_error" ||
-              cardState === "conflict"
-            }
-            onAction={(actionId, values) => {
-              if (!session || !conversation) return;
-              const id = randomUUID();
-              void session.send({
-                type: "card.respond",
-                commandId: id,
-                idempotencyKey: id,
-                conversationId: conversation.id,
-                messageId: m.id,
-                cardId: document.id,
-                expectedCardRevision: document.revision,
-                actionId,
-                values,
-                language,
-              });
-            }}
-          />
-          {!current && document.actions.length ? (
-            <Text role="caption" tone="secondary">
-              {tr("cardOutdated")}
-            </Text>
-          ) : null}
-          {cardState === "network_error" ||
-          cardState === "conflict" ||
-          cardState === "rejected" ? (
-            <Notice error>{tr(cardState)}</Notice>
-          ) : cardState === "accepted" ? (
-            <Text role="caption" tone="secondary">
-              {tr("accepted")}
-            </Text>
-          ) : null}
+          {answer(m)}
+          <Text selectable>{cardDocumentText(m.result.document)}</Text>
         </AssistantMessage>
       );
-    }
     if (m.result?.type === "service.action") {
       const result = m.result;
       return (
         <AssistantMessage key={m.id}>
-          {m.text ? (
-            <View style={styles.answer}>
-              <MarkdownText text={m.text} />
-            </View>
-          ) : null}
+          {answer(m)}
           <ServiceActionCard
             result={result}
             language={language}
@@ -1520,6 +1472,7 @@ export function Workspace({
     if (m.result?.type === "crm.contacts")
       return (
         <AssistantMessage key={m.id}>
+          {answer(m, false)}
           <CrmContactResults result={m.result} language={language} />
         </AssistantMessage>
       );
@@ -1534,17 +1487,14 @@ export function Workspace({
           key={m.id}
           onLayout={(e) => locateWork(m.workItemId!, e.nativeEvent.layout.y)}
         >
-          <AssistantMessage>{cardsById.get(m.workItemId)}</AssistantMessage>
+          <AssistantMessage>
+            {answer(m, false)}
+            {cardsById.get(m.workItemId)}
+          </AssistantMessage>
         </View>
       );
     }
-    return (
-      <AssistantMessage key={m.id}>
-        <View style={styles.answer}>
-          <MarkdownText text={m.text} />
-        </View>
-      </AssistantMessage>
-    );
+    return <AssistantMessage key={m.id}>{answer(m)}</AssistantMessage>;
   });
   const hasConversation = messages.length > 0 || work.length > 0;
   const pendingMessage = selectPendingChatMessage(state, conversationId);
@@ -2040,11 +1990,7 @@ export function Workspace({
               (attempt) =>
                 attempt.command.commandId === state.pending?.commandId,
             ) &&
-            !(
-              section === "chat" &&
-              (state.pending.type === "message.send" ||
-                state.pending.type === "card.respond")
-            ) &&
+            !(section === "chat" && state.pending.type === "message.send") &&
             canRetryPending(state) ? (
               <Button
                 label={tr("retry")}
@@ -2309,8 +2255,7 @@ export function Workspace({
                       />
                     </AssistantMessage>
                   ) : null}
-                  {(state.pending?.type === "message.send" ||
-                    state.pending?.type === "card.respond") &&
+                  {state.pending?.type === "message.send" &&
                   state.pending.conversationId === conversationId ? (
                     <AssistantMessage
                       key={`activity-${state.pending.commandId}`}
@@ -2706,7 +2651,11 @@ export default function App() {
         allowHttp,
         undefined,
         randomUUID,
-        { processOutputs: true, messageResults: MOBILE_MESSAGE_RESULTS },
+        {
+          processOutputs: true,
+          messageResults: MOBILE_MESSAGE_RESULTS,
+          generativeUi: true,
+        },
       ),
   );
   const connection = useSyncExternalStore(

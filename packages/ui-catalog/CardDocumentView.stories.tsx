@@ -8,7 +8,7 @@ const document: CardDocument = {
   title: "Website launch review",
   subtitle: "A clear view of the next decision",
   icon: "calendar",
-  root: ["status", "summary", "facts", "people", "progress", "details", "next"],
+  root: ["status", "summary", "facts", "people", "progress", "details"],
   nodes: [
     { id: "status", type: "badge", label: "Ready to review", tone: "info" },
     {
@@ -64,22 +64,13 @@ const document: CardDocument = {
       type: "text",
       text: "Check navigation, accessibility and Czech copy. Calendar changes will require a separate confirmation.",
     },
-    { id: "next", type: "button", actionId: "prepare" },
   ],
-  actions: [
-    {
-      id: "prepare",
-      kind: "reply",
-      label: "Prepare a meeting proposal",
-      variant: "primary",
-      icon: "calendar",
-    },
-  ],
+  actions: [],
 };
 const meta = {
   title: "Workflow/Composable card",
   component: CardDocumentView,
-  args: { document, language: "en", disabled: false, onAction: () => {} },
+  args: { document, language: "en" },
 } satisfies Meta<typeof CardDocumentView>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -159,103 +150,10 @@ export const Czech: Story = {
           type: "text",
           text: "Zkontrolovat navigaci, přístupnost a české texty. Změny v kalendáři budou vyžadovat samostatné potvrzení.",
         },
-        { id: "next", type: "button", actionId: "prepare" },
-      ],
-      actions: [
-        {
-          id: "prepare",
-          kind: "reply",
-          label: "Připravit návrh schůzky",
-          variant: "primary",
-          icon: "calendar",
-        },
       ],
     },
   },
 };
-export const Form: Story = {
-  args: {
-    document: {
-      id: "review-form",
-      revision: 1,
-      title: "Choose your review details",
-      icon: "edit",
-      root: ["hint", "name", "columns", "choice", "remote", "send"],
-      nodes: [
-        {
-          id: "hint",
-          type: "notice",
-          tone: "info",
-          text: "Sending these details asks the assistant to prepare a proposal. It will not create a calendar event.",
-        },
-        {
-          id: "name",
-          type: "input",
-          label: "Meeting title",
-          kind: "text",
-          required: true,
-          value: "Website review",
-        },
-        {
-          id: "columns",
-          type: "columns",
-          children: ["date", "time", "duration"],
-        },
-        {
-          id: "date",
-          type: "input",
-          label: "Date",
-          kind: "date",
-          required: true,
-        },
-        {
-          id: "time",
-          type: "input",
-          label: "Time",
-          kind: "time",
-          required: true,
-        },
-        {
-          id: "duration",
-          type: "input",
-          label: "Duration in minutes",
-          kind: "number",
-          value: 30,
-        },
-        {
-          id: "choice",
-          type: "input",
-          label: "Location",
-          kind: "choice",
-          required: true,
-          options: [
-            { id: "room", label: "Meeting room A" },
-            { id: "online", label: "Video call" },
-          ],
-        },
-        {
-          id: "remote",
-          type: "input",
-          label: "Include remote participants",
-          kind: "toggle",
-          value: true,
-        },
-        { id: "send", type: "button", actionId: "submit" },
-      ],
-      actions: [
-        {
-          id: "submit",
-          kind: "submit",
-          label: "Prepare the proposal",
-          variant: "primary",
-          icon: "send",
-          fields: ["name", "date", "time", "duration", "choice", "remote"],
-        },
-      ],
-    },
-  },
-};
-export const Disabled: Story = { args: { ...Form.args, disabled: true } };
 export const LongContent: Story = {
   args: {
     document: {
@@ -336,8 +234,8 @@ const contactLinks = (language: "en" | "cs"): CardDocument => ({
   ],
 });
 export const ContactLinks: Story = {
-  args: { document: contactLinks("en"), onAction: undefined },
+  args: { document: contactLinks("en") },
 };
 export const ContactLinksCzech: Story = {
-  args: { document: contactLinks("cs"), language: "cs", onAction: undefined },
+  args: { document: contactLinks("cs"), language: "cs" },
 };

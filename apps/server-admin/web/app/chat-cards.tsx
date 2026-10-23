@@ -53,12 +53,8 @@ import {
   CardTitle,
 } from "@admin/components/ui/card";
 import { Alert, AlertDescription } from "@admin/components/ui/alert";
-import { Input } from "@admin/components/ui/input";
-import { Label } from "@admin/components/ui/label";
-import { Switch } from "@admin/components/ui/switch";
 import { Progress } from "@admin/components/ui/progress";
 import { Separator } from "@admin/components/ui/separator";
-import { RadioGroup, RadioGroupItem } from "@admin/components/ui/radio-group";
 import { Markdown } from "@admin/components/ui/markdown";
 import { StatusBadge, type Tone } from "@admin/components/console/status";
 import { EntityIcon, initials } from "@admin/components/console/entity-icon";
@@ -72,8 +68,6 @@ import {
 import type { CrmContact } from "../../../../packages/protocol";
 import {
   CardDocumentSchema,
-  cardFieldValueValid,
-  type CardAction,
   type CardDocument,
   type CardNode,
 } from "../../../../packages/protocol/card-document";
@@ -156,7 +150,14 @@ export function FieldList({ fields }: { fields: DisplayField[] }) {
     </dl>
   );
 }
-function FieldValue({ value, phone }: { value: string; phone?: boolean }) {
+/** The value as text, or a link when all of it is an address. */
+export function FieldValue({
+  value,
+  phone,
+}: {
+  value: string;
+  phone?: boolean;
+}) {
   const link = displayLink(value, phone ? "phone" : undefined);
   return link ? (
     <a
@@ -249,13 +250,13 @@ export function ServiceActionView({
           )}
           {card && (
             <Disclosure title={tr("cardAdditionalContext")}>
-              <CardDocumentView document={card} embedded />
+              <CardDocumentView document={card} />
             </Disclosure>
           )}
         </>
       )}
       {card && !waiting ? (
-        <CardDocumentView document={card} embedded />
+        <CardDocumentView document={card} />
       ) : presentation ? (
         <ServiceResultView presentation={presentation} />
       ) : null}
@@ -542,123 +543,28 @@ const badgeTone: Record<Extract<CardNode, { type: "badge" }>["tone"], Tone> = {
   warning: "warning",
   danger: "danger",
 };
-type CardValues = Record<string, string | number | boolean>;
-
 /**
- * A validated server card. Reading, expanding and editing its form are
- * passive; only an action button reports its values to the owner.
+ * A validated system card inside its owner's view (a service result, a
+ * task's context): passive content only, with no authority to add buttons
+ * or questions.
  */
-export function CardDocumentView(props: {
-  document: CardDocument;
-  disabled?: boolean;
-  embedded?: boolean;
-  onAction?: (actionId: string, values: CardValues) => void;
-}) {
+export function CardDocumentView({ document }: { document: CardDocument }) {
   const { tr } = useChatCopy();
   const parsed = useMemo(
-    () => CardDocumentSchema.safeParse(props.document),
-    [props.document],
+    () => CardDocumentSchema.safeParse(document),
+    [document],
   );
-  const [seen, setSeen] = useState(() => ({
-    id: parsed.success ? parsed.data.id : null,
-    revision: parsed.success ? parsed.data.revision : 0,
-    updated: false,
-  }));
-  if (
-    parsed.success &&
-    (seen.id !== parsed.data.id || seen.revision !== parsed.data.revision)
-  )
-    setSeen({
-      id: parsed.data.id,
-      revision: parsed.data.revision,
-      updated: seen.id === parsed.data.id,
-    });
   if (!parsed.success)
     return (
       <p role="alert" className="text-sm text-muted-foreground">
         {tr("cardUnavailable")}
       </p>
     );
-  return (
-    <div className="flex min-w-0 flex-col gap-3">
-      {seen.updated && parsed.data.nodes.some((n) => n.type === "input") && (
-        <Alert>
-          <AlertDescription>{tr("cardUpdated")}</AlertDescription>
-        </Alert>
-      )}
-      <CardBody
-        key={`${parsed.data.id}:${parsed.data.revision}`}
-        {...props}
-        document={parsed.data}
-      />
-    </div>
-  );
+  return <CardBody document={parsed.data} />;
 }
-function CardBody({
-  document,
-  disabled = false,
-  embedded = false,
-  onAction,
-}: {
-  document: CardDocument;
-  disabled?: boolean;
-  embedded?: boolean;
-  onAction?: (actionId: string, values: CardValues) => void;
-}) {
-  const { tr, language } = useChatCopy();
+function CardBody({ document }: { document: CardDocument }) {
+  const { language } = useChatCopy();
   const nodes = new Map(document.nodes.map((node) => [node.id, node]));
-  const actions = new Map(document.actions.map((a) => [a.id, a]));
-  const [draft, setDraft] = useState<CardValues>(() =>
-    Object.fromEntries(
-      document.nodes.flatMap((node) =>
-        node.type === "input"
-          ? [[node.id, node.value ?? (node.kind === "toggle" ? false : "")]]
-          : [],
-      ),
-    ),
-  );
-  const [errors, setErrors] = useState<Record<string, "required" | "invalid">>(
-    {},
-  );
-  const inactive = disabled || !onAction;
-  const edit = (id: string, value: string | number | boolean) => {
-    setDraft((current) => ({ ...current, [id]: value }));
-    setErrors((current) => {
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
-  };
-  const activate = (action: CardAction) => {
-    if (inactive) return;
-    if (action.kind === "reply") {
-      onAction?.(action.id, {});
-      return;
-    }
-    const values: CardValues = {};
-    const invalid: Record<string, "required" | "invalid"> = {};
-    for (const id of action.fields ?? []) {
-      const node = nodes.get(id);
-      if (node?.type !== "input") return;
-      const value = draft[id];
-      if (
-        value === undefined ||
-        value === "" ||
-        (typeof value === "string" && !value.trim())
-      ) {
-        if (node.required) invalid[id] = "required";
-        continue;
-      }
-      const normalized =
-        node.kind === "number" && typeof value !== "boolean"
-          ? Number(value)
-          : value;
-      if (!cardFieldValueValid(node, normalized)) invalid[id] = "invalid";
-      else values[id] = normalized;
-    }
-    setErrors(invalid);
-    if (!Object.keys(invalid).length) onAction?.(action.id, values);
-  };
   const renderNode = (id: string): ReactNode => {
     const node = nodes.get(id);
     if (!node) return null;
@@ -817,187 +723,21 @@ function CardBody({
             />
           </div>
         );
-      case "button": {
-        const action = actions.get(node.actionId);
-        // An embedded data card has no authority to add buttons to its parent.
-        if (!action || !onAction) return null;
-        return (
-          <Button
-            key={id}
-            className="self-start"
-            variant={
-              action.variant === "primary"
-                ? "default"
-                : action.variant === "secondary"
-                  ? "outline"
-                  : "ghost"
-            }
-            disabled={inactive}
-            onClick={() => activate(action)}
-          >
-            {action.icon && <CardIcon name={action.icon} />}
-            {action.label}
-          </Button>
-        );
-      }
+      // Buttons and questions were a composed card's; a passive one has none.
+      case "button":
       case "input":
-        return (
-          <CardInput
-            key={id}
-            node={node}
-            value={draft[id] ?? ""}
-            disabled={inactive}
-            readOnly={!onAction}
-            error={
-              errors[id]
-                ? tr(
-                    errors[id] === "required"
-                      ? "cardRequired"
-                      : "cardInvalidValue",
-                  )
-                : undefined
-            }
-            onChange={(value) => edit(id, value)}
-          />
-        );
+        return null;
     }
   };
-  const content = document.root.map(renderNode);
-  if (embedded)
-    return (
-      <div
-        data-testid={`card-${document.id}`}
-        className="@container/chat-card flex min-w-0 flex-col gap-3"
-      >
-        {content}
-      </div>
-    );
   return (
-    <Card size="sm" data-testid={`card-${document.id}`}>
-      <CardHeader>
-        <div className="flex items-start gap-3">
-          {document.icon && (
-            <EntityIcon size="md">
-              <CardIcon name={document.icon} />
-            </EntityIcon>
-          )}
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <CardTitle>{document.title}</CardTitle>
-            {document.subtitle && (
-              <CardDescription>{document.subtitle}</CardDescription>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="@container/chat-card flex min-w-0 flex-col gap-3">
-          {content}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-function CardInput({
-  node,
-  value,
-  disabled,
-  readOnly,
-  error,
-  onChange,
-}: {
-  node: Extract<CardNode, { type: "input" }>;
-  value: string | number | boolean;
-  disabled: boolean;
-  readOnly: boolean;
-  error?: string;
-  onChange: (value: string | number | boolean) => void;
-}) {
-  const { tr } = useChatCopy();
-  const inputId = `card-input-${node.id}`;
-  if (readOnly)
-    return (
-      <div className="flex flex-col gap-0.5">
-        <span className="text-xs text-muted-foreground">{node.label}</span>
-        <span>
-          {typeof value === "boolean"
-            ? tr(value ? "cardOn" : "cardOff")
-            : String(
-                node.kind === "choice"
-                  ? (node.options?.find((option) => option.id === value)
-                      ?.label ?? value)
-                  : value,
-              )}
-        </span>
-      </div>
-    );
-  const label = node.label + (node.required ? " *" : "");
-  return (
-    <div className="flex flex-col gap-1.5">
-      {node.kind === "toggle" ? (
-        <div className="flex items-center justify-between gap-3">
-          <Label htmlFor={inputId}>{node.label}</Label>
-          <Switch
-            id={inputId}
-            checked={value === true}
-            disabled={disabled}
-            onCheckedChange={onChange}
-          />
-        </div>
-      ) : node.kind === "choice" ? (
-        <>
-          <Label id={`${inputId}-label`}>{label}</Label>
-          <RadioGroup
-            aria-labelledby={`${inputId}-label`}
-            value={typeof value === "string" ? value : ""}
-            onValueChange={onChange}
-            disabled={disabled}
-          >
-            {node.options?.map((option) => (
-              <div key={option.id} className="flex items-center gap-2">
-                <RadioGroupItem
-                  id={`${inputId}-${option.id}`}
-                  value={option.id}
-                />
-                <Label htmlFor={`${inputId}-${option.id}`}>
-                  {option.label}
-                </Label>
-              </div>
-            ))}
-          </RadioGroup>
-        </>
-      ) : (
-        <>
-          <Label htmlFor={inputId}>{label}</Label>
-          <Input
-            id={inputId}
-            type={
-              node.kind === "date"
-                ? "date"
-                : node.kind === "time"
-                  ? "time"
-                  : node.kind === "number"
-                    ? "number"
-                    : "text"
-            }
-            value={String(value)}
-            placeholder={node.placeholder}
-            maxLength={4000}
-            disabled={disabled}
-            required={!!node.required}
-            aria-invalid={!!error}
-            onChange={(event) => onChange(event.target.value)}
-          />
-        </>
-      )}
-      {error && (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      )}
+    <div
+      data-testid={`card-${document.id}`}
+      className="@container/chat-card flex min-w-0 flex-col gap-3"
+    >
+      {document.root.map(renderNode)}
     </div>
   );
 }
-
 const preview = (value: unknown) => {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return text.length > 120 ? text.slice(0, 119) + "…" : text;

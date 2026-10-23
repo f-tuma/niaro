@@ -8,11 +8,9 @@ import { createFixtureServer } from "../apps/fixture-server/http";
 import { FixtureStorage } from "../apps/fixture-server/storage";
 import type { Interpretation } from "../apps/fixture-server/engine";
 import type { Decision, ModelInput } from "../apps/fixture-server/decision";
-import { composeCard } from "../apps/server-cards/composer";
 import { serviceCard } from "../apps/server-cards/adapters";
 import { messageCommand } from "../packages/client-core/commands";
 import {
-  CommandSchema,
   CommandResultSchema,
   CredentialSchema,
   EventsResponseSchema,
@@ -24,6 +22,7 @@ import { snapshotForClient } from "../packages/protocol/reply-correlation";
 import { ServerInfoSchema } from "../packages/protocol/server-info";
 import type { ServiceResult } from "../packages/protocol/service-result";
 import { MESSAGE_TIME_PROFILE } from "../packages/protocol/message-delivery";
+import { GENERATIVE_UI_PROFILE } from "../packages/protocol/generative-ui";
 
 const reply: Decision = {
   kind: "reply",
@@ -33,44 +32,12 @@ const reply: Decision = {
   durationMinutes: null,
   reply: "TEST answer received",
 };
-const form = () =>
-  composeCard(
-    {
-      title: "TEST Prepare a review",
-      nodes: [
-        {
-          id: "agenda",
-          type: "input",
-          label: "Agenda",
-          kind: "text",
-          required: true,
-        },
-        {
-          id: "venue",
-          type: "input",
-          label: "Venue",
-          kind: "choice",
-          required: true,
-          options: [
-            { id: "office", label: "TEST office" },
-            { id: "online", label: "TEST online" },
-          ],
-        },
-        { id: "submit", type: "button", actionId: "prepare" },
-      ],
-      root: ["agenda", "venue", "submit"],
-      actions: [
-        {
-          id: "prepare",
-          kind: "submit",
-          label: "Prepare a proposal",
-          variant: "primary",
-          fields: ["agenda", "venue"],
-        },
-      ],
-    },
-    { id: "TEST-form", revision: 3 },
-  );
+const ui = {
+  type: "openui.program",
+  version: 1,
+  library: "niaro-ui@1",
+  program: 'root = Stack([Heading("TEST Review"), Metric("TEST Items", 3)])',
+} as const;
 
 function json(
   port: number,
@@ -144,9 +111,9 @@ function seed(directory: string) {
   };
   service.card = serviceCard(service, "en");
   const creation = messageCommand(
-    "TEST prepare the review form",
+    "TEST summarize the review",
     "en",
-    "TEST-seed-form",
+    "TEST-seed-ui",
   );
   try {
     expect(
@@ -162,40 +129,19 @@ function seed(directory: string) {
         interpretation({ serviceResult: service }),
       ).status,
     ).toBe("accepted");
-    const receipt = store.execute(
-      scope,
-      creation,
-      interpretation({ card: form() }),
-    );
+    const receipt = store.execute(scope, creation, interpretation({ ui }));
     expect(receipt.status).toBe("accepted");
-    const last = receipt.snapshot.conversations[0]!.messages.at(-1)!;
-    expect(last.result?.type).toBe("card.document");
+    expect(receipt.snapshot.conversations[0]!.messages.at(-1)!.ui).toEqual(ui);
     return {
       credential,
       foreign,
       scope,
       creation,
       snapshot: receipt.snapshot,
-      messageId: last.id,
     };
   } finally {
     store.close();
   }
-}
-
-function cardResponse(messageId: string, commandId = "TEST-answer") {
-  return CommandSchema.parse({
-    type: "card.respond",
-    commandId,
-    idempotencyKey: commandId,
-    conversationId: "conversation-1",
-    messageId,
-    cardId: "TEST-form",
-    expectedCardRevision: 3,
-    actionId: "prepare",
-    language: "en",
-    values: { agenda: "TEST quarterly review", venue: "online" },
-  });
 }
 
 function serviceResult(snapshot: Snapshot) {
@@ -219,6 +165,7 @@ function expectLegacy(snapshot: Snapshot) {
     text: "TEST answer received",
   });
   expect(assistant).not.toHaveProperty("result");
+  expect(assistant).not.toHaveProperty("ui");
   expect(assistant).not.toHaveProperty("createdAt");
 }
 
@@ -271,10 +218,10 @@ async function fixture() {
   return { ...seeded, call, restart, dispose, decide };
 }
 
-test("real HTTP negotiates card snapshots, events, receipts and catalog while preserving the old wire", async () => {
+test("real HTTP negotiates passive cards and generated UI on snapshots, events, receipts and catalog while preserving the old wire", async () => {
   const f = await fixture();
   // This client also shows message times, so it receives the stored wire.
-  const negotiated = `cards=${encodeURIComponent(CARD_PROFILE)}&messages=${encodeURIComponent(MESSAGE_TIME_PROFILE)}`;
+  const negotiated = `cards=${encodeURIComponent(CARD_PROFILE)}&messages=${encodeURIComponent(MESSAGE_TIME_PROFILE)}&ui=${encodeURIComponent(GENERATIVE_UI_PROFILE)}`;
   try {
     const snapshot = SnapshotSchema.parse(
       (await f.call(`/v1/a/snapshot?${negotiated}`)).value,
@@ -282,9 +229,16 @@ test("real HTTP negotiates card snapshots, events, receipts and catalog while pr
     expect(snapshot).toEqual(snapshotForClient(f.snapshot, false));
     expect(snapshot.workItems[0]?.card).toBeDefined();
     expect(serviceResult(snapshot)).toHaveProperty("card");
-    expect(snapshot.conversations[0]!.messages.at(-1)?.result?.type).toBe(
-      "card.document",
-    );
+    expect(snapshot.conversations[0]!.messages.at(-1)?.ui).toEqual(ui);
+    expect(
+      SnapshotSchema.parse(
+        (
+          await f.call(
+            `/v1/a/snapshot?cards=${encodeURIComponent(CARD_PROFILE)}`,
+          )
+        ).value,
+      ).conversations[0]!.messages.at(-1),
+    ).not.toHaveProperty("ui");
     expectLegacy(SnapshotSchema.parse((await f.call("/v1/a/snapshot")).value));
     expectLegacy(
       SnapshotSchema.parse(
@@ -314,7 +268,7 @@ test("real HTTP negotiates card snapshots, events, receipts and catalog while pr
       .at(-1)!;
     if (latest.type !== "conversation.upserted")
       throw new Error("Expected conversation event");
-    expect(latest.entity.messages.at(-1)?.result?.type).toBe("card.document");
+    expect(latest.entity.messages.at(-1)?.ui).toEqual(ui);
     const oldEvents = EventsResponseSchema.parse(
       (await f.call("/v1/a/events?after=0")).value,
     ).events;
@@ -329,7 +283,7 @@ test("real HTTP negotiates card snapshots, events, receipts and catalog while pr
       .at(-1)!;
     if (oldConversation.type !== "conversation.upserted")
       throw new Error("Expected conversation event");
-    expect(oldConversation.entity.messages.at(-1)).not.toHaveProperty("result");
+    expect(oldConversation.entity.messages.at(-1)).not.toHaveProperty("ui");
 
     const receipt = await f.call(`/v1/a/commands?${negotiated}`, f.creation);
     expect(receipt.status).toBe(202);
@@ -350,82 +304,6 @@ test("real HTTP negotiates card snapshots, events, receipts and catalog while pr
       ).snapshot,
     ).toEqual(snapshot);
     expect(f.decide).not.toHaveBeenCalled();
-  } finally {
-    await f.dispose();
-  }
-});
-
-test("real form responses bind scope and revision and replay without another inference after restart", async () => {
-  const f = await fixture();
-  const path = `/v1/a/commands?cards=${encodeURIComponent(CARD_PROFILE)}`;
-  try {
-    const answer = cardResponse(f.messageId);
-    const wrongRoute = await f.call("/v1/b/commands", answer);
-    expect(wrongRoute.status).toBe(403);
-    const foreign = await f.call(
-      "/v1/b/commands",
-      answer,
-      f.foreign.accessToken,
-    );
-    expect(foreign.status).toBe(422);
-    const stale = await f.call(path, {
-      ...answer,
-      commandId: "TEST-stale",
-      idempotencyKey: "TEST-stale",
-      expectedCardRevision: 2,
-    });
-    expect(stale.status).toBe(409);
-    expect(CommandResultSchema.parse(stale.value).code).toBe(
-      "revision_conflict",
-    );
-    const forged = await f.call(path, {
-      ...answer,
-      commandId: "TEST-forged",
-      idempotencyKey: "TEST-forged",
-      values: { agenda: "TEST", venue: "online", approved: true },
-    });
-    expect(forged.status).toBe(422);
-    expect(CommandResultSchema.parse(forged.value).code).toBe("invalid_answer");
-    expect(f.decide).not.toHaveBeenCalled();
-
-    const first = await f.call(path, answer);
-    expect(first.status).toBe(202);
-    const result = CommandResultSchema.parse(first.value);
-    expect(result.status).toBe("accepted");
-    expect(f.decide).toHaveBeenCalledTimes(1);
-    expect(f.decide.mock.calls[0]?.[0]).toMatchObject({
-      text: "Prepare a proposal\nAgenda: TEST quarterly review\nVenue: TEST online",
-      language: "en",
-    });
-    expect(result.snapshot.operations).toEqual([]);
-    expect(result.snapshot.actionProposals).toEqual([]);
-    expect(
-      CommandResultSchema.parse((await f.call(path, answer)).value),
-    ).toEqual(result);
-    expect(f.decide).toHaveBeenCalledTimes(1);
-    await f.restart();
-    expect(
-      SnapshotSchema.parse(
-        (
-          await f.call(
-            `/v1/a/snapshot?cards=${encodeURIComponent(CARD_PROFILE)}`,
-          )
-        ).value,
-      ),
-    ).toEqual(result.snapshot);
-    expect(
-      CommandResultSchema.parse((await f.call(path, answer)).value),
-    ).toEqual(result);
-    expect(f.decide).toHaveBeenCalledTimes(1);
-    const changed = await f.call(path, {
-      ...answer,
-      values: { agenda: "TEST changed", venue: "online" },
-    });
-    expect(changed.status).toBe(422);
-    expect(CommandResultSchema.parse(changed.value).code).toBe(
-      "idempotency_conflict",
-    );
-    expect(f.decide).toHaveBeenCalledTimes(1);
   } finally {
     await f.dispose();
   }

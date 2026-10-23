@@ -65,10 +65,10 @@ test("clients name what they read: message times and result types", () => {
   // Anything malformed counts as not asked.
   const odd = messageDelivery(
     new URLSearchParams(
-      "messages=agent-message-time/2&results=x,,process.offer",
+      "messages=agent-message-time/2&results=x,,process.offer&ui=agent-openui/2",
     ),
   );
-  expect(odd).toEqual({ times: false, results: new Set() });
+  expect(odd).toEqual({ times: false, ui: false, results: new Set() });
   expect(MESSAGE_RESULTS).toEqual(
     expect.arrayContaining([...BASELINE_MESSAGE_RESULTS]),
   );

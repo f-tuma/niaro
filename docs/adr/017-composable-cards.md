@@ -1,6 +1,6 @@
 # ADR 017 — Composable server-authored cards
 
-Date: 2026-09-30. Status: accepted for `agent-card/1`.
+Date: 2026-09-30. Status: accepted for `agent-card/1`; model composition superseded by [ADR 019](019-generative-ui-openui.md). The server's passive cards for service results and work remain.
 
 Service results previously selected one of five presentation types (`contacts`, `events`, `records`, `detail`, `text`), with task-specific renderers and separate fixed approval content. Adding a useful arrangement of facts required another predefined component or a special case. The server needs to compose task-specific information and answers while the client preserves a consistent, readable design and the existing consent boundary.
 
@@ -28,4 +28,4 @@ Custom passive service content augments the canonical frame and is not an indepe
 
 Validation covers malformed graphs, unsupported content, action/form relationships and limits. Renderer stories cover varied arrangements, English/Czech, long text, state and narrow layouts. Integration tests cover authenticated dispatch and revisions. These checks do not substitute for a physical-device accessibility review or measured evaluation with live models.
 
-Authoring guidance and the protocol boundary are documented in [Composable cards](../composable-cards.md).
+The current protocol boundary is documented in [Protocol](../protocol.md#server-cards-optional-agent-card1).

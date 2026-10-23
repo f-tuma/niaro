@@ -56,6 +56,8 @@ jest.mock("@tanstack/react-router", () => {
     useRouterState: () => "/",
   };
 });
+// Generated charts draw with recharts, which Jest cannot parse.
+jest.mock("../apps/server-admin/web/app/generative-ui/charts", () => ({}));
 jest.mock("../apps/server-admin/web/app/context", () => ({
   useApp: () => ({ language: "cs", session: mockApp.session }),
   useAppSession: () => {

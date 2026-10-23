@@ -156,11 +156,11 @@ export async function evaluateTrust(
     limitations: [
       options.liveModel
         ? "The selected chat model is measured against synthetic services and scripted decision checks. This does not measure live CRM/calendar behavior, and does not prove generalized truthfulness or safety outside these scenarios."
-        : "Native Mastra loop with a scripted provider and decision checker: no measurement of a real model's reasoning, truthfulness, memory recall or card composition quality.",
+        : "Native Mastra loop with a scripted provider and decision checker: no measurement of a real model's reasoning, truthfulness, memory recall or generated UI quality.",
       options.liveModel
         ? "Real public CatalogRuntime, Mastra Agent/Memory/checkpoints, Niaro catalog/controller, scoped memory and file-backed workflow stores. Only the selected chat model is live and paid; decision checks and business service responses remain synthetic, so no real CRM/calendar effect occurs."
         : "Real public CatalogRuntime, Mastra Agent/Memory/checkpoints, Niaro catalog/controller, scoped memory and file-backed workflow stores; authenticated actors and all model/service transport responses are synthetic. No real business effect or paid inference.",
-      "Direct command boundary: HTTP authentication, card rendering, physical devices and operating-system process crashes are outside this runner. Restart closes and reopens durable stores; interruption is injected at recorded execution boundaries.",
+      "Direct command boundary: HTTP authentication, UI rendering, physical devices and operating-system process crashes are outside this runner. Restart closes and reopens durable stores; interruption is injected at recorded execution boundaries.",
       "The memory retention clock is advanced in probes; native conversation state and catalog receipt clocks use wall time. This runner does not measure retention expiry or latency of the native conversation store.",
     ],
     scenarios: results,

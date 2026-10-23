@@ -514,7 +514,7 @@ export function WorkCard({
           {work.card &&
             (!work.native || work.native.process) &&
             proposal?.status !== "awaiting_approval" && (
-              <CardDocumentView document={work.card} embedded />
+              <CardDocumentView document={work.card} />
             )}
           {proposal && (
             <ProposalReview

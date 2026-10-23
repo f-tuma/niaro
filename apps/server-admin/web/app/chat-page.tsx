@@ -84,19 +84,20 @@ import type {
   NativeQuestion,
   WorkItem,
 } from "../../../../packages/protocol";
+import { cardDocumentText } from "../../../../packages/protocol/card-document";
 import type { MessageMention } from "../../../../packages/protocol/mentions";
 import { useApp, useAppSession } from "./context";
 import { chatChangeError, useChatCopy } from "./chat-copy";
 import { useMessageLink } from "./message-link";
 import {
   ContactList,
-  CardDocumentView,
   ProcessOfferView,
   ProcessProposalView,
   ServiceActionView,
   ServiceConnectionView,
 } from "./chat-cards";
 import { AnswerRecoveryView, ProgressView, WorkCard } from "./chat-work";
+import { GeneratedUi } from "./generative-ui";
 import {
   UNSAVED_DRAFT,
   chatHistoryKey,
@@ -870,6 +871,38 @@ export function ChatConversation({
     />
   );
 
+  // A follow-up from a generated answer is put in the composer, never sent;
+  // it replaces only an earlier follow-up the person hasn't changed.
+  const lastFollowUp = useRef("");
+  const followUp = (text: string) => {
+    setContext(undefined);
+    const current = draftRef.current.trim();
+    const next =
+      !current || current === lastFollowUp.current
+        ? text
+        : `${draftRef.current.trimEnd()}\n\n${text}`;
+    lastFollowUp.current = text;
+    setDraft(next);
+    requestAnimationFrame(() => {
+      const composer = composerRef.current;
+      composer?.focus();
+      composer?.setSelectionRange(next.length, next.length);
+    });
+  };
+  /** An answer: its text, its generated part, then the system's own view. */
+  const answer = (m: ChatMessage, system?: ReactNode, withText = true) => (
+    <AssistantMessage key={m.id} label={copy.assistant}>
+      {withText && <Markdown text={m.text} />}
+      {m.ui && (
+        <GeneratedUi
+          program={m.ui.program}
+          disabled={readOnly}
+          onFollowUp={followUp}
+        />
+      )}
+      {system}
+    </AssistantMessage>
+  );
   const renderMessage = (m: ChatMessage, index: number) => {
     if (m.role === "user")
       return (
@@ -885,173 +918,112 @@ export function ChatConversation({
     const current = messages.at(-1)?.id === m.id;
     const result = m.result;
     if (result?.type === "service.connection")
-      return (
-        <AssistantMessage key={m.id} label={copy.assistant}>
-          <Markdown text={m.text} />
-          <ServiceConnectionView
-            key={`${result.serviceId}:${m.id}`}
-            session={session}
-            result={result}
-            disabled={busy || !online || readOnly}
-            online={online}
-            onContinue={(text) => submitMessage(text, null)}
-          />
-        </AssistantMessage>
+      return answer(
+        m,
+        <ServiceConnectionView
+          key={`${result.serviceId}:${m.id}`}
+          session={session}
+          result={result}
+          disabled={busy || !online || readOnly}
+          online={online}
+          onContinue={(text) => submitMessage(text, null)}
+        />,
       );
     if (result?.type === "process.offer") {
       const request = messages
         .slice(0, index)
         .reverse()
         .find((message) => message.role === "user");
-      return (
-        <AssistantMessage key={m.id} label={copy.assistant}>
-          <Markdown text={m.text} />
-          <ProcessOfferView
-            offer={result}
-            disabled={busy || !online || !current || readOnly}
-            onReview={() => {
-              handOffProcessOffer(result);
-              void navigate({ to: "/processes" });
-            }}
-            onDecline={() => {
-              if (request?.text)
-                submitMessage(request.text, null, undefined, {
-                  withoutProcess: true,
-                  mentions: messageMentions(
-                    request.text,
-                    sentMentions(request.text, directory),
-                  ),
-                });
-            }}
-          />
-        </AssistantMessage>
+      return answer(
+        m,
+        <ProcessOfferView
+          offer={result}
+          disabled={busy || !online || !current || readOnly}
+          onReview={() => {
+            handOffProcessOffer(result);
+            void navigate({ to: "/processes" });
+          }}
+          onDecline={() => {
+            if (request?.text)
+              submitMessage(request.text, null, undefined, {
+                withoutProcess: true,
+                mentions: messageMentions(
+                  request.text,
+                  sentMentions(request.text, directory),
+                ),
+              });
+          }}
+        />,
       );
     }
     if (result?.type === "skill.proposal")
-      return (
-        <AssistantMessage key={m.id} label={copy.assistant}>
-          <Markdown text={m.text} />
-          <SkillProposalView
-            session={session}
-            proposal={result}
-            disabled={!online || readOnly}
-          />
-        </AssistantMessage>
+      return answer(
+        m,
+        <SkillProposalView
+          session={session}
+          proposal={result}
+          disabled={!online || readOnly}
+        />,
       );
     if (result?.type === "process.proposal")
-      return (
-        <AssistantMessage key={m.id} label={copy.assistant}>
-          <Markdown text={m.text} />
-          <ProcessProposalView
-            key={`${result.sessionId ?? "budget"}:${m.id}`}
-            session={session}
-            proposal={result}
-            disabled={!online || readOnly}
-          />
-        </AssistantMessage>
+      return answer(
+        m,
+        <ProcessProposalView
+          key={`${result.sessionId ?? "budget"}:${m.id}`}
+          session={session}
+          proposal={result}
+          disabled={!online || readOnly}
+        />,
       );
-    if (result?.type === "card.document") {
-      const document = result.document;
-      const cardState =
-        state.commandStates[`${m.id}:${document.id}:${document.revision}`];
-      return (
-        <AssistantMessage key={m.id} label={copy.assistant}>
-          <Markdown text={m.text} />
-          <CardDocumentView
-            document={document}
-            disabled={
-              busy ||
-              !current ||
-              !online ||
-              readOnly ||
-              !!store?.stale ||
-              cardState === "sending" ||
-              cardState === "accepted" ||
-              cardState === "network_error" ||
-              cardState === "conflict"
-            }
-            onAction={(actionId, values) => {
-              if (!conversation) return;
-              const commandId = newId();
-              following.current = true;
-              void session.send({
-                type: "card.respond",
-                commandId,
-                idempotencyKey: commandId,
-                conversationId: conversation.id,
-                messageId: m.id,
-                cardId: document.id,
-                expectedCardRevision: document.revision,
-                actionId,
-                values,
-                language,
-              });
-            }}
-          />
-          {!current && document.actions.length > 0 && (
-            <Caption>{tr("cardOutdated")}</Caption>
-          )}
-          {cardState === "network_error" ||
-          cardState === "conflict" ||
-          cardState === "rejected" ? (
-            <Caption error>{tr(cardState)}</Caption>
-          ) : cardState === "accepted" ? (
-            <Caption>{tr("accepted")}</Caption>
-          ) : null}
-        </AssistantMessage>
+    // A card composed by an earlier model: its words only, nothing to answer.
+    if (result?.type === "card.document")
+      return answer(
+        m,
+        <p className="break-words whitespace-pre-wrap">
+          {cardDocumentText(result.document)}
+        </p>,
       );
-    }
     if (result?.type === "service.action")
-      return (
-        <AssistantMessage key={m.id} label={copy.assistant}>
-          <Markdown text={m.text} />
-          <ServiceActionView
-            result={result}
-            disabled={busy || !online || readOnly}
-            rememberTarget={
-              workspace && {
-                organizationId: workspace.organizationId,
-                workspaceId: workspace.workspaceId,
-              }
+      return answer(
+        m,
+        <ServiceActionView
+          result={result}
+          disabled={busy || !online || readOnly}
+          rememberTarget={
+            workspace && {
+              organizationId: workspace.organizationId,
+              workspaceId: workspace.workspaceId,
             }
-            onDecide={(approved) => {
-              if (!conversation) return;
-              const commandId = newId();
-              void session.send({
-                type: "service.resolve",
-                commandId,
-                idempotencyKey: commandId,
-                conversationId: conversation.id,
-                operationId: result.operationId,
-                approved,
-                language,
-              });
-            }}
-          />
-        </AssistantMessage>
+          }
+          onDecide={(approved) => {
+            if (!conversation) return;
+            const commandId = newId();
+            void session.send({
+              type: "service.resolve",
+              commandId,
+              idempotencyKey: commandId,
+              conversationId: conversation.id,
+              operationId: result.operationId,
+              approved,
+              language,
+            });
+          }}
+        />,
       );
     if (result?.type === "crm.contacts")
-      return (
-        <AssistantMessage key={m.id} label={copy.assistant}>
-          <ContactList contacts={result.contacts} hasMore={result.hasMore} />
-        </AssistantMessage>
+      return answer(
+        m,
+        <ContactList contacts={result.contacts} hasMore={result.hasMore} />,
+        false,
       );
     const anchored = m.workItemId
       ? work.find((w) => w.id === m.workItemId)
       : undefined;
     if (anchored && anchors.get(anchored.id) === m.id) {
       referencedWork.add(anchored.id);
-      return (
-        <AssistantMessage key={m.id} label={copy.assistant}>
-          {renderWork(anchored)}
-        </AssistantMessage>
-      );
+      return answer(m, renderWork(anchored), false);
     }
-    return (
-      <AssistantMessage key={m.id} label={copy.assistant}>
-        <Markdown text={m.text} />
-      </AssistantMessage>
-    );
+    return answer(m);
   };
   /** "Again" asks the previous request once more, as a new message. */
   const again = (request: ChatMessage) =>
@@ -1126,8 +1098,7 @@ export function ChatConversation({
   );
   const pendingMessage = selectPendingChatMessage(state, id);
   const progressVisible =
-    (state.pending?.type === "message.send" ||
-      state.pending?.type === "card.respond") &&
+    state.pending?.type === "message.send" &&
     state.pending.conversationId === id;
   const retryable = canRetryPending(state);
   const processAnnouncement = selectProcessCommandNotice(state, noticeOwner);
@@ -1864,23 +1835,5 @@ function AssistantMessage({
     <article aria-label={label} className="flex min-w-0 flex-col gap-3">
       {children}
     </article>
-  );
-}
-
-function Caption({
-  error = false,
-  children,
-}: {
-  error?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <p
-      role={error ? "alert" : undefined}
-      data-error={error}
-      className="text-xs text-muted-foreground data-[error=true]:text-destructive"
-    >
-      {children}
-    </p>
   );
 }

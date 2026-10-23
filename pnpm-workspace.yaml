@@ -7,7 +7,11 @@ overrides:
   "@storybook/react-native-ui-common": "10.4.0"
   "@storybook/react-native-theming": "10.4.0"
   "@storybook/react": "10.4.0"
+  # Development-only inspector that loads its UI from a CDN; never installed.
+  "@openuidev/devtools": "-"
 allowBuilds:
+  # Its postinstall sends installation telemetry.
+  "@openuidev/lang-core": false
   esbuild: true
   unrs-resolver: true
 minimumReleaseAgeExclude:

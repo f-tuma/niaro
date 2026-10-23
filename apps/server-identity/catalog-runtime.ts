@@ -7,7 +7,7 @@ import type {
 import type { ServiceResult } from "../../packages/protocol/service-result";
 import type { ProcessOfferResult } from "../../packages/protocol/process-offer";
 import type { ServiceConnectionCard } from "../../packages/protocol/service-oauth";
-import type { CardDocument } from "../../packages/protocol/card-document";
+import type { GeneratedUi } from "../../packages/protocol/generative-ui";
 import type { CatalogController, CatalogContext } from "./catalog-controller";
 import type { IntegrationTransport } from "../server-integrations/transport";
 import type { PluginSettings } from "../server-plugins/registry";
@@ -27,7 +27,8 @@ export type ServiceAnswer = {
   connection?: ServiceConnectionCard;
   reply: string;
   result?: ServiceResult;
-  card?: CardDocument;
+  /** The answer's admitted UI program, shown beside the reply. */
+  ui?: GeneratedUi;
   processOffer?: ProcessOfferResult;
   skillProposal?: import("../../packages/protocol/skills").SkillProposalResult;
   processProposal?: import("../../packages/protocol/process-proposal").ProcessProposalResult;

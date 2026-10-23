@@ -4927,3 +4927,58 @@ test("meeting tools: read-only search and read of the person's own meetings, fra
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("an answer's UI program travels beside its reply; a refused one is asked again once, then left out", async () => {
+  const f = fixture();
+  try {
+    f.configureModels();
+    const session = await f
+      .domain()
+      .begin("TEST-ui", "TEST how are sales doing?", "en", [], "UTC");
+    assert(
+      (await session.prepareModel()).instructions.includes(
+        "## Visual answers (OpenUI Lang)",
+      ),
+    );
+    assert(!session.activeTools().includes("compose_card"));
+    const refused =
+      'TEST sales grew.\n\n```openui-lang\nroot = Stack([Text(q.total)])\nq = Query("sales", {}, {total: 0})\n```';
+    const first = await session.finalize(refused);
+    assert("repair" in first);
+    assert.match(first.repair, /Query and Mutation are not supported/);
+    assert.equal(session.state.uiRepair, true);
+    // The second refusal is not repaired again: the text stands alone.
+    const plain = await session.finalize(refused);
+    assert(!("repair" in plain));
+    assert.deepEqual(plain, { reply: "TEST sales grew." });
+
+    const next = await f
+      .domain()
+      .begin("TEST-ui-admitted", "TEST how are sales doing?", "en", [], "UTC");
+    const answer = await next.finalize(
+      '```openui-lang\nroot = Stack([Heading("TEST Sales"), Metric("TEST Q3", 120), Foo("x"), Link("TEST", "javascript:alert(1)")])\n```',
+    );
+    assert.deepEqual(answer, {
+      reply: "TEST Sales",
+      ui: {
+        type: "openui.program",
+        version: 1,
+        library: "niaro-ui@1",
+        program:
+          'root = Stack([Heading("TEST Sales"), Metric("TEST Q3", 120)])',
+      },
+    });
+    // The checker judged the UI's claims together with the reply.
+    assert(JSON.stringify(f.decisionBodies.at(-1)).includes("generatedUi"));
+    assert.deepEqual(
+      DomainCommandSchema.parse(
+        f.store.turn(next.state.runId, target.workspaceId, userId),
+      ).answer,
+      answer,
+    );
+    assert.equal(f.dispatches(), 0);
+  } finally {
+    await f.memoryStore.close();
+    f.db.close();
+  }
+});

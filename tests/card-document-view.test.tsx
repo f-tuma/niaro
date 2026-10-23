@@ -138,20 +138,9 @@ const form: CardDocument = {
     },
   ],
 };
-function fillForm() {
-  fireEvent.changeText(screen.getByLabelText("Title"), "Website review");
-  fireEvent.changeText(screen.getByLabelText("Minutes"), "30");
-  fireEvent.changeText(screen.getByLabelText("Date"), "2026-10-01");
-  fireEvent.changeText(screen.getByLabelText("Time"), "14:30");
-  fireEvent.press(screen.getByRole("radio", { name: "Video call" }));
-}
-
 test("composition renders readable primitive nodes and expands locally without dispatch or fetching", () => {
-  const onAction = jest.fn();
   const fetch = jest.spyOn(globalThis, "fetch");
-  render(
-    <CardDocumentView document={overview} language="en" onAction={onAction} />,
-  );
+  render(<CardDocumentView document={overview} language="en" />);
   expect(
     screen.getByRole("header", { name: "Review a new project" }),
   ).toBeTruthy();
@@ -169,28 +158,18 @@ test("composition renders readable primitive nodes and expands locally without d
   );
   expect(screen.getByText("TEST-review-42").props.selectable).toBe(true);
   expect(screen.getByText("Local expansion only")).toBeTruthy();
-  expect(onAction).not.toHaveBeenCalled();
+  // Answer-card buttons are gone; a system card shows data only.
+  expect(
+    screen.queryByRole("button", { name: "Prepare a meeting proposal" }),
+  ).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
   fetch.mockRestore();
 });
-test("a reply button dispatches its registered action only on an explicit press", () => {
-  const onAction = jest.fn();
-  render(
-    <CardDocumentView document={overview} language="en" onAction={onAction} />,
-  );
-  expect(onAction).not.toHaveBeenCalled();
-  fireEvent.press(
-    screen.getByRole("button", { name: "Prepare a meeting proposal" }),
-  );
-  expect(onAction.mock.calls).toEqual([["prepare", {}]]);
-});
-
 test.each(["en", "cs"] as const)(
   "%s passive field cards open complete contact and URL values only on tap",
   (language) => {
     const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
     const fetch = jest.spyOn(globalThis, "fetch");
-    const onAction = jest.fn();
     const card: CardDocument = {
       id: "contact-links",
       revision: 1,
@@ -236,14 +215,7 @@ test.each(["en", "cs"] as const)(
         },
       ],
     };
-    const ui = render(
-      <CardDocumentView
-        document={card}
-        language={language}
-        onAction={onAction}
-        embedded
-      />,
-    );
+    render(<CardDocumentView document={card} language={language} embedded />);
     const tr = translate(language);
     expect(screen.getAllByRole("link")).toHaveLength(3);
     expect(screen.getByText("555010001").props.selectable).toBe(true);
@@ -265,15 +237,6 @@ test.each(["en", "cs"] as const)(
       );
       expect(openURL).toHaveBeenLastCalledWith(href);
     }
-    expect(onAction).not.toHaveBeenCalled();
-    ui.rerender(
-      <CardDocumentView document={card} language={language} disabled />,
-    );
-    const disabledPhone = screen.getByRole("link", {
-      name: tr("contactCall").replace("{value}", "+420 555 010 001"),
-    });
-    expect(disabledPhone.props.accessibilityState.disabled).toBe(true);
-    fireEvent.press(disabledPhone);
     expect(openURL).toHaveBeenCalledTimes(3);
     fetch.mockRestore();
     openURL.mockRestore();
@@ -321,126 +284,21 @@ test("unhandled URI schemes remain selectable data and failed external navigatio
   expect(openURL).toHaveBeenCalledWith("https://example.test/");
   openURL.mockRestore();
 });
-test("form drafts are local; explicit submission contains the action's typed field values", () => {
-  const onAction = jest.fn();
-  render(
-    <CardDocumentView document={form} language="en" onAction={onAction} />,
-  );
-  fillForm();
-  fireEvent(screen.getByLabelText("Remote participants"), "valueChange", false);
-  expect(onAction).not.toHaveBeenCalled();
-  fireEvent.press(screen.getByRole("button", { name: "Prepare the proposal" }));
-  expect(onAction.mock.calls).toEqual([
-    [
-      "submit",
-      {
-        title: "Website review",
-        number: 30,
-        date: "2026-10-01",
-        time: "14:30",
-        choice: "online",
-        toggle: false,
-      },
-    ],
-  ]);
-});
-test.each(["en", "cs"] as const)(
-  "%s missing form values explain what must be completed without dispatch",
-  (language) => {
-    const onAction = jest.fn();
-    render(
-      <CardDocumentView
-        document={form}
-        language={language}
-        onAction={onAction}
-      />,
-    );
-    fireEvent.press(
-      screen.getByRole("button", { name: "Prepare the proposal" }),
-    );
-    expect(
-      screen.getAllByText(translate(language)("cardRequired")),
-    ).toHaveLength(5);
-    expect(onAction).not.toHaveBeenCalled();
-  },
-);
-test.each([
-  ["Minutes", "Infinity"],
-  ["Date", "2026-02-30"],
-  ["Time", "24:01"],
-])("invalid %s is rejected locally", (label, value) => {
-  const onAction = jest.fn();
-  render(
-    <CardDocumentView document={form} language="en" onAction={onAction} />,
-  );
-  fillForm();
-  fireEvent.changeText(screen.getByLabelText(label!), value!);
-  fireEvent.press(screen.getByRole("button", { name: "Prepare the proposal" }));
-  expect(screen.getByText(translate("en")("cardInvalidValue"))).toBeTruthy();
-  expect(onAction).not.toHaveBeenCalled();
-});
-test("a new document revision resets a local draft to current server values", () => {
-  const onAction = jest.fn();
-  const { rerender } = render(
-    <CardDocumentView document={form} language="en" onAction={onAction} />,
-  );
-  fillForm();
-  const current: CardDocument = {
-    ...form,
-    revision: 2,
-    nodes: form.nodes.map((node) =>
-      node.type === "input" && node.id === "title"
-        ? { ...node, value: "New server title" }
-        : node,
-    ),
-  };
-  rerender(
-    <CardDocumentView document={current} language="en" onAction={onAction} />,
-  );
-  expect(screen.getByLabelText("Title").props.value).toBe("New server title");
-  expect(screen.getByLabelText("Minutes").props.value).toBe("");
-  expect(screen.getByText(translate("en")("cardUpdated"))).toBeTruthy();
-  expect(
-    screen.getByRole("radio", { name: "Video call" }).props.accessibilityState
-      .checked,
-  ).toBe(false);
-  expect(onAction).not.toHaveBeenCalled();
-});
-test("unavailable cards disable every interaction and do not dispatch on press", () => {
-  const onAction = jest.fn();
-  render(
-    <CardDocumentView
-      document={form}
-      language="en"
-      disabled
-      onAction={onAction}
-    />,
-  );
-  expect(screen.getByLabelText("Title").props.editable).toBe(false);
-  expect(
-    screen.getByRole("radio", { name: "Video call" }).props.accessibilityState
-      .disabled,
-  ).toBe(true);
-  fireEvent.press(screen.getByRole("button", { name: "Prepare the proposal" }));
-  expect(onAction).not.toHaveBeenCalled();
-});
-test("read-only embedded content never adds command controls to a parent's approval frame", () => {
+test("stored inputs and buttons never become controls", () => {
   render(<CardDocumentView document={form} language="cs" embedded />);
   expect(screen.queryByText("Meeting details")).toBeNull();
   expect(screen.queryByRole("button")).toBeNull();
   expect(screen.queryByRole("radio")).toBeNull();
-  expect(screen.getByText("Zapnuto")).toBeTruthy();
-  expect(screen.getByText("Title")).toBeTruthy();
+  expect(screen.queryByText("Title")).toBeNull();
+  expect(screen.queryByText("Prepare the proposal")).toBeNull();
 });
 test.each(["en", "cs"] as const)(
   "%s invalid graphs fall back passively and hide their actions",
   (language) => {
-    const onAction = jest.fn();
     render(
       <CardDocumentView
         document={{ ...overview, root: ["missing"] }}
         language={language}
-        onAction={onAction}
       />,
     );
     expect(screen.getByRole("alert")).toBeTruthy();
@@ -448,20 +306,16 @@ test.each(["en", "cs"] as const)(
       screen.getByText(translate(language)("cardUnavailable")),
     ).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
-    expect(onAction).not.toHaveBeenCalled();
   },
 );
 test("non-document input falls back passively without throwing", () => {
-  const onAction = jest.fn();
   render(
     <CardDocumentView
       document={null as unknown as CardDocument}
       language="en"
-      onAction={onAction}
     />,
   );
   expect(screen.getByText(translate("en")("cardUnavailable"))).toBeTruthy();
-  expect(onAction).not.toHaveBeenCalled();
 });
 const service: ServiceResult = {
   type: "service.action",

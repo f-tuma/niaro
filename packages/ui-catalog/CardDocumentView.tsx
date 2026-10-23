@@ -1,149 +1,60 @@
 import React, { useMemo, useState } from "react";
-import { StyleSheet, Switch, View, useWindowDimensions } from "react-native";
+import { StyleSheet, View, useWindowDimensions } from "react-native";
 import {
   CardDocumentSchema,
-  cardFieldValueValid,
-  type CardAction,
   type CardDocument,
-  type CardNode,
 } from "../protocol/card-document";
 import type { Language } from "../protocol";
 import { tokens as t } from "../design-tokens";
 import { translate } from "../i18n";
 import {
   Avatar,
-  Button,
   Disclosure,
-  Field,
   Icon,
-  Notice,
   Row,
   StatusPill,
   Surface,
   Text,
   type StatusTone,
 } from "../ui";
-import { MotionPressable } from "../ui/motion";
 import { CardDataField } from "./CardDataField";
 
-export type CardValues = Record<string, string | number | boolean>;
 export type CardDocumentViewProps = {
   document: CardDocument;
   language: Language;
-  disabled?: boolean;
   /** Embedded cards reuse their surrounding card's surface and title. */
   embedded?: boolean;
-  onAction?: (actionId: string, values: CardValues) => void;
 };
 
-/** Validated display data only. Reading, rendering, expansion and draft edits are passive. */
+/**
+ * A system card's validated display data (service results, work items).
+ * Passive: it reads, links and expands, and never answers or sends.
+ */
 export function CardDocumentView(props: CardDocumentViewProps) {
   const parsed = useMemo(
     () => CardDocumentSchema.safeParse(props.document),
     [props.document],
   );
-  const [seen, setSeen] = useState(() => ({
-    id: parsed.success ? parsed.data.id : null,
-    revision: parsed.success ? parsed.data.revision : 0,
-    updated: false,
-  }));
-  if (
-    parsed.success &&
-    (seen.id !== parsed.data.id || seen.revision !== parsed.data.revision)
-  ) {
-    setSeen({
-      id: parsed.data.id,
-      revision: parsed.data.revision,
-      updated: seen.id === parsed.data.id,
-    });
-  }
   if (!parsed.success)
     return (
       <Text role="caption" tone="secondary" accessibilityRole="alert">
         {translate(props.language)("cardUnavailable")}
       </Text>
     );
-  return (
-    <View style={styles.stack}>
-      {seen.updated &&
-      parsed.data.nodes.some((node) => node.type === "input") ? (
-        <Notice>{translate(props.language)("cardUpdated")}</Notice>
-      ) : null}
-      <CardBody
-        key={`${parsed.data.id}:${parsed.data.revision}`}
-        {...props}
-        document={parsed.data}
-      />
-    </View>
-  );
+  return <CardBody {...props} document={parsed.data} />;
 }
 
 function CardBody({
   document,
   language,
-  disabled = false,
   embedded = false,
-  onAction,
 }: CardDocumentViewProps) {
-  const tr = translate(language);
   const { width } = useWindowDimensions();
   const [cardWidth, setCardWidth] = useState(0);
   const nodes = useMemo(
     () => new Map(document.nodes.map((node) => [node.id, node])),
     [document.nodes],
   );
-  const actions = useMemo(
-    () => new Map(document.actions.map((action) => [action.id, action])),
-    [document.actions],
-  );
-  const [draft, setDraft] = useState<CardValues>(() =>
-    Object.fromEntries(
-      document.nodes.flatMap((node) =>
-        node.type === "input"
-          ? [[node.id, node.value ?? (node.kind === "toggle" ? false : "")]]
-          : [],
-      ),
-    ),
-  );
-  const [errors, setErrors] = useState<Record<string, "required" | "invalid">>(
-    {},
-  );
-  const inactive = disabled || !onAction;
-  const edit = (id: string, value: string | number | boolean) => {
-    setDraft((current) => ({ ...current, [id]: value }));
-    setErrors((current) => {
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
-  };
-  const activate = (action: CardAction) => {
-    if (inactive) return;
-    if (action.kind === "reply") {
-      onAction?.(action.id, {});
-      return;
-    }
-    const values: CardValues = {};
-    const invalid: Record<string, "required" | "invalid"> = {};
-    for (const id of action.fields ?? []) {
-      const node = nodes.get(id);
-      if (node?.type !== "input") return;
-      const value = draft[id];
-      if (
-        value === undefined ||
-        value === "" ||
-        (typeof value === "string" && !value.trim())
-      ) {
-        if (node.required) invalid[id] = "required";
-        continue;
-      }
-      const normalized = normalizeInput(node, value);
-      if (normalized === undefined) invalid[id] = "invalid";
-      else values[id] = normalized;
-    }
-    setErrors(invalid);
-    if (!Object.keys(invalid).length) onAction?.(action.id, values);
-  };
   const renderChildren = (ids: string[]) => ids.map(renderNode);
   const renderNode = (id: string): React.ReactNode => {
     const node = nodes.get(id);
@@ -174,7 +85,6 @@ function CardBody({
             value={node.value}
             icon={node.icon}
             language={language}
-            disabled={disabled}
           />
         );
       case "badge":
@@ -358,47 +268,10 @@ function CardBody({
           </View>
         );
       }
-      case "button": {
-        const action = actions.get(node.actionId);
-        // An embedded data card has no authority to add buttons to its parent's approval.
-        if (!action || !onAction) return null;
-        return (
-          <Button
-            key={id}
-            label={action.label}
-            variant={action.variant}
-            icon={action.icon}
-            disabled={inactive}
-            onPress={() => activate(action)}
-          />
-        );
-      }
+      // Inputs and buttons belonged to answer cards; system cards show data.
+      case "button":
       case "input":
-        return (
-          <View key={id} style={styles.stack}>
-            <CardInput
-              node={node}
-              value={draft[id] ?? ""}
-              language={language}
-              disabled={inactive}
-              readOnly={!onAction}
-              onChange={(value) => edit(id, value)}
-            />
-            {errors[id] ? (
-              <Text
-                role="caption"
-                accessibilityRole="alert"
-                style={{ color: t.color.status.error }}
-              >
-                {tr(
-                  errors[id] === "required"
-                    ? "cardRequired"
-                    : "cardInvalidValue",
-                )}
-              </Text>
-            ) : null}
-          </View>
-        );
+        return null;
     }
   };
   const body = (
@@ -444,135 +317,6 @@ function CardBody({
       {body}
     </Surface>
   );
-}
-
-type InputNode = Extract<CardNode, { type: "input" }>;
-function CardInput({
-  node,
-  value,
-  language,
-  disabled,
-  readOnly,
-  onChange,
-}: {
-  node: InputNode;
-  value: string | number | boolean;
-  language: Language;
-  disabled: boolean;
-  readOnly: boolean;
-  onChange: (value: string | number | boolean) => void;
-}) {
-  const tr = translate(language);
-  if (readOnly)
-    return (
-      <View style={styles.content}>
-        <Text role="caption" tone="secondary">
-          {node.label}
-        </Text>
-        <Text selectable>
-          {typeof value === "boolean"
-            ? tr(value ? "cardOn" : "cardOff")
-            : String(
-                node.kind === "choice"
-                  ? (node.options?.find((option) => option.id === value)
-                      ?.label ?? value)
-                  : value,
-              )}
-        </Text>
-      </View>
-    );
-  if (node.kind === "toggle")
-    return (
-      <Row style={{ justifyContent: "space-between" }}>
-        <Text role="label" style={{ flex: 1 }}>
-          {node.label}
-        </Text>
-        <Switch
-          accessibilityLabel={node.label}
-          accessibilityState={{ disabled }}
-          aria-disabled={disabled}
-          aria-checked={value === true}
-          disabled={disabled}
-          value={value === true}
-          onValueChange={onChange}
-          trackColor={{ false: t.color.border, true: t.color.action.primary }}
-          thumbColor={t.color.surfaceRaised}
-        />
-      </Row>
-    );
-  if (node.kind === "choice")
-    return (
-      <View style={styles.stack}>
-        <Text role="label">
-          {node.label}
-          {node.required ? " *" : ""}
-        </Text>
-        <View
-          accessibilityRole="radiogroup"
-          accessibilityLabel={node.label}
-          style={styles.stack}
-        >
-          {node.options?.map((option) => (
-            <MotionPressable
-              key={option.id}
-              accessibilityRole="radio"
-              accessibilityLabel={option.label}
-              accessibilityState={{ checked: value === option.id, disabled }}
-              aria-checked={value === option.id}
-              aria-disabled={disabled}
-              disabled={disabled}
-              onPress={() => onChange(option.id)}
-              style={[
-                styles.choice,
-                value === option.id && styles.choiceSelected,
-              ]}
-            >
-              <Row>
-                <Icon
-                  name={value === option.id ? "check" : "chevron"}
-                  size={18}
-                  color={t.color.action.primary}
-                />
-                <Text style={{ flex: 1 }}>{option.label}</Text>
-              </Row>
-            </MotionPressable>
-          ))}
-        </View>
-      </View>
-    );
-  return (
-    <Field
-      label={node.label + (node.required ? " *" : "")}
-      accessibilityLabel={node.label}
-      placeholder={
-        node.placeholder ??
-        (node.kind === "date"
-          ? "YYYY-MM-DD"
-          : node.kind === "time"
-            ? "HH:MM"
-            : undefined)
-      }
-      value={String(value)}
-      editable={!disabled}
-      accessibilityState={{ disabled }}
-      aria-disabled={disabled}
-      aria-required={!!node.required}
-      keyboardType={node.kind === "number" ? "decimal-pad" : "default"}
-      maxLength={4000}
-      onChangeText={onChange}
-    />
-  );
-}
-
-function normalizeInput(
-  node: InputNode,
-  value: string | number | boolean,
-): string | number | boolean | undefined {
-  const normalized =
-    node.kind === "number" && typeof value !== "boolean"
-      ? Number(value)
-      : value;
-  return cardFieldValueValid(node, normalized) ? normalized : undefined;
 }
 
 const badgeTone: Record<keyof typeof toneColor, StatusTone> = {
@@ -632,16 +376,4 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   fill: { height: 6, backgroundColor: t.color.action.primary },
-  choice: {
-    minHeight: t.control.minHeight,
-    padding: t.spacing.md,
-    borderWidth: 1,
-    borderColor: t.color.border,
-    borderRadius: t.radius.control,
-    backgroundColor: t.color.surfaceRaised,
-  },
-  choiceSelected: {
-    borderColor: t.color.action.primary,
-    backgroundColor: t.color.accent.softBlue,
-  },
 });

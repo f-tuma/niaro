@@ -234,6 +234,8 @@ export type ClientSessionOptions = {
   messageResults?: readonly string[];
   /** Ask for `createdAt` on messages (MESSAGE_TIME_PROFILE). */
   messageTimes?: boolean;
+  /** Ask for generated UI on answers (GENERATIVE_UI_PROFILE). */
+  generativeUi?: boolean;
   /** The credential has no refresh token, but `renewCredential` issues a new
    * one (the web app asks its signed-in browser session). */
   reissue?: boolean;
@@ -472,6 +474,7 @@ export class ClientSession {
   private messageDelivery(path: string) {
     return messageDeliveryPath(path, {
       times: this.options.messageTimes,
+      ui: this.options.generativeUi,
       results: this.options.messageResults,
     });
   }
@@ -1414,7 +1417,7 @@ export class ClientSession {
     if (!this.authorized) await this.authorize();
     const path = messageDeliveryPath(
       `conversations/messages?profile=${CONVERSATION_HISTORY_PROFILE}&conversationId=${encodeURIComponent(id)}${after ? `&after=${encodeURIComponent(after)}` : ""}${revision ? `&revision=${revision}` : ""}`,
-      { times: this.options.messageTimes },
+      { times: this.options.messageTimes, ui: this.options.generativeUi },
     );
     const { response, value } = await this.json(path, { signal });
     if (response.status === 404 || response.status === 406)

@@ -1,9 +1,8 @@
 import {
-  type CardAction,
+  PassiveCardDocumentSchema,
   type CardDocument,
   type CardNode,
 } from "../../packages/protocol/card-document";
-import { composeCard } from "./composer";
 
 type NodeInput<T = CardNode> = T extends CardNode ? Omit<T, "id"> : never;
 type CardHeader = Pick<
@@ -11,11 +10,13 @@ type CardHeader = Pick<
   "id" | "revision" | "title" | "subtitle" | "icon"
 >;
 
-/** Typed authoring convenience; build still validates the complete graph. */
+/**
+ * Typed authoring of the server's own passive cards (service results, work
+ * summaries). Build validates the complete graph; cards carry no actions.
+ */
 export class CardBuilder {
   private nodes: CardNode[] = [];
   private roots: string[] = [];
-  private actions: CardAction[] = [];
 
   constructor(private readonly header: CardHeader) {}
 
@@ -27,21 +28,12 @@ export class CardBuilder {
     return id;
   }
 
-  action(action: CardAction, { root = true }: { root?: boolean } = {}): string {
-    this.actions.push(action);
-    return this.add({ type: "button", actionId: action.id }, { root });
-  }
-
   build(): CardDocument {
-    const { id, revision, ...content } = this.header;
-    return composeCard(
-      {
-        ...content,
-        nodes: this.nodes,
-        root: this.roots,
-        actions: this.actions,
-      },
-      { id, revision },
-    );
+    return PassiveCardDocumentSchema.parse({
+      ...this.header,
+      nodes: this.nodes,
+      root: this.roots,
+      actions: [],
+    });
   }
 }

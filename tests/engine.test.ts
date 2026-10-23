@@ -1,5 +1,5 @@
 import { FixtureEngine } from "../apps/fixture-server/engine";
-import { composeCard } from "../apps/server-cards/composer";
+import { CardDocumentSchema } from "../packages/protocol/card-document";
 import { resolveCardResponse } from "../apps/server-cards/respond";
 import { CommandSchema, type Command } from "../packages/protocol";
 import {
@@ -73,7 +73,11 @@ describe("server-owned work", () => {
   });
   test("an explicit retry adds its reply without duplicating the logical user message", () => {
     const e = new FixtureEngine();
-    const original = messageCommand("TEST status update", "en", "TEST-original");
+    const original = messageCommand(
+      "TEST status update",
+      "en",
+      "TEST-original",
+    );
     const interpretation = (reply: string) => ({
       decision: {
         kind: "new_topic" as const,
@@ -98,9 +102,9 @@ describe("server-owned work", () => {
     expect(messages.filter((message) => message.role === "user")).toHaveLength(
       1,
     );
-    expect(messages.filter((message) => message.role === "assistant")).toHaveLength(
-      2,
-    );
+    expect(
+      messages.filter((message) => message.role === "assistant"),
+    ).toHaveLength(2);
     expect(messages[0]).toMatchObject({
       text: "TEST status update",
       logicalMessageId: "TEST-original",
@@ -112,7 +116,11 @@ describe("server-owned work", () => {
   });
   test("an explicit retry cannot hide a changed request under another message's identity", () => {
     const e = new FixtureEngine();
-    const original = messageCommand("TEST original intent", "en", "TEST-parent");
+    const original = messageCommand(
+      "TEST original intent",
+      "en",
+      "TEST-parent",
+    );
     const first = e.execute(original, {
       decision: {
         kind: "new_topic",
@@ -371,32 +379,32 @@ test.each([true, false])(
   "a card rejection preserves only validated submitted values (valid=%s)",
   (valid) => {
     const engine = new FixtureEngine();
-    const card = composeCard(
-      {
-        title: "TEST collect task",
-        nodes: [
-          {
-            id: "name",
-            type: "input",
-            label: "Name",
-            kind: "text",
-            required: true,
-          },
-          { id: "button", type: "button", actionId: "submit" },
-        ],
-        root: ["name", "button"],
-        actions: [
-          {
-            id: "submit",
-            label: "Submit",
-            kind: "submit",
-            variant: "primary",
-            fields: ["name"],
-          },
-        ],
-      },
-      { id: "TEST-card", revision: 1 },
-    );
+    // A form stored with an answer before model-composed cards were retired.
+    const card = CardDocumentSchema.parse({
+      id: "TEST-card",
+      revision: 1,
+      title: "TEST collect task",
+      nodes: [
+        {
+          id: "name",
+          type: "input",
+          label: "Name",
+          kind: "text",
+          required: true,
+        },
+        { id: "button", type: "button", actionId: "submit" },
+      ],
+      root: ["name", "button"],
+      actions: [
+        {
+          id: "submit",
+          label: "Submit",
+          kind: "submit",
+          variant: "primary",
+          fields: ["name"],
+        },
+      ],
+    });
     engine.execute(messageCommand("TEST create a task", "en", "TEST-start"), {
       decision: {
         kind: "reply",
@@ -408,8 +416,12 @@ test.each([true, false])(
       },
       expectedCursor: engine.snapshot().cursor,
       timeZone: "UTC",
-      card,
     });
+    engine.data.snapshot.conversations[0]!.messages.at(-1)!.result = {
+      type: "card.document",
+      version: 1,
+      document: card,
+    };
     const before = engine.snapshot();
     const command = CommandSchema.parse({
       type: "card.respond",

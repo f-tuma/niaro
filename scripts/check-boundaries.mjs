@@ -1,10 +1,19 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 const rules = {
-  protocol: [/from ['"]react/, /from ['"].*(ui|design-tokens)/],
+  protocol: [
+    /from ['"]react/,
+    /from ['"][^'"]*\/(?:ui|ui-catalog|design-tokens)(?:\/|['"])/,
+  ],
   "client-core": [/from ['"]react/, /from ['"].*(ui-catalog|\/ui)/],
   ui: [/from ['"].*(client-core|protocol)/, /\bfetch\(/],
   "ui-catalog": [/from ['"].*client-core/, /\bfetch\(/],
+  // The shared generated-UI spec: no renderer, no network.
+  "openui-library": [
+    /from ['"]react/,
+    /from ['"][^'"]*\/(?:ui|ui-catalog|design-tokens|client-core)(?:\/|['"])/,
+    /\bfetch\(/,
+  ],
   // Types and helpers only: a plugin never reaches server internals through it.
   "plugin-sdk": [/from ['"](?:\.\.\/)+(?:apps|plugins)\//, /from ['"]react/],
 };
