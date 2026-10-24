@@ -11,7 +11,10 @@ import {
   ActivityResponseSchema,
   legacyActivity,
   toolActivity,
+  workflowActivity as workflowActivityProfile,
+  ACTIVITY_DRAFT_MAX,
   ACTIVITY_PROFILE,
+  WORKFLOW_ACTIVITY_PROFILE,
   TOOL_ACTIVITY_PROFILE,
   LEGACY_ACTIVITY_PROFILE,
 } from "../packages/protocol/activity";
@@ -499,4 +502,105 @@ test("workflow activity is bounded and older profiles preserve only their suppor
     ).toBe(true);
   expect(toolActivity(null)).toBeNull();
   expect(legacyActivity(null)).toBeNull();
+});
+test("the answer's draft is bounded, only for a running request, and never reaches older profiles", () => {
+  const activity = {
+    ...workflowActivity({ step: 2, stage: "inputs" }),
+    draft: "TEST answer so far",
+  };
+  const envelope = { scope: scopeFor(), commandId: activity.commandId };
+  expect(
+    ActivityResponseSchema.parse({
+      ...envelope,
+      profile: ACTIVITY_PROFILE,
+      activity,
+    }).activity,
+  ).toEqual(activity);
+  const { draft: _draft, ...withoutDraft } = activity;
+  expect(workflowActivityProfile(activity)).toEqual(withoutDraft);
+  expect(
+    ActivityResponseSchema.parse({
+      ...envelope,
+      profile: WORKFLOW_ACTIVITY_PROFILE,
+      activity: workflowActivityProfile(activity),
+    }).activity,
+  ).toEqual(withoutDraft);
+  expect(toolActivity(activity)).not.toHaveProperty("draft");
+  for (const profile of [
+    WORKFLOW_ACTIVITY_PROFILE,
+    TOOL_ACTIVITY_PROFILE,
+    LEGACY_ACTIVITY_PROFILE,
+  ])
+    expect(
+      ActivityResponseSchema.safeParse({ ...envelope, profile, activity })
+        .success,
+    ).toBe(false);
+  for (const draft of ["", "x".repeat(ACTIVITY_DRAFT_MAX + 1), 1])
+    expect(
+      RequestActivitySchema.safeParse({ ...activity, draft }).success,
+    ).toBe(false);
+  expect(
+    RequestActivitySchema.safeParse({
+      ...activity,
+      status: "succeeded",
+      steps: activity.steps.map((step) => ({ ...step, status: "succeeded" })),
+    }).success,
+  ).toBe(false);
+});
+
+test("the draft is transient progress: replaced as it grows, cleared on request and gone when the request ends", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "activity-draft-"));
+  const scope = scopeFor(),
+    store = new FixtureStorage(dir, scope.serverId);
+  const model = new ModelService(store, undefined);
+  const command = messageCommand("TEST draft", "en", "draft-progress");
+  const seen: (string | undefined)[] = [];
+  const current = () =>
+    RequestActivitySchema.parse(model.activity(scope, command.commandId)).draft;
+  try {
+    await expect(
+      model.execute(scope, command, () => {}, new AbortController().signal, {
+        tools: {
+          has: () => false,
+          invoke: async () => {
+            throw Error("unused");
+          },
+        },
+        run: async <T>(fn: () => T) => fn(),
+        integrations: {
+          enabled: true,
+          hasTurn: async () => false,
+          resolve: async () => {
+            throw Error("unused");
+          },
+          message: async (...args) => {
+            const draft = args[8]!.reportDraft!;
+            draft("TEST answer");
+            seen.push(current());
+            draft("TEST answer " + "x".repeat(ACTIVITY_DRAFT_MAX));
+            seen.push(String(current()?.length));
+            draft(null);
+            seen.push(current());
+            draft("TEST again");
+            throw new ModelError("model_timeout");
+          },
+        },
+      }),
+    ).rejects.toThrow("model_timeout");
+    expect(seen).toEqual([
+      "TEST answer",
+      String(ACTIVITY_DRAFT_MAX),
+      undefined,
+    ]);
+    const final = RequestActivitySchema.parse(
+      model.activity(scope, command.commandId),
+    );
+    expect(final.status).toBe("failed");
+    expect(final).not.toHaveProperty("draft");
+    // The snapshot and its events never carry the draft.
+    expect(JSON.stringify(store.snapshot(scope))).not.toContain("TEST again");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

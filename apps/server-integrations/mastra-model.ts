@@ -12,13 +12,21 @@ import type {
   Provider,
 } from "../../packages/protocol/service-catalog";
 import {
+  canStream,
   IntegrationError,
   jsonResponse,
   MAX_TRANSPORT_TIMEOUT_MS,
   sameEndpoint,
   type DispatchGuard,
   type IntegrationTransport,
+  type TransportResponse,
 } from "./transport";
+import {
+  CompletionStream,
+  completionFromStream,
+  isEventStream,
+} from "./chat-stream";
+import { providerFailure } from "./failures";
 import type { ModelMessage } from "./models";
 
 export type NiaroModelSelection = {
@@ -340,12 +348,41 @@ export const MODEL_CALL_LIMITS = {
   design: { timeoutMs: 5 * 60_000, maxOutputTokens: 16_000 },
 } as const satisfies Record<string, ModelCallLimits>;
 
+/** Sees the reply text of a streamed call grow; never its tool calls. */
+export type ModelTextObserver = { onText(text: string): void };
+
+/** The body of a completed call. A streamed one is assembled into the body
+ * the same call returns without streaming; a provider error sent inside the
+ * stream fails like an error status. */
+function completion(response: TransportResponse, key: string) {
+  if (
+    !isEventStream(response) ||
+    response.status < 200 ||
+    response.status >= 300
+  )
+    return jsonResponse(response, [key]);
+  const body = completionFromStream(response.text) as
+    | { error?: unknown }
+    | undefined;
+  if (body?.error)
+    throw new IntegrationError(
+      "integration_provider_failed",
+      502,
+      providerFailure(JSON.stringify({ error: body.error }), {
+        httpStatus: 502,
+        secretValues: [key],
+      }),
+    );
+  return body;
+}
+
 /** A single provider invocation. Mastra owns the model/tool loop and all retries are disabled by its caller. */
 export function createNiaroMastraModel(
   selected: NiaroModelSelection,
   transport: IntegrationTransport,
   beforeDispatch: DispatchGuard,
   limits: ModelCallLimits = MODEL_CALL_LIMITS.chat,
+  observer?: ModelTextObserver,
 ): LanguageModelV4 {
   const provider = { ...selected.provider };
   const model = { ...selected.model };
@@ -363,6 +400,7 @@ export function createNiaroMastraModel(
   ).href;
   const generate = async (
     options: LanguageModelV4CallOptions,
+    observe?: ModelTextObserver,
   ): Promise<LanguageModelV4GenerateResult> => {
     options.abortSignal?.throwIfAborted();
     // SDK options cannot change the configured endpoint or authentication headers.
@@ -371,17 +409,27 @@ export function createNiaroMastraModel(
       ...options,
       maxOutputTokens: options.maxOutputTokens ?? maxOutputTokens,
     });
+    // A streamed call shows its reply while it is written. It still resolves
+    // only with the whole completion, validated as without streaming.
+    const stream = observe && new CompletionStream();
     const response = await transport({
       url,
       method: "POST",
       headers: key ? { Authorization: `Bearer ${key}` } : {},
-      body,
+      body: stream
+        ? { ...body, stream: true, stream_options: { include_usage: true } }
+        : body,
       signal: options.abortSignal,
       ...transportLimits,
       beforeDispatch,
+      ...(stream && {
+        onEvent: (data: string) => {
+          if (stream.push(data)) observe.onText(stream.reply);
+        },
+      }),
     });
     options.abortSignal?.throwIfAborted();
-    const result = resultFrom(jsonResponse(response, [key]));
+    const result = resultFrom(completion(response, key));
     if (options.topK !== undefined)
       result.warnings.push({ type: "unsupported", feature: "topK" });
     if (options.reasoning && options.reasoning !== "provider-default")
@@ -406,7 +454,10 @@ export function createNiaroMastraModel(
     supportedUrls: { "*/*": [/.*/] },
     doGenerate: generate,
     async doStream(options) {
-      const result = await generate(options);
+      const result = await generate(
+        options,
+        observer && canStream(transport) ? observer : undefined,
+      );
       const chunks: LanguageModelV4StreamPart[] = [
         { type: "stream-start", warnings: result.warnings },
       ];

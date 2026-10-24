@@ -118,10 +118,12 @@ import {
 } from "../../packages/protocol/request-interruption";
 import {
   ACTIVITY_PROFILE,
+  WORKFLOW_ACTIVITY_PROFILE,
   TOOL_ACTIVITY_PROFILE,
   LEGACY_ACTIVITY_PROFILE,
   legacyActivity,
   toolActivity,
+  workflowActivity,
   ActivityCommandIdSchema,
   ActivityResponseSchema,
 } from "../../packages/protocol/activity";
@@ -1326,6 +1328,7 @@ export function createFixtureServer(
         const requestedProfile = url.searchParams.get("profile");
         const profile =
           requestedProfile === ACTIVITY_PROFILE ||
+          requestedProfile === WORKFLOW_ACTIVITY_PROFILE ||
           requestedProfile === TOOL_ACTIVITY_PROFILE
             ? requestedProfile
             : LEGACY_ACTIVITY_PROFILE;
@@ -1341,9 +1344,11 @@ export function createFixtureServer(
               activity:
                 profile === ACTIVITY_PROFILE
                   ? activity
-                  : profile === TOOL_ACTIVITY_PROFILE
-                    ? toolActivity(activity)
-                    : legacyActivity(activity),
+                  : profile === WORKFLOW_ACTIVITY_PROFILE
+                    ? workflowActivity(activity)
+                    : profile === TOOL_ACTIVITY_PROFILE
+                      ? toolActivity(activity)
+                      : legacyActivity(activity),
             });
           }),
         );

@@ -84,9 +84,16 @@ The console no longer offers a choice between two execution engines.
 Provider calls retain Niaro's endpoint, credentials, guarded transport, personal
 OAuth pins and last authorization check inside the identity queue. Unsupported
 file/provider tools fail before SDK prefetch. Native retries and eager/parallel
-tool execution are disabled. The current guarded transport buffers a provider
-completion before emitting native SDK stream parts; token streaming over the
-provider connection has not been added. Requests share persistent per-command limits:
+tool execution are disabled. A chat turn that reports a draft asks the provider
+to stream (`stream: true` with usage in the last event); the guarded transport
+hands each server-sent event to the model as it arrives, under the same origin,
+address and size checks, and the model passes the growing reply text to the
+draft. The SDK still receives the call only once the whole completion is
+assembled and validated as a non-streamed one, so tool calls, finish reasons,
+usage settlement, errors and the processors behave as before. Calls without a
+draft observer, `doGenerate`, decisions, and transports that are not marked as
+streaming (tests, the live evaluation harness) keep the buffered request.
+Requests share persistent per-command limits:
 12 model steps, 40 total inference calls, 12 catalog action attempts and 10
 exposed action tools; provider daily request limits also apply. These are request
 limits alongside the durable token/cost ledger. Ledger enforcement requires an

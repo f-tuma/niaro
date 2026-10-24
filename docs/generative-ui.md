@@ -84,7 +84,16 @@ Read-only (archived) chats show the UI without actions.
 
 ## Streaming and history
 
-Both renderers accept partial input: lang-core re-parses the accumulated text and shows complete statements as they arrive. The chat transport currently delivers an answer when it is complete (the reply is checked before publication), so the web app renders on arrival today and progressively once answers stream; the phone renders on completion.
+Both renderers accept partial input: lang-core re-parses the accumulated text and shows complete statements as they arrive.
+
+An answer is still published only when it is complete, after admission and the checker. While the model writes it, the person sees it grow:
+
+1. The chat model call asks the provider to stream (`apps/server-integrations/mastra-model.ts`, `chat-stream.ts`). The guarded transport passes each server-sent event on as it arrives; the call still resolves only with the whole completion, assembled and validated as a non-streamed one, and the inference budget settles the usage of the stream's last event.
+2. The native runtime (`apps/server-agent/runtime.ts`, `onDraft`) keeps a draft of the step that can still become the answer: the reply text so far, program included. A step that calls a tool drops it (text before a tool call is not the answer), so does a reply the checker or the program admission sends back, a system answer and a failure. When the answer is final, the draft becomes its text with the admitted program, so the switch to the stored message shows the same content.
+3. The draft travels in request progress as `draft` (`agent-activity/4`, [protocol](protocol.md)), transient memory only: it is never stored and never reaches the snapshot, events, history, search, memory or voice. Clients poll every 250 ms while a draft is present.
+4. Both clients draw it under the "Thinking" line with `splitDraft` (a fence still being typed is not shown as text) and the streaming renderers, read-only: buttons, fields and links in a draft do nothing. The stored message replaces it in the same update; a draft that was sent back simply disappears, without animating into the final answer.
+
+A draft program is not admitted, which is why it is never interactive and never kept; the renderers parse it with the same library and drop anything outside it.
 
 The program is stored with its message and re-renders from history. The model's own thread keeps the program as its text (subject to the private-response projection above), so a follow-up can change it.
 
@@ -108,7 +117,8 @@ The server's own passive cards remain: service results and work summaries are bu
 
 - `tests/generative-ui.test.ts`: admission (valid, unknown, nesting, Query/Mutation, unsafe links and steps, caps), reply splitting, follow-up text, negotiation, local prompt without network or telemetry.
 - `tests/mastra-domain.node.ts`, `tests/native-tool-validation.node.ts`, `tests/mastra-http.node.ts`, `tests/action-failure-agent.node.ts` and the `ui-*` trust scenarios: repair, normalized storage, checker wiring, no UI for unknown writes, HTTP delivery.
-- `tests/web-generative-ui.test.tsx` and `tests/mobile-generative-ui.test.tsx`: rendering, streaming input, follow-ups, links, local state and the text fallback for old cards.
+- `tests/web-generative-ui.test.tsx` and `tests/mobile-generative-ui.test.tsx`: rendering, streaming input, follow-ups, links, local state and the text fallback for old cards; the phone's draft in chat and its replacement.
 - `tests/generative-ui-live-programs.test.tsx`: the programs a live model wrote in the `ui.*` trust matrix (`tests/fixtures/generative-ui-live-programs.json`) render on the web and the phone.
+- `tests/answer-streaming.node.ts`: stream assembly, streamed and fallback model calls, events from the real transport while the response is open, and the draft's lifecycle in a native run (tool step, checker repair, settled answer). `tests/activity.test.ts`, `tests/activity-client.test.ts`, `tests/inference-budget.node.ts` and `tests/web-chat.test.tsx`: the `/4` profile, transient draft, faster polling, streamed usage settlement and the web draft.
 
 Live-model quality of the UI is measured with the paired EN/CS `ui.*` cases of the live trust runner ([agent trust](agent-trust.md#explicit-live-model-mode)): whether UI appears where a visual helps and not for a simple answer, whether the server admits it without repair, whether text and UI carry only facts from the synthetic data, text brevity and UI language. `tests/agent-trust-ui.node.ts` checks the scoring itself with a scripted provider.

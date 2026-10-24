@@ -317,6 +317,18 @@ const CLOSE = /^\s*```\s*$/;
  * program (the first ```openui-lang fence; further programs are dropped).
  * An unterminated fence runs to the end, as while streaming.
  */
+/**
+ * A reply still being written. Its text is shown without a fence line that is
+ * only partly typed, and a program that has not started yet is not shown.
+ */
+export function splitDraft(draft: string): { text: string; program?: string } {
+  const lines = draft.split("\n");
+  // An opening or closing fence still being typed; an open program needs no
+  // closing fence to be read.
+  if (/^\s*`{1,3}[\w-]*\s*$/.test(lines.at(-1) ?? "")) lines.pop();
+  return splitReply(lines.join("\n"));
+}
+
 export function splitReply(reply: string): { text: string; program?: string } {
   const lines = reply.split("\n");
   const text: string[] = [];

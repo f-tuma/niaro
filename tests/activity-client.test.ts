@@ -85,6 +85,56 @@ test("progress is transient and ends with command result without resubmitting", 
     f.session.stop();
   }
 });
+test("the answer's draft is read twice as often while it is written and ends with the stored reply", async () => {
+  let draft: string | undefined = "TEST first";
+  const f = setup();
+  f.fetcher.mockImplementation(async (url, init) => {
+    if (String(url).endsWith("auth/session")) return response(authInfo());
+    if (String(url).includes("activity?"))
+      return response({
+        ...f.payload,
+        activity: { ...requestActivity(), ...(draft ? { draft } : {}) },
+      });
+    if (init?.method === "POST") return f.post.promise;
+    return response(f.engine.snapshot());
+  });
+  const reads = () =>
+    f.fetcher.mock.calls.filter(([url]) => String(url).includes("activity?"))
+      .length;
+  try {
+    await f.session.start(false);
+    const send = f.session.send(f.command);
+    await jest.advanceTimersByTimeAsync(260);
+    expect(f.session.getSnapshot().activity?.draft).toBe("TEST first");
+    draft = "TEST first draft";
+    const before = reads();
+    await jest.advanceTimersByTimeAsync(260);
+    expect(reads()).toBe(before + 1);
+    expect(f.session.getSnapshot().activity?.draft).toBe("TEST first draft");
+    // Without a draft the usual pace returns.
+    draft = undefined;
+    await jest.advanceTimersByTimeAsync(260);
+    const paced = reads();
+    await jest.advanceTimersByTimeAsync(260);
+    expect(reads()).toBe(paced);
+    expect(f.session.getSnapshot().activity?.draft).toBeUndefined();
+    f.post.resolve(response(f.engine.execute(f.command), 202));
+    await send;
+    // The stored reply replaces the draft in the same update.
+    expect(f.session.getSnapshot().activity).toBeNull();
+    expect(
+      Object.values(f.session.getSnapshot().store!.conversations)
+        .flatMap((conversation) => conversation.messages)
+        .some(
+          (message) =>
+            message.role === "assistant" &&
+            message.replyToCommandId === f.command.commandId,
+        ),
+    ).toBe(true);
+  } finally {
+    f.session.stop();
+  }
+});
 test.each([ACTIVITY_PROFILE, TOOL_ACTIVITY_PROFILE, LEGACY_ACTIVITY_PROFILE])(
   "client requests enhanced progress and accepts %s",
   async (profile) => {

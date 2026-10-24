@@ -11,7 +11,12 @@ import {
 } from "../../packages/protocol/inference-budget";
 import type { CatalogTarget } from "../../packages/protocol/service-catalog";
 import type { NiaroModelSelection } from "../server-integrations/mastra-model";
-import type { IntegrationTransport } from "../server-integrations/transport";
+import {
+  canStream,
+  streamingTransport,
+  type IntegrationTransport,
+} from "../server-integrations/transport";
+import { completionBody } from "../server-integrations/chat-stream";
 import { IdentityError } from "./error";
 import { isInferenceBudgetFailureCode } from "./inference-budget-failure";
 import { operatorLog } from "../fixture-server/operator-log";
@@ -541,7 +546,7 @@ export function budgetedInferenceTransport(
   priorInference: () => number,
   caps?: InferenceRunCaps,
 ): IntegrationTransport {
-  return async (request) => {
+  const budgeted: IntegrationTransport = async (request) => {
     const started = performance.now();
     // The body is known here, so the call reserves its own estimated input
     // (within the price ceiling and the run's remaining headroom) rather than
@@ -611,12 +616,8 @@ export function budgetedInferenceTransport(
           });
         },
       });
-      let raw: unknown;
-      try {
-        raw = JSON.parse(response.text);
-      } catch {
-        raw = undefined;
-      }
+      // A streamed completion reports its usage in its last event.
+      const raw = completionBody(response);
       let usage = inferenceUsage(raw, kind, reservation.price);
       if (
         (response.status < 200 || response.status >= 300) &&
@@ -655,4 +656,5 @@ export function budgetedInferenceTransport(
       throw error;
     }
   };
+  return canStream(transport) ? streamingTransport(budgeted) : budgeted;
 }

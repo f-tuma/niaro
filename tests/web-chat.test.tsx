@@ -942,6 +942,142 @@ test("while the assistant works, the composer offers stop and progress is shown"
   expect(session.retry).toHaveBeenCalled();
 });
 
+test("an answer is shown as it is written, inert, and the stored reply replaces it", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Kolik máme objednávek?")],
+  };
+  const { session, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const pending = {
+    type: "message.send" as const,
+    commandId: "c-2",
+    idempotencyKey: "c-2",
+    conversationId: "conv-1",
+    text: "Kolik máme objednávek?",
+    language: "cs" as const,
+  };
+  const running = {
+    commandId: "c-2",
+    conversationId: "conv-1",
+    status: "running" as const,
+    steps: [
+      { id: "understanding" as const, status: "running" as const },
+      { id: "preparing" as const, status: "pending" as const },
+    ],
+  };
+  await act(async () =>
+    publish({
+      pending,
+      commandStates: { chat: "sending" },
+      activity: {
+        ...running,
+        // The opening fence is still being typed.
+        draft: "Za září **340** objednávek.\n``",
+      },
+    }),
+  );
+  const draft = byTestId(root, "answer-draft");
+  expect(text(draft)).toContain("340");
+  expect(text(draft)).not.toContain("``");
+  expect(
+    draft.findAll((node) => node.props["data-testid"] === "generated-ui"),
+  ).toHaveLength(0);
+  await act(async () =>
+    publish({
+      activity: {
+        ...running,
+        draft: [
+          "Za září **340** objednávek.",
+          "```openui-lang",
+          "root = Stack([b])",
+          'b = Buttons([Button("Detail", @ToAssistant("Ukaž detail"), "primary")])',
+        ].join("\n"),
+      },
+    }),
+  );
+  const ui = byTestId(byTestId(root, "answer-draft"), "generated-ui");
+  // Nothing in a draft can be acted on.
+  expect(button(ui, "Detail").props.disabled).toBe(true);
+  // The stored message replaces the draft; a draft is never part of the chat.
+  await act(async () =>
+    publish({
+      pending: null,
+      activity: null,
+      commandStates: { chat: "accepted" },
+      store: storeWith([
+        {
+          ...conversation,
+          revision: 5,
+          messages: [
+            ...conversation.messages,
+            {
+              id: "m-2",
+              role: "assistant",
+              text: "V září bylo 340 objednávek.",
+              replyToCommandId: "c-2",
+            },
+          ],
+        },
+      ]),
+    }),
+  );
+  expect(
+    root.findAll((node) => node.props["data-testid"] === "answer-draft"),
+  ).toHaveLength(0);
+  expect(text(root)).toContain("V září bylo 340 objednávek.");
+  expect(text(root)).not.toContain("Za září");
+});
+
+test("a finished turn stays in an opened chat while its history is read again", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Ahoj")],
+  };
+  const { session, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1", { revision: 4 }) },
+  });
+  const root = (await render(session, "conv-1")).root;
+  // The next history read is still on its way.
+  (session.readConversation as jest.Mock).mockImplementation(
+    () => new Promise(() => {}),
+  );
+  await act(async () =>
+    publish({
+      pending: null,
+      activity: null,
+      store: storeWith([
+        {
+          ...conversation,
+          revision: 6,
+          messages: [
+            ...conversation.messages,
+            user("m-2", "Kolik máme objednávek?"),
+            {
+              id: "m-3",
+              role: "assistant",
+              text: "V září bylo 340 objednávek.",
+              replyToCommandId: "c-2",
+            },
+          ],
+        },
+      ]),
+    }),
+  );
+  expect(session.readConversation).toHaveBeenCalledTimes(2);
+  const shown = text(root);
+  expect(shown).toContain("Ahoj");
+  expect(shown).toContain("Kolik máme objednávek?");
+  expect(shown).toContain("V září bylo 340 objednávek.");
+  expect(shown.indexOf("Ahoj")).toBeLessThan(
+    shown.indexOf("Kolik máme objednávek?"),
+  );
+});
+
 test("chats group by day like the app menu", () => {
   const now = new Date("2026-10-16T12:00:00");
   const labels = { today: "Dnes", yesterday: "Včera", lastWeek: "Týden" };

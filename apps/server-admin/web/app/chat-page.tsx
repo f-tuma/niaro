@@ -98,6 +98,7 @@ import {
 } from "./chat-cards";
 import { AnswerRecoveryView, ProgressView, WorkCard } from "./chat-work";
 import { GeneratedUi } from "./generative-ui";
+import { splitDraft } from "../../../../packages/openui-library/program";
 import {
   UNSAVED_DRAFT,
   chatHistoryKey,
@@ -790,14 +791,27 @@ export function ChatConversation({
   };
 
   // Earlier sessions stay on the server; live messages carry the cards.
+  const live = historySelection && !historySelection.readOnly && online;
+  const liveMessages = conversation?.messages ?? [];
+  // Messages newer than the loaded page show at once, before the page is
+  // read again; otherwise the finished turn would vanish for that read.
+  const lastRead = historyMessages.at(-1)?.id;
+  const lastReadAt = liveMessages.findIndex((m) => m.id === lastRead);
+  const newer =
+    live && (lastReadAt >= 0 || !historyMessages.length)
+      ? liveMessages.slice(lastReadAt + 1)
+      : [];
   const messages = historySelection
-    ? historyMessages.map(
-        (message) =>
-          (!historySelection.readOnly && online
-            ? conversation?.messages.find((m) => m.id === message.id)
-            : undefined) ?? message,
-      )
-    : (conversation?.messages ?? []);
+    ? [
+        ...historyMessages.map(
+          (message) =>
+            (live
+              ? liveMessages.find((m) => m.id === message.id)
+              : undefined) ?? message,
+        ),
+        ...newer,
+      ]
+    : liveMessages;
   const work = store ? selectConversationWork(store, id) : [];
   const referencedWork = store
     ? selectPresentedWork(store, id, messages)
@@ -1353,6 +1367,9 @@ export function ChatConversation({
                     }
                     retryDisabled={!online}
                   />
+                  {state.activity?.draft && (
+                    <AnswerDraft draft={state.activity.draft} />
+                  )}
                 </AssistantMessage>
               )}
             </div>
@@ -1874,3 +1891,25 @@ function AssistantMessage({
     </article>
   );
 }
+
+/**
+ * The answer while it is written. It is not the answer yet: the stored
+ * message replaces it, and nothing in it can be acted on.
+ */
+function AnswerDraft({ draft }: { draft: string }) {
+  const { text, program } = splitDraft(draft);
+  return (
+    <div data-testid="answer-draft" className="flex min-w-0 flex-col gap-3">
+      {text && <Markdown text={text} />}
+      {program && (
+        <GeneratedUi
+          program={program}
+          streaming
+          disabled
+          onFollowUp={noFollowUp}
+        />
+      )}
+    </div>
+  );
+}
+const noFollowUp = () => {};

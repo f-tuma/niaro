@@ -1,8 +1,10 @@
 import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
+import { StringDecoder } from "node:string_decoder";
 import ipaddr from "ipaddr.js";
 import { ServiceUrl } from "../../packages/protocol/service-catalog";
+import { streamEvents } from "./chat-stream";
 import { providerFailure } from "./failures";
 import { IntegrationError } from "./integration-error";
 export { IntegrationError } from "./integration-error";
@@ -29,6 +31,12 @@ export type TransportRequest = {
    * caller checks the next address before it follows.
    */
   publicWeb?: boolean;
+  /**
+   * Called with the data of each server-sent event as it arrives, when the
+   * response is a `text/event-stream`. The response still resolves with the
+   * whole body, under the same size limit, once the stream ends.
+   */
+  onEvent?: (data: string) => void;
 };
 export type TransportResponse = {
   status: number;
@@ -39,6 +47,16 @@ export type TransportResponse = {
 export type IntegrationTransport = (
   request: TransportRequest,
 ) => Promise<TransportResponse>;
+const streamingTransports = new WeakSet<IntegrationTransport>();
+/** A transport that reports server-sent events through `onEvent`. Test and
+ * evaluation transports are not marked, so model calls through them do not
+ * ask the provider to stream. */
+export function streamingTransport(transport: IntegrationTransport) {
+  streamingTransports.add(transport);
+  return transport;
+}
+export const canStream = (transport: IntegrationTransport) =>
+  streamingTransports.has(transport);
 export function publicAddress(value: string) {
   if (!ipaddr.isValid(value)) return false;
   let address = ipaddr.parse(value);
@@ -64,7 +82,7 @@ export function validateEndpoint(
 export function createTransport(
   trustedOrigins: readonly string[] = [],
 ): IntegrationTransport {
-  return async (input) => {
+  return streamingTransport(async (input) => {
     const url = new URL(input.url);
     if (input.publicWeb) {
       if (
@@ -156,6 +174,11 @@ export function createTransport(
           (res) => {
             const chunks: Buffer[] = [];
             let size = 0;
+            const events =
+              input.onEvent &&
+              res.headers["content-type"]?.includes("text/event-stream")
+                ? { decoder: new StringDecoder("utf8"), pending: "" }
+                : undefined;
             const status = res.statusCode ?? 0;
             if (
               input.publicWeb &&
@@ -192,6 +215,19 @@ export function createTransport(
                 );
               } else {
                 chunks.push(chunk);
+                if (events) {
+                  const read = streamEvents(
+                    events.pending + events.decoder.write(chunk),
+                  );
+                  events.pending = read.rest;
+                  for (const data of read.events) {
+                    try {
+                      input.onEvent!(data);
+                    } catch {
+                      // An observer never fails the request.
+                    }
+                  }
+                }
                 if (
                   input.responseId !== undefined &&
                   res.headers["content-type"]?.includes("text/event-stream")
@@ -265,7 +301,7 @@ export function createTransport(
         }
       }
     });
-  };
+  });
 }
 export function jsonResponse(
   response: TransportResponse,

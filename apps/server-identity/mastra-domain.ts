@@ -694,6 +694,8 @@ export type DomainMessageContext = {
   /** Services, processes and skills the person tagged; the server re-checks each. */
   mentions?: MessageMention[];
   session?: "new";
+  /** The answer while it is written, for the person's progress view only. */
+  reportDraft?: (draft: string | null) => void;
   validateRequest?: () => void;
   requestHash?: string;
   outerCommandId?: string;

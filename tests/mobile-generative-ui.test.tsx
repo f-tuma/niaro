@@ -449,3 +449,121 @@ test("in chat, generated UI follows the answer text and a follow-up only fills t
   );
   expect(session.send).not.toHaveBeenCalled();
 });
+
+test("in chat, an answer shows as it is written, inert, until the stored reply replaces it", async () => {
+  const snapshot = emptySnapshot();
+  const pending = {
+    type: "message.send" as const,
+    commandId: "TEST-command",
+    idempotencyKey: "TEST-command",
+    conversationId: "conversation-1",
+    text: "TEST How did Q3 go?",
+    language: "en" as const,
+  };
+  const running = {
+    commandId: "TEST-command",
+    conversationId: "conversation-1",
+    status: "running" as const,
+    steps: [
+      { id: "understanding" as const, status: "running" as const },
+      { id: "preparing" as const, status: "pending" as const },
+    ],
+  };
+  let state: SessionState = {
+    store: fromSnapshot("https://fixture.test/v1/a", snapshot.scope, snapshot),
+    status: "online",
+    pending,
+    answerAttempts: [],
+    answerRecoveryBlocked: false,
+    processPending: null,
+    commandStates: { chat: "sending" },
+    error: null,
+    activity: {
+      ...running,
+      draft: [
+        "TEST Sales are growing.",
+        "```openui-lang",
+        'root = Stack([Metric("Revenue", 410), Button("Compare", @ToAssistant("TEST Compare"))',
+      ].join("\n"),
+    },
+    activityConnection: "live",
+  };
+  const listeners = new Set<() => void>();
+  const session = {
+    getSnapshot: () => state,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    start: jest.fn(async () => {}),
+    stop: jest.fn(),
+    refresh: jest.fn(async () => {}),
+    send: jest.fn(async () => {}),
+    retry: jest.fn(async () => {}),
+    interruptPending: jest.fn(async () => true),
+  };
+  function Harness() {
+    const [section, setSection] = useState<Section>("chat");
+    return (
+      <Workspace
+        session={session as unknown as ClientSession}
+        language="en"
+        section={section}
+        setSection={setSection}
+        settings={null}
+        authError={null}
+        spokenReplies={false}
+      />
+    );
+  }
+  render(<Harness />);
+  await act(async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  });
+  const draft = screen.getByTestId("answer-draft");
+  expect(draft).toBeTruthy();
+  expect(screen.getByText("TEST Sales are growing.")).toBeTruthy();
+  expect(screen.getByLabelText("Revenue, 410")).toBeTruthy();
+  // Nothing in a draft can be acted on.
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Compare" }));
+  });
+  expect(
+    screen.getByLabelText(translate("en")("composer")).props.value,
+  ).not.toBe("TEST Compare");
+  // The stored reply replaces the draft in the same update.
+  await act(async () => {
+    const store = state.store!;
+    state = {
+      ...state,
+      pending: null,
+      activity: null,
+      commandStates: { chat: "accepted" },
+      store: {
+        ...store,
+        conversations: {
+          ...store.conversations,
+          "conversation-1": {
+            ...store.conversations["conversation-1"]!,
+            revision: 2,
+            messages: [
+              { id: "m-1", role: "user", text: pending.text },
+              {
+                id: "m-2",
+                role: "assistant",
+                text: "TEST Revenue rose to 410.",
+                replyToCommandId: "TEST-command",
+              },
+            ],
+          },
+        },
+      },
+    };
+    listeners.forEach((listener) => listener());
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  });
+  expect(screen.queryByTestId("answer-draft")).toBeNull();
+  expect(screen.queryByText("TEST Sales are growing.")).toBeNull();
+  expect(screen.getByText("TEST Revenue rose to 410.")).toBeTruthy();
+  expect(session.send).not.toHaveBeenCalled();
+});

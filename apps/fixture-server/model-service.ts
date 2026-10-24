@@ -33,10 +33,11 @@ import {
   type ContactDirectory,
 } from "../server-tools/contacts";
 import type { ToolContext, ToolRegistry } from "../server-tools/registry";
-import type {
-  RequestActivity,
-  ActivityTool,
-  ActivityWorkflow,
+import {
+  ACTIVITY_DRAFT_MAX,
+  type RequestActivity,
+  type ActivityTool,
+  type ActivityWorkflow,
 } from "../../packages/protocol/activity";
 import { IdentityError } from "../server-identity/error";
 import { isInferenceBudgetFailureCode } from "../server-identity/inference-budget-failure";
@@ -182,13 +183,23 @@ export class ModelService {
         activity = { ...activity, workflow };
         publish();
       },
+      /** The answer while it is written; the stored message replaces it. */
+      draft: (draft: string | null) => {
+        if (closed) return;
+        const { draft: _previous, ...rest } = activity;
+        activity = draft
+          ? { ...rest, draft: draft.slice(0, ACTIVITY_DRAFT_MAX) }
+          : rest;
+        publish();
+      },
       finish: (status: "succeeded" | "failed") => {
         if (closed) return;
         // Only an executor's completion notification can mark a tool successful.
         if (activity.tools?.some((tool) => tool.status === "running"))
           status = "failed";
+        const { draft: _draft, ...current } = activity;
         activity = {
-          ...activity,
+          ...current,
           status,
           steps: activity.steps.map((step) =>
             step.status === "running" ? { ...step, status } : step,
@@ -1230,6 +1241,7 @@ export class ModelService {
                           }
                         : {}),
                       ...(command.session ? { session: command.session } : {}),
+                      reportDraft: activity.draft,
                       ...(validateCardRequest
                         ? { validateRequest: validateCardRequest }
                         : {}),

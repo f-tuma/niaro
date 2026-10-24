@@ -4,7 +4,10 @@ import type { CatalogContext, CatalogController } from "./catalog-controller";
 import type { CatalogRuntime, ServiceAnswer } from "./catalog-runtime";
 import type { AgentMemory } from "./agent-memory";
 import type { PluginSettings } from "../server-plugins/registry";
-import { createNiaroMastraModel } from "../server-integrations/mastra-model";
+import {
+  createNiaroMastraModel,
+  MODEL_CALL_LIMITS,
+} from "../server-integrations/mastra-model";
 import {
   createMastraDomain,
   DomainCommandSchema,
@@ -243,6 +246,7 @@ export function createNativeCatalogRuntime(
     signal: AbortSignal,
     text?: string,
     resume?: { toolCallId: string; data: unknown },
+    reportDraft?: (draft: string | null) => void,
   ) {
     const runtime = await nativeCatalogOwner(controller);
     const state = session.state;
@@ -301,7 +305,7 @@ export function createNativeCatalogRuntime(
         signal,
         session,
         definitions,
-        createModel: (selected) =>
+        createModel: (selected, _guard, observer) =>
           createNiaroMastraModel(
             selected,
             session.transport(selected, "model"),
@@ -311,7 +315,10 @@ export function createNativeCatalogRuntime(
                 selected.provider.revision,
                 start,
               ),
+            MODEL_CALL_LIMITS.chat,
+            observer,
           ),
+        ...(reportDraft ? { onDraft: reportDraft } : {}),
         onEvent: async (event) => {
           if (event.type === "model-start") {
             steps.set(
@@ -1132,10 +1139,16 @@ export function createNativeCatalogRuntime(
                 await continuation.session.finishFailure();
                 return (await recorded(continuation.session))!;
               }
-              return execute(continuation.session, signal, undefined, {
-                toolCallId: continuation.toolCallId,
-                data: { answer: text },
-              });
+              return execute(
+                continuation.session,
+                signal,
+                undefined,
+                {
+                  toolCallId: continuation.toolCallId,
+                  data: { answer: text },
+                },
+                messageContext?.reportDraft,
+              );
             }
             const session = await domain.begin(
               commandId,
@@ -1155,7 +1168,13 @@ export function createNativeCatalogRuntime(
               await session.finishFailure();
               return (await recorded(session))!;
             }
-            return execute(session, signal, text);
+            return execute(
+              session,
+              signal,
+              text,
+              undefined,
+              messageContext?.reportDraft,
+            );
           } catch (error) {
             if (signal.reason !== REQUEST_INTERRUPTION_REASON) throw error;
             // Preparation may dispatch continuity inference before a native

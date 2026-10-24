@@ -34,7 +34,10 @@ import type {
 } from "./model-types.ts";
 import type { ActionFailure } from "../../packages/protocol/action-failure";
 import type { ServiceAnswer } from "../server-identity/catalog-runtime";
-import type { NiaroModelSelection } from "../server-integrations/mastra-model";
+import type {
+  ModelTextObserver,
+  NiaroModelSelection,
+} from "../server-integrations/mastra-model";
 import type { DispatchGuard } from "../server-integrations/transport";
 import { privateInternalTool } from "../server-plugins/registry";
 import {
@@ -272,8 +275,16 @@ export type NativeAgentInput = {
   createModel(
     selected: NiaroModelSelection,
     beforeDispatch: DispatchGuard,
+    observer?: ModelTextObserver,
   ): LanguageModelV4;
   onEvent?(event: NativeAgentEvent): Promise<void> | void;
+  /**
+   * The answer while it is written: the raw text of the model step that can
+   * still become the reply, or null when there is none (the step called a
+   * tool, the checker sent the reply back, the answer is a system answer).
+   * Presentation only: it is never stored and decides nothing.
+   */
+  onDraft?(draft: string | null): void;
 };
 export type NativeAgentResult = {
   runId: string;
@@ -759,8 +770,39 @@ export function createNativeAgentRuntime(storageUrl: string) {
           ? error
           : new Error("niaro_native_execution_rejected");
       fatal ??= rejection;
+      showDraft(null);
       return fatal;
     };
+    // The reply while it is written. Only ever shown; an observer never fails
+    // the run.
+    let draft: string | null = null;
+    const showDraft = (next: string | null) => {
+      if (!input.onDraft || next === draft) return;
+      draft = next;
+      try {
+        input.onDraft(next);
+      } catch {
+        // Presentation only.
+      }
+    };
+    const textObserver = input.onDraft
+      ? {
+          onText: (text: string) => {
+            if (!fatal) showDraft(text);
+          },
+        }
+      : undefined;
+    /** What stays shown once an answer is final until it is published. */
+    const settledDraft = (answer: ServiceAnswer) =>
+      session.state.pending ||
+      answer.connection ||
+      answer.processOffer ||
+      answer.skillProposal ||
+      answer.processProposal
+        ? null
+        : answer.ui
+          ? `${answer.reply}\n\n\`\`\`openui-lang\n${answer.ui.program}\n\`\`\``
+          : answer.reply;
     // Mastra strips reserved input keys, spreads arrays into objects and rejects
     // null before tool.execute. Retain the supplied JSON before those adaptations.
     const suppliedInputs = new Map<string, { name: string; input: unknown }>();
@@ -869,18 +911,23 @@ export function createNativeAgentRuntime(storageUrl: string) {
         : safeCall;
     };
     const model = (selected: NiaroModelSelection): LanguageModelV4 => {
-      const native = input.createModel(selected, (start) =>
-        session.allowance(
-          selected.provider.id,
-          selected.provider.revision,
-          start,
-        ),
+      const native = input.createModel(
+        selected,
+        (start) =>
+          session.allowance(
+            selected.provider.id,
+            selected.provider.revision,
+            start,
+          ),
+        textObserver,
       );
       const invoke = async <T>(operation: () => PromiseLike<T>) => {
         if (fatal) throw fatal;
         try {
           input.signal.throwIfAborted();
           await observeCheckpoint();
+          // Every step starts without a draft; only its own text shows.
+          showDraft(null);
           await input.onEvent?.({
             type: "model-start",
             model: selected.model.model,
@@ -906,6 +953,8 @@ export function createNativeAgentRuntime(storageUrl: string) {
               ...options,
               abortSignal: signal(options.abortSignal),
             });
+            if (result.content.some((part) => part.type === "tool-call"))
+              showDraft(null);
             return {
               ...result,
               content: result.content.map((part) =>
@@ -927,6 +976,8 @@ export function createNativeAgentRuntime(storageUrl: string) {
                   LanguageModelV4StreamPart
                 >({
                   transform(part, controller) {
+                    // Text written before a tool call is not the answer.
+                    if (part.type === "tool-call") showDraft(null);
                     controller.enqueue(
                       part.type === "tool-call" ? captureToolCall(part) : part,
                     );
@@ -1289,11 +1340,16 @@ export function createNativeAgentRuntime(storageUrl: string) {
               }
             : message,
         );
-        if (session.state.pending || toolCalls?.length) return stamped;
+        if (session.state.pending || toolCalls?.length) {
+          showDraft(null);
+          return stamped;
+        }
         const answer = await session.finalize(text ?? "").catch((error) => {
           throw fail(error);
         });
         if ("repair" in answer) {
+          // The model writes the answer again; the rejected one is gone.
+          showDraft(null);
           messageList.clearSystemMessages("niaro-checker-repair");
           messageList.addSystem(
             `[Checker] ${answer.repair.slice(0, 6000)}`,
@@ -1303,6 +1359,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
         }
         messageList.clearSystemMessages("niaro-checker-repair");
         finalized = answer;
+        showDraft(settledDraft(answer));
         return stamped;
       },
     } satisfies Processor;

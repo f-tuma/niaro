@@ -147,6 +147,7 @@ import { ProcessOfferCard } from "../../packages/ui-catalog/ProcessOfferCard";
 import type { ProcessOfferResult } from "../../packages/protocol/process-offer";
 import { processProposalWebUrl } from "../../packages/protocol/process-proposal";
 import { MarkdownText } from "../../packages/ui-catalog/MarkdownText";
+import { splitDraft } from "../../packages/openui-library/program";
 
 import { CrmContactResults } from "../../packages/ui-catalog/CrmContactCard";
 import { RequestProgressCard } from "../../packages/ui-catalog/RequestProgressCard";
@@ -2310,6 +2311,12 @@ export function Workspace({
                           )
                         }
                       />
+                      {state.activity?.draft ? (
+                        <AnswerDraft
+                          draft={state.activity.draft}
+                          language={language}
+                        />
+                      ) : null}
                     </AssistantMessage>
                   ) : null}
                 </>
@@ -2852,3 +2859,36 @@ export default function App() {
     </MotionProvider>
   );
 }
+
+/**
+ * The answer while it is written. It is not the answer yet: the stored
+ * message replaces it, and nothing in it can be acted on.
+ */
+function AnswerDraft({
+  draft,
+  language,
+}: {
+  draft: string;
+  language: Language;
+}) {
+  const { text, program } = splitDraft(draft);
+  return (
+    <View testID="answer-draft">
+      {text ? (
+        <View style={styles.answer}>
+          <MarkdownText text={text} />
+        </View>
+      ) : null}
+      {program ? (
+        <GenerativeUiView
+          program={program}
+          streaming
+          disabled
+          language={language}
+          onFollowUp={noFollowUp}
+        />
+      ) : null}
+    </View>
+  );
+}
+const noFollowUp = () => {};

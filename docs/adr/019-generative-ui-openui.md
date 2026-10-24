@@ -25,4 +25,4 @@ A new kind of visual needs a component in the spec and both renderers; a new arr
 
 Stored model-composed cards show their text. `card.respond` still resolves a form of such a stored card for older app builds; it is not produced any more and can be removed with the internal card origin of process starts.
 
-Chat answers are published once complete (after the checker), so streaming renders progressively only when a streaming transport is added; the renderers already accept partial input. Live-model evaluation of when and how the model uses UI remains open.
+Chat answers are still published once complete (after the checker). While the model writes, the provider streams and the answer's raw text, program included, is offered as a transient draft in request progress (`agent-activity/4`); both clients draw it with the streaming renderers, inert, and replace it with the stored message, which may differ (a checker repair, a system answer). A draft program is not admitted, so it never acts and is never kept. Live-model use of UI is measured with the `ui.*` trust matrix; how the checker judges a contradicting UI is not.

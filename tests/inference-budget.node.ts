@@ -10,7 +10,11 @@ import {
   budgetedInferenceTransport,
   inferenceUsage,
 } from "../apps/server-identity/inference-budget";
-import type { IntegrationTransport } from "../apps/server-integrations/transport";
+import {
+  canStream,
+  streamingTransport,
+  type IntegrationTransport,
+} from "../apps/server-integrations/transport";
 import {
   budgetTarget as target,
   budgetSelection as selected,
@@ -391,6 +395,55 @@ test("transport cancels before dispatch, clamps output, and settles before downs
     await wrapped(request);
     assert.equal(sent, 1);
     assert.equal(store.summary("TEST-root").accountedTokens, 15);
+  } finally {
+    db.close();
+  }
+});
+
+test("a streamed completion settles the usage of its last event and keeps the transport streaming", async () => {
+  const { db, store } = fixture();
+  const serial = <T>(run: () => Promise<T>) => run();
+  const streamed: IntegrationTransport = streamingTransport(async (r) => {
+    await r.beforeDispatch!(() => {});
+    return {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+      text:
+        'data: {"choices":[{"index":0,"delta":{"content":"TEST"}}]}\n\n' +
+        'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"cost":0.00002}}\n\n' +
+        "data: [DONE]\n\n",
+    };
+  });
+  const wrap = (transport: IntegrationTransport, runId: string) =>
+    budgetedInferenceTransport(
+      transport,
+      store,
+      runId,
+      target,
+      selected,
+      "model",
+      serial,
+      async () => {},
+      () => 0,
+    );
+  try {
+    const wrapped = wrap(streamed, "TEST-streamed");
+    assert.equal(canStream(wrapped), true);
+    assert.equal(
+      canStream(
+        wrap(
+          async () => ({ status: 200, headers: {}, text: "" }),
+          "TEST-plain",
+        ),
+      ),
+      false,
+    );
+    await wrapped({
+      url: "https://provider.example.test/v1/chat/completions",
+      body: { max_tokens: 100, stream: true },
+      beforeDispatch: async (start) => start(),
+    });
+    assert.equal(store.summary("TEST-streamed").accountedTokens, 15);
   } finally {
     db.close();
   }

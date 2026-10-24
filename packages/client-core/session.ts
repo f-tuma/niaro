@@ -3704,6 +3704,8 @@ export class ClientSession {
     command: Extract<Command, { type: "message.send" | "card.respond" }>,
   ) {
     let active = true;
+    // While the answer is being written, its draft is read twice as often.
+    let drafting = false;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const current = () =>
@@ -3730,17 +3732,25 @@ export class ClientSession {
             result.activity.conversationId !== command.conversationId)
         )
           throw new Error("activity_mismatch");
+        drafting =
+          !!result.activity &&
+          "draft" in result.activity &&
+          !!result.activity.draft;
         this.publish({
           activity: result.activity,
           activityConnection: result.activity ? "live" : "waiting",
         });
       } catch {
+        drafting = false;
         if (current()) this.publish({ activityConnection: "unavailable" });
       } finally {
         if (current())
-          timer = setTimeout(() => {
-            void poll();
-          }, 500);
+          timer = setTimeout(
+            () => {
+              void poll();
+            },
+            drafting ? 250 : 500,
+          );
       }
     };
     timer = setTimeout(() => {
