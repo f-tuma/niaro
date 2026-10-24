@@ -81,7 +81,7 @@ and context expiry can remove a previously actionable question or result.
 ## Access and connection
 
 Sign in to Niaro with a personal account, select a workspace and open
-**External AI apps** in the sidebar (`/admin/mcp`). Choose **Create token**, pick
+**External AI apps** in the sidebar (`/admin/mcp`). Choose **Connect an app**, pick
 **Runs actions** (Connector) or **Hands over tasks** (Processor), copy the token once into your own MCP client and use the
 displayed endpoint:
 

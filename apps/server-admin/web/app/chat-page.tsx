@@ -644,7 +644,9 @@ export function ChatConversation({
       busy ||
       !online ||
       readOnly ||
-      !valid
+      !valid ||
+      // Typing goes on while the history loads; the composer sends after.
+      (historyLoading && !options.detached)
     )
       return;
     setReplyError(null);
@@ -1222,14 +1224,18 @@ export function ChatConversation({
   const hasConversation =
     messages.length > 0 || trailingWork.length > 0 || !!pendingMessage;
   // Typing goes on through a reconnect; only sending waits for it.
-  const inputDisabled =
-    !valid || historyLoading || (!!context && !validContext);
+  const inputDisabled = !valid || (!!context && !validContext);
   const composerDisabled = !online || inputDisabled;
   const length = draft.trim().length;
   const tooLong = length > MAX_MESSAGE_LENGTH;
   const count = new Intl.NumberFormat(language);
   const canSend =
-    !!draft.trim() && !tooLong && !busy && !composerDisabled && !readOnly;
+    !!draft.trim() &&
+    !tooLong &&
+    !busy &&
+    !composerDisabled &&
+    !historyLoading &&
+    !readOnly;
   const stoppable =
     progressVisible ||
     (state.pending?.type === "process.answer" &&

@@ -162,6 +162,7 @@ const en = {
     askAdmin: "Ask an administrator.",
     connectAction: "Connect account",
     routingAction: "Model choice",
+    processAction: "Test it again",
     serviceAction: "Open service",
     servicesAction: "Services",
   },
@@ -324,6 +325,7 @@ const cs: HubCopy = {
     askAdmin: "Ozvi se správci.",
     connectAction: "Připojit účet",
     routingAction: "Výběr modelů",
+    processAction: "Otestovat znovu",
     serviceAction: "Otevřít službu",
     servicesAction: "Služby",
   },
@@ -361,7 +363,11 @@ export type HubFix =
   | {
       kind: "admin";
       href: string;
-      label: "routingAction" | "serviceAction" | "servicesAction";
+      label:
+        | "routingAction"
+        | "serviceAction"
+        | "servicesAction"
+        | "processAction";
     };
 /**
  * A failed widget (or a refused widget change) in one line, with the step
@@ -376,7 +382,7 @@ export function hubWidgetProblem(
     sources: { id: string }[];
     isAdmin: boolean;
     /** A process widget, in the page's language. */
-    process?: { language: Language };
+    process?: { language: Language; processId?: string };
   },
 ): { text: string; fix?: HubFix } {
   if (context.process) {
@@ -386,7 +392,18 @@ export function hubWidgetProblem(
       if (code === "connection_required")
         return { text, fix: { kind: "connect" } };
       if (processSourceChanged(code))
-        return { text, fix: { kind: "processes" } };
+        return {
+          text,
+          // An admin retests it in the administration; others see the list.
+          fix:
+            context.isAdmin && context.process.processId
+              ? {
+                  kind: "admin",
+                  href: `/admin/processes/${context.process.processId}`,
+                  label: "processAction",
+                }
+              : { kind: "processes" },
+        };
       return { text };
     }
     const text = hubErrorText(copy, code);

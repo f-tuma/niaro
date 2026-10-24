@@ -247,6 +247,18 @@ export const CatalogSchema = z.strictObject({
   providers: z.array(ProviderSchema).max(50),
   models: z.array(CatalogModelSchema).max(500),
   routing: Routing,
+  /** For managers: the services people sign in to themselves, and how many
+   * have a working sign-in. */
+  signIn: z
+    .array(
+      z.strictObject({
+        serviceId: IdentityId,
+        requiredFor: z.enum(["writes", "all"]),
+        connected: z.number().int().min(0),
+      }),
+    )
+    .max(100)
+    .default([]),
 });
 export const CatalogTarget = z.strictObject({
   organizationId: IdentityId,

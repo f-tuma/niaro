@@ -188,6 +188,22 @@ describe("Processes", () => {
     expect(onOpen).not.toHaveBeenCalled();
   });
 
+  test("an admin's blocked process that needs a new test opens that test", async () => {
+    const { root } = await render(
+      <ProcessList
+        entries={[blocked("changed", "source_changed")]}
+        copy={menuCopy.cs}
+        language="cs"
+        disabled={false}
+        isAdmin
+        onOpen={jest.fn()}
+      />,
+    );
+    const link = root.find((node) => node.type === "a");
+    expect(link.props.href).toBe("/admin/processes/changed");
+    expect(root.findAll((node) => node.type === "button")).toEqual([]);
+  });
+
   test("a finished run reads Completed; a failed one says why in its row", () => {
     expect(tr(runStatusKey("succeeded"))).toBe("Dokončeno");
     expect(translate("en")(runStatusKey("succeeded"))).toBe("Completed");

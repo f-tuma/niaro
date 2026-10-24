@@ -21,7 +21,11 @@ import {
   HubDashboardView,
   hubGreeting,
 } from "../apps/server-admin/web/app/hub-page";
-import { hubCopy, hubErrorText } from "../apps/server-admin/web/app/hub-copy";
+import {
+  hubCopy,
+  hubErrorText,
+  hubWidgetProblem,
+} from "../apps/server-admin/web/app/hub-copy";
 import {
   UNSAVED_DRAFT,
   draftKey,
@@ -992,6 +996,22 @@ test("a process widget says why its process can't run as the Processes page does
   expect(links("connect")).toContain("/connections");
   expect(text(cell(root, "inactive"))).toContain(tr("process_not_active"));
   expect(text(root)).not.toContain("Ozvi se správci");
+});
+
+test("an admin's process widget that needs a new test leads to that test in the administration", () => {
+  const problem = (isAdmin: boolean) =>
+    hubWidgetProblem(copy, "source_changed", {
+      sources: [],
+      isAdmin,
+      process: { language: "cs", processId: "proc-1" },
+    });
+  expect(problem(true).fix).toEqual({
+    kind: "admin",
+    href: "/admin/processes/proc-1",
+    label: "processAction",
+  });
+  expect(copy.fix.processAction).toBe("Otestovat znovu");
+  expect(problem(false).fix).toEqual({ kind: "processes" });
 });
 
 test("a failed refresh dims the earlier data and says when it is from", async () => {

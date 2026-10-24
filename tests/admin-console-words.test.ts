@@ -139,6 +139,18 @@ describe("overview: needs attention", () => {
     ]);
   });
 
+  test("an enabled service nobody has signed in to yet needs attention", () => {
+    expect(
+      needsAttention({
+        ...quiet,
+        signIn: [
+          { serviceId: "s-1", name: "Microsoft 365", connected: 0 },
+          { serviceId: "s-2", name: "CRM", connected: 3 },
+        ],
+      }),
+    ).toEqual([{ key: "signIn", serviceId: "s-1", name: "Microsoft 365" }]);
+  });
+
   test("requests warn from 80 % of a set limit", () => {
     expect(requestsWarning(79, 100)).toBe(false);
     expect(requestsWarning(80, 100)).toBe(true);

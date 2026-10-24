@@ -427,7 +427,17 @@ test("configuration/URL changes invalidate credentials and expiry requires recon
       value,
       { beforeDispatch: guard },
     );
+    assert.equal(store.connectedPeople(target), 0);
     store.commitConnection(value, tokens, actor, target);
+    // Administrators see how many people have a working sign-in.
+    assert.equal(store.connectedPeople(target), 1);
+    assert.equal(
+      store.connectedPeople({
+        ...target,
+        serviceUrl: "https://other.example.test/mcp",
+      }),
+      0,
+    );
     const pinned = store.resolve(target, actor.userId, "write");
     assert.equal(pinned.kind, "personal");
     assert.throws(() =>
@@ -478,6 +488,7 @@ test("configuration/URL changes invalidate credentials and expiry requires recon
       store.status(target, actor.userId).connection.status,
       "disconnected",
     );
+    assert.equal(store.connectedPeople(target), 0);
     assert.throws(() => store.resolve(target, actor.userId, "read"));
     assert.throws(() => store.resolve(target, actor.userId, "read", true));
     if (pinned.kind === "personal")

@@ -1283,3 +1283,24 @@ test("a reconnect keeps the composer editable; only sending waits", async () => 
   expect(root.findByType("textarea").props.value).toBe("Píšu dál");
   expect(button(root, "Odeslat").props["aria-disabled"]).toBe(true);
 });
+
+test("while an opened chat's history loads, the composer takes text but does not send", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Ahoj")],
+  };
+  const { session, sent } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1", { revision: 4 }) },
+  });
+  (session.readConversation as jest.Mock).mockImplementation(
+    () => new Promise(() => {}),
+  );
+  const root = (await render(session, "conv-1")).root;
+  expect(root.findByType("textarea").props.disabled).toBeFalsy();
+  await type(root, "Kolik máme objednávek?");
+  expect(sent).toEqual([]);
+  expect(root.findByType("textarea").props.value).toBe(
+    "Kolik máme objednávek?",
+  );
+});

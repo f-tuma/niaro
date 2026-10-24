@@ -129,7 +129,7 @@ export function ProcessesPage() {
 }
 
 function Launcher({ session }: { session: ClientSession }) {
-  const { language, workspace, identity } = useApp();
+  const { language, workspace, identity, isAdmin } = useApp();
   const copy = useMenuCopy();
   const appCopy = useAppCopy();
   const tr = translate(language);
@@ -368,6 +368,7 @@ function Launcher({ session }: { session: ClientSession }) {
                 copy={copy}
                 language={language}
                 disabled={!fresh || model.loading}
+                isAdmin={isAdmin}
                 onOpen={(entry) => void launcher.open(entry)}
               />
             </Section>
@@ -460,12 +461,15 @@ export function ProcessList({
   copy,
   language,
   disabled,
+  isAdmin = false,
   onOpen,
 }: {
   entries: readonly ProcessExecutionEntry[];
   copy: MenuCopy;
   language: "en" | "cs";
   disabled: boolean;
+  /** An admin's blocked row that needs a new test leads to that test. */
+  isAdmin?: boolean;
   onOpen(entry: ProcessExecutionEntry): void;
 }) {
   const tr = translate(language);
@@ -476,6 +480,11 @@ export function ProcessList({
         const blocked = entry.availability === "blocked";
         // A missing account is the person's to fix: the row leads there.
         const connect = blocked && entry.reason === "connection_required";
+        const retest =
+          isAdmin &&
+          blocked &&
+          (entry.reason === "source_changed" ||
+            entry.reason === "qualification_required");
         const content = (
           <>
             <ItemMedia>
@@ -505,7 +514,7 @@ export function ProcessList({
               {blocked && (
                 <StatusBadge tone="warning">{copy.processBlocked}</StatusBadge>
               )}
-              {(!blocked || connect) && (
+              {(!blocked || connect || retest) && (
                 <ChevronRight
                   aria-hidden="true"
                   className="size-4 text-muted-foreground"
@@ -518,6 +527,8 @@ export function ProcessList({
           <Item key={entry.processId} asChild variant="row" size="row">
             {connect ? (
               <Link to="/connections">{content}</Link>
+            ) : retest ? (
+              <a href={`/admin/processes/${entry.processId}`}>{content}</a>
             ) : (
               <button
                 type="button"

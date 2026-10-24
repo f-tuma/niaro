@@ -344,6 +344,25 @@ export class ServiceOAuthStore {
         ])
       : undefined;
   }
+  /** How many people have a working sign-in to the service: one made for its
+   * current address and sign-in settings. Expiry is left out; it refreshes. */
+  connectedPeople(target: ServiceOAuthTarget): number {
+    const stored = this.read(target);
+    if (stored.serviceUrl !== target.serviceUrl) return 0;
+    return this.db
+      .prepare(
+        "SELECT data,secret FROM agent_service_oauth_connection WHERE workspace_id=? AND service_id=?",
+      )
+      .all(target.workspaceId, target.serviceId)
+      .filter((row) => {
+        const data = JSON.parse(String(row.data)) as Connection;
+        return (
+          !!row.secret &&
+          !!data.identity &&
+          data.configRevision === credentialRevision(stored)
+        );
+      }).length;
+  }
   private connection(target: ServiceOAuthTarget, userId: string) {
     const row = this.db
       .prepare(

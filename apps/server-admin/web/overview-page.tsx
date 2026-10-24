@@ -12,6 +12,7 @@ import {
   FlaskConical,
   Gauge,
   MessageSquare,
+  PlugZap,
   Scale,
   Volume2,
   Wrench,
@@ -485,11 +486,16 @@ function useNeedsAttention(
     staleTime: 15_000,
   });
   const [now] = useState(Date.now);
+  const catalog = state.query.data;
   return needsAttention({
     failedToday: audit.data ? countToday(audit.data.entries, now) : null,
     retests: processes.data
       ? processes.data.filter((p) => p.retestNeeded).length
       : null,
+    signIn: (catalog?.signIn ?? []).flatMap((entry) => {
+      const service = catalog?.services.find((s) => s.id === entry.serviceId);
+      return service?.enabled ? [{ ...entry, name: service.name }] : [];
+    }),
     requests,
     limit,
   });
@@ -513,13 +519,17 @@ function NeedsAttention({
               ? CircleX
               : row.key === "retest"
                 ? FlaskConical
-                : Gauge;
+                : row.key === "signIn"
+                  ? PlugZap
+                  : Gauge;
           const title =
             row.key === "failed"
               ? plural(language, row.count, copy.failedToday)
               : row.key === "retest"
                 ? plural(language, row.count, copy.retestCount)
-                : copy.requestsShare.replace("{p}", String(row.percent));
+                : row.key === "signIn"
+                  ? copy.nobodySignedIn.replace("{service}", row.name)
+                  : copy.requestsShare.replace("{p}", String(row.percent));
           const content = (
             <>
               <ItemMedia>
@@ -541,8 +551,20 @@ function NeedsAttention({
             </>
           );
           return (
-            <Item key={row.key} asChild variant="row" size="row">
-              {row.key === "failed" ? (
+            <Item
+              key={row.key === "signIn" ? `signIn:${row.serviceId}` : row.key}
+              asChild
+              variant="row"
+              size="row"
+            >
+              {row.key === "signIn" ? (
+                <Link
+                  to="/services/$serviceId"
+                  params={{ serviceId: row.serviceId }}
+                >
+                  {content}
+                </Link>
+              ) : row.key === "failed" ? (
                 <Link
                   to="/audit"
                   search={{

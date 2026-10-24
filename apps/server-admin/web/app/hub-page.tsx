@@ -1313,7 +1313,7 @@ function ProcessWidget({
             problem={hubWidgetProblem(copy, result?.error, {
               sources: [],
               isAdmin,
-              process: { language },
+              process: { language, processId: item.processId },
             })}
             copy={copy}
             onRetry={disabled ? undefined : onRefresh}

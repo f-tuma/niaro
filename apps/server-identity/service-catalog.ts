@@ -650,7 +650,26 @@ export class ServiceCatalogStore {
   }
   inventory(orgId: string, workspaceId: string, actor: CatalogActor): Catalog {
     const manage = actor.role !== "member";
+    const oauth = this.oauth;
+    const signIn =
+      manage && oauth
+        ? this.rows(workspaceId, "service").flatMap((row) => {
+            const requiredFor = oauth.requiredFor(workspaceId, row.id);
+            return requiredFor === "none"
+              ? []
+              : [
+                  {
+                    serviceId: row.id,
+                    requiredFor,
+                    connected: oauth.connectedPeople(
+                      this.oauthTarget(workspaceId, row.id),
+                    ),
+                  },
+                ];
+          })
+        : [];
     return CatalogSchema.parse({
+      signIn,
       organizationId: orgId,
       workspaceId,
       canManage: manage,
