@@ -17,9 +17,13 @@ import { trustScenarios } from "./scenarios";
 import {
   trustQualityScenarios,
   validateBalancedQualitySelection,
+  type TrustQualityScenario,
 } from "./quality-scenarios";
+import { trustUiScenarios } from "./ui-scenarios";
 
 export const LIVE_TRUST_PROVIDER_URL = "https://openrouter.ai/api/v1";
+/** A live turn makes several model calls; the scripted 15 s deadline is too short. */
+export const LIVE_TRUST_SCENARIO_TIMEOUT_MS = 180_000;
 
 export type LiveTrustOptions = {
   modelId: string;
@@ -30,7 +34,11 @@ export type LiveTrustOptions = {
   output: string;
 };
 
-const availableScenarios = [...trustScenarios, ...trustQualityScenarios];
+const availableScenarios = [
+  ...trustScenarios,
+  ...trustQualityScenarios,
+  ...trustUiScenarios,
+];
 const valuedFlags = new Set([
   "--model",
   "--scenario",
@@ -128,11 +136,10 @@ export function parseLiveTrustArguments(
   for (const id of selectedIds)
     if (!availableScenarios.some((scenario) => scenario.id === id))
       throw new Error(`Unknown scenario: ${id}`);
-  validateBalancedQualitySelection(
-    trustQualityScenarios.filter((scenario) =>
-      selectedIds.includes(scenario.id),
-    ),
-  );
+  for (const matrix of [trustQualityScenarios, trustUiScenarios])
+    validateBalancedQualitySelection(
+      matrix.filter((scenario) => selectedIds.includes(scenario.id)),
+    );
 
   const modelId = one("--model").trim();
   if (!modelId || /\s/.test(modelId))
@@ -188,8 +195,13 @@ export function parseLiveTrustArguments(
   };
 }
 
-function qualitySummary(report: TrustReport, selectedIds: string[]) {
-  const selectedQuality = trustQualityScenarios.filter((scenario) =>
+function qualitySummary(
+  report: TrustReport,
+  selectedIds: string[],
+  matrix: TrustQualityScenario[] = trustQualityScenarios,
+  prefix = "quality",
+) {
+  const selectedQuality = matrix.filter((scenario) =>
     selectedIds.includes(scenario.id),
   );
   const qualityRuns = report.scenarios.flatMap((scenario) => {
@@ -231,7 +243,7 @@ function qualitySummary(report: TrustReport, selectedIds: string[]) {
       ...new Set(
         qualityRuns.flatMap((run) =>
           run.scenario.checks.map((check) =>
-            check.id.startsWith("quality.")
+            check.id.startsWith(`${prefix}.`)
               ? check.id.split(".")[1]!
               : undefined,
           ),
@@ -242,7 +254,7 @@ function qualitySummary(report: TrustReport, selectedIds: string[]) {
       .map((dimension) => {
         const checks = qualityRuns.flatMap((run) =>
           run.scenario.checks.filter((check) =>
-            check.id.startsWith(`quality.${dimension}.`),
+            check.id.startsWith(`${prefix}.${dimension}.`),
           ),
         );
         return [
@@ -260,7 +272,7 @@ function qualitySummary(report: TrustReport, selectedIds: string[]) {
     .filter(
       ({ scenario }) =>
         scenario.status !== "passed" &&
-        !scenario.checks.some((check) => check.id.startsWith("quality.")),
+        !scenario.checks.some((check) => check.id.startsWith(`${prefix}.`)),
     )
     .map(({ scenario, quality }) => ({
       scenarioId: scenario.id,
@@ -278,20 +290,68 @@ function qualitySummary(report: TrustReport, selectedIds: string[]) {
   };
 }
 
+type UiObservation = {
+  expected: boolean;
+  present: boolean;
+  repairs: number;
+  components: string[];
+  programChars: number;
+};
+/** How often generated UI appears where it helps, where it does not, and how often it needed repair. */
+function uiSummary(report: TrustReport, selectedIds: string[]) {
+  const score = qualitySummary(report, selectedIds, trustUiScenarios, "ui");
+  if (!score) return undefined;
+  const runs = report.scenarios.flatMap((scenario) => {
+    const ui = scenario.observations.ui as UiObservation | undefined;
+    return ui && scenario.id.startsWith("ui.") ? [ui] : [];
+  });
+  const helpful = runs.filter((run) => run.expected);
+  const simple = runs.filter((run) => !run.expected);
+  const withUi = runs.filter((run) => run.present);
+  const components = new Map<string, number>();
+  for (const run of withUi)
+    for (const name of run.components)
+      components.set(name, (components.get(name) ?? 0) + 1);
+  return {
+    ...score,
+    usage: {
+      helpfulCases: helpful.length,
+      uiWhereHelpful: helpful.filter((run) => run.present).length,
+      simpleCases: simple.length,
+      needlessUi: simple.filter((run) => run.present).length,
+      programs: withUi.length,
+      programsRepaired: runs.filter((run) => run.repairs > 0).length,
+      averageProgramChars: withUi.length
+        ? Math.round(
+            withUi.reduce((total, run) => total + run.programChars, 0) /
+              withUi.length,
+          )
+        : 0,
+      components: Object.fromEntries(
+        [...components].sort((a, b) => b[1] - a[1]),
+      ),
+    },
+    interpretation:
+      "Deterministic checks of generated UI against synthetic records: whether UI appears where a visual helps and not for a simple answer, whether the server admitted it without repair, whether text and UI carry only facts from the data, text brevity and UI language. The consistency checker is scripted to accept, so its judgment is not measured here. One fixed sample per case and language; not a statistical estimate.",
+  };
+}
+
 export function buildLiveTrustReport(
   report: TrustReport,
   options: LiveTrustOptions,
   usage: ReturnType<ReturnType<typeof createLiveTrustBudget>["snapshot"]>,
 ) {
   const qualityScore = qualitySummary(report, options.selectedIds);
+  const uiScore = uiSummary(report, options.selectedIds);
   const verdict = report.summary.failed
     ? "failed"
     : report.summary.gaps || usage.uncertain
       ? "incomplete"
       : "passed";
-  const selectedQuality = trustQualityScenarios.filter((scenario) =>
-    options.selectedIds.includes(scenario.id),
-  );
+  const selectedQuality = [
+    ...trustQualityScenarios,
+    ...trustUiScenarios,
+  ].filter((scenario) => options.selectedIds.includes(scenario.id));
   return {
     ...report,
     verdict,
@@ -322,6 +382,7 @@ export function buildLiveTrustReport(
       caps: options.caps,
       usage,
       ...(qualityScore ? { qualityScore } : {}),
+      ...(uiScore ? { uiScore } : {}),
     },
   };
 }
@@ -421,7 +482,7 @@ export async function runLiveTrustEvaluation(
             `  ${check.status.toUpperCase()} ${check.id}: ${check.description}\n  ${JSON.stringify(scrubLiveTrustSecrets(check.evidence, [options.apiKey]))}`,
           );
       },
-      { liveModel: budget.model },
+      { liveModel: budget.model, timeoutMs: LIVE_TRUST_SCENARIO_TIMEOUT_MS },
     );
     const usage = budget.snapshot();
     const liveReport = buildLiveTrustReport(report, options, usage);

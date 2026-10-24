@@ -109,5 +109,6 @@ The server's own passive cards remain: service results and work summaries are bu
 - `tests/generative-ui.test.ts`: admission (valid, unknown, nesting, Query/Mutation, unsafe links and steps, caps), reply splitting, follow-up text, negotiation, local prompt without network or telemetry.
 - `tests/mastra-domain.node.ts`, `tests/native-tool-validation.node.ts`, `tests/mastra-http.node.ts`, `tests/action-failure-agent.node.ts` and the `ui-*` trust scenarios: repair, normalized storage, checker wiring, no UI for unknown writes, HTTP delivery.
 - `tests/web-generative-ui.test.tsx` and `tests/mobile-generative-ui.test.tsx`: rendering, streaming input, follow-ups, links, local state and the text fallback for old cards.
+- `tests/generative-ui-live-programs.test.tsx`: the programs a live model wrote in the `ui.*` trust matrix (`tests/fixtures/generative-ui-live-programs.json`) render on the web and the phone.
 
-Live-model quality of the UI (when to show it, layout choice, factual agreement) is measured separately, like the rest of the agent's answers.
+Live-model quality of the UI is measured with the paired EN/CS `ui.*` cases of the live trust runner ([agent trust](agent-trust.md#explicit-live-model-mode)): whether UI appears where a visual helps and not for a simple answer, whether the server admits it without repair, whether text and UI carry only facts from the synthetic data, text brevity and UI language. `tests/agent-trust-ui.node.ts` checks the scoring itself with a scripted provider.

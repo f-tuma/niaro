@@ -1,0 +1,179 @@
+{
+  "source": "pnpm eval:trust:live, openai/gpt-6-luna, ui.* matrix x3, 2026-10-24; synthetic data",
+  "programs": [
+    {
+      "id": "ui.sales-numbers.en.repeat-1",
+      "language": "en",
+      "program": "root = Stack([chart, monthly, branches])\npraha = Series(\"Praha\", [412000, 398000, 455000])\nbrno = Series(\"Brno\", [198000, 224000, 241000])\nostrava = Series(\"Ostrava\", [121000, 117000, 139000])\ntrend = BarChart([\"July\", \"August\", \"September\"], [praha, brno, ostrava])\nchart = Section(\"Monthly sales by branch\", [trend])\nmonthTable = Table([\"Month\", \"Praha (CZK)\", \"Brno (CZK)\", \"Ostrava (CZK)\", \"Total (CZK)\"], [[\"July\", 412000, 198000, 121000, 731000], [\"August\", 398000, 224000, 117000, 739000], [\"September\", 455000, 241000, 139000, 835000], [\"Q3 total\", 1265000, 663000, 377000, 2305000]])\nmonthly = Section(\"Revenue by month\", [monthTable])\nbranchTable = Table([\"Branch\", \"Q3 revenue (CZK)\"], [[\"Praha\", 1265000], [\"Brno\", 663000], [\"Ostrava\", 377000]])\nbranches = Section(\"Branch totals for Q3\", [branchTable])",
+      "shows": ["Praha", "Brno", "Ostrava"]
+    },
+    {
+      "id": "ui.sales-numbers.cs.repeat-1",
+      "language": "cs",
+      "program": "root = Stack([summary, chart, table])\nsummary = Row([Metric(\"Tržby za Q3\", \"2 305 000\", \"Kč\"), Metric(\"Změna červenec → září\", \"+14,2\", \"%\", \"731 000 → 835 000 Kč\", \"success\")])\npraha = Series(\"Praha\", [412000, 398000, 455000])\nbrno = Series(\"Brno\", [198000, 224000, 241000])\nostrava = Series(\"Ostrava\", [121000, 117000, 139000])\nchart = BarChart([\"Červenec\", \"Srpen\", \"Září\"], [praha, brno, ostrava])\ntable = Table([\"Pobočka\", \"Červenec\", \"Srpen\", \"Září\", \"Celkem za Q3\"], [[\"Praha\", \"412 000 Kč\", \"398 000 Kč\", \"455 000 Kč\", \"1 265 000 Kč\"], [\"Brno\", \"198 000 Kč\", \"224 000 Kč\", \"241 000 Kč\", \"663 000 Kč\"], [\"Ostrava\", \"121 000 Kč\", \"117 000 Kč\", \"139 000 Kč\", \"377 000 Kč\"], [\"Celkem\", \"731 000 Kč\", \"739 000 Kč\", \"835 000 Kč\", \"2 305 000 Kč\"]])",
+      "shows": ["Praha", "Brno", "Ostrava"]
+    },
+    {
+      "id": "ui.deal-list.en.repeat-1",
+      "language": "en",
+      "program": "root = Stack([deals])\ndeals = Table([\"Deal\", \"Amount (CZK)\", \"Stage\"], [[\"Umbrella expansion\", 410000, \"Proposal\"], [\"Acme renewal\", 240000, \"Proposal\"], [\"Globex rollout\", 185000, \"Negotiation\"], [\"Stark audit\", 126000, \"Discovery\"]])",
+      "shows": [
+        "Acme renewal",
+        "Globex rollout",
+        "Umbrella expansion",
+        "Stark audit"
+      ]
+    },
+    {
+      "id": "ui.deal-list.cs.repeat-1",
+      "language": "cs",
+      "program": "root = Stack([deals])\ndeals = Table([\"Obchod\", \"Hodnota\", \"Fáze\"], [[\"Acme renewal\", \"240 000 Kč\", \"Proposal\"], [\"Globex rollout\", \"185 000 Kč\", \"Negotiation\"], [\"Umbrella expansion\", \"410 000 Kč\", \"Proposal\"], [\"Stark audit\", \"126 000 Kč\", \"Discovery\"]])",
+      "shows": [
+        "Acme renewal",
+        "Globex rollout",
+        "Umbrella expansion",
+        "Stark audit"
+      ]
+    },
+    {
+      "id": "ui.schedule.en.repeat-1",
+      "language": "en",
+      "program": "root = Stack([schedule])\nevent1 = TimelineItem(\"09:30–10:30 UTC\", \"Acme Q4 review\")\nevent2 = TimelineItem(\"13:00–14:00 UTC\", \"Globex onboarding\")\nevent3 = TimelineItem(\"16:15–16:45 UTC\", \"Initech demo\")\nschedule = Timeline([event1, event2, event3])",
+      "shows": ["Acme Q4 review", "Globex onboarding", "Initech demo"]
+    },
+    {
+      "id": "ui.schedule.cs.repeat-1",
+      "language": "cs",
+      "program": "root = Stack([udalosti])\nudalost1 = TimelineItem(\"09:30–10:30\", \"Acme Q4 review\")\nudalost2 = TimelineItem(\"13:00–14:00\", \"Globex onboarding\")\nudalost3 = TimelineItem(\"16:15–16:45\", \"Initech demo\")\nudalosti = Timeline([udalost1, udalost2, udalost3])",
+      "shows": ["Acme Q4 review", "Globex onboarding", "Initech demo"]
+    },
+    {
+      "id": "ui.plan-comparison.en.repeat-1",
+      "language": "en",
+      "program": "root = Stack([plans])\nplans = Table([\"Plan\", \"Price / month\", \"Users\", \"Storage\"], [[\"Basic\", \"290 CZK\", 3, \"50 GB\"], [\"Pro\", \"790 CZK\", 15, \"500 GB\"], [\"Business\", \"1,890 CZK\", 100, \"2,000 GB\"]])",
+      "shows": ["Basic", "Pro", "Business"]
+    },
+    {
+      "id": "ui.plan-comparison.cs.repeat-1",
+      "language": "cs",
+      "program": "root = Stack([plans])\nplans = Table([\"Tarif\", \"Cena za měsíc\", \"Uživatelé\", \"Úložiště\"], [[\"Basic\", \"290 Kč\", \"3\", \"50 GB\"], [\"Pro\", \"790 Kč\", \"15\", \"500 GB\"], [\"Business\", \"1 890 Kč\", \"100\", \"2 000 GB\"]])",
+      "shows": ["Basic", "Pro", "Business"]
+    },
+    {
+      "id": "ui.sales-numbers.en.repeat-2",
+      "language": "en",
+      "program": "root = Stack([metrics, chart, table])\nquarterTotal = Metric(\"Q3 revenue\", \"2,305,000\", \"CZK\")\nseptemberChange = Metric(\"September vs. August\", \"+96,000\", \"CZK\", \"+13.0 %\", \"success\")\nmetrics = Row([quarterTotal, septemberChange])\npraha = Series(\"Praha\", [412000, 398000, 455000])\nbrno = Series(\"Brno\", [198000, 224000, 241000])\nostrava = Series(\"Ostrava\", [121000, 117000, 139000])\nchart = BarChart([\"July\", \"August\", \"September\"], [praha, brno, ostrava])\ntable = Table([\"Month\", \"Praha (CZK)\", \"Brno (CZK)\", \"Ostrava (CZK)\", \"Total (CZK)\"], [[\"July\", 412000, 198000, 121000, 731000], [\"August\", 398000, 224000, 117000, 739000], [\"September\", 455000, 241000, 139000, 835000]], true)",
+      "shows": ["Praha", "Brno", "Ostrava"]
+    },
+    {
+      "id": "ui.sales-numbers.cs.repeat-2",
+      "language": "cs",
+      "program": "root = Stack([summary, chart, table])\nsummary = Metric(\"Tržby za Q3 2026\", \"2 305 000\", \"Kč\")\npraha = Series(\"Praha\", [412000, 398000, 455000])\nbrno = Series(\"Brno\", [198000, 224000, 241000])\nostrava = Series(\"Ostrava\", [121000, 117000, 139000])\nchart = BarChart([\"Červenec\", \"Srpen\", \"Září\"], [praha, brno, ostrava], false, true)\ntable = Table([\"Měsíc\", \"Praha\", \"Brno\", \"Ostrava\", \"Celkem\"], [[\"Červenec\", \"412 000 Kč\", \"198 000 Kč\", \"121 000 Kč\", \"731 000 Kč\"], [\"Srpen\", \"398 000 Kč\", \"224 000 Kč\", \"117 000 Kč\", \"739 000 Kč\"], [\"Září\", \"455 000 Kč\", \"241 000 Kč\", \"139 000 Kč\", \"835 000 Kč\"]])",
+      "shows": ["Praha", "Brno", "Ostrava"]
+    },
+    {
+      "id": "ui.deal-list.en.repeat-2",
+      "language": "en",
+      "program": "root = Stack([deals])\ndeals = Table([\"Deal\", \"Amount\", \"Stage\"], [[\"Acme renewal\", \"240,000 CZK\", \"Proposal\"], [\"Globex rollout\", \"185,000 CZK\", \"Negotiation\"], [\"Umbrella expansion\", \"410,000 CZK\", \"Proposal\"], [\"Stark audit\", \"126,000 CZK\", \"Discovery\"]])",
+      "shows": [
+        "Acme renewal",
+        "Globex rollout",
+        "Umbrella expansion",
+        "Stark audit"
+      ]
+    },
+    {
+      "id": "ui.deal-list.cs.repeat-2",
+      "language": "cs",
+      "program": "root = Stack([summary, deals])\nsummary = Metric(\"Celková hodnota\", \"961 000\", \"Kč\")\ndeals = Table([\"Obchod\", \"Fáze\", \"Hodnota\"], [[\"Acme renewal\", \"Nabídka\", \"240 000 Kč\"], [\"Globex rollout\", \"Vyjednávání\", \"185 000 Kč\"], [\"Umbrella expansion\", \"Nabídka\", \"410 000 Kč\"], [\"Stark audit\", \"Zjišťování\", \"126 000 Kč\"]])",
+      "shows": [
+        "Acme renewal",
+        "Globex rollout",
+        "Umbrella expansion",
+        "Stark audit"
+      ]
+    },
+    {
+      "id": "ui.schedule.en.repeat-2",
+      "language": "en",
+      "program": "root = Stack([schedule])\nevent1 = TimelineItem(\"09:30–10:30 UTC\", \"Acme Q4 review\")\nevent2 = TimelineItem(\"13:00–14:00 UTC\", \"Globex onboarding\")\nevent3 = TimelineItem(\"16:15–16:45 UTC\", \"Initech demo\")\nschedule = Timeline([event1, event2, event3])",
+      "shows": ["Acme Q4 review", "Globex onboarding", "Initech demo"]
+    },
+    {
+      "id": "ui.schedule.cs.repeat-2",
+      "language": "cs",
+      "program": "root = Stack([schedule])\nevent1 = TimelineItem(\"09:30–10:30 UTC\", \"Acme Q4 review\")\nevent2 = TimelineItem(\"13:00–14:00 UTC\", \"Globex onboarding\")\nevent3 = TimelineItem(\"16:15–16:45 UTC\", \"Initech demo\")\nschedule = Timeline([event1, event2, event3])",
+      "shows": ["Acme Q4 review", "Globex onboarding", "Initech demo"]
+    },
+    {
+      "id": "ui.plan-comparison.en.repeat-2",
+      "language": "en",
+      "program": "root = Stack([plans])\nplans = Table([\"Plan\", \"Price/month\", \"Users\", \"Storage\"], [[\"Basic\", \"290 CZK\", \"3\", \"50 GB\"], [\"Pro\", \"790 CZK\", \"15\", \"500 GB\"], [\"Business\", \"1,890 CZK\", \"100\", \"2,000 GB\"]])",
+      "shows": ["Basic", "Pro", "Business"]
+    },
+    {
+      "id": "ui.plan-comparison.cs.repeat-2",
+      "language": "cs",
+      "program": "root = Stack([comparison])\ncomparison = Table([\"Tarif\", \"Cena za měsíc\", \"Uživatelé\", \"Úložiště\"], [[\"Basic\", \"290 Kč\", \"3\", \"50 GB\"], [\"Pro\", \"790 Kč\", \"15\", \"500 GB\"], [\"Business\", \"1 890 Kč\", \"100\", \"2 000 GB\"]])",
+      "shows": ["Basic", "Pro", "Business"]
+    },
+    {
+      "id": "ui.sales-numbers.en.repeat-3",
+      "language": "en",
+      "program": "root = Stack([trend, breakdown])\npraha = Series(\"Praha\", [412000, 398000, 455000])\nbrno = Series(\"Brno\", [198000, 224000, 241000])\nostrava = Series(\"Ostrava\", [121000, 117000, 139000])\ntrend = BarChart([\"Jul 2026\", \"Aug 2026\", \"Sep 2026\"], [praha, brno, ostrava], true, true)\nbreakdown = Table([\"Month\", \"Praha (CZK)\", \"Brno (CZK)\", \"Ostrava (CZK)\", \"Total (CZK)\"], [[\"Jul 2026\", 412000, 198000, 121000, 731000], [\"Aug 2026\", 398000, 224000, 117000, 739000], [\"Sep 2026\", 455000, 241000, 139000, 835000], [\"Q3 total\", 1265000, 663000, 377000, 2305000]], false)",
+      "shows": ["Praha", "Brno", "Ostrava"]
+    },
+    {
+      "id": "ui.sales-numbers.cs.repeat-3",
+      "language": "cs",
+      "program": "root = Stack([summary, monthly, branches, trend])\nsummary = Row([Metric(\"Tržby za Q3\", \"2 305 000\", \"Kč\"), Metric(\"Změna červenec → září\", \"+14,2 %\", \"\")])\nmonthly = Section(\"Tržby po měsících\", [Table([\"Měsíc\", \"Praha\", \"Brno\", \"Ostrava\", \"Celkem\"], [[\"Červenec\", 412000, 198000, 121000, 731000], [\"Srpen\", 398000, 224000, 117000, 739000], [\"Září\", 455000, 241000, 139000, 835000]])])\nbranches = Section(\"Součet za čtvrtletí podle pobočky\", [Table([\"Pobočka\", \"Tržby\"], [[\"Praha\", 1265000], [\"Brno\", 663000], [\"Ostrava\", 377000]])])\ntrend = Section(\"Měsíční vývoj podle pobočky (Kč)\", [LineChart([\"Červenec\", \"Srpen\", \"Září\"], [Series(\"Praha\", [412000, 398000, 455000]), Series(\"Brno\", [198000, 224000, 241000]), Series(\"Ostrava\", [121000, 117000, 139000])])])",
+      "shows": ["Praha", "Brno", "Ostrava"]
+    },
+    {
+      "id": "ui.deal-list.en.repeat-3",
+      "language": "en",
+      "program": "root = Stack([deals])\ndeals = Table([\"Deal\", \"Amount (CZK)\", \"Stage\"], [[\"Acme renewal\", 240000, \"Proposal\"], [\"Globex rollout\", 185000, \"Negotiation\"], [\"Umbrella expansion\", 410000, \"Proposal\"], [\"Stark audit\", 126000, \"Discovery\"]])",
+      "shows": [
+        "Acme renewal",
+        "Globex rollout",
+        "Umbrella expansion",
+        "Stark audit"
+      ]
+    },
+    {
+      "id": "ui.deal-list.cs.repeat-3",
+      "language": "cs",
+      "program": "root = Stack([deals])\ndeals = Table([\"Obchod\", \"Hodnota\", \"Fáze\"], [[\"Acme renewal\", \"240 000 Kč\", \"Nabídka\"], [\"Globex rollout\", \"185 000 Kč\", \"Vyjednávání\"], [\"Umbrella expansion\", \"410 000 Kč\", \"Nabídka\"], [\"Stark audit\", \"126 000 Kč\", \"Objevování\"]])",
+      "shows": [
+        "Acme renewal",
+        "Globex rollout",
+        "Umbrella expansion",
+        "Stark audit"
+      ]
+    },
+    {
+      "id": "ui.schedule.en.repeat-3",
+      "language": "en",
+      "program": "root = Stack([schedule])\nevent1 = TimelineItem(\"09:30–10:30\", \"Acme Q4 review\")\nevent2 = TimelineItem(\"13:00–14:00\", \"Globex onboarding\")\nevent3 = TimelineItem(\"16:15–16:45\", \"Initech demo\")\nschedule = Timeline([event1, event2, event3])",
+      "shows": ["Acme Q4 review", "Globex onboarding", "Initech demo"]
+    },
+    {
+      "id": "ui.schedule.cs.repeat-3",
+      "language": "cs",
+      "program": "root = Stack([schedule])\nevent1 = TimelineItem(\"09:30–10:30 UTC\", \"Acme Q4 review\")\nevent2 = TimelineItem(\"13:00–14:00 UTC\", \"Globex onboarding\")\nevent3 = TimelineItem(\"16:15–16:45 UTC\", \"Initech demo\")\nschedule = Timeline([event1, event2, event3])",
+      "shows": ["Acme Q4 review", "Globex onboarding", "Initech demo"]
+    },
+    {
+      "id": "ui.plan-comparison.en.repeat-3",
+      "language": "en",
+      "program": "root = Stack([plans])\nplans = Table([\"Plan\", \"Price per month\", \"Users\", \"Storage\"], [[\"Basic\", \"290 CZK\", 3, \"50 GB\"], [\"Pro\", \"790 CZK\", 15, \"500 GB\"], [\"Business\", \"1,890 CZK\", 100, \"2,000 GB\"]])",
+      "shows": ["Basic", "Pro", "Business"]
+    },
+    {
+      "id": "ui.plan-comparison.cs.repeat-3",
+      "language": "cs",
+      "program": "root = Stack([comparison])\ncomparison = Table([\"Tarif\", \"Cena za měsíc\", \"Uživatelé\", \"Úložiště\"], [[\"Basic\", \"290 Kč\", \"3\", \"50 GB\"], [\"Pro\", \"790 Kč\", \"15\", \"500 GB\"], [\"Business\", \"1 890 Kč\", \"100\", \"2 000 GB\"]])",
+      "shows": ["Basic", "Pro", "Business"]
+    }
+  ]
+}

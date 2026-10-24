@@ -1,6 +1,6 @@
 # ADR 019 — Generated UI in answers with OpenUI Lang
 
-Date: 2026-10-23. Status: implemented; live-model quality not yet measured.
+Date: 2026-10-23. Status: implemented; live-model use measured on 2026-10-24 for one model (see [agent trust](../agent-trust.md#explicit-live-model-mode)).
 
 ## Context
 
