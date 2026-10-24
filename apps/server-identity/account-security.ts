@@ -403,6 +403,16 @@ export class AccountSecurity {
       throw new IdentityError(404, "identity_not_found");
     this.auditPerson(userId, "session.revoked");
   }
+  /**
+   * Signs the person's other browsers out (and the chat credentials bound to
+   * them); this one stays signed in. Devices and MCP access stay listed.
+   */
+  revokeOtherBrowsers(userId: string, sessionId: string) {
+    const { changes } = this.db
+      .prepare('DELETE FROM session WHERE "userId"=? AND id<>?')
+      .run(userId, sessionId);
+    if (changes) this.auditPerson(userId, "session.revoked");
+  }
   /** Signs the person out of every browser, device and app, and ends their MCP access. */
   revokeEverything(userId: string) {
     this.db.prepare('DELETE FROM session WHERE "userId"=?').run(userId);

@@ -26,7 +26,9 @@ import {
   UNSAVED_DRAFT,
   draftKey,
   readDraft,
+  saveDraft,
 } from "../apps/server-admin/web/app/chat-store";
+import { translate } from "../packages/i18n";
 
 if (!globalThis.crypto?.randomUUID)
   Object.defineProperty(globalThis, "crypto", { value: webcrypto });
@@ -119,6 +121,32 @@ jest.mock(
   () => {
     const React = jest.requireActual<typeof import("react")>("react");
     return {
+      ConfirmAction: ({
+        open,
+        title,
+        description,
+        confirmLabel,
+        onConfirm,
+      }: {
+        open: boolean;
+        title: string;
+        description?: string;
+        confirmLabel: string;
+        onConfirm: () => void;
+      }) =>
+        open
+          ? React.createElement(
+              "div",
+              { "data-host": "ConfirmAction" },
+              title,
+              description,
+              React.createElement(
+                "button",
+                { "data-testid": "confirm-action", onClick: onConfirm },
+                confirmLabel,
+              ),
+            )
+          : null,
       DetailList: ({
         items,
       }: {
@@ -612,9 +640,19 @@ test("editing moves and resizes widgets by pointer and keys, and saves the whole
       node.props["data-host"] === "DropdownMenuItem" &&
       text(node).includes(copy.remove),
   );
+  const beforeRemove = commands.length;
   await act(async () => removes.at(-1)!.props.onSelect());
   await settle();
-  expect(commands.at(-1)).toMatchObject({ type: "remove" });
+  // Nothing is removed until the person confirms it.
+  expect(commands).toHaveLength(beforeRemove);
+  const confirm = root.find(
+    (node) => node.props["data-host"] === "ConfirmAction",
+  );
+  expect(text(confirm)).toContain(copy.removeConfirm);
+  expect(text(confirm)).toContain("Proces day");
+  await act(async () => button(confirm, copy.removeAction).props.onClick());
+  await settle();
+  expect(commands.at(-1)).toMatchObject({ type: "remove", itemId: "day" });
   expect(text(root)).toContain(copy.done);
 });
 
@@ -695,6 +733,60 @@ test("the view sheet offers only views the output allows and saves only what cha
   ).toHaveLength(0);
 });
 
+test("a refused save keeps the sheet open with the edits and says why inside", async () => {
+  const { session, fake, commands } = fakeSession(
+    dashboard([
+      tasksItem,
+      processItem("deals", { result: succeeded, fields: stageFields }),
+    ]),
+  );
+  const root = await render(<HubDashboardView session={session} />);
+  const configure = cell(root, "deals").find(
+    (node) =>
+      node.props["data-host"] === "DropdownMenuItem" &&
+      text(node).includes(copy.rename),
+  );
+  await act(async () => configure.props.onSelect());
+  await settle();
+  const openSheet = () =>
+    root.find(
+      (node) => node.props["data-host"] === "Sheet" && node.props.open === true,
+    );
+  const name = () =>
+    openSheet().findAll((node) => node.props["data-host"] === "Input")[0]!;
+  await act(async () =>
+    name().props.onChange({ target: { value: "Obchody" } }),
+  );
+  fake.sendHubCommand.mockImplementationOnce(async () => {
+    throw new Error("hub_full");
+  });
+  await act(async () =>
+    openSheet()
+      .find((node) => node.type === "form")
+      .props.onSubmit({ preventDefault() {} }),
+  );
+  await settle();
+  expect(commands).toEqual([]);
+  // Still open, with what the person typed and the reason in it, not above the grid.
+  expect(name().props.value).toBe("Obchody");
+  expect(text(openSheet())).toContain(copy.errors.hub_full);
+  expect(byTestId(root, "hub-error")).toHaveLength(1);
+  // Saving again works and closes it.
+  await act(async () =>
+    openSheet()
+      .find((node) => node.type === "form")
+      .props.onSubmit({ preventDefault() {} }),
+  );
+  await settle();
+  expect(commands.at(-1)).toMatchObject({ type: "rename", title: "Obchody" });
+  expect(
+    root.findAll(
+      (node) => node.props["data-host"] === "Sheet" && node.props.open === true,
+    ),
+  ).toHaveLength(0);
+  expect(byTestId(root, "hub-error")).toHaveLength(0);
+});
+
 test("a widget whose process now returns other data asks to set its view again", async () => {
   const { session } = fakeSession(
     dashboard([
@@ -723,6 +815,30 @@ test("a widget the assistant added waits until the person refreshes it", async (
   expect(hubErrorText(copy, "hub_process_writes")).toBe(
     copy.errors.hub_process_writes,
   );
+});
+
+test("asking from the dashboard keeps what the person already wrote in the new chat", async () => {
+  const { session } = fakeSession(dashboard([tasksItem]));
+  const key = draftKey("identity-1", UNSAVED_DRAFT);
+  saveDraft(key, { text: "Rozepsaná zpráva\n", revision: 3 });
+  const root = await render(<HubDashboardView session={session} />);
+  const ask = root.find(
+    (node) =>
+      node.props["data-host"] === "InputGroupInput" &&
+      node.props["aria-label"] === copy.ask,
+  );
+  await act(async () => ask.props.onChange({ target: { value: "A dnes?" } }));
+  await act(async () =>
+    root
+      .find((node) => node.type === "form")
+      .props.onSubmit({ preventDefault() {} }),
+  );
+  expect(mockNavigate).toHaveBeenCalledWith({ to: "/chat" });
+  expect(readDraft(key)).toEqual({
+    text: "Rozepsaná zpráva\n\nA dnes?",
+    revision: 3,
+  });
+  saveDraft(key, { text: "", revision: 0 });
 });
 
 test("asking from the dashboard opens a new chat with the question ready", async () => {
@@ -785,7 +901,7 @@ test("greeting and failure reasons are short and specific", () => {
 });
 
 test("a failed refresh says so once, with the short reason and the run's chat", async () => {
-  const { session } = fakeSession(
+  const { session, commands } = fakeSession(
     dashboard([
       tasksItem,
       processItem("count", {
@@ -818,4 +934,102 @@ test("a failed refresh says so once, with the short reason and the run's chat", 
     (node) => node.type === "a" && node.props.href === "/chat/chat-hub-count",
   );
   expect(text(chat)).toContain(copy.openChat);
+  // An unknown reason offers another try.
+  expect(() => button(cell(root, "count"), copy.retry)).toThrow();
+  await act(async () =>
+    button(cell(root, "other"), copy.retry).props.onClick(),
+  );
+  expect(commands.at(-1)).toEqual({
+    profile: HUB_PROFILE_V3,
+    type: "refresh",
+    itemIds: ["other"],
+  });
+});
+
+test("a process widget says why its process can't run as the Processes page does, with the fix", async () => {
+  const tr = translate("cs");
+  const failed = (error: string) => ({
+    result: {
+      status: "failed" as const,
+      startedAt: "2026-10-16T07:00:00.000Z",
+      producedAt: null,
+      error,
+    },
+  });
+  const { session } = fakeSession(
+    dashboard([
+      processItem("changed", failed("source_changed")),
+      processItem("sources", {
+        ...failed("process_sources_changed"),
+        layout: { x: 0, y: 4, w: 6, h: 4 },
+      }),
+      processItem("connect", {
+        ...failed("connection_required"),
+        layout: { x: 0, y: 8, w: 6, h: 4 },
+      }),
+      processItem("inactive", {
+        ...failed("process_not_active"),
+        layout: { x: 0, y: 12, w: 6, h: 4 },
+      }),
+    ]),
+  );
+  const root = await render(<HubDashboardView session={session} />);
+  const links = (id: string) =>
+    cell(root, id)
+      .findAll((node) => node.type === "a")
+      .map((node) => node.props.href);
+  for (const id of ["changed", "sources"]) {
+    expect(text(cell(root, id))).toContain(tr("process_source_changed"));
+    expect(text(cell(root, id))).toContain(copy.openProcesses);
+    expect(links(id)).toContain("/processes");
+  }
+  expect(tr("process_source_changed")).toBe(
+    "Jeho služby se změnily. Admin ho musí znovu otestovat.",
+  );
+  expect(text(cell(root, "connect"))).toContain(
+    tr("process_connection_required"),
+  );
+  expect(links("connect")).toContain("/connections");
+  expect(text(cell(root, "inactive"))).toContain(tr("process_not_active"));
+  expect(text(root)).not.toContain("Ozvi se správci");
+});
+
+test("a failed refresh dims the earlier data and says when it is from", async () => {
+  const { session } = fakeSession(
+    dashboard([
+      processItem("count", {
+        view: { type: "number", field: "count" },
+        fields: stageFields,
+        data: { type: "number", value: 7 },
+        result: {
+          status: "failed",
+          startedAt: "2026-10-16T07:00:00.000Z",
+          producedAt: "2026-10-16T06:00:05.000Z",
+          error: "process_step_limit",
+        },
+      }),
+      processItem("fresh", {
+        view: { type: "number", field: "count" },
+        fields: stageFields,
+        data: { type: "number", value: 3 },
+        result: succeeded,
+        layout: { x: 0, y: 4, w: 6, h: 4 },
+      }),
+    ]),
+  );
+  const root = await render(<HubDashboardView session={session} />);
+  const stale = byTestId(cell(root, "count"), "widget-stale");
+  expect(stale).toHaveLength(1);
+  expect(text(stale[0]!)).toContain(copy.staleData);
+  expect(
+    cell(root, "count").findAll(
+      (node) => node.type === "div" && node.props["data-stale"] === true,
+    ),
+  ).toHaveLength(1);
+  expect(byTestId(cell(root, "fresh"), "widget-stale")).toHaveLength(0);
+  expect(
+    cell(root, "fresh").findAll(
+      (node) => node.type === "div" && node.props["data-stale"] === true,
+    ),
+  ).toHaveLength(0);
 });

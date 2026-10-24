@@ -48,7 +48,7 @@ const en = {
   hint: "At least 12 characters.",
   change: "Change password",
   changed:
-    "Password changed. Your other browsers were signed out and your MCP access tokens stopped working.",
+    "Password changed. Your other browsers were signed out and your external AI apps were disconnected.",
   incorrect: "The current password isn't right.",
   mismatch: "The new passwords don't match.",
   tooShort: "The new password needs at least 12 characters.",
@@ -77,14 +77,17 @@ const en = {
   everywhere: "Sign out everywhere",
   everywhereTitle: "Sign out everywhere?",
   everywhereHint:
-    "Every browser and mobile app is signed out, this one too, and your MCP access tokens stop working. You'll sign in again here.",
-  mcp: "MCP access",
+    "Every browser and mobile app is signed out, this one too, and your external AI apps are disconnected. You'll sign in again here.",
+  others: "Sign out other browsers",
+  othersTitle: "Sign out other browsers?",
+  othersHint: "This one stays signed in.",
+  mcp: "External AI apps",
   more: "More",
   expires: "expires",
   neverUsed: "never used",
   lastUsed: "last used",
   revoke: "Revoke",
-  revokeTitle: "Revoke this MCP access?",
+  revokeTitle: "Disconnect this app?",
   revokeHint: "The client stops working until you connect it again.",
   cancel: "Cancel",
   loadFailed: "Couldn't load your sign-ins.",
@@ -101,7 +104,7 @@ const cs: Copy = {
   hint: "Aspoň 12 znaků.",
   change: "Změnit heslo",
   changed:
-    "Heslo je změněné. Ostatní prohlížeče jsme odhlásili a přístupy MCP přestaly platit.",
+    "Heslo je změněné. Ostatní prohlížeče jsme odhlásili a externí AI aplikace jsme odpojili.",
   incorrect: "Současné heslo nesedí.",
   mismatch: "Nová hesla se neshodují.",
   tooShort: "Nové heslo musí mít aspoň 12 znaků.",
@@ -130,14 +133,17 @@ const cs: Copy = {
   everywhere: "Odhlásit všude",
   everywhereTitle: "Odhlásit všude?",
   everywhereHint:
-    "Odhlásíme všechny prohlížeče i mobilní aplikace, i tenhle, a přístupy MCP přestanou platit. Tady se pak přihlásíš znovu.",
-  mcp: "Přístup MCP",
+    "Odhlásíme všechny prohlížeče i mobilní aplikace, i tenhle, a externí AI aplikace se odpojí. Tady se pak přihlásíš znovu.",
+  others: "Odhlásit ostatní prohlížeče",
+  othersTitle: "Odhlásit ostatní prohlížeče?",
+  othersHint: "Tenhle zůstane přihlášený.",
+  mcp: "Externí AI aplikace",
   more: "Další",
   expires: "vyprší",
   neverUsed: "zatím nepoužito",
   lastUsed: "naposledy použito",
   revoke: "Zrušit",
-  revokeTitle: "Zrušit tenhle přístup MCP?",
+  revokeTitle: "Odpojit tuhle aplikaci?",
   revokeHint: "Klient přestane fungovat, dokud ho znovu nepřipojíš.",
   cancel: "Zrušit",
   loadFailed: "Přihlášení se nepodařilo načíst.",
@@ -163,11 +169,13 @@ export function AccountPage() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [confirmEverywhere, setConfirmEverywhere] = useState(false);
-  async function revoke(id: string) {
+  async function change(
+    body: { action: "revoke"; id: string } | { action: "revokeOthers" },
+  ) {
     setBusy(true);
     setError("");
     try {
-      await api("identity/account/access", { action: "revoke", id });
+      await api("identity/account/access", body);
     } catch {
       setError(copy.failed);
     } finally {
@@ -175,12 +183,17 @@ export function AccountPage() {
       await client.invalidateQueries({ queryKey: key });
     }
   }
+  const revoke = (id: string) => change({ action: "revoke", id });
   async function everywhere() {
     setBusy(true);
+    setError("");
     try {
       await api("identity/account/access", { action: "revokeAll" });
     } catch {
-      /* Signing out below re-checks the session either way. */
+      // Nothing confirmed the sign-out: say so and stay signed in here.
+      setError(copy.failed);
+      setBusy(false);
+      return;
     }
     signOut();
   }
@@ -256,6 +269,7 @@ export function AccountPage() {
             copy={copy}
             busy={busy}
             revoke={revoke}
+            revokeOthers={() => change({ action: "revokeOthers" })}
             signOut={signOut}
           />
           {query.data.mcp.length > 0 && (
@@ -501,18 +515,53 @@ function Browsers({
   copy,
   busy,
   revoke,
+  revokeOthers,
   signOut,
 }: {
   access: Access;
   copy: Copy;
   busy: boolean;
   revoke: (id: string) => Promise<void>;
+  revokeOthers: () => Promise<void>;
   signOut: () => void;
 }) {
+  const [confirmOthers, setConfirmOthers] = useState(false);
+  // This browser first, then the others newest first.
+  const browsers = [...access.browsers].sort(
+    (a, b) => Number(b.current) - Number(a.current),
+  );
   return (
-    <Section title={copy.browsers} count={access.browsers.length}>
+    <Section
+      title={copy.browsers}
+      count={access.browsers.length}
+      actions={
+        browsers.some((browser) => !browser.current) && (
+          <>
+            <MoreActions label={copy.more} size="sm">
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={busy}
+                onSelect={() => setConfirmOthers(true)}
+              >
+                <LogOut aria-hidden="true" />
+                {copy.others}
+              </DropdownMenuItem>
+            </MoreActions>
+            <ConfirmAction
+              open={confirmOthers}
+              onOpenChange={setConfirmOthers}
+              title={copy.othersTitle}
+              description={copy.othersHint}
+              confirmLabel={copy.others}
+              cancelLabel={copy.cancel}
+              onConfirm={revokeOthers}
+            />
+          </>
+        )
+      }
+    >
       <Card variant="list">
-        {access.browsers.map((browser) => (
+        {browsers.map((browser) => (
           <Item key={browser.id} variant="row" size="row">
             <ItemMedia variant="icon">
               <Monitor aria-hidden="true" />

@@ -386,9 +386,32 @@ export class ServiceProcessStore {
         actor.userId,
       ) as ProcessRow[];
     return {
-      processes: rows.slice(0, 100).map((row) => this.summary(row)),
+      processes: rows.slice(0, 100).map((row) => ({
+        ...this.summary(row),
+        ...(this.retestNeeded(actor, row)
+          ? { retestNeeded: true as const }
+          : {}),
+      })),
       nextAfter: rows.length > 100 ? rows[99]!.id : null,
     };
+  }
+  /**
+   * The active version is blocked for this manager in a way only a new test
+   * fixes (the app shows it as "Blocked: its service setup changed"). Rows
+   * they can't run, like someone else's personal process, say nothing.
+   */
+  private retestNeeded(actor: ProcessActor, row: ProcessRow) {
+    if (row.active_version === null) return false;
+    try {
+      const entry = this.executionEntry(actor, row);
+      return (
+        entry?.availability === "blocked" &&
+        (entry.reason === "source_changed" ||
+          entry.reason === "qualification_required")
+      );
+    } catch {
+      return false;
+    }
   }
   /** Passive service-owned management inventory, including inactive drafts. */
   listServiceOwned(raw: ProcessActor, serviceId: string, after?: string) {

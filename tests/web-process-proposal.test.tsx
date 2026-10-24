@@ -316,7 +316,7 @@ test("a save the test could not prepare stops with a link; a refused press shows
     buttons(renderer.root, "Uložit a zapnout")[0]!.props.onClick();
   });
   await flush();
-  expect(text(renderer.root)).toContain("AI rozpočet není nastavený.");
+  expect(text(renderer.root)).toContain("Limity využití nejsou nastavené.");
 });
 
 test("questions and a missing budget have no save button", async () => {
@@ -358,7 +358,7 @@ test("questions and a missing budget have no save button", async () => {
     budget.session,
   );
   expect(text(renderer.root)).toContain(
-    "AI rozpočet ještě není nastavený — požádej správce.",
+    "Limity využití nejsou nastavené. Požádej správce.",
   );
   expect(renderer.root.findAll((node) => node.type === "button")).toEqual([]);
   expect(budget.read).not.toHaveBeenCalled();

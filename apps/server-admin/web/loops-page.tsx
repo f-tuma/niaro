@@ -537,7 +537,7 @@ function LoopRun({
               ))}
             </dl>
             {(current.traceMode === "reconstructed" || trace.truncated) && (
-              <p>{trace.truncated ? copy.truncated : copy.reconstructedHint}</p>
+              <p>{trace.truncated ? copy.truncated : copy.reconstructed}</p>
             )}
           </div>
         </Card>
@@ -880,12 +880,12 @@ function FailureDetails({
   action: { failure?: ActionFailure; status: string; effect: "read" | "write" };
 }) {
   const copy = useLoopsCopy();
-  const guidance: Record<ActionFailure["retry"], string> = {
+  // "none" adds nothing an administrator can act on, so it says nothing.
+  const guidance: Partial<Record<ActionFailure["retry"], string>> = {
     correct_input: copy.retryCorrectInput,
     reconnect: copy.retryReconnect,
     later: copy.retryLater,
     verify_first: copy.retryVerifyFirst,
-    none: copy.retryNone,
   };
   const failure = action.failure;
   const retry =
@@ -923,7 +923,9 @@ function FailureDetails({
           }))}
         />
       ) : null}
-      <p className="text-sm text-muted-foreground">{guidance[retry]}</p>
+      {guidance[retry] && (
+        <p className="text-sm text-muted-foreground">{guidance[retry]}</p>
+      )}
     </DetailBlock>
   );
 }

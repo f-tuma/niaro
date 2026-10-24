@@ -327,6 +327,8 @@ export type SessionState = {
   answerAttempts: readonly ProcessAnswerAttempt[];
   answerRecoveryBlocked: boolean;
   error: string | null;
+  /** The chat of the command sent last: its error belongs there. */
+  commandConversationId?: string;
   connectionDiagnostic?: ConnectionDiagnostic;
   processNotice?: ProcessCommandNoticeView | null;
   activity: RequestActivity | null;
@@ -3329,6 +3331,7 @@ export class ClientSession {
     this.commandRejection = null;
     this.publish({
       pending: command,
+      commandConversationId: command.conversationId,
       commandStates: { ...this.state.commandStates, [target]: "sending" },
       error: null,
       processNotice: null,

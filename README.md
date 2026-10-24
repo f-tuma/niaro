@@ -23,7 +23,7 @@ The app never talks to a model provider or a company tool directly. It renders t
 - Services connected through OpenAPI or MCP; actions are discovered as disabled drafts and enabled deliberately.
 - An organization-owned AI provider and model catalog, with per-workspace model routing for chat, decision, speech-to-text and voice replies.
 - Durable command receipts: retrying a request never repeats a completed action.
-- Audit log of configuration changes and tool runs (metadata only, no payloads or secrets).
+- Activity log of configuration changes and tool runs (metadata only, no payloads or secrets).
 - Encrypted credentials, strict origin checks and an explicit outbound allowlist.
 
 **Server console** (`apps/server-admin`, React, TanStack Router/Query, shadcn/ui, Tailwind CSS v4)
@@ -31,7 +31,7 @@ The app never talks to a model provider or a company tool directly. It renders t
 - Overview of the assistant runtime, setup progress and recent activity.
 - Services, plugins, model routing, usage limits, AI providers, people, workspaces, sign-in methods and audit log.
 - A process designer with an AI conversation beside a visual canvas.
-- MCP access for external agents: Connector (call the workspace's services directly) or Processor (submit tasks Niaro runs on the server).
+- External AI apps over MCP: Runs actions (call the workspace's services directly) or Hands over tasks (submit tasks Niaro runs on the server).
 - Light and dark themes, English and Czech, usable down to phone width.
 
 ## Architecture

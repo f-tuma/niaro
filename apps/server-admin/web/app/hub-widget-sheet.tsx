@@ -73,12 +73,15 @@ export function HubWidgetSheet({
   item,
   focus,
   disabled,
+  error,
   onClose,
   onSave,
 }: {
   item: HubCard | null;
   focus: "name" | "view";
   disabled: boolean;
+  /** A refused save; the sheet stays open with the edits. */
+  error?: ReactNode;
   onClose: () => void;
   onSave: (changes: HubWidgetChange) => void | Promise<void>;
 }) {
@@ -94,6 +97,7 @@ export function HubWidgetSheet({
         <SheetHeader>
           <SheetTitle>{copy.sheetTitle}</SheetTitle>
         </SheetHeader>
+        {item && error && <div className="px-4">{error}</div>}
         {item && (
           <WidgetForm
             key={item.id}

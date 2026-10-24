@@ -68,11 +68,11 @@ import {
 } from "@admin/components/ui/sheet";
 
 const en = {
-  title: "Hosted servers",
-  add: "Add server",
+  title: "Installed connectors",
+  add: "Add connector",
   custom: "Custom",
   needsDocker: "Needs Docker",
-  empty: "No hosted servers",
+  empty: "No connectors installed",
   installing: "Installing",
   starting: "Starting",
   running: "Running",
@@ -84,7 +84,7 @@ const en = {
   secrets: "Secrets",
   export: "Export",
   remove: "Remove",
-  removeTitle: "Remove the hosted server?",
+  removeTitle: "Remove this connector?",
   removeHint:
     "The process stops and its files are deleted. Services using its address stop working.",
   cancel: "Cancel",
@@ -97,16 +97,18 @@ const en = {
   more: "More actions",
   restarts: "restarts",
   image: "Image",
-  notManager: "Only organization owners and admins manage hosted servers.",
+  notManager:
+    "Only organization owners and admins manage installed connectors.",
   error: "The request failed. Reload and try again.",
-  exists: "This server is already running for the organization.",
+  exists: "This connector is already running for the organization.",
   noSandbox:
-    "Docker is not available to this server, so hosted servers cannot run.",
-  processRuntime: "Without Docker: npm servers run as processes of this server",
-  limit: "The server limit has been reached.",
+    "This server can't install connectors (Docker missing). Ask whoever runs the server.",
+  processRuntime: "Without Docker: connectors run directly on this server",
+  limit: "The connector limit has been reached.",
   errors: {
     install_failed: "Installation failed. Check the log.",
-    sandbox_unavailable: "Docker is not available.",
+    sandbox_unavailable:
+      "This server can't install connectors (Docker missing). Ask whoever runs the server.",
     docker_required: "Images need Docker, which this server doesn't have.",
     bin_required: "Choose the package's executable.",
     crashed: "It crashed repeatedly and was stopped.",
@@ -115,11 +117,11 @@ const en = {
   } as Record<string, string>,
 };
 const cs: typeof en = {
-  title: "Hostované servery",
-  add: "Přidat server",
+  title: "Instalované konektory",
+  add: "Přidat konektor",
   custom: "Vlastní",
   needsDocker: "Potřebuje Docker",
-  empty: "Žádné hostované servery",
+  empty: "Zatím žádné konektory",
   installing: "Instaluje se",
   starting: "Spouští se",
   running: "Běží",
@@ -131,7 +133,7 @@ const cs: typeof en = {
   secrets: "Tajné hodnoty",
   export: "Exportovat",
   remove: "Odstranit",
-  removeTitle: "Odstranit hostovaný server?",
+  removeTitle: "Odstranit konektor?",
   removeHint:
     "Proces se zastaví a jeho soubory se smažou. Služby s jeho adresou přestanou fungovat.",
   cancel: "Zrušit",
@@ -144,16 +146,17 @@ const cs: typeof en = {
   more: "Další akce",
   restarts: "restartů",
   image: "Image",
-  notManager: "Hostované servery spravují vlastníci a správci organizace.",
+  notManager: "Instalované konektory spravují vlastníci a správci organizace.",
   error: "Požadavek selhal. Načti stránku znovu a zkus to znovu.",
-  exists: "Tento server pro organizaci už běží.",
+  exists: "Tento konektor pro organizaci už běží.",
   noSandbox:
-    "Tento server nemá přístup k Dockeru, hostované servery proto nemohou běžet.",
-  processRuntime: "Bez Dockeru: npm servery běží jako procesy serveru",
-  limit: "Byl dosažen limit počtu serverů.",
+    "Server nemůže instalovat konektory (chybí Docker). Požádej toho, kdo server spravuje.",
+  processRuntime: "Bez Dockeru: konektory běží přímo na serveru",
+  limit: "Byl dosažen limit počtu konektorů.",
   errors: {
     install_failed: "Instalace selhala. Podívej se do logu.",
-    sandbox_unavailable: "Docker není dostupný.",
+    sandbox_unavailable:
+      "Server nemůže instalovat konektory (chybí Docker). Požádej toho, kdo server spravuje.",
     docker_required: "Image potřebuje Docker, který tento server nemá.",
     bin_required: "Vyber spustitelný soubor balíčku.",
     crashed: "Opakovaně padal, a proto byl zastaven.",

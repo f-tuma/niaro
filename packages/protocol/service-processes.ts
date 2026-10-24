@@ -286,6 +286,9 @@ export const ProcessSummarySchema = z.strictObject({
   latestVersion: z.number().int().nonnegative(),
   activeVersion: positive.nullable(),
   updatedAt: z.iso.datetime(),
+  /** Management lists only: the active version is blocked until it is tested
+   * again, because a service or model it uses changed or it never qualified. */
+  retestNeeded: z.literal(true).optional(),
 });
 export const ProcessRecordSchema = ProcessSummarySchema.extend({
   draft: ProcessDefinitionSchema,

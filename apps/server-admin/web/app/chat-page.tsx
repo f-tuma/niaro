@@ -49,7 +49,9 @@ import { messageCommand } from "../../../../packages/client-core/commands";
 import {
   canRetryPending,
   chatErrorKey,
+  chatOwnsError,
   isUserMessageRecorded,
+  runningChat,
   selectPendingChatMessage,
 } from "../../../../packages/client-core/chat-view";
 import {
@@ -84,6 +86,7 @@ import type {
   NativeQuestion,
   WorkItem,
 } from "../../../../packages/protocol";
+import { ACTIVITY_DRAFT_MAX } from "../../../../packages/protocol/activity";
 import { cardDocumentText } from "../../../../packages/protocol/card-document";
 import type { MessageMention } from "../../../../packages/protocol/mentions";
 import { useApp, useAppSession } from "./context";
@@ -141,6 +144,8 @@ type ChatMessage = Conversation["messages"][number];
 const validConversationId = (id: string) => /^[a-zA-Z0-9._:-]{1,160}$/.test(id);
 /** Chat history requests in the web app never fall back to the legacy chat. */
 const CHAT_PREFIX = "chat-";
+/** The composer counts characters only near the limit. */
+const COUNTER_FROM = 3500;
 
 /**
  * The chat at "/chat" (always a new, unsaved chat) and "/chat/$id". A new chat
@@ -197,6 +202,13 @@ const sendErrorKey = (error: unknown, fallback: TranslationKey) =>
   error.message in en
     ? (error.message as TranslationKey)
     : fallback;
+/** Shared codes whose app wording (settings, server address) misleads in a chat. */
+const chatWording: Partial<Record<TranslationKey, TranslationKey>> = {
+  requestRejected: "chatRequestFailed",
+  connection_failed: "chatServerUnreachable",
+  storage_error: "chatSendFailed",
+  network_error: "chatConnectionLost",
+};
 
 export function ChatConversation({
   session,
@@ -650,7 +662,7 @@ export function ChatConversation({
             });
         })
         .catch(() => {
-          if (alive.current) setReplyError("requestRejected");
+          if (alive.current) setReplyError("chatSendFailed");
         });
       return;
     }
@@ -784,7 +796,7 @@ export function ChatConversation({
             error,
             isProcessReply(replyContext)
               ? "process_question_rejected"
-              : "requestRejected",
+              : "chatSendFailed",
           ),
         );
       });
@@ -1031,10 +1043,10 @@ export function ChatConversation({
               workspaceId: workspace.workspaceId,
             }
           }
-          onDecide={(approved) => {
-            if (!conversation) return;
+          onDecide={async (approved) => {
+            if (!conversation) return false;
             const commandId = newId();
-            void session.send({
+            await session.send({
               type: "service.resolve",
               commandId,
               idempotencyKey: commandId,
@@ -1043,6 +1055,11 @@ export function ChatConversation({
               approved,
               language,
             });
+            // The card saves "Don't ask next time" only once this is accepted.
+            return (
+              session.getSnapshot().commandStates[result.operationId] ===
+              "accepted"
+            );
           }}
         />,
       );
@@ -1140,17 +1157,47 @@ export function ChatConversation({
       (!!w.native?.process || !isTerminalNativeWork(w)),
   );
   const pendingMessage = selectPendingChatMessage(state, id);
-  const progressVisible =
+  const progressCommand =
     state.pending?.type === "message.send" &&
-    state.pending.conversationId === id;
-  const retryable = canRetryPending(state);
+    state.pending.conversationId === id
+      ? state.pending
+      : null;
+  const progressVisible = !!progressCommand;
+  // Errors and retries are the chat's whose command caused them.
+  const retryable = canRetryPending(state, id);
+  const modelFailed = !!progressCommand && !!state.error?.startsWith("model_");
+  const requestInterrupted =
+    !!progressCommand &&
+    (!online ||
+      state.commandStates[commandTarget(progressCommand)] === "network_error");
+  // The progress block says why its request stopped; the alert would repeat it.
+  const progressHint =
+    modelFailed && state.error! in en
+      ? tr(state.error as TranslationKey)
+      : requestInterrupted && retryable
+        ? tr("chatConnectionLost")
+        : undefined;
   const processAnnouncement = selectProcessCommandNotice(state, noticeOwner);
-  const errorKey = chatErrorKey(
+  const sharedErrorKey = chatErrorKey(
     replyError,
     processAnnouncement,
-    state.error,
+    chatOwnsError(state, id) &&
+      !(progressHint && (modelFailed || state.error === "network_error"))
+      ? state.error
+      : null,
     isProcessReply(context),
   );
+  const errorKey =
+    sharedErrorKey && (chatWording[sharedErrorKey] ?? sharedErrorKey);
+  // A command of another chat holds the session until it is done.
+  const otherChat =
+    state.pending &&
+    state.pending.conversationId !== id &&
+    !state.pending.type.startsWith("conversation.")
+      ? state.pending
+      : null;
+  const otherChatRunning =
+    !!otherChat && runningChat(state) === otherChat.conversationId;
   let validContext = false;
   if (isProcessReply(context)) {
     try {
@@ -1174,12 +1221,19 @@ export function ChatConversation({
     !recordedProcessAnswer(state.store, context, answerCaption.command);
   const hasConversation =
     messages.length > 0 || trailingWork.length > 0 || !!pendingMessage;
-  const composerDisabled =
-    !online || !valid || historyLoading || (!!context && !validContext);
-  const tooLong = draft.trim().length > MAX_MESSAGE_LENGTH;
+  // Typing goes on through a reconnect; only sending waits for it.
+  const inputDisabled =
+    !valid || historyLoading || (!!context && !validContext);
+  const composerDisabled = !online || inputDisabled;
+  const length = draft.trim().length;
+  const tooLong = length > MAX_MESSAGE_LENGTH;
+  const count = new Intl.NumberFormat(language);
   const canSend =
     !!draft.trim() && !tooLong && !busy && !composerDisabled && !readOnly;
-  const stoppable = progressVisible || state.pending?.type === "process.answer";
+  const stoppable =
+    progressVisible ||
+    (state.pending?.type === "process.answer" &&
+      state.pending.conversationId === id);
   const title = conversationTitle(historySelection?.title ?? "");
   const showHome =
     !(historyLoading && !historySelection) &&
@@ -1353,13 +1407,9 @@ export function ChatConversation({
                     onToggle={holdScrollOnce}
                     activity={state.activity}
                     connection={state.activityConnection}
-                    failed={!!state.error?.startsWith("model_")}
-                    interrupted={
-                      !online ||
-                      Object.values(state.commandStates).includes(
-                        "network_error",
-                      )
-                    }
+                    failed={modelFailed}
+                    interrupted={requestInterrupted}
+                    hint={progressHint}
                     onRetry={
                       retryable
                         ? () => void session.retry(noticeOwner)
@@ -1368,7 +1418,14 @@ export function ChatConversation({
                     retryDisabled={!online}
                   />
                   {state.activity?.draft && (
-                    <AnswerDraft draft={state.activity.draft} />
+                    <AnswerDraft
+                      draft={state.activity.draft}
+                      stopped={
+                        requestInterrupted ||
+                        modelFailed ||
+                        state.activity.status === "failed"
+                      }
+                    />
                   )}
                 </AssistantMessage>
               )}
@@ -1525,6 +1582,39 @@ export function ChatConversation({
               </AlertDescription>
             </Alert>
           )}
+          {otherChat && !readOnly && (
+            <div
+              role="status"
+              data-testid="other-chat-busy"
+              className="flex flex-wrap items-center justify-center gap-x-1 text-xs text-muted-foreground"
+            >
+              <span>
+                {otherChatRunning
+                  ? copy.otherChatRunning
+                  : copy.otherChatWaiting}
+              </span>
+              <Button variant="link" size="xs" asChild>
+                <Link
+                  to="/chat/$conversationId"
+                  params={{ conversationId: otherChat.conversationId }}
+                >
+                  {copy.open}
+                </Link>
+              </Button>
+              {otherChatRunning &&
+                (otherChat.type === "message.send" ||
+                  otherChat.type === "process.answer") && (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    disabled={!online}
+                    onClick={() => void session.interruptPending()}
+                  >
+                    {copy.stop}
+                  </Button>
+                )}
+            </div>
+          )}
           {errorKey && (
             <Alert variant="destructive" data-testid="chat-error">
               <AlertDescription>{tr(errorKey)}</AlertDescription>
@@ -1680,7 +1770,7 @@ export function ChatConversation({
                   placeholder={copy.placeholder}
                   rows={1}
                   value={draft}
-                  disabled={composerDisabled}
+                  disabled={inputDisabled}
                   className="max-h-48"
                   aria-invalid={tooLong || undefined}
                   {...(directory.length
@@ -1711,7 +1801,11 @@ export function ChatConversation({
                   }}
                   onBlur={() => setPicker(null)}
                   onKeyDown={(event) => {
-                    if (pickerOpen) {
+                    // While an IME composes, Enter and Tab pick its words.
+                    const composing =
+                      event.nativeEvent.isComposing ||
+                      event.nativeEvent.keyCode === 229;
+                    if (pickerOpen && !composing) {
                       const move =
                         event.key === "ArrowDown"
                           ? 1
@@ -1749,7 +1843,7 @@ export function ChatConversation({
                     if (
                       event.key === "Enter" &&
                       !event.shiftKey &&
-                      !event.nativeEvent.isComposing
+                      !composing
                     ) {
                       event.preventDefault();
                       submitMessage();
@@ -1763,7 +1857,7 @@ export function ChatConversation({
                       type="button"
                       size="icon-sm"
                       aria-label={copy.mentionPicker}
-                      disabled={composerDisabled || readOnly}
+                      disabled={inputDisabled || readOnly}
                       // The textarea keeps the focus and the caret.
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={startMention}
@@ -1802,10 +1896,21 @@ export function ChatConversation({
                   )}
                 </InputGroupAddon>
               </InputGroup>
-              {tooLong && (
-                <p role="alert" className="pt-1 text-xs text-destructive">
-                  {copy.tooLong}
-                </p>
+              {length > COUNTER_FROM && (
+                <div className="flex gap-2 pt-1 text-xs">
+                  {tooLong && (
+                    <p role="alert" className="text-destructive">
+                      {copy.tooLong}
+                    </p>
+                  )}
+                  <span
+                    data-testid="composer-count"
+                    data-over={tooLong}
+                    className="ml-auto text-muted-foreground tabular-nums data-[over=true]:text-destructive"
+                  >
+                    {count.format(length)} / {count.format(MAX_MESSAGE_LENGTH)}
+                  </span>
+                </div>
               )}
             </form>
           )}
@@ -1896,18 +2001,34 @@ function AssistantMessage({
  * The answer while it is written. It is not the answer yet: the stored
  * message replaces it, and nothing in it can be acted on.
  */
-function AnswerDraft({ draft }: { draft: string }) {
+function AnswerDraft({ draft, stopped }: { draft: string; stopped: boolean }) {
+  const { copy } = useChatCopy();
   const { text, program } = splitDraft(draft);
   return (
     <div data-testid="answer-draft" className="flex min-w-0 flex-col gap-3">
-      {text && <Markdown text={text} />}
-      {program && (
-        <GeneratedUi
-          program={program}
-          streaming
-          disabled
-          onFollowUp={noFollowUp}
-        />
+      <div
+        data-stopped={stopped}
+        className="flex min-w-0 flex-col gap-3 data-[stopped=true]:opacity-50"
+      >
+        {text && <Markdown text={text} />}
+        {program && (
+          <GeneratedUi
+            program={program}
+            streaming
+            disabled
+            onFollowUp={noFollowUp}
+          />
+        )}
+      </div>
+      {stopped ? (
+        <p className="text-xs text-muted-foreground">{copy.interrupted}</p>
+      ) : (
+        // The stream carries only the draft's start; the answer goes on.
+        draft.length >= ACTIVITY_DRAFT_MAX && (
+          <p data-thinking="" className="text-xs text-muted-foreground">
+            {copy.stillWriting}
+          </p>
+        )
       )}
     </div>
   );

@@ -18,7 +18,7 @@ import { PluginsPage } from "./plugins-page";
 import { PluginFilesPage } from "./plugin-files-page";
 import { AuthProvidersPage } from "./auth-providers";
 import { Accounts, Workspaces } from "./identity-pages";
-import { AuditPage } from "./audit-page";
+import { AuditPage, auditSearchSchema } from "./audit-page";
 import { McpPage, mcpSearchSchema } from "./mcp-page";
 import { UsageLimitsPage } from "./usage-limits-page";
 import { McpConsent } from "./mcp-consent";
@@ -120,7 +120,12 @@ export const router = createRouter({
     page("/hosted", HostedPage),
     page("/auth-providers", AuthProvidersPage),
     page("/auth-providers/$authProviderId", AuthProvidersPage),
-    page("/audit", () => <AuditPage />),
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/audit",
+      validateSearch: (search) => auditSearchSchema.parse(search),
+      component: () => <AuditPage />,
+    }),
     createRoute({
       getParentRoute: () => rootRoute,
       path: "/mcp",

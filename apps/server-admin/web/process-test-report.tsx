@@ -265,8 +265,8 @@ export function NativeTestReportView({
                     tone={q.status === "qualified" ? "success" : "warning"}
                   >
                     {q.status === "qualified"
-                      ? copy.qualified
-                      : copy.unqualified}
+                      ? copy.qualifiedBadge
+                      : copy.unqualifiedBadge}
                   </StatusBadge>
                 ) : report ? (
                   <span className="text-sm text-muted-foreground">
@@ -274,7 +274,9 @@ export function NativeTestReportView({
                   </span>
                 ) : (
                   <>
-                    <StatusBadge tone="warning">{copy.unqualified}</StatusBadge>
+                    <StatusBadge tone="warning">
+                      {copy.unqualifiedBadge}
+                    </StatusBadge>
                     <span className="text-sm text-muted-foreground">
                       {copy.incomplete}
                     </span>
@@ -312,7 +314,7 @@ export function NativeTestReportView({
                             ? c.applicable === false
                               ? copy.notApplicable
                               : copy.passed
-                            : copy.unqualified}
+                            : copy.unqualifiedBadge}
                         </StatusBadge>
                       </div>
                       {c.reasons.map((r) => (

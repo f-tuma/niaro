@@ -1,6 +1,10 @@
 import { en, type TranslationKey } from "../i18n";
 import { isReservedProcessRecoveryCopy } from "./process-command-notice";
-import type { SessionCommand, SessionState } from "./session";
+import {
+  commandTarget,
+  type SessionCommand,
+  type SessionState,
+} from "./session";
 import type { Store } from "./store";
 
 /**
@@ -59,14 +63,49 @@ export function selectPendingChatMessage(
     : { kind: "message", text: pending.text };
 }
 
-/** Delivery of the pending command is uncertain; resending it is safe. */
+/**
+ * Delivery of the pending command is uncertain; resending it is safe. Given a
+ * chat, only that chat's own pending command counts.
+ */
 export function canRetryPending(
   state: Pick<SessionState, "commandStates" | "error" | "pending">,
+  conversationId?: string,
 ) {
+  const pending = state.pending;
+  if (conversationId !== undefined)
+    return (
+      pending?.conversationId === conversationId &&
+      (state.commandStates[commandTarget(pending)] === "network_error" ||
+        state.error === "storage_error")
+    );
   return (
     Object.values(state.commandStates).includes("network_error") ||
     (state.error === "storage_error" && !!state.pending)
   );
+}
+
+/** The chat whose command is on its way to the server, if any. */
+export function runningChat(
+  state: Pick<SessionState, "pending" | "commandStates">,
+): string | null {
+  const pending = state.pending;
+  return pending &&
+    !pending.type.startsWith("conversation.") &&
+    state.commandStates[commandTarget(pending)] === "sending"
+    ? pending.conversationId
+    : null;
+}
+
+/**
+ * The session's error belongs to this chat: its command is pending here or
+ * was sent from here last. An error no command caused belongs to every chat.
+ */
+export function chatOwnsError(
+  state: Pick<SessionState, "pending" | "commandConversationId">,
+  conversationId: string,
+) {
+  const owner = state.pending?.conversationId ?? state.commandConversationId;
+  return owner === undefined || owner === conversationId;
 }
 
 /** A server or local code as display copy; unknown codes fall back to a generic line. */

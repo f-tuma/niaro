@@ -275,11 +275,15 @@ test("cross-user scope and foreign workspace/org are never accepted from request
 test("source revisions never advertise ready", () =>
   isolated((h, path) => {
     const id = h.activate(h.basic());
+    // Management lists flag only a process a new test would unblock.
+    assert.equal(h.registry.list(admin).processes[0]!.retestNeeded, undefined);
     change(h, h.ids!.readId, { name: "TEST changed metadata" });
     const entry = h.registry.executionInventory(member, scope).processes[0]!;
     assert.equal(entry.availability, "blocked");
     if (entry.availability === "blocked")
       assert.equal(entry.reason, "source_changed");
+    assert.equal(h.registry.list(admin).processes[0]!.retestNeeded, true);
+    assert.equal(h.registry.listOwned(admin).processes[0]!.retestNeeded, true);
     const before = request(h, id);
     assert.throws(
       () => prepareProcessInput(h.registry, h.starts, admin, scope, before),

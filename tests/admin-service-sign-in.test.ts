@@ -11,23 +11,23 @@ import {
 describe("add service result: automatic OAuth", () => {
   test("a detected service with a registered client", () => {
     expect(signInLine("configured", setupCs)).toBe(
-      "Přihlášení: OAuth služby, pro každou akci · klient zaregistrován",
+      "Každý se přihlásí do služby · klient zaregistrován",
     );
     expect(signInLine("configured", setupEn)).toBe(
-      "Sign-in: the service's OAuth, for every action · client registered",
+      "Each person signs in to the service · client registered",
     );
   });
   test("metadata without a client still names the sign-in", () => {
     expect(signInLine("metadata", setupCs)).toBe(
-      "Přihlášení: OAuth služby, pro každou akci · klient chybí",
+      "Každý se přihlásí do služby · klient chybí",
     );
     expect(signInLine("metadata", setupEn)).toBe(
-      "Sign-in: the service's OAuth, for every action · client missing",
+      "Each person signs in to the service · client missing",
     );
   });
   test("no OAuth says so and nothing else", () => {
-    expect(signInLine("none", setupCs)).toBe("OAuth nenalezeno");
-    expect(signInLine("none", setupEn)).toBe("OAuth not found");
+    expect(signInLine("none", setupCs)).toBe("Přihlášení nenalezeno");
+    expect(signInLine("none", setupEn)).toBe("No sign-in found");
   });
   test("the outcome is a detail page search parameter; anything else is refused", () => {
     expect(

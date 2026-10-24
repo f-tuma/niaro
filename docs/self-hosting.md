@@ -216,7 +216,7 @@ there and show "Images need Docker". The profile chooses the runtime, and
 weaker than a container's (same user, unrestricted network, no hard memory
 limit); see [process runtime](hosted-servers.md#runtimes). Any other MCP server,
 in any language, can run as its own compose service next to Niaro and be
-connected by URL after adding its origin under **Settings → Origins**: see
+connected by URL after adding its origin under **Settings → Allowed addresses**: see
 [own compose service](hosted-servers.md#own-compose-service).
 
 ## Backups and upgrades
@@ -233,7 +233,7 @@ Answers carry their visual part as an OpenUI Lang program ([generative UI](gener
 
 ## October 1 client and loop diagnostics update
 
-Rebuild the console with `pnpm admin:build` and restart the reference server with the existing profile. Owners/admins can then open **Loops** beside Audit log (`/admin/loops`); [the administration guide](server-admin.md#agent-loops) describes recorded and reconstructed steps.
+Rebuild the console with `pnpm admin:build` and restart the reference server with the existing profile. Owners/admins can then open **Runs** beside Activity log (`/admin/loops`); [the administration guide](server-admin.md#agent-loops) describes recorded and reconstructed steps.
 
 Loops opens on **Run overview** with a vertical timeline in recorded order. It combines only exact call/result pairs and shows up to two meaningful safe input/result previews per step. Select **All steps** to inspect the full trace. Open a step to inspect its input, known result, approval/execution phase and duration; its details expand in place. Technical tool identifiers remain behind a disclosure. **Run details** keeps the full recorded request and the immutable process/run/version/artifact/conversation/command identities. A request-only trace shows an explicit empty step state rather than a blank timeline. On wide screens the run list and timeline scroll independently within the available height; on narrow screens the list and timeline are stacked, with the timeline bounded for scrolling.
 

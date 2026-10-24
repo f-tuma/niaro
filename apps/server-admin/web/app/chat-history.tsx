@@ -51,6 +51,7 @@ import {
   AlertDialogTitle,
 } from "@admin/components/ui/alert-dialog";
 import { Button } from "@admin/components/ui/button";
+import { Spinner } from "@admin/components/ui/spinner";
 import {
   conversationNamesKey,
   loadConversationPins,
@@ -59,6 +60,7 @@ import {
 import { useHubCopy } from "./hub-copy";
 import { conversationTitle } from "../../../../packages/client-core/conversation-title";
 import type { KeyValueStorage } from "../../../../packages/client-core/preferences";
+import { runningChat } from "../../../../packages/client-core/chat-view";
 import {
   archivableConversation,
   type ConversationHistoryPage,
@@ -208,6 +210,12 @@ export function ChatHistoryNav() {
     if (directoryVersion)
       void client.invalidateQueries({ queryKey: chatHistoryKey(identityKey) });
   }, [directoryVersion, client, identityKey]);
+  // The chat whose answer is on its way.
+  const runningId = useSyncExternalStore(
+    subscribe,
+    () => (session ? runningChat(session.getSnapshot()) : null),
+    () => null,
+  );
   const navigate = useNavigate();
   const [failure, setFailure] = useState<string | null>(null);
   /** The list shows the change at once; the server's answer settles it. */
@@ -390,6 +398,7 @@ export function ChatHistoryNav() {
                           : undefined
                       }
                       active={conversation.id === activeId}
+                      running={conversation.id === runningId}
                       pinned={pinned.includes(conversation.id)}
                       pinsReady={pins.isSuccess && !togglePin.isPending}
                       copy={copy}
@@ -473,6 +482,7 @@ function ChatRow({
   conversation,
   title,
   active,
+  running,
   pinned,
   pinsReady,
   copy,
@@ -487,6 +497,8 @@ function ChatRow({
   conversation: ConversationSummary;
   title: string;
   active: boolean;
+  /** Its answer is on its way. */
+  running: boolean;
   pinned: boolean;
   pinsReady: boolean;
   copy: ChatCopy;
@@ -542,6 +554,12 @@ function ChatRow({
           title={title}
         >
           <span>{title}</span>
+          {running && (
+            <Spinner
+              aria-label={copy.answering}
+              className="ml-auto size-3 shrink-0"
+            />
+          )}
         </Link>
       </SidebarMenuButton>
       <DropdownMenu>

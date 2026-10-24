@@ -70,8 +70,8 @@ failure.
 
 1. **Services → Add service → Configure manually**, protocol MCP, the server's
    URL (`https://…/mcp`). A private or plain-HTTP address must be listed first in
-   **Settings → Origins → Integration origins**. A hosted server needs none of
-   this: its row has **Create service** ([Hosted servers](hosted-servers.md)).
+   **Settings → Allowed addresses → Service addresses**. An installed connector needs none of
+   this: its row has **Create service** ([Installed connectors](hosted-servers.md)).
 2. Authentication: the server's shared key (Bearer or an `X-…` header), or
    _None_ when each person signs in with their own account (step 4).
 3. On the service's overview, follow **Setup**: the address answers, then
@@ -152,7 +152,7 @@ In **AI providers → Choose from catalog**, search by name or API ID, filter by
 
 Discovery reads the configured OpenAI-compatible `GET /models` endpoint on the server. The console displays optional context length. `supported_parameters` containing `tools` enables tool calling; an explicit list without it marks the model unsupported. Missing metadata remains unknown. **Verify support** opens the manual form with the capability unchecked; it does not probe the model or infer capability from its name. Text-only/unknown models cannot be bulk-selected for service execution. Current discovery accepts one bounded response of up to 5,000 records; provider-specific remote pagination and other provider API dialects are not implemented.
 
-**Model routing** sets a workspace default and optional service overrides. The workspace default is required to select the service; its override then selects the action and arguments. **Use workspace default** removes the override and shows the effective inherited model. A service can also be configured through its **Model** tab. Only enabled providers/models with tool support appear in assignment choices, grouped by provider, with search when there are more than eight choices. A disabled existing assignment stays visible as unavailable until replaced or cleared. Saving is revision-checked, and a refreshed catalog does not silently overwrite an edited routing draft.
+**Model choice** sets a workspace default and optional service overrides. The workspace default is required to select the service; its override then selects the action and arguments. **Use workspace default** removes the override and shows the effective inherited model. A service can also be configured through its **Model** tab. Only enabled providers/models with tool support appear in assignment choices, grouped by provider, with search when there are more than eight choices. A disabled existing assignment stays visible as unavailable until replaced or cleared. Saving is revision-checked, and a refreshed catalog does not silently overwrite an edited routing draft.
 
 `POST /admin/api/identity/catalog/models` returns `{models: [{model, name, tools: boolean | null, contextLength: number | null}]}`. The new `importModels` catalog command accepts `providerId`, `providerRevision` and 1–50 unique `{model, name, tools}` entries plus the existing organization/workspace scope. Both operations require current owner/admin authority. Imports are transactional and audited. No database migration or native workflow protocol version change is required.
 
@@ -262,7 +262,7 @@ Only company owners/admins can configure these workspace choices. Models remain 
 ### Speech transcription
 
 1. **AI providers → Choose from catalog:** add an audio-capable chat model such as `google/gemini-3.1-flash-lite`, or a dedicated **Speech-to-text · STT** model such as `openai/gpt-4o-mini-transcribe`. For an older Gemini entry without its audio flag, edit it and enable **Audio input** after verifying provider support. Refresh/import never silently overwrites an administrator's saved capabilities.
-2. **Model routing → Voice to text:** choose **AI interpreter** for an audio-capable chat model, or **Direct transcription** for a dedicated STT model. The selector shows only models compatible with that mode. Changing mode clears the incompatible selection; choose a model and save. **Off** explicitly disables transcription, including any inherited legacy profile. **Existing server profile** is only offered when an existing profile is available; that profile retains its own transcription implementation. Older stored catalog routes without `voiceMethod` default to `interpreter`, preserving the previous chat-audio endpoint.
+2. **Model choice → Voice to text:** choose **AI interpreter** for an audio-capable chat model, or **Direct transcription** for a dedicated STT model. The selector shows only models compatible with that mode. Changing mode clears the incompatible selection; choose a model and save. **Off** explicitly disables transcription, including any inherited legacy profile. **Existing server profile** is only offered when an existing profile is available; that profile retains its own transcription implementation. Older stored catalog routes without `voiceMethod` default to `interpreter`, preserving the previous chat-audio endpoint.
 3. Operator setup: run `npm run voice:install` (requires the compiler/ffmpeg prerequisites from the voice setup guide), then configure `administration.identity.voiceAssetsDirectory` to the `.voice` directory, relative to the server configuration file. Existing compatible voice adapter assets are detected without inheriting their credentials. Missing optional legacy assets leave catalog voice unavailable; an explicitly configured invalid directory fails startup with the filesystem error.
 4. Rebuild/restart the server and reload/rebuild the mobile client for `agent-voice/5`. Settings report the actual selected model ID.
 
@@ -275,8 +275,8 @@ Mode and model are validated together on save and dispatch; there is no automati
 
 ### Decision mode (Jev)
 
-1. In the OpenRouter provider, choose **Choose from catalog**, search for **Jev**, and add **TypeSafe: Jev 1.13** (`typesafe/jev-1.13`). The console supplements the ordinary `/models` response with this documented Decisions model. Manual entry with **Model type: Decision · Jev** is also available. `typesafe/jev-router` is a separate model router, not a Decision or transcription model. Previously imported Jev Router records are corrected on read, preserving their IDs and revisions; an old voice assignment becomes unavailable until an administrator chooses a suitable model. Exact model-ID classification applies only to the canonical OpenRouter provider.
-2. In **Model routing**, select the Decision model and enable **Use Decision mode**. Keep a workspace default tool model for fallback and service execution. Save.
+1. In the OpenRouter provider, choose **Choose from catalog**, search for **Jev**, and add **TypeSafe: Jev 1.13** (`typesafe/jev-1.13`). The console supplements the ordinary `/models` response with this documented Decisions model. Manual entry with **Model type: Service picker** is also available. `typesafe/jev-router` is a separate model router, not a Decision or transcription model. Previously imported Jev Router records are corrected on read, preserving their IDs and revisions; an old voice assignment becomes unavailable until an administrator chooses a suitable model. Exact model-ID classification applies only to the canonical OpenRouter provider.
+2. In **Model choice**, turn on **Service picker** and select its model (Jev). The model type is **Service picker**, and the threshold is **Required certainty**. Keep a workspace default tool model for fallback and service execution. Save.
 3. Start with the 80% confidence threshold, then tune it with representative requests. This is an initial routing threshold, not a measured correctness rate.
 
 Decision mode now drives **progressive execution**, rather than selecting a service only once:
@@ -312,7 +312,7 @@ Routing changes use the existing workspace revision and organization policy epoc
 ### Spoken replies (TTS)
 
 In **AI providers → Choose from catalog** you can import a model with audio output
-or a dedicated TTS model. **Model routing → Voice reply** is a separate workspace
+or a dedicated TTS model. **Model choice → Voice reply** is a separate workspace
 choice, independent of transcription, decision and service models. Owners/admins
 manage it. Both new and existing workspaces have read-aloud off by default.
 

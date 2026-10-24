@@ -27,10 +27,10 @@ const en = {
   allStatuses: "All states",
   status: "State",
   running: "Running",
-  runningUnverified: "Saved status · not verified live",
+  runningUnverified: "Running? Not confirmed",
   unconfirmedOutcome: "Outcome unconfirmed",
   unconfirmedOutcomeHint:
-    "A possible failure was recorded, but its cause and final result are unconfirmed.",
+    "It may have failed. Check in the service before retrying.",
   succeeded: "Completed",
   waiting: "Waiting for input",
   failed: "Failed",
@@ -47,9 +47,7 @@ const en = {
   error: "Error",
   step: "Step",
   details: "Step details",
-  reconstructed: "Reconstructed trace",
-  reconstructedHint:
-    "Earlier runs contain tool order; model timings were not recorded.",
+  reconstructed: "Older run, partial detail",
   truncated: "The trace reached its display limit.",
   modelCalls: "Model calls",
   toolCalls: "Tool calls",
@@ -164,7 +162,6 @@ const en = {
   retryLater: "A later attempt may be possible after the service recovers.",
   retryVerifyFirst:
     "Check whether the action took effect in the service before repeating it.",
-  retryNone: "This is not permission to repeat the action automatically.",
 };
 const cs: typeof en = {
   pinnedProcess: "Připnutý proces",
@@ -188,10 +185,9 @@ const cs: typeof en = {
   allStatuses: "Všechny stavy",
   status: "Stav",
   running: "Probíhá",
-  runningUnverified: "Uložený stav · živě neověřen",
+  runningUnverified: "Běží? Nepotvrzeno",
   unconfirmedOutcome: "Výsledek není potvrzený",
-  unconfirmedOutcomeHint:
-    "Byla zaznamenána možná chyba, ale její příčina ani konečný výsledek nejsou potvrzené.",
+  unconfirmedOutcomeHint: "Možná selhalo. Než to zopakuješ, ověř to ve službě.",
   succeeded: "Dokončeno",
   waiting: "Čeká na odpověď",
   failed: "Selhalo",
@@ -208,9 +204,7 @@ const cs: typeof en = {
   error: "Chyba",
   step: "Krok",
   details: "Podrobnosti kroku",
-  reconstructed: "Rekonstruovaný průběh",
-  reconstructedHint:
-    "Starší běhy obsahují pořadí nástrojů; časy modelů nebyly zaznamenány.",
+  reconstructed: "Starší běh, neúplné",
   truncated: "Průběh dosáhl limitu zobrazení.",
   modelCalls: "Volání modelu",
   toolCalls: "Volání nástrojů",
@@ -323,7 +317,6 @@ const cs: typeof en = {
   retryLater: "Další pokus může být možný po obnovení služby.",
   retryVerifyFirst:
     "Před opakováním ověř ve službě, zda se akce už neprovedla.",
-  retryNone: "Tato informace není souhlasem s automatickým opakováním akce.",
 };
 export type LoopsCopy = typeof en;
 export function loopFailureLabel(

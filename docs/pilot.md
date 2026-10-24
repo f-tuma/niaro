@@ -34,7 +34,7 @@ services, and the agent reads and changes them there.
 The administration Overview shows a checklist; work through it from the top:
 
 1. An **AI provider** with a key (for example OpenRouter, OpenAI).
-2. A **model**, assigned to chat in _Model routing_.
+2. A **model**, assigned to chat in _Model choice_.
 3. **Usage limits** in _Enforce_ mode, with model prices. Without them the
    process designer and process tests do not work.
 4. **Services**: add the CRM / Microsoft 365, load actions, turn on only the ones
@@ -86,7 +86,7 @@ For each problem, write:
 - a screenshot, if it is about appearance,
 - whether it was the web or mobile app (and which browser / phone).
 
-The administrator finds the run in _Loops_ and _Audit log_; the server log
+The administrator finds the run in _Runs_ and _Activity log_; the server log
 contains no message contents or keys (`docker compose logs niaro`).
 
 ## 6. Known pilot limitations

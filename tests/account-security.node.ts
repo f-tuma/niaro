@@ -613,26 +613,95 @@ test("invitation links, passwords, reset links and own sign-ins", async (t) => {
       },
     );
 
+    // Sign-ins are rate limited per address: these two tests share theirs.
+    const person = client("This browser");
+    const elsewhere = client("Other browser");
+    let userId = "";
+    let grant = "";
+    await t.test(
+      "signing out other browsers keeps this one, devices and MCP access",
+      async () => {
+        assert.equal(
+          await signIn(person, "member2@example.test", "TEST-reset-password"),
+          200,
+        );
+        userId = (await person("api/identity")).data.user.id as string;
+        grant = mcpGrant(userId, memberId, workspaceId);
+        identity["mobile"].issueApp({
+          member_id: memberId,
+          organization_id: organizationId,
+          workspace_id: workspaceId,
+          user_id: userId,
+          server_id: "TEST-server",
+        });
+        await signIn(elsewhere, "member2@example.test", "TEST-reset-password");
+        const before = audit("session.revoked");
+        // Another site can't sign the person's browsers out.
+        const foreign = await fetch(
+          `${origin}/admin/api/identity/account/access`,
+          {
+            method: "POST",
+            headers: {
+              Origin: "https://evil.example",
+              "X-Agent-Admin": "1",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ action: "revokeOthers" }),
+          },
+        );
+        assert.notEqual(foreign.status, 200);
+        const response = await person("api/identity/account/access", {
+          action: "revokeOthers",
+        });
+        assert.equal(response.status, 200);
+        // The answer is the new list: only this browser is left.
+        assert.deepEqual(
+          response.data.browsers.map(
+            (b: { current: boolean; userAgent: string }) => [
+              b.current,
+              b.userAgent,
+            ],
+          ),
+          [[true, "This browser"]],
+        );
+        assert.equal(response.data.devices.length, 1);
+        assert.equal(response.data.mcp.length, 1);
+        assert.equal((await person("api/identity")).status, 200);
+        assert.equal((await elsewhere("api/identity")).status, 401);
+        assert.equal(mcpRevoked(grant), false);
+        // Nobody else is signed out.
+        assert.equal((await owner("api/identity")).status, 200);
+        // One row per organization the person belongs to.
+        const audited = audit("session.revoked");
+        assert(audited > before);
+        // Nothing left to sign out: nothing to audit.
+        assert.equal(
+          (
+            await person("api/identity/account/access", {
+              action: "revokeOthers",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(audit("session.revoked"), audited);
+      },
+    );
+
     await t.test("sign out everywhere ends this browser too", async () => {
-      const person = client();
-      assert.equal(
-        await signIn(person, "member2@example.test", "TEST-reset-password"),
-        200,
-      );
-      const grant = mcpGrant(
-        (await person("api/identity")).data.user.id as string,
-        memberId,
-        workspaceId,
-      );
-      const elsewhere = client();
-      await signIn(elsewhere, "member2@example.test", "TEST-reset-password");
       assert.equal(
         (await person("api/identity/account/access", { action: "revokeAll" }))
           .status,
         200,
       );
       assert.equal((await person("api/identity")).status, 401);
-      assert.equal((await elsewhere("api/identity")).status, 401);
+      assert.equal(
+        Number(
+          db
+            .prepare('SELECT count(*) AS n FROM session WHERE "userId"=?')
+            .get(userId)!.n,
+        ),
+        0,
+      );
       assert.equal(mcpRevoked(grant), true);
     });
 

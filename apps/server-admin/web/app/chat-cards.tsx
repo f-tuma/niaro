@@ -205,7 +205,8 @@ export function ServiceActionView({
 }: {
   result: ServiceResult;
   disabled: boolean;
-  onDecide: (approved: boolean) => void;
+  /** Resolves whether the server accepted the decision, when the caller knows. */
+  onDecide: (approved: boolean) => void | Promise<boolean>;
   reviewFrame?: ServiceActionReviewFrame;
   embedded?: boolean;
   /** Offers "Don't ask next time" for the person's own personal-service changes. */
@@ -273,12 +274,17 @@ export function ServiceActionView({
         disabled={decisionDisabled}
         onClick={() => {
           if (decisionDisabled) return;
-          onDecide(true);
-          // The approval goes first; only then stop asking for this action.
+          const decided = onDecide(true);
+          // The approval goes first; only once the server accepted it stop
+          // asking for this action. A failed approval saves no rule.
           if (remember && rememberTarget)
-            void rememberApproval(rememberTarget, result.operationId).catch(
-              () => setRememberFailed(true),
-            );
+            void Promise.resolve(decided)
+              .then((accepted) =>
+                accepted === true
+                  ? rememberApproval(rememberTarget, result.operationId)
+                  : undefined,
+              )
+              .catch(() => setRememberFailed(true));
         }}
       >
         {tr("serviceApprove")}

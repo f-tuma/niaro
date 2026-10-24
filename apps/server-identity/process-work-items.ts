@@ -175,13 +175,19 @@ export function createProcessTaskProjection(
       );
     if (journal.failure && detailsAvailable)
       explanation +=
-        say(language, " Failure code: ", " Kód chyby: ") +
-        loopText(journal.failure.code, 160);
+        journal.failure.code === "process_step_limit"
+          ? say(
+              language,
+              " It needed more steps than allowed.",
+              " Potřeboval víc kroků, než je povoleno.",
+            )
+          : say(language, " Failure code: ", " Kód chyby: ") +
+            loopText(journal.failure.code, 160);
     if (!detailsAvailable)
       explanation += say(
         language,
-        " Saved details are unavailable under the current access or context.",
-        " Uložené podrobnosti nejsou dostupné s aktuálním přístupem nebo kontextem.",
+        " Details aren't available to you.",
+        " Podrobnosti ti nejsou dostupné.",
       );
     if (
       ["failed", "interrupted", "unknown"].includes(status) &&

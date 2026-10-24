@@ -1,5 +1,10 @@
 import { ClientSession } from "../packages/client-core/session";
 import { messageCommand } from "../packages/client-core/commands";
+import {
+  canRetryPending,
+  chatOwnsError,
+  runningChat,
+} from "../packages/client-core/chat-view";
 import { FixtureEngine } from "../apps/fixture-server/engine";
 import {
   ACTIVITY_PROFILE,
@@ -232,6 +237,29 @@ test("lost command response stops live progress and preserves exact command for 
     await jest.advanceTimersByTimeAsync(2000);
     expect(f.fetcher).toHaveBeenCalledTimes(calls);
     expect(f.engine.snapshot().operations).toEqual([]);
+  } finally {
+    f.session.stop();
+  }
+});
+test("a failed request's error and retry belong to the chat that sent it", async () => {
+  const f = setup();
+  const own = f.command.conversationId;
+  try {
+    await f.session.start(false);
+    const send = f.session.send(f.command);
+    await jest.advanceTimersByTimeAsync(260);
+    expect(runningChat(f.session.getSnapshot())).toBe(own);
+    f.post.resolve(response({ error: "model_timeout" }, 503));
+    await send;
+    const state = f.session.getSnapshot();
+    expect(state.error).toBe("model_timeout");
+    expect(state.commandConversationId).toBe(own);
+    // Waiting for a retry is not running.
+    expect(runningChat(state)).toBeNull();
+    expect(chatOwnsError(state, own)).toBe(true);
+    expect(chatOwnsError(state, "conversation-2")).toBe(false);
+    expect(canRetryPending(state, own)).toBe(true);
+    expect(canRetryPending(state, "conversation-2")).toBe(false);
   } finally {
     f.session.stop();
   }

@@ -130,6 +130,32 @@ jest.mock(
   () => {
     const React = jest.requireActual<typeof import("react")>("react");
     return {
+      ConfirmAction: ({
+        open,
+        title,
+        description,
+        confirmLabel,
+        onConfirm,
+      }: {
+        open: boolean;
+        title: string;
+        description?: string;
+        confirmLabel: string;
+        onConfirm: () => void;
+      }) =>
+        open
+          ? React.createElement(
+              "div",
+              { "data-host": "ConfirmAction" },
+              title,
+              description,
+              React.createElement(
+                "button",
+                { "data-testid": "confirm-action", onClick: onConfirm },
+                confirmLabel,
+              ),
+            )
+          : null,
       DetailList: ({
         items,
       }: {

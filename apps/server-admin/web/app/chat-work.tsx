@@ -899,11 +899,14 @@ export function ProgressView({
   onRetry,
   retryDisabled,
   onToggle,
+  hint,
 }: {
   activity: RequestActivity | null;
   connection: "waiting" | "live" | "unavailable";
   interrupted: boolean;
   failed: boolean;
+  /** Why the request stopped, in one line; replaces the generic hint. */
+  hint?: string;
   onRetry?: () => void;
   retryDisabled: boolean;
   /** Called before the steps open or close, so the transcript stays put. */
@@ -983,9 +986,9 @@ export function ProgressView({
           })}
         </ul>
       )}
-      {unknown && (
+      {(unknown || hint) && (
         <p className="text-xs text-muted-foreground">
-          {tr(failed ? "progressFailedHint" : "progressUnavailable")}
+          {hint ?? tr(failed ? "progressFailedHint" : "progressUnavailable")}
         </p>
       )}
       {onRetry && (

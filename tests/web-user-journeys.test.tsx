@@ -1784,6 +1784,7 @@ test("the admin sidebar groups pages as Services, AI, Processes, People and Sett
   expect(links).toEqual([
     "/",
     "/services",
+    "/hosted",
     "/plugins",
     "/mcp",
     "/providers",
@@ -1795,7 +1796,6 @@ test("the admin sidebar groups pages as Services, AI, Processes, People and Sett
     "/people",
     "/workspaces",
     "/auth-providers",
-    "/hosted",
     "/audit",
     "/settings",
   ]);

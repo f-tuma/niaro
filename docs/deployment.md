@@ -463,7 +463,7 @@ by built-in adapters must be mounted separately (see above).
   `administration.identity.hosting.allowCustom: false` keeps only the built-in
   definitions. Image definitions need Docker. Any other MCP server runs as its
   own compose service next to Niaro, connected by URL after adding its origin
-  under Settings → Origins. See [hosted MCP servers](hosted-servers.md) and
+  under Settings → Allowed addresses. See [hosted MCP servers](hosted-servers.md) and
   [docs/self-hosting.md](self-hosting.md#without-docker).
 - **Local Whisper transcription** (`whisper.cpp` with a Whisper model) is not
   part of the image. The image carries only whisper.cpp's speech detection

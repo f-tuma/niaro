@@ -242,8 +242,8 @@ networks, sidecars).
    `npx` resolves the package's dependencies at every start; pin the image by
    digest and prefer a prebuilt image with a lockfile for production.
 
-2. Allow its origin: **Administration → Settings → Origins → Integration
-   origins**, add `http://tracker-mcp:8080` (the compose service name and port,
+2. Allow its origin: **Administration → Settings → Allowed addresses → Service
+   addresses**, add `http://tracker-mcp:8080` (the compose service name and port,
    no path), save and restart Niaro. Private and plain-HTTP addresses are
    reachable only when listed there (`administration.identity.integrationOrigins`
    in the profile).
@@ -274,8 +274,8 @@ by URL.
    `tracker-mcp-x1y2z3`) and nobody else can. To keep it in Niaro's compose
    project instead, add it as a second service there on `dokploy-network`, as
    in [Own compose service](#own-compose-service).
-4. Allow its origin: **Administration → Settings → Origins → Integration
-   origins**, add `http://<app-name>:<port>` (no path), save and restart
+4. Allow its origin: **Administration → Settings → Allowed addresses → Service
+   addresses**, add `http://<app-name>:<port>` (no path), save and restart
    Niaro.
 5. **Services → Add service**, protocol MCP, URL
    `http://<app-name>:<port>/mcp`, then follow the service's setup checklist.

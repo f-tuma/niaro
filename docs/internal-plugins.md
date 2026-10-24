@@ -37,7 +37,7 @@ Update/restart the server and reload the updated client bundle to use `agent-act
 
 ## Workspace administration
 
-Open **Plugins** at `/admin/plugins`, select a company and workspace, then edit the **Date & time** card. Owners and administrators can enable the tool, choose an IANA timezone and save. Members can inspect the settings but cannot change them; the recovery key cannot manage workspace plugins. Tool names, execution scope and supported dates are in the expandable technical details.
+Open **Built-in tools** at `/admin/plugins`, select a company and workspace, then edit the **Date & time** card. Owners and administrators can enable the tool, choose an IANA timezone and save. Members can inspect the settings but cannot change them; the recovery key cannot manage workspace plugins. Tool names, execution scope and supported dates are in the expandable technical details.
 
 Workspaces initially inherit the profile settings. Saving creates a workspace override in the identity SQLite database; **Use server defaults**, followed by **Save changes**, removes that override. A restart preserves saved settings. No restart is needed for workspace changes. The operator's enabled list remains an upper bound: a workspace cannot re-enable an operator-disabled plugin. Per-user datetime overrides are not implemented; the memory plugin separately supports a personal opt-out.
 

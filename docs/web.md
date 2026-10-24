@@ -109,7 +109,7 @@ The profile can set server-wide values under `plugins.settings.web`.
   `.internal`, `.lan`, `.home.arpa` and single-label names are refused. The
   transport resolves the name once, refuses it when any address is not
   public, and pins the connection to the checked address. Origins trusted in
-  Settings → Origins are **not** trusted for web reads.
+  Settings → Allowed addresses are **not** trusted for web reads.
 - **Redirects** are followed at most 3 times, each new address checked the
   same way before it is requested.
 - **Bounded:** 15 s per request, 2 MB per response, no content encoding;
@@ -213,7 +213,7 @@ you want it on a network of its own.
 
 ### Connect it
 
-1. **Administration → Settings → Origins → Integration origins**: add
+1. **Administration → Settings → Allowed addresses → Service addresses**: add
    `http://browser-mcp:8931` (no path), save, restart Niaro. Plain HTTP and
    private addresses are reachable only when listed there.
 2. **Services → Add service → Configure manually**, protocol MCP, URL

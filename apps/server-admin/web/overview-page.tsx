@@ -7,6 +7,10 @@ import {
   Check,
   Boxes,
   BrainCircuit,
+  ChevronRight,
+  CircleX,
+  FlaskConical,
+  Gauge,
   MessageSquare,
   Scale,
   Volume2,
@@ -32,6 +36,14 @@ import { useCatalog, type CatalogState } from "./catalog-shared";
 import { ServiceAvatar } from "./service-avatar";
 import { auditOutcomes, outcomeTone, useAuditEvent } from "./audit-page";
 import { api } from "./lib/api";
+import { loadOwnedProcesses } from "./lib/owned-processes";
+import {
+  countToday,
+  needsAttention,
+  requestsWarning,
+  type AttentionRow,
+} from "./lib/needs-attention";
+import { processAuthority } from "./service-process-overview";
 import { RelativeTime } from "@admin/components/console/time";
 import { PageHeader, Section } from "@admin/components/console/page";
 import { StatusBadge } from "@admin/components/console/status";
@@ -230,7 +242,10 @@ function Dashboard({ state }: { state: CatalogState }) {
       value: routing.decision.enabled
         ? {
             primary: modelName(model(routing.decision.modelId)),
-            secondary: `≥ ${Math.round(routing.decision.minConfidence * 100)} %`,
+            secondary: copy.certainty.replace(
+              "{p}",
+              String(Math.round(routing.decision.minConfidence * 100)),
+            ),
             missing: !model(routing.decision.modelId),
           }
         : { off: true },
@@ -264,10 +279,14 @@ function Dashboard({ state }: { state: CatalogState }) {
   }
 
   const checklist = useSetupChecklist(state);
+  const attention = useNeedsAttention(state, requests, limit);
 
   return (
     <>
       {checklist && <SetupSteps steps={checklist} />}
+      {attention.length > 0 && (
+        <NeedsAttention rows={attention} workspaceId={workspace!.id} />
+      )}
       <Card variant="flush" className="grid grid-cols-2 lg:grid-cols-4">
         <Metric
           label={copy.enabledServices}
@@ -284,6 +303,7 @@ function Dashboard({ state }: { state: CatalogState }) {
           label={copy.requestsToday}
           value={requests}
           total={limit || undefined}
+          warning={requestsWarning(requests, limit)}
         />
       </Card>
       <div className="grid items-start gap-8 lg:grid-cols-2">
@@ -378,10 +398,13 @@ function Metric({
   label,
   value,
   total,
+  warning,
 }: {
   label: string;
   value: number;
   total?: number;
+  /** Close to a limit: the value turns the warning color. */
+  warning?: boolean;
 }) {
   const copy = useShellCopy();
   const { language } = useAdmin();
@@ -390,7 +413,10 @@ function Metric({
     <div className="flex flex-col gap-1 border-b px-4 py-3 odd:border-r lg:border-b-0 lg:border-r lg:last:border-r-0">
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="flex items-baseline gap-1.5">
-        <span className="text-xl font-semibold tracking-tight tabular-nums">
+        <span
+          data-warning={warning || undefined}
+          className="text-xl font-semibold tracking-tight tabular-nums data-[warning=true]:text-warning"
+        >
           {format(value)}
         </span>
         {total !== undefined && (
@@ -400,6 +426,143 @@ function Metric({
         )}
       </span>
     </div>
+  );
+}
+
+/**
+ * Today's failed actions (managers read the activity log), processes blocked
+ * until a new test, and AI requests near today's limit. Rows whose data is
+ * still loading or not visible to this person are left out.
+ */
+function useNeedsAttention(
+  state: CatalogState,
+  requests: number,
+  limit: number,
+) {
+  const admin = useAdmin();
+  const { data } = admin;
+  const { organization, workspace, detail } = state.scope;
+  const audit = useQuery({
+    queryKey: [
+      "admin",
+      "audit",
+      data.authentication.principalId,
+      organization!.id,
+      "failed-tools",
+      workspace!.id,
+    ],
+    queryFn: async ({ signal }) =>
+      AuditPageSchema.parse(
+        await api(
+          `identity/audit?${new URLSearchParams({
+            organizationId: organization!.id,
+            workspaceId: workspace!.id,
+            category: "tools",
+            outcome: "failed",
+          })}`,
+          undefined,
+          signal,
+        ),
+      ),
+    enabled: !!detail.data?.canManageWorkspaces,
+    staleTime: 15_000,
+    refetchInterval: 60_000,
+  });
+  // The same query, key and cache as the Processes page.
+  const processes = useQuery({
+    queryKey: [
+      "admin",
+      "workspace-processes",
+      processAuthority(state, admin),
+      state.target.organizationId,
+      state.target.workspaceId,
+    ],
+    queryFn: ({ signal }) => loadOwnedProcesses(state.target, signal),
+    enabled:
+      !!state.query.data?.canManage &&
+      data.authentication.current === "better-auth",
+    retry: false,
+    staleTime: 15_000,
+  });
+  const [now] = useState(Date.now);
+  return needsAttention({
+    failedToday: audit.data ? countToday(audit.data.entries, now) : null,
+    retests: processes.data
+      ? processes.data.filter((p) => p.retestNeeded).length
+      : null,
+    requests,
+    limit,
+  });
+}
+
+function NeedsAttention({
+  rows,
+  workspaceId,
+}: {
+  rows: AttentionRow[];
+  workspaceId: string;
+}) {
+  const copy = useShellCopy();
+  const { language } = useAdmin();
+  return (
+    <Section title={copy.needsAttention}>
+      <Card variant="list">
+        {rows.map((row) => {
+          const Icon =
+            row.key === "failed"
+              ? CircleX
+              : row.key === "retest"
+                ? FlaskConical
+                : Gauge;
+          const title =
+            row.key === "failed"
+              ? plural(language, row.count, copy.failedToday)
+              : row.key === "retest"
+                ? plural(language, row.count, copy.retestCount)
+                : copy.requestsShare.replace("{p}", String(row.percent));
+          const content = (
+            <>
+              <ItemMedia>
+                <Icon
+                  aria-hidden="true"
+                  data-danger={row.key === "failed" || undefined}
+                  className="size-4 text-warning data-[danger=true]:text-destructive"
+                />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>{title}</ItemTitle>
+              </ItemContent>
+              <ItemActions>
+                <ChevronRight
+                  aria-hidden="true"
+                  className="size-4 text-muted-foreground"
+                />
+              </ItemActions>
+            </>
+          );
+          return (
+            <Item key={row.key} asChild variant="row" size="row">
+              {row.key === "failed" ? (
+                <Link
+                  to="/audit"
+                  search={{
+                    workspaceId,
+                    category: "tools",
+                    outcome: "failed",
+                  }}
+                >
+                  {content}
+                </Link>
+              ) : (
+                <Link to={row.key === "retest" ? "/processes" : "/providers"}>
+                  {content}
+                </Link>
+              )}
+            </Item>
+          );
+        })}
+      </Card>
+    </Section>
   );
 }
 
@@ -556,9 +719,12 @@ function ServiceSummary({
             <ItemContent>
               <ItemTitle>{service.name}</ItemTitle>
               <ItemDescription>
-                {granted(service)} {copy.of}{" "}
-                {plural(language, service.actions.length, copy.actionsCount)}{" "}
-                {copy.withAccess}
+                {copy.allowedOf
+                  .replace("{n}", granted(service).toLocaleString(language))
+                  .replace(
+                    "{total}",
+                    service.actions.length.toLocaleString(language),
+                  )}
               </ItemDescription>
             </ItemContent>
             {!service.enabled && (

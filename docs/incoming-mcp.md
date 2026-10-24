@@ -3,10 +3,10 @@
 Niaro exposes one `/mcp` endpoint with two modes. The access token or OAuth
 grant decides which tools a client sees:
 
-| Mode          | Scope                       | Tools                                                      | Who plans and executes |
-| ------------- | --------------------------- | ---------------------------------------------------------- | ---------------------- |
-| **Processor** | `native.view`, `native.run` | `task_submit`, `task_get`, `task_respond`, `task_cancel`   | Niaro's server agent   |
-| **Connector** | `services.call`             | one tool per permitted service action, `niaro_call_status` | the connected client   |
+| Mode                               | Scope                       | Tools                                                      | Who plans and executes |
+| ---------------------------------- | --------------------------- | ---------------------------------------------------------- | ---------------------- |
+| **Processor** (_Hands over tasks_) | `native.view`, `native.run` | `task_submit`, `task_get`, `task_respond`, `task_cancel`   | Niaro's server agent   |
+| **Connector** (_Runs actions_)     | `services.call`             | one tool per permitted service action, `niaro_call_status` | the connected client   |
 
 A grant may hold both scopes; it then lists both tool families.
 
@@ -81,8 +81,8 @@ and context expiry can remove a previously actionable question or result.
 ## Access and connection
 
 Sign in to Niaro with a personal account, select a workspace and open
-**MCP access** in the sidebar (`/admin/mcp`). Choose **Create token**, pick
-Connector or Processor, copy the token once into your own MCP client and use the
+**External AI apps** in the sidebar (`/admin/mcp`). Choose **Create token**, pick
+**Runs actions** (Connector) or **Hands over tasks** (Processor), copy the token once into your own MCP client and use the
 displayed endpoint:
 
 ```json
@@ -101,7 +101,7 @@ task submission, clarification and cancellation. `services.call` permits
 connector calls. None of them grants independent action approval.
 Tokens expire after at most 30 days and can be revoked from the same page.
 
-For an OAuth client, open **MCP access → OAuth client registration**. Copy the
+For an OAuth client, open **External AI apps → OAuth client registration**. Copy the
 exact HTTPS callback address from that client's connection settings, register it
 and copy the returned client ID into the client's supplied-client configuration.
 Use the same `/mcp` endpoint. Niaro publishes protected-resource and authorization

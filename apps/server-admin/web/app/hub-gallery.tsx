@@ -705,12 +705,15 @@ export function HubWidgetEditSheet({
   item,
   session,
   disabled,
+  error,
   onClose,
   onSave,
 }: {
   item: HubCard | null;
   session: ClientSession;
   disabled: boolean;
+  /** A refused save; the sheet stays open with the edits. */
+  error?: ReactNode;
   onClose: () => void;
   onSave: (changes: HubWidgetEdit) => void | Promise<void>;
 }) {
@@ -730,6 +733,7 @@ export function HubWidgetEditSheet({
             {definition?.fill === "ai" ? copy.editBrief : copy.editWidget}
           </SheetTitle>
         </SheetHeader>
+        {item && error && <div className="px-4">{error}</div>}
         {item && widget && definition && (
           <WidgetForm
             key={item.id}

@@ -91,7 +91,9 @@ test("workspace inventory joins all service pages through one shared workspace k
     assert.equal(parsed.searchParams.has("serviceId"), false);
     return calls.length === 1
       ? inventory([summary("test_a")], "test_a")
-      : inventory([summary("test_b", "test_other_service")]);
+      : inventory([
+          { ...summary("test_b", "test_other_service"), retestNeeded: true },
+        ]);
   });
   const loaded = await loadWorkspaceProcesses(
     target,
@@ -100,6 +102,11 @@ test("workspace inventory joins all service pages through one shared workspace k
   assert.deepEqual(
     loaded.map((p) => p.id),
     ["test_a", "test_b"],
+  );
+  // A process blocked until a new test keeps its flag for the list badge.
+  assert.deepEqual(
+    loaded.map((p) => p.retestNeeded),
+    [undefined, true],
   );
   assert.equal(calls[1]!.searchParams.get("after"), "test_a");
   assert.equal(

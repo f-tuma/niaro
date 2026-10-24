@@ -177,7 +177,7 @@ a refused add or change) shows one line and the step that fixes it
 | Code                                          | The person sees                                 | Fix                                                                                                        |
 | --------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `connection_required`                         | Your account isn't connected to the service     | **Connect account**: `/connections/<service>` (one source) or `/connections`                               |
-| `model_unavailable`, `catalog_model_required` | The overview has no AI model                    | Admins: **Model routing** (`/admin/routing`); others: "Ask an administrator"                               |
+| `model_unavailable`, `catalog_model_required` | The overview has no AI model                    | Admins: **Model choice** (`/admin/routing`); others: "Ask an administrator"                                |
 | `service_unavailable`                         | No service the overview can read yet            | Admins: **Services** (`/admin/services`); others: "Ask an administrator"                                   |
 | `hub_source_unavailable`                      | The overview can't read the chosen service      | Admins: **Open service** (`/admin/services/<id>`); others: "Ask an administrator"                          |
 | `service_access_denied`                       | The service refused access (permissions or key) | Admins: **Open service** (its checklist names missing sign-in permissions); others: "Ask an administrator" |

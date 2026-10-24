@@ -16,9 +16,7 @@ test.each(["en", "cs"] as const)(
   (language) => {
     const copy = loopsCopy[language];
     expect(copy.runningUnverified).toBe(
-      language === "en"
-        ? "Saved status · not verified live"
-        : "Uložený stav · živě neověřen",
+      language === "en" ? "Running? Not confirmed" : "Běží? Nepotvrzeno",
     );
     expect(copy.unconfirmedOutcome).toBeTruthy();
     expect(

@@ -20,8 +20,8 @@ model and switches to enforce.
 
 In the console, open **Usage limits** (`/admin/usage`). **Fill from providers**
 copies list prices published by the provider (OpenRouter publishes them for
-most models); type the rest, choose **Enforce** and save. The process designer
-and custom agent steps run only in enforce mode with a priced model; the
+most models); type the rest, choose **Stop at limit** and save. The process designer
+and custom agent steps run only with **Stop at limit** and a priced model; the
 designer says so and links to this page before a message is sent.
 
 The same policy is available through the authenticated account endpoint:

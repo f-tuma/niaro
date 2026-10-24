@@ -14,6 +14,7 @@ import type {
   ConversationSummary,
   WorkItem,
 } from "../packages/protocol";
+import { ACTIVITY_DRAFT_MAX } from "../packages/protocol/activity";
 import type { ServiceResult } from "../packages/protocol/service-result";
 import type { ProcessOfferResult } from "../packages/protocol/process-offer";
 import { ChatConversation } from "../apps/server-admin/web/app/chat-page";
@@ -1102,4 +1103,183 @@ test("chats group by day like the app menu", () => {
     "Včera",
     "Týden",
   ]);
+});
+
+const sending = (conversationId: string): SessionCommand => ({
+  type: "message.send",
+  commandId: `c-${conversationId}`,
+  idempotencyKey: `c-${conversationId}`,
+  conversationId,
+  text: "Kolik máme objednávek?",
+  language: "cs",
+});
+const has = (root: ReactTestInstance, id: string) =>
+  root.findAll((node) => node.props["data-testid"] === id).length > 0;
+const occurrences = (whole: string, part: string) =>
+  whole.split(part).length - 1;
+
+test("an answer running in another chat is named above the composer, with a way there", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Ahoj")],
+  };
+  const { session, sent, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  await act(async () =>
+    publish({ pending: sending("conv-2"), commandStates: { chat: "sending" } }),
+  );
+  const line = byTestId(root, "other-chat-busy");
+  expect(text(line)).toContain("V jiném chatu ještě běží odpověď");
+  expect(line.findByType("a").props.href).toBe("/chat/$conversationId");
+  // This chat neither shows that answer's progress nor offers to stop it below.
+  expect(has(root, "request-progress")).toBe(false);
+  expect(button(root, "Odeslat")).toBeTruthy();
+  // Enter keeps the text: the line above says why it waits.
+  await type(root, "Další otázka");
+  expect(sent).toEqual([]);
+  expect(root.findByType("textarea").props.value).toBe("Další otázka");
+  await act(async () =>
+    button(byTestId(root, "other-chat-busy"), "Zastavit").props.onClick(),
+  );
+  expect(session.interruptPending).toHaveBeenCalled();
+  // Its failure and retry stay in its own chat.
+  await act(async () =>
+    publish({
+      commandStates: { chat: "network_error" },
+      error: "network_error",
+      commandConversationId: "conv-2",
+    }),
+  );
+  expect(text(byTestId(root, "other-chat-busy"))).toContain(
+    "V jiném chatu čeká nedokončený požadavek",
+  );
+  expect(has(root, "chat-error")).toBe(false);
+  expect(text(root)).not.toContain("Zkusit znovu");
+});
+
+test("a refused request is reported in the chat that sent it, in chat words", async () => {
+  const conversations: Conversation[] = [
+    { id: "conv-1", revision: 4, messages: [user("m-1", "Ahoj")] },
+    { id: "conv-2", revision: 4, messages: [user("m-2", "Ahoj")] },
+  ];
+  const history = {
+    "conv-1": { conversation: summary("conv-1") },
+    "conv-2": { conversation: summary("conv-2") },
+  };
+  const elsewhere = fakeSession(storeWith(conversations), history);
+  const other = (await render(elsewhere.session, "conv-1")).root;
+  const own = fakeSession(storeWith(conversations), history);
+  const here = (await render(own.session, "conv-2")).root;
+  for (const { publish } of [elsewhere, own])
+    await act(async () =>
+      publish({ error: "requestRejected", commandConversationId: "conv-2" }),
+    );
+  expect(has(other, "chat-error")).toBe(false);
+  expect(text(byTestId(here, "chat-error"))).toBe(tr("chatRequestFailed"));
+});
+
+test("a lost connection dims the draft and says once what to do", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Kolik máme objednávek?")],
+  };
+  const { session, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const activity = {
+    commandId: "c-conv-1",
+    conversationId: "conv-1",
+    status: "running" as const,
+    steps: [
+      { id: "understanding" as const, status: "running" as const },
+      { id: "preparing" as const, status: "pending" as const },
+    ],
+    draft: "Za září **340** objednávek.",
+  };
+  await act(async () =>
+    publish({
+      pending: sending("conv-1"),
+      commandStates: { chat: "sending" },
+      activity,
+      commandConversationId: "conv-1",
+    }),
+  );
+  expect(text(byTestId(root, "answer-draft"))).not.toContain("Přerušeno");
+  await act(async () =>
+    publish({
+      commandStates: { chat: "network_error" },
+      error: "network_error",
+      activityConnection: "unavailable",
+    }),
+  );
+  const progress = byTestId(root, "request-progress");
+  expect(text(progress)).toContain(tr("chatConnectionLost"));
+  expect(text(progress)).not.toContain(tr("progressUnavailable"));
+  expect(button(progress, "Zkusit znovu")).toBeTruthy();
+  // The progress block explains it; no second alert below.
+  expect(has(root, "chat-error")).toBe(false);
+  const draft = byTestId(root, "answer-draft");
+  expect(text(draft)).toContain("Přerušeno");
+  expect(
+    draft.findAll((node) => node.props["data-stopped"] === true),
+  ).toHaveLength(1);
+  // A model failure is said once, where the answer stopped.
+  await act(async () => publish({ error: "model_timeout" }));
+  expect(occurrences(text(root), tr("model_timeout"))).toBe(1);
+  expect(has(root, "chat-error")).toBe(false);
+});
+
+test("a draft cut at the stream's limit says the answer goes on", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Napiš dlouhou zprávu")],
+  };
+  const { session, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const running = {
+    commandId: "c-conv-1",
+    conversationId: "conv-1",
+    status: "running" as const,
+    steps: [{ id: "understanding" as const, status: "running" as const }],
+  };
+  await act(async () =>
+    publish({
+      pending: sending("conv-1"),
+      commandStates: { chat: "sending" },
+      activity: { ...running, draft: "Začátek odpovědi" },
+    }),
+  );
+  expect(text(byTestId(root, "answer-draft"))).not.toContain("ještě píšu");
+  await act(async () =>
+    publish({
+      activity: { ...running, draft: "a".repeat(ACTIVITY_DRAFT_MAX) },
+    }),
+  );
+  expect(text(byTestId(root, "answer-draft"))).toContain("…ještě píšu");
+});
+
+test("a reconnect keeps the composer editable; only sending waits", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Ahoj")],
+  };
+  const { session, sent, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  await act(async () => publish({ status: "offline" }));
+  expect(root.findByType("textarea").props.disabled).toBe(false);
+  await type(root, "Píšu dál");
+  expect(sent).toEqual([]);
+  expect(root.findByType("textarea").props.value).toBe("Píšu dál");
+  expect(button(root, "Odeslat").props["aria-disabled"]).toBe(true);
 });

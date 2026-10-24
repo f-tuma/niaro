@@ -1,6 +1,6 @@
 import { useAdmin } from "./context";
 const en = {
-  title: "Plugins",
+  title: "Built-in tools",
   files: "Files",
   addPlugin: "Add plugin",
   pluginId: "Plugin ID",
@@ -25,7 +25,7 @@ const en = {
   override: "Edited",
   operator: "Own",
   source: "Source",
-  invalidPlugins: "Plugins that did not load",
+  invalidPlugins: "Tools that did not load",
   toolsLabel: "Tools",
   reads: "Reads",
   writes: "Writes",
@@ -34,8 +34,8 @@ const en = {
   network: "Public web, through the server",
   settingInvalid: "Check the highlighted values.",
   settings: "Settings",
-  notFound: "Plugin not found",
-  empty: "No plugins available",
+  notFound: "Tool not found",
+  empty: "No built-in tools available",
   dateTime: "Date & time",
   memory: "Memory",
   retentionDays: "Retention (days)",
@@ -90,7 +90,7 @@ const en = {
   blocked: "Disabled by the server operator.",
   timeZone: "Default timezone",
   zoneInvalid: "Enter a valid IANA timezone, such as Europe/Prague.",
-  refreshFailed: "Could not refresh plugin settings. Your edits are kept.",
+  refreshFailed: "Could not refresh tool settings. Your edits are kept.",
   serverDefault: "Server default",
   workspaceOverride: "Workspace override",
   restore: "Use server defaults",
@@ -130,7 +130,7 @@ const en = {
   previewChanged:
     "Settings have changed. Refresh the page before testing again.",
   previewDenied:
-    "The plugin is disabled or your access has changed. Refresh the page.",
+    "The tool is disabled or your access has changed. Refresh the page.",
   previewSaveFirst: "Save or discard your changes before testing.",
   missing_time: "Choose a local time.",
   invalid_date: "This date is invalid or outside 2000–2100.",
@@ -140,7 +140,7 @@ const en = {
   invalid_offset: "This UTC offset does not match the selected time.",
 };
 const cs: Record<keyof typeof en, string> = {
-  title: "Pluginy",
+  title: "Vestavěné nástroje",
   files: "Soubory",
   addPlugin: "Přidat plugin",
   pluginId: "ID pluginu",
@@ -164,7 +164,7 @@ const cs: Record<keyof typeof en, string> = {
   override: "Upravený",
   operator: "Vlastní",
   source: "Původ",
-  invalidPlugins: "Pluginy, které se nenačetly",
+  invalidPlugins: "Nástroje, které se nenačetly",
   toolsLabel: "Nástroje",
   reads: "Čte",
   writes: "Zapisuje",
@@ -173,8 +173,8 @@ const cs: Record<keyof typeof en, string> = {
   network: "Veřejný web přes server",
   settingInvalid: "Zkontroluj označené hodnoty.",
   settings: "Nastavení",
-  notFound: "Plugin nebyl nalezen",
-  empty: "Žádné dostupné pluginy",
+  notFound: "Nástroj nebyl nalezen",
+  empty: "Žádné dostupné vestavěné nástroje",
   dateTime: "Datum a čas",
   memory: "Paměť",
   retentionDays: "Uchování (dny)",
@@ -267,7 +267,7 @@ const cs: Record<keyof typeof en, string> = {
   previewFailed: "Výpočet se nepodařilo načíst. Zkus to znovu.",
   previewChanged: "Nastavení se změnilo. Před dalším testem obnov stránku.",
   previewDenied:
-    "Plugin je vypnutý nebo se změnil tvůj přístup. Obnov stránku.",
+    "Nástroj je vypnutý nebo se změnil tvůj přístup. Obnov stránku.",
   previewSaveFirst: "Před testem ulož nebo zahoď rozpracované změny.",
   missing_time: "Vyber lokální čas.",
   invalid_date: "Datum není platné nebo je mimo rozsah 2000–2100.",

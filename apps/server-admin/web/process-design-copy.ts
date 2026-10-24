@@ -9,7 +9,7 @@ export const designEn = {
   noDesignerModel: "No model for process design is configured.",
   configureModel: "Configure a model",
   askAdmin: "Ask an administrator to set one up.",
-  budgetMember: "The AI budget isn't set up yet — ask an administrator.",
+  budgetMember: "Usage limits aren't set. Ask your admin.",
   starting: "Starting…",
 
   steps: "Steps",
@@ -43,6 +43,7 @@ export const designEn = {
   draft: "Draft",
   saved: "Draft saved",
   activeVersion: "Active version",
+  retestNeeded: "Retest needed",
   noProcesses: "No processes yet",
   processManagementRequired: "Only owners and admins can manage processes.",
   processLoadFailed: "Couldn’t load processes. Refresh to retry.",
@@ -205,7 +206,7 @@ export const designCs: DesignCopy = {
   noDesignerModel: "Pro návrh procesů není nastavený žádný model.",
   configureModel: "Nastavit model",
   askAdmin: "Požádej správce, ať ho nastaví.",
-  budgetMember: "AI rozpočet ještě není nastavený — požádej správce.",
+  budgetMember: "Limity využití nejsou nastavené. Požádej správce.",
   starting: "Zahajuji…",
 
   steps: "Kroky",
@@ -239,6 +240,7 @@ export const designCs: DesignCopy = {
   draft: "Koncept",
   saved: "Uloženo",
   activeVersion: "Aktivní verze",
+  retestNeeded: "Otestuj znovu",
   noProcesses: "Zatím žádné procesy",
   processManagementRequired: "Procesy spravují jen vlastníci a administrátoři.",
   processLoadFailed: "Procesy nešlo načíst. Obnov stránku.",

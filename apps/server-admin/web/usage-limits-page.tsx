@@ -46,7 +46,7 @@ import {
   CatalogBoundary,
   type CatalogState,
 } from "./catalog-shared";
-import { useUsageCopy } from "./usage-copy";
+import { usageSaveStatus, useUsageCopy } from "./usage-copy";
 
 // Generous per-call ceilings: the request ceiling bounds the serialized request
 // size (tool schemas and design context included), the reply ceiling caps max_tokens.
@@ -504,7 +504,11 @@ function UsageLimits({ state }: { state: CatalogState }) {
       </Section>
       {(draft !== null || busy || stale.length > 0 || error) && (
         <SaveBar
-          status={error ?? copy.unsavedChanges}
+          status={usageSaveStatus(copy, {
+            error,
+            edited: draft !== null,
+            stale: stale.length,
+          })}
           tone={error ? "error" : "muted"}
         >
           <Button

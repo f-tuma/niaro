@@ -27,14 +27,14 @@ company's services and the agent reads and changes them there.
 
 ### 2.2 Roles
 
-|                                                          | Member                | Administrator / owner   |
-| -------------------------------------------------------- | --------------------- | ----------------------- |
-| Chat, hub, tasks, connections                            | yes                   | yes                     |
-| Own personal processes (design, test, activate)          | yes                   | yes                     |
-| Start company processes                                  | yes, under own grants | yes                     |
-| Providers, models, limits, services, actions, access     | no                    | yes                     |
-| People, invitations, workspaces, roles                   | no                    | yes (owner for members) |
-| MCP access, plugins, audit, runs (Loops), hosted servers | no                    | yes                     |
+|                                                                            | Member                | Administrator / owner   |
+| -------------------------------------------------------------------------- | --------------------- | ----------------------- |
+| Chat, hub, tasks, connections                                              | yes                   | yes                     |
+| Own personal processes (design, test, activate)                            | yes                   | yes                     |
+| Start company processes                                                    | yes, under own grants | yes                     |
+| Providers, models, limits, services, actions, access                       | no                    | yes                     |
+| People, invitations, workspaces, roles                                     | no                    | yes (owner for members) |
+| External AI apps, built-in tools, activity log, runs, installed connectors | no                    | yes                     |
 
 Verify: authorization tests per row; members get 403/404 on admin APIs.
 

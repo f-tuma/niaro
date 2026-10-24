@@ -81,18 +81,20 @@ import {
   sessionFresh,
   type LaunchModel,
 } from "./process-launch";
+import { processBlockedKey } from "./process-problems";
 
-const blockedReasons: Record<
-  Extract<ProcessExecutionEntry, { availability: "blocked" }>["reason"],
-  TranslationKey
-> = {
-  service_unavailable: "process_service_unavailable",
-  model_unavailable: "process_model_unavailable",
-  source_changed: "process_source_changed",
-  connection_required: "process_connection_required",
-  qualification_required: "process_qualification_required",
-  budget_unavailable: "process_budget_unavailable",
-};
+/** A run's state in a word; a finished run reads "Completed", as in the chat. */
+export function runStatusKey(status: WorkItem["status"]): TranslationKey {
+  return status === "succeeded"
+    ? "nativeSucceeded"
+    : (status as TranslationKey);
+}
+
+/** Why a failed run stopped, in its result's first line. */
+export function runFailure(run: WorkItem) {
+  if (run.status !== "failed" || !run.result) return null;
+  return run.result.trim().split("\n", 1)[0]?.trim() || null;
+}
 
 /** How a run's state reads at a glance. */
 export function runTone(status: WorkItem["status"]): Tone {
@@ -391,18 +393,22 @@ function Launcher({ session }: { session: ClientSession }) {
                   </ItemMedia>
                   <ItemContent>
                     <ItemTitle>{work.title}</ItemTitle>
-                    {work.native?.process?.startedAt && (
-                      <ItemDescription>
-                        <When
-                          value={work.native.process.startedAt}
-                          language={language}
-                        />
-                      </ItemDescription>
+                    {runFailure(work) ? (
+                      <ItemDescription>{runFailure(work)}</ItemDescription>
+                    ) : (
+                      work.native?.process?.startedAt && (
+                        <ItemDescription>
+                          <When
+                            value={work.native.process.startedAt}
+                            language={language}
+                          />
+                        </ItemDescription>
+                      )
                     )}
                   </ItemContent>
                   <ItemActions>
                     <StatusBadge tone={runTone(work.status)}>
-                      {tr(work.status as TranslationKey)}
+                      {tr(runStatusKey(work.status))}
                     </StatusBadge>
                   </ItemActions>
                 </button>
@@ -449,7 +455,7 @@ function RunIcon({ status }: { status: WorkItem["status"] }) {
   );
 }
 
-function ProcessList({
+export function ProcessList({
   entries,
   copy,
   language,
@@ -468,50 +474,60 @@ function ProcessList({
       {entries.map((entry) => {
         const Icon = entry.kind === "agent" ? Bot : Workflow;
         const blocked = entry.availability === "blocked";
+        // A missing account is the person's to fix: the row leads there.
+        const connect = blocked && entry.reason === "connection_required";
+        const content = (
+          <>
+            <ItemMedia>
+              <EntityIcon size="sm" tone={blocked ? "muted" : "glyph"}>
+                <Icon />
+              </EntityIcon>
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>
+                {entry.name}
+                <span className="sr-only">
+                  ,{" "}
+                  {entry.kind === "agent"
+                    ? copy.processAgent
+                    : copy.processWorkflow}
+                </span>
+              </ItemTitle>
+              {(blocked || entry.description) && (
+                <ItemDescription>
+                  {blocked
+                    ? tr(processBlockedKey(entry.reason))
+                    : entry.description}
+                </ItemDescription>
+              )}
+            </ItemContent>
+            <ItemActions>
+              {blocked && (
+                <StatusBadge tone="warning">{copy.processBlocked}</StatusBadge>
+              )}
+              {(!blocked || connect) && (
+                <ChevronRight
+                  aria-hidden="true"
+                  className="size-4 text-muted-foreground"
+                />
+              )}
+            </ItemActions>
+          </>
+        );
         return (
           <Item key={entry.processId} asChild variant="row" size="row">
-            <button
-              type="button"
-              className="text-left"
-              disabled={disabled || blocked}
-              onClick={() => onOpen(entry)}
-            >
-              <ItemMedia>
-                <EntityIcon size="sm" tone={blocked ? "muted" : "glyph"}>
-                  <Icon />
-                </EntityIcon>
-              </ItemMedia>
-              <ItemContent>
-                <ItemTitle>
-                  {entry.name}
-                  <span className="sr-only">
-                    ,{" "}
-                    {entry.kind === "agent"
-                      ? copy.processAgent
-                      : copy.processWorkflow}
-                  </span>
-                </ItemTitle>
-                {(blocked || entry.description) && (
-                  <ItemDescription>
-                    {blocked
-                      ? tr(blockedReasons[entry.reason])
-                      : entry.description}
-                  </ItemDescription>
-                )}
-              </ItemContent>
-              <ItemActions>
-                {blocked ? (
-                  <StatusBadge tone="warning">
-                    {copy.processBlocked}
-                  </StatusBadge>
-                ) : (
-                  <ChevronRight
-                    aria-hidden="true"
-                    className="size-4 text-muted-foreground"
-                  />
-                )}
-              </ItemActions>
-            </button>
+            {connect ? (
+              <Link to="/connections">{content}</Link>
+            ) : (
+              <button
+                type="button"
+                className="text-left"
+                disabled={disabled || blocked}
+                onClick={() => onOpen(entry)}
+              >
+                {content}
+              </button>
+            )}
           </Item>
         );
       })}
@@ -584,7 +600,12 @@ function PersonalList({
               </ItemTitle>
               {p.reason && (
                 <ItemDescription>
-                  {tr(blockedReasons[p.reason])}
+                  {/* Their own process: the person retests it themselves. */}
+                  {tr(
+                    p.reason === "source_changed"
+                      ? "process_source_changed_own"
+                      : processBlockedKey(p.reason),
+                  )}
                 </ItemDescription>
               )}
             </ItemContent>
@@ -850,7 +871,7 @@ function RunSheet({
                     label: copy.processRunStatus,
                     value: (
                       <StatusBadge tone={runTone(run.status)}>
-                        {tr(run.status as TranslationKey)}
+                        {tr(runStatusKey(run.status))}
                       </StatusBadge>
                     ),
                   },

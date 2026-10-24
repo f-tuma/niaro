@@ -3,8 +3,11 @@ import type {
   HubRefresh,
   HubWidgetType,
 } from "../../../../packages/protocol/hub";
+import type { Language } from "../../../../packages/protocol";
+import { translate } from "../../../../packages/i18n";
 import type { PluralForms } from "../lib/plural";
 import { useApp } from "./context";
+import { processProblemKey, processSourceChanged } from "./process-problems";
 
 const en = {
   overview: "Overview",
@@ -73,11 +76,14 @@ const en = {
   waiting: "Waiting for you",
   openChat: "Open chat",
   failed: "Couldn't refresh",
+  staleData: "data from",
   empty: "Nothing to show",
   more: "more",
   moveUp: "Move up",
   moveDown: "Move down",
   remove: "Remove from overview",
+  removeConfirm: "Remove from overview?",
+  removeAction: "Remove",
   policyLabel: "Refresh schedule",
   policy: {
     manual: "Manually",
@@ -129,7 +135,6 @@ const en = {
     budget: "The AI budget ran out. Ask an administrator.",
     access: "You can't run this process right now.",
     qualification_required: "The process needs a new test.",
-    unavailable: "The process can't run now. Ask an administrator.",
     busy: "The assistant was busy. Try again.",
     process_step_limit: "The process hit its step limit.",
     process_duration_exceeded: "The process ran out of time.",
@@ -156,7 +161,7 @@ const en = {
       "The service refused access: its sign-in doesn't ask for the permissions it needs, or its key may not read this.",
     askAdmin: "Ask an administrator.",
     connectAction: "Connect account",
-    routingAction: "Model routing",
+    routingAction: "Model choice",
     serviceAction: "Open service",
     servicesAction: "Services",
   },
@@ -230,11 +235,14 @@ const cs: HubCopy = {
   waiting: "Čeká na tebe",
   openChat: "Otevřít chat",
   failed: "Nepodařilo se obnovit",
+  staleData: "data:",
   empty: "Nic k zobrazení",
   more: "další",
   moveUp: "Posunout výš",
   moveDown: "Posunout níž",
   remove: "Odebrat z přehledu",
+  removeConfirm: "Odebrat z přehledu?",
+  removeAction: "Odebrat",
   policyLabel: "Obnovovat",
   policy: {
     manual: "Ručně",
@@ -290,7 +298,6 @@ const cs: HubCopy = {
     budget: "Došel rozpočet na AI. Ozvi se správci.",
     access: "Tenhle proces teď nemůžeš spustit.",
     qualification_required: "Proces je potřeba znovu otestovat.",
-    unavailable: "Proces teď nejde spustit. Ozvi se správci.",
     busy: "Asistent byl zaneprázdněný. Zkus to znovu.",
     process_step_limit: "Proces narazil na limit kroků.",
     process_duration_exceeded: "Proces narazil na časový limit.",
@@ -316,7 +323,7 @@ const cs: HubCopy = {
       "Služba odmítla přístup: její přihlášení nežádá potřebná oprávnění, nebo její klíč tohle číst nesmí.",
     askAdmin: "Ozvi se správci.",
     connectAction: "Připojit účet",
-    routingAction: "Přiřazení modelů",
+    routingAction: "Výběr modelů",
     serviceAction: "Otevřít službu",
     servicesAction: "Služby",
   },
@@ -341,38 +348,52 @@ export function hubErrorText(copy: HubCopy, code: string | undefined) {
     )
   )
     return errors.access;
-  if (
-    [
-      "service_unavailable",
-      "model_unavailable",
-      "source_changed",
-      "process_sources_changed",
-      "process_not_active",
-      "process_execution_unavailable",
-    ].includes(code)
-  )
-    return errors.unavailable;
   return errors.other;
 }
 
-/** What fixes a failed AI widget: the app's own connect flow, or a page of
- * the administration (a separate app, so a plain link). */
+/** What fixes a failed widget: the app's own connect flow or Processes page,
+ * a page of the administration (a separate app, so a plain link), or another
+ * refresh. */
 export type HubFix =
   | { kind: "connect"; serviceId?: string }
+  | { kind: "processes" }
+  | { kind: "retry" }
   | {
       kind: "admin";
       href: string;
       label: "routingAction" | "serviceAction" | "servicesAction";
     };
 /**
- * A failed AI widget (or a refused widget change) in one line, with the step
- * that fixes it when there is one. Codes without a fix read as `hubErrorText`.
+ * A failed widget (or a refused widget change) in one line, with the step
+ * that fixes it when there is one. A process widget reads its process's
+ * problems as the Processes page does; codes without a fix read as
+ * `hubErrorText`.
  */
 export function hubWidgetProblem(
   copy: HubCopy,
   code: string | undefined,
-  context: { sources: { id: string }[]; isAdmin: boolean },
+  context: {
+    sources: { id: string }[];
+    isAdmin: boolean;
+    /** A process widget, in the page's language. */
+    process?: { language: Language };
+  },
 ): { text: string; fix?: HubFix } {
+  if (context.process) {
+    const key = processProblemKey(code);
+    if (key) {
+      const text = translate(context.process.language)(key);
+      if (code === "connection_required")
+        return { text, fix: { kind: "connect" } };
+      if (processSourceChanged(code))
+        return { text, fix: { kind: "processes" } };
+      return { text };
+    }
+    const text = hubErrorText(copy, code);
+    return text === copy.errors.other
+      ? { text, fix: { kind: "retry" } }
+      : { text };
+  }
   const only = context.sources.length === 1 ? context.sources[0]!.id : null;
   const admin = (text: string, fix: HubFix) =>
     context.isAdmin ? { text, fix } : { text: `${text} ${copy.fix.askAdmin}` };

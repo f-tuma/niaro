@@ -339,7 +339,7 @@ Speech-to-text uses the workspace's catalog model and the OpenRouter
 provider:
 
 - **Timestamped (preferred).** When the workspace's voice model is a
-  speech-to-text model (Direct transcription), or **Model routing → Voice
+  speech-to-text model (Direct transcription), or **Model choice → Voice
   input → Meetings** names one (`meetingTranscriptionModelId`, a catalog model
   of kind `transcription`, for example `openai/gpt-4o-transcribe`; check what
   OpenRouter currently lists), the server sends chunks of 5 minutes

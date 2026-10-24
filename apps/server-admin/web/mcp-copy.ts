@@ -2,9 +2,9 @@ import { useAdmin } from "./context";
 
 const en = {
   mode: "Mode",
-  connector: "Connector",
+  connector: "Runs actions",
   connectorHint: "Calls enabled service actions directly as tools.",
-  processor: "Processor",
+  processor: "Hands over tasks",
   processorHint: "Submits tasks; the server runs them with its own model.",
   connectorScope: "Call service actions",
   createToken: "Create token",
@@ -14,7 +14,7 @@ const en = {
   day1: "1 day",
   days7: "7 days",
   days30: "30 days",
-  tokens: "Access tokens",
+  tokens: "Connected apps",
   approvalCall: "Approval needed",
   input: "Input",
   approve: "Approve",
@@ -23,7 +23,7 @@ const en = {
   callDeclined: "You declined this call.",
   callClosed: "This call is no longer waiting for approval.",
   callFailed: "The call could not run. Your MCP client can read the reason.",
-  title: "MCP access",
+  title: "External AI apps",
   register: "Register OAuth client",
   callback: "Callback URL",
   callbackHint: "Exactly as your client gives it.",
@@ -53,7 +53,7 @@ const en = {
   runOnly: "View & run tasks",
   reauthenticate: "This client requires a new sign-in.",
   reauthenticateAction: "Sign in again",
-  accountOnly: "Sign in with an account to manage MCP access.",
+  accountOnly: "Sign in with an account to manage external AI apps.",
   switchAccount: "Sign in with an account",
   noWorkspace: "Select a workspace",
   workspaces: "Workspaces",
@@ -72,7 +72,7 @@ const en = {
   copied: "Copied",
   copyFailed: "Copy failed. Select the token and copy it manually.",
   closeToken: "Done",
-  empty: "No tokens yet",
+  empty: "No apps connected",
   expired: "Expired",
   revoked: "Revoked",
   created: "Created",
@@ -83,9 +83,9 @@ const en = {
   cancel: "Cancel",
   moreActions: "More actions",
   refresh: "Refresh",
-  loading: "Loading MCP access…",
+  loading: "Loading external AI apps…",
   forbidden:
-    "You do not have permission to manage MCP access in this workspace.",
+    "You do not have permission to manage external AI apps in this workspace.",
   taskForbidden: "You do not have permission to view or decide this task.",
   authError: "Your session has expired. Sign in again.",
   notFound:
@@ -93,8 +93,8 @@ const en = {
   conflict: "This request has changed. Refresh it before deciding again.",
   invalid:
     "The server could not accept this request. Check the values and try again.",
-  failed: "MCP access could not be updated. Try again.",
-  loadFailed: "MCP access could not be loaded. Try again.",
+  failed: "External AI apps could not be updated. Try again.",
+  loadFailed: "External AI apps could not be loaded. Try again.",
   taskLoadFailed: "The task could not be loaded. Try again.",
   rateError: "Too many requests. Wait a moment and try again.",
   task: "MCP task",
@@ -135,9 +135,9 @@ const en = {
 
 const cs: Record<keyof typeof en, string> = {
   mode: "Režim",
-  connector: "Konektor",
+  connector: "Spouští akce",
   connectorHint: "Volá zapnuté akce služeb přímo jako nástroje.",
-  processor: "Zpracování úloh",
+  processor: "Předává úkoly",
   processorHint: "Zadává úlohy, server je provede vlastním modelem.",
   connectorScope: "Volat akce služeb",
   createToken: "Vytvořit token",
@@ -147,7 +147,7 @@ const cs: Record<keyof typeof en, string> = {
   day1: "1 den",
   days7: "7 dní",
   days30: "30 dní",
-  tokens: "Přístupové tokeny",
+  tokens: "Připojené aplikace",
   approvalCall: "Čeká na schválení",
   input: "Vstup",
   approve: "Schválit",
@@ -156,7 +156,7 @@ const cs: Record<keyof typeof en, string> = {
   callDeclined: "Toto volání jsi odmítl.",
   callClosed: "Toto volání už na schválení nečeká.",
   callFailed: "Volání se nepodařilo provést. MCP klient si může přečíst důvod.",
-  title: "Přístup přes MCP",
+  title: "Externí AI aplikace",
   register: "Zaregistrovat OAuth klienta",
   callback: "Návratová adresa",
   callbackHint: "Přesně tak, jak ji uvádí klient.",
@@ -186,7 +186,7 @@ const cs: Record<keyof typeof en, string> = {
   runOnly: "Čtení a spouštění úloh",
   reauthenticate: "Klient vyžaduje nové přihlášení.",
   reauthenticateAction: "Přihlásit znovu",
-  accountOnly: "Pro správu MCP přístupu se přihlas účtem.",
+  accountOnly: "Pro správu externích AI aplikací se přihlas účtem.",
   switchAccount: "Přihlásit se účtem",
   noWorkspace: "Vyber pracovní prostor",
   workspaces: "Pracovní prostory",
@@ -205,7 +205,7 @@ const cs: Record<keyof typeof en, string> = {
   copied: "Zkopírováno",
   copyFailed: "Kopírování selhalo. Označ token a zkopíruj ho ručně.",
   closeToken: "Hotovo",
-  empty: "Zatím žádné tokeny",
+  empty: "Zatím nic nepřipojeno",
   expired: "Vypršel",
   revoked: "Odvolaný",
   created: "Vytvořen",
@@ -216,16 +216,16 @@ const cs: Record<keyof typeof en, string> = {
   cancel: "Zrušit",
   moreActions: "Další akce",
   refresh: "Obnovit",
-  loading: "Načítám MCP přístup…",
+  loading: "Načítám externí AI aplikace…",
   forbidden:
-    "V tomto pracovním prostoru nemáš oprávnění spravovat MCP přístup.",
+    "V tomto pracovním prostoru nemáš oprávnění spravovat externí AI aplikace.",
   taskForbidden: "Nemáš oprávnění zobrazit tuto úlohu ani o ní rozhodnout.",
   authError: "Relace vypršela. Přihlas se znovu.",
   notFound: "Úloha ani přístupový token v tomto pracovním prostoru nejsou.",
   conflict: "Požadavek se změnil. Před rozhodnutím ho obnov.",
   invalid: "Server požadavek nepřijal. Zkontroluj hodnoty a zkus to znovu.",
-  failed: "MCP přístup se nepodařilo změnit. Zkus to znovu.",
-  loadFailed: "MCP přístup se nepodařilo načíst. Zkus to znovu.",
+  failed: "Externí AI aplikace se nepodařilo změnit. Zkus to znovu.",
+  loadFailed: "Externí AI aplikace se nepodařilo načíst. Zkus to znovu.",
   taskLoadFailed: "Úlohu se nepodařilo načíst. Zkus to znovu.",
   rateError: "Příliš mnoho požadavků. Chvíli počkej a zkus to znovu.",
   task: "MCP úloha",
@@ -265,6 +265,7 @@ const cs: Record<keyof typeof en, string> = {
 };
 
 export type McpCopy = typeof en;
+export const mcpCopy = { en, cs };
 export function useMcpCopy(): McpCopy {
   return useAdmin().language === "cs" ? cs : en;
 }

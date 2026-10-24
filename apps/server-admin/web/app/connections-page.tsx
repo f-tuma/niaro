@@ -67,6 +67,20 @@ export function signInState(
   return { tone: "neutral", label: copy.connectionDisconnected };
 }
 
+/** The row's second line: the account, what signing in unlocks (only until
+ * it is connected) and the organization sign-in it comes from. */
+export function signInDetails(service: PersonalSignIn, copy: MenuCopy) {
+  return [
+    service.account,
+    service.status === "connected"
+      ? null
+      : service.requiredFor === "all"
+        ? copy.connectionAll
+        : copy.connectionWrites,
+    service.provider ? `${copy.connectionVia} ${service.provider.name}` : null,
+  ].filter((detail): detail is string => !!detail);
+}
+
 export function listKey(workspace: AppWorkspace) {
   return [
     "app",
@@ -276,11 +290,7 @@ function SignInRow({
   onConnect(): void;
 }) {
   const state = signInState(service, copy);
-  const details = [
-    service.account,
-    service.requiredFor === "all" ? copy.connectionAll : copy.connectionWrites,
-    service.provider ? `${copy.connectionVia} ${service.provider.name}` : null,
-  ].filter(Boolean);
+  const details = signInDetails(service, copy);
   // A missing sign-in is the next step, so it stays on the row; everything
   // else (permissions, disconnect) is in the service's detail.
   const signIn = service.ready && service.status !== "connected";

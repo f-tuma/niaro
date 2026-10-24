@@ -88,6 +88,8 @@ type ProcessSummary = {
   activeVersion: number | null;
   updatedAt: string;
   serviceId?: string | null;
+  /** Blocked until it is tested again (a service or model changed). */
+  retestNeeded?: true;
 };
 
 /** Rows of processes; each row opens the process page. */
@@ -108,7 +110,15 @@ export function ProcessRows({
         const Icon = p.kind === "agent" ? Bot : Workflow;
         return (
           <Item key={p.id} asChild variant="row" size="row">
-            <Link {...processConsoleRoute(p.serviceId ?? serviceId, p.id)}>
+            {/* A blocked process opens on its Tests tab, where the fix is. */}
+            <Link
+              {...processConsoleRoute(p.serviceId ?? serviceId, p.id)}
+              state={
+                p.retestNeeded
+                  ? (previous) => ({ ...previous, processTab: "tests" })
+                  : undefined
+              }
+            >
               <ItemMedia>
                 <EntityIcon size="sm">
                   <Icon />
@@ -130,6 +140,9 @@ export function ProcessRows({
                 <span className="hidden text-xs text-muted-foreground sm:inline">
                   <RelativeTime value={p.updatedAt} />
                 </span>
+                {p.retestNeeded && (
+                  <StatusBadge tone="warning">{copy.retestNeeded}</StatusBadge>
+                )}
                 {p.activeVersion ? (
                   <span className="text-xs text-muted-foreground tabular-nums">
                     <span className="sr-only">{copy.activeVersion} </span>v

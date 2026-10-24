@@ -722,6 +722,48 @@ describe("tagging with @", () => {
     expect(root.findByType("textarea").props.value).toHaveLength(4001);
   });
 
+  test("the composer counts characters only near the limit", async () => {
+    const { session } = fakeSession(storeWith([chat([])]));
+    const root = await renderChat(session, "conv-1");
+    await typeInto(root, "a".repeat(3500));
+    expect(allByTestId(root, "composer-count")).toHaveLength(0);
+    await typeInto(root, "a".repeat(3600));
+    expect(text(byTestId(root, "composer-count"))).toMatch(
+      /^3\s600 \/ 4\s000$/,
+    );
+    expect(byTestId(root, "composer-count").props["data-over"]).toBe(false);
+    await typeInto(root, "a".repeat(4001));
+    expect(byTestId(root, "composer-count").props["data-over"]).toBe(true);
+  });
+
+  test("Enter and Tab belong to an IME while it composes", async () => {
+    const { session, sent } = fakeSession(storeWith([chat([])]));
+    const root = await renderChat(session, "conv-1");
+    await typeInto(root, "@cr");
+    for (const composing of [
+      { nativeEvent: { isComposing: true } },
+      // Some browsers flag the composition only by its key code.
+      { nativeEvent: { isComposing: false, keyCode: 229 } },
+    ])
+      for (const name of ["Enter", "Tab"])
+        await act(async () =>
+          root.findByType("textarea").props.onKeyDown(key(name, composing)),
+        );
+    expect(root.findByType("textarea").props.value).toBe("@cr");
+    expect(byTestId(root, "mention-picker")).toBeTruthy();
+    await typeInto(root, "こんにちは");
+    await act(async () =>
+      root
+        .findByType("textarea")
+        .props.onKeyDown(
+          key("Enter", { nativeEvent: { isComposing: false, keyCode: 229 } }),
+        ),
+    );
+    expect(sent).toHaveLength(0);
+    await press(root, "Enter");
+    expect(sent[0]).toMatchObject({ text: "こんにちは" });
+  });
+
   test("Escape stops a running answer", async () => {
     const { session, publish } = fakeSession(storeWith([chat([])]));
     await renderChat(session, "conv-1");
@@ -771,7 +813,7 @@ describe("chat history", () => {
   async function renderHistory(
     pages: { conversations: ConversationSummary[]; nextAfter: string | null }[],
   ) {
-    const { session } = fakeSession(storeWith([]));
+    const { session, publish } = fakeSession(storeWith([]));
     (session.readConversations as jest.Mock).mockImplementation(
       async (after: string | null) => ({
         profile: "agent-conversations/1",
@@ -782,10 +824,50 @@ describe("chat history", () => {
     mockApp.session = session;
     const root = await render(<ChatHistoryNav />);
     await settle();
-    return { root, session };
+    return { root, session, publish };
   }
   const titles = (root: ReactTestInstance) =>
     root.findAll((node) => node.type === "a").map((link) => text(link).trim());
+  test("the chat whose answer is on its way shows a spinner", async () => {
+    const { root, publish } = await renderHistory([
+      {
+        conversations: [
+          summary("chat-1", { title: "Schůzka s Janem" }),
+          summary("chat-2", { title: "Faktury" }),
+        ],
+        nextAfter: null,
+      },
+    ]);
+    const spinners = () =>
+      root
+        .findAll((node) => node.type === "a")
+        .map(
+          (link) =>
+            link.findAll(
+              (node) =>
+                node.props["data-host"] === "Spinner" &&
+                node.props["aria-label"] === "Odpovídá",
+            ).length,
+        );
+    expect(spinners()).toEqual([0, 0]);
+    const pending: SessionCommand = {
+      type: "message.send",
+      commandId: "c-2",
+      idempotencyKey: "c-2",
+      conversationId: "chat-2",
+      text: "Kolik je faktur?",
+      language: "cs",
+    };
+    await act(async () =>
+      publish({ pending, commandStates: { chat: "sending" } }),
+    );
+    expect(spinners()).toEqual([0, 1]);
+    // A request that lost its connection waits for a retry; it isn't running.
+    await act(async () =>
+      publish({ commandStates: { chat: "network_error" } }),
+    );
+    expect(spinners()).toEqual([0, 0]);
+  });
   test("the list has no title filter (search is its own screen) and loads older chats on demand", async () => {
     const { root, session } = await renderHistory([
       {

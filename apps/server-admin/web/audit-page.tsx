@@ -1,5 +1,7 @@
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearch } from "@tanstack/react-router";
+import { z } from "zod";
 import { ChevronLeft, ChevronRight, ScrollText } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
 import { Card } from "@admin/components/ui/card";
@@ -56,6 +58,12 @@ import { readableName } from "../../../packages/protocol/display-name";
 
 type AuditFilter = { workspaceId: string; category: string; outcome: string };
 const all = "all";
+/** A link may open the log already filtered, e.g. today's failed actions. */
+export const auditSearchSchema = z.object({
+  workspaceId: z.string().max(200).optional().catch(undefined),
+  category: z.enum(["changes", "tools"]).optional().catch(undefined),
+  outcome: AuditOutcome.optional().catch(undefined),
+});
 
 export const auditActions: Record<AuditEntry["action"], keyof Copy> = {
   "mcp.access_issued": "auditMcpAccessIssued",
@@ -180,11 +188,14 @@ export function outcomeTone(outcome: AuditEntry["outcome"]): Tone {
 }
 function AuditFeed({ detail }: { detail: OrganizationDetail }) {
   const { copy, data, language } = useAdmin();
-  const [filter, setFilter] = useState<AuditFilter>({
-    workspaceId: "",
-    category: "",
-    outcome: "",
-  });
+  const search = auditSearchSchema.parse(useSearch({ strict: false }));
+  const [filter, setFilter] = useState<AuditFilter>(() => ({
+    workspaceId: detail.workspaces.some((w) => w.id === search.workspaceId)
+      ? search.workspaceId!
+      : "",
+    category: search.category ?? "",
+    outcome: search.outcome ?? "",
+  }));
   const [cursors, setCursors] = useState<number[]>([]);
   const [selected, setSelected] = useState<AuditEntry | null>(null);
   const before = cursors.at(-1);

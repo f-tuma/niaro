@@ -79,7 +79,7 @@ import {
 import { RelativeTime } from "@admin/components/console/time";
 import { useAdmin } from "./context";
 import { useCatalog, CatalogBoundary } from "./catalog-shared";
-import { useProcessHost } from "./process-host";
+import { AdminLink, useProcessHost } from "./process-host";
 import {
   ProcessConsoleClient,
   type ProcessConsoleScope,
@@ -723,6 +723,15 @@ function Workspace({
                       {budgetMissing && (
                         <Alert>
                           <AlertDescription>{copy.budget}</AlertDescription>
+                          {adminLinks !== "none" && (
+                            <AlertAction>
+                              <Button asChild size="sm" variant="outline">
+                                <AdminLink to="/usage">
+                                  {copy.budgetLink}
+                                </AdminLink>
+                              </Button>
+                            </AlertAction>
+                          )}
                         </Alert>
                       )}
                       {state.toolsError && (

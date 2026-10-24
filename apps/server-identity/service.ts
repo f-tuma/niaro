@@ -4803,10 +4803,13 @@ export class IdentityService {
                   id: z.string().regex(/^[A-Za-z0-9_-]{32}$/),
                 }),
                 z.strictObject({ action: z.literal("revokeAll") }),
+                z.strictObject({ action: z.literal("revokeOthers") }),
               ])
               .parse(payload);
             if (input.action === "revoke")
               this.accountSecurity.revoke(userId, input.id);
+            if (input.action === "revokeOthers")
+              this.accountSecurity.revokeOtherBrowsers(userId, sessionId);
             if (input.action === "revokeAll") {
               const signedOut = await this.auth.api.signOut({
                 headers: this.headers(req),

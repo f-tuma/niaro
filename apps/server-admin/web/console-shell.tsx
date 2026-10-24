@@ -1,33 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useRouterState, type LinkProps } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Boxes,
-  Cable,
-  History,
-  PlugZap,
   Check,
   ChevronsUpDown,
-  Cpu,
-  GitBranch,
-  Gauge,
-  Workflow,
-  Sparkles,
   Languages,
-  LayoutDashboard,
   LogOut,
   Monitor,
   Moon,
-  Puzzle,
   RefreshCw,
-  ScrollText,
-  Settings2,
-  ShieldCheck,
   Sun,
   Terminal,
-  Users,
-  type LucideIcon,
-  Server,
 } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
 import { Separator } from "@admin/components/ui/separator";
@@ -84,80 +68,7 @@ import { initials } from "@admin/components/console/entity-icon";
 import { setTheme, useTheme } from "@admin/lib/theme";
 import { ProcessEditsGuard, useProcessEditsGuard } from "./process-edits-guard";
 import { designEn, designCs } from "./process-design-copy";
-
-type NavKey =
-  | "overview"
-  | "processes"
-  | "skills"
-  | "services"
-  | "plugins"
-  | "routing"
-  | "usage"
-  | "mcp"
-  | "providers"
-  | "people"
-  | "workspaces"
-  | "signIn"
-  | "hosted"
-  | "audit"
-  | "loops"
-  | "settings";
-type NavItem = {
-  to: NonNullable<LinkProps["to"]>;
-  key: NavKey;
-  icon: LucideIcon;
-};
-const navigation: {
-  label?:
-    | "groupServices"
-    | "groupAi"
-    | "groupProcesses"
-    | "groupPeople"
-    | "groupSettings";
-  items: NavItem[];
-}[] = [
-  { items: [{ to: "/", key: "overview", icon: LayoutDashboard }] },
-  {
-    label: "groupServices",
-    items: [
-      { to: "/services", key: "services", icon: Cable },
-      { to: "/plugins", key: "plugins", icon: Puzzle },
-      { to: "/mcp", key: "mcp", icon: PlugZap },
-    ],
-  },
-  {
-    label: "groupAi",
-    items: [
-      { to: "/providers", key: "providers", icon: Cpu },
-      { to: "/routing", key: "routing", icon: GitBranch },
-      { to: "/usage", key: "usage", icon: Gauge },
-      { to: "/skills", key: "skills", icon: Sparkles },
-    ],
-  },
-  {
-    label: "groupProcesses",
-    items: [
-      { to: "/processes", key: "processes", icon: Workflow },
-      { to: "/loops", key: "loops", icon: History },
-    ],
-  },
-  {
-    label: "groupPeople",
-    items: [
-      { to: "/people", key: "people", icon: Users },
-      { to: "/workspaces", key: "workspaces", icon: Boxes },
-      { to: "/auth-providers", key: "signIn", icon: ShieldCheck },
-    ],
-  },
-  {
-    label: "groupSettings",
-    items: [
-      { to: "/hosted", key: "hosted", icon: Server },
-      { to: "/audit", key: "audit", icon: ScrollText },
-      { to: "/settings", key: "settings", icon: Settings2 },
-    ],
-  },
-];
+import { navigation } from "./console-navigation";
 
 function usePath() {
   const raw = useRouterState({ select: (s) => s.location.pathname });

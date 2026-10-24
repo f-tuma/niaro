@@ -8,6 +8,8 @@ import type {
 import type { Service } from "../packages/protocol/service-catalog";
 import type { ServiceResult } from "../packages/protocol/service-result";
 import { ConnectionDetailPage } from "../apps/server-admin/web/app/connection-detail";
+import { signInDetails } from "../apps/server-admin/web/app/connections-page";
+import { menuCopy } from "../apps/server-admin/web/app/menu-copy";
 import { ServiceActionView } from "../apps/server-admin/web/app/chat-cards";
 import { ServiceActionList } from "../apps/server-admin/web/service-action-list";
 import { ServiceAccess } from "../apps/server-admin/web/service-access";
@@ -279,6 +281,24 @@ const saves = () =>
 
 beforeEach(() => mockApi.mockReset());
 
+describe("Connections list", () => {
+  test("what signing in unlocks shows only until the account is connected", () => {
+    const cs = menuCopy.cs;
+    expect(signInDetails(signIn, cs)).toEqual(["anna@example.test"]);
+    expect(
+      signInDetails({ ...signIn, status: "expired", account: null }, cs),
+    ).toEqual(["Přihlas se, abys ho mohl používat"]);
+    expect(
+      signInDetails(
+        { ...signIn, status: "disconnected", requiredFor: "writes" },
+        menuCopy.en,
+      ),
+    ).toEqual(["anna@example.test", "Sign in to make changes"]);
+    expect(menuCopy.en.connectionAll).toBe("Sign in to use it");
+    expect(cs.connectionWrites).toBe("Přihlas se, abys mohl dělat změny");
+  });
+});
+
 describe("Connections → service detail", () => {
   test("shows the account and what the assistant may do, grouped, with approval for changes", async () => {
     serve(permissions());
@@ -402,13 +422,16 @@ describe("chat approval card", () => {
     reviewTruncated: false,
     summary: "",
   };
-  test("'Příště se neptat' saves only after the approval is sent", async () => {
+  test("'Příště se neptat' saves only after the approval is accepted", async () => {
     const order: string[] = [];
     mockApi.mockImplementation(async (path: string) => {
       order.push(path);
       return path.endsWith("/approval") ? { available: true } : { ok: true };
     });
-    const onDecide = jest.fn(() => order.push("approve"));
+    const onDecide = jest.fn(async () => {
+      order.push("approve");
+      return true;
+    });
     const { root } = await render(
       <ServiceActionView
         result={waiting}
@@ -434,6 +457,32 @@ describe("chat approval card", () => {
       workspaceId: "ws-1",
       operationId: "op-1",
     });
+  });
+  test("a failed approval saves no rule", async () => {
+    mockApi.mockResolvedValue({ available: true });
+    for (const decide of [
+      async () => false,
+      () => Promise.reject(new Error("network_error")),
+    ]) {
+      mockApi.mockClear();
+      const { root } = await render(
+        <ServiceActionView
+          result={waiting}
+          disabled={false}
+          onDecide={decide}
+          rememberTarget={mockWorkspace}
+        />,
+      );
+      await act(async () => {
+        byHost(root, "Checkbox")[0]!.props.onCheckedChange(true);
+      });
+      await act(async () => {
+        button(root, "Potvrdit").props.onClick();
+      });
+      expect(
+        mockApi.mock.calls.some(([path]) => String(path).endsWith("/remember")),
+      ).toBe(false);
+    }
   });
   test("no option without the person's own account, and none unless ticked", async () => {
     mockApi.mockResolvedValue({ available: false });

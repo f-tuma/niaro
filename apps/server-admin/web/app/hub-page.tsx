@@ -72,7 +72,7 @@ import {
   TableHeader,
   TableRow,
 } from "@admin/components/ui/table";
-import { DetailList } from "@admin/components/console/forms";
+import { ConfirmAction, DetailList } from "@admin/components/console/forms";
 import { StatusBadge } from "@admin/components/console/status";
 import { RelativeTime } from "@admin/components/console/time";
 import type { ClientSession } from "../../../../packages/client-core/session";
@@ -97,9 +97,8 @@ import {
 } from "../../../../packages/protocol/widgets";
 import { plural } from "../lib/plural";
 import { useApp, useAppSession } from "./context";
-import { UNSAVED_DRAFT, draftKey, saveDraft } from "./chat-store";
+import { UNSAVED_DRAFT, draftKey, readDraft, saveDraft } from "./chat-store";
 import {
-  hubErrorText,
   hubWidgetProblem,
   useHubCopy,
   type HubCopy,
@@ -191,6 +190,8 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
   } | null>(null);
   /** The widget shown large in a dialog, by id. */
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** The widget waiting for "Remove from overview" to be confirmed. */
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const change = useMutation({
     mutationFn: (command: HubChange) =>
       session.sendHubCommand(language, {
@@ -238,6 +239,22 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
       });
     void navigate({ to: "/chat" });
   };
+  /** The header's box: its text joins what the person had already written
+   * in the new chat instead of replacing it. */
+  const askFromBox = (text: string) => {
+    const question = text.trim();
+    if (question) {
+      const key = draftKey(session.identityKey, UNSAVED_DRAFT);
+      const saved = readDraft(key);
+      const before = saved?.text.trimEnd();
+      saveDraft(key, {
+        ...saved,
+        text: before ? `${before}\n\n${question}` : question,
+        revision: saved?.revision ?? 0,
+      });
+    }
+    void navigate({ to: "/chat" });
+  };
   /** A new chat that starts with the widget as context; the person finishes it. */
   const askAbout = (name: string, detail = "") => {
     saveDraft(draftKey(session.identityKey, UNSAVED_DRAFT), {
@@ -283,7 +300,7 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
           </>
         ) : (
           <>
-            <AskBox copy={copy} onAsk={ask} />
+            <AskBox copy={copy} onAsk={askFromBox} />
             {data && data.items.length > 0 && (
               <Button
                 variant="ghost"
@@ -337,6 +354,14 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
       work.status === "waiting_approval" || work.status === "waiting_input",
   ).length;
   const configured = items.find((item) => item.id === configuring?.id);
+  const removing = items.find((item) => item.id === removingId);
+  const sheetError = changeError && configured && (
+    <ChangeProblem copy={copy} error={changeError} isAdmin={isAdmin} />
+  );
+  const closeSheet = () => {
+    setConfiguring(null);
+    setChangeError(null);
+  };
   const add = (choice: HubAddChoice) => {
     setAdding(false);
     if (choice.kind === "tasks") return mutate({ type: "add", kind: "tasks" });
@@ -361,7 +386,7 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
   return (
     <section aria-label={copy.overview} className="flex flex-col gap-6">
       {header}
-      {changeError && (
+      {changeError && !configured && (
         <ChangeProblem copy={copy} error={changeError} isAdmin={isAdmin} />
       )}
       {!items.length && !editing ? (
@@ -426,7 +451,7 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
                 onConfigure={(focus) => setConfiguring({ id, focus })}
                 onExpand={() => setExpandedId(id)}
                 onRefresh={() => mutate({ type: "refresh", itemIds: [id] })}
-                onRemove={() => mutate({ type: "remove", itemId: id })}
+                onRemove={() => setRemovingId(id)}
               />
             );
             const frame = {
@@ -469,6 +494,7 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
                 item={item}
                 frame={frame}
                 disabled={pending}
+                isAdmin={isAdmin}
                 onRefresh={() => mutate({ type: "refresh", itemIds: [id] })}
                 onConfigure={() => setConfiguring({ id, focus: "view" })}
                 onAsk={() => askAbout(item.title)}
@@ -489,7 +515,8 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
         item={configured && configured.kind !== "widget" ? configured : null}
         focus={configuring?.focus ?? "view"}
         disabled={pending}
-        onClose={() => setConfiguring(null)}
+        error={sheetError}
+        onClose={closeSheet}
         onSave={async (changes: HubWidgetChange) => {
           if (!configured) return;
           const itemId = configured.id;
@@ -514,8 +541,7 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
               });
             setConfiguring(null);
           } catch {
-            // The error shows above the grid.
-            setConfiguring(null);
+            // The sheet stays open with the edits; the error shows in it.
           }
         }}
       />
@@ -523,7 +549,8 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
         item={configured?.kind === "widget" ? configured : null}
         session={session}
         disabled={pending}
-        onClose={() => setConfiguring(null)}
+        error={sheetError}
+        onClose={closeSheet}
         onSave={async (changes) => {
           if (!configured) return;
           const itemId = configured.id;
@@ -550,8 +577,19 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
               });
             setConfiguring(null);
           } catch {
-            setConfiguring(null);
+            // The sheet stays open with the edits; the error shows in it.
           }
+        }}
+      />
+      <ConfirmAction
+        open={!!removing}
+        onOpenChange={(open) => !open && setRemovingId(null)}
+        title={copy.removeConfirm}
+        description={removing?.title}
+        confirmLabel={copy.removeAction}
+        cancelLabel={copy.cancel}
+        onConfirm={() => {
+          if (removing) mutate({ type: "remove", itemId: removing.id });
         }}
       />
     </section>
@@ -951,9 +989,19 @@ function ResultState({
     );
   if (status === "waiting")
     return <StatusBadge tone="warning">{copy.waiting}</StatusBadge>;
-  // The badge says it failed; the reason, when known, is in the body.
+  // The badge says it failed; the reason, when known, is in the body. The
+  // data still shown is from an earlier refresh: say when.
   if (status === "failed")
-    return <StatusBadge tone="danger">{copy.failed}</StatusBadge>;
+    return (
+      <span className="flex min-w-0 items-center gap-1.5">
+        <StatusBadge tone="danger">{copy.failed}</StatusBadge>
+        {result?.producedAt && (
+          <span data-testid="widget-stale" className="truncate">
+            · {copy.staleData} <RelativeTime value={result.producedAt} />
+          </span>
+        )}
+      </span>
+    );
   if (result?.producedAt)
     return (
       <span className="flex min-w-0 items-center gap-1.5">
@@ -988,12 +1036,35 @@ function RefreshButton({
   );
 }
 
-/** The step that fixes a failed widget: the app's connect flow, or the
- * administration page (another app, so a plain link). */
-function FixAction({ fix, copy }: { fix: HubFix; copy: HubCopy }) {
+/** The step that fixes a failed widget: the app's connect flow or Processes
+ * page, the administration page (another app, so a plain link), or a retry. */
+function FixAction({
+  fix,
+  copy,
+  onRetry,
+}: {
+  fix: HubFix;
+  copy: HubCopy;
+  onRetry?: () => void;
+}) {
+  if (fix.kind === "retry")
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        className="self-start"
+        disabled={!onRetry}
+        onClick={onRetry}
+      >
+        <RefreshCw data-icon="inline-start" aria-hidden="true" />
+        {copy.retry}
+      </Button>
+    );
   return (
     <Button variant="outline" size="sm" className="self-start" asChild>
-      {fix.kind === "connect" ? (
+      {fix.kind === "processes" ? (
+        <Link to="/processes">{copy.openProcesses}</Link>
+      ) : fix.kind === "connect" ? (
         fix.serviceId ? (
           <Link
             to="/connections/$serviceId"
@@ -1015,19 +1086,27 @@ function FixAction({ fix, copy }: { fix: HubFix; copy: HubCopy }) {
   );
 }
 
-/** Why a widget couldn't fill, in one muted line, and the fix beside it. */
+/** Why a widget couldn't fill, in one muted line, and the fix beside it. The
+ * generic line would only repeat the badge, so it is left out. */
 function WidgetProblem({
   problem,
   copy,
+  onRetry,
 }: {
   problem: ReturnType<typeof hubWidgetProblem>;
   copy: HubCopy;
+  onRetry?: () => void;
 }) {
-  if (!problem.fix && problem.text === copy.errors.other) return null;
+  const generic = problem.text === copy.errors.other;
+  if (!problem.fix && generic) return null;
   return (
     <div className="flex flex-col gap-2" data-testid="widget-error">
-      <p className="text-sm text-muted-foreground">{problem.text}</p>
-      {problem.fix && <FixAction fix={problem.fix} copy={copy} />}
+      {!generic && (
+        <p className="text-sm text-muted-foreground">{problem.text}</p>
+      )}
+      {problem.fix && (
+        <FixAction fix={problem.fix} copy={copy} onRetry={onRetry} />
+      )}
     </div>
   );
 }
@@ -1115,16 +1194,18 @@ function TypedWidget({
             />
           )}
           {data !== null && Body ? (
-            <Body
-              data={data}
-              config={config}
-              item={item}
-              language={language}
-              ask={onAsk}
-              session={session}
-              expanded={expanded}
-              onExpand={frame.onExpand}
-            />
+            <StaleData stale={status === "failed"}>
+              <Body
+                data={data}
+                config={config}
+                item={item}
+                language={language}
+                ask={onAsk}
+                session={session}
+                expanded={expanded}
+                onExpand={frame.onExpand}
+              />
+            </StaleData>
           ) : running ? (
             <Skeleton className="min-h-10 w-full flex-1" />
           ) : null}
@@ -1187,6 +1268,7 @@ function ProcessWidget({
   item,
   frame,
   disabled,
+  isAdmin,
   onRefresh,
   onConfigure,
   onAsk,
@@ -1194,11 +1276,13 @@ function ProcessWidget({
   item: HubCard;
   frame: WidgetFrameState;
   disabled: boolean;
+  isAdmin: boolean;
   onRefresh: () => void;
   onConfigure: () => void;
   onAsk: () => void;
 }) {
   const copy = useHubCopy();
+  const { language } = useApp();
   const result = item.result;
   const status = result?.status;
   const running = status === "running";
@@ -1224,12 +1308,17 @@ function ProcessWidget({
       frame={frame}
     >
       <div className="flex min-h-0 flex-1 flex-col gap-3">
-        {status === "failed" &&
-          hubErrorText(copy, result?.error) !== copy.errors.other && (
-            <p className="text-sm text-muted-foreground">
-              {hubErrorText(copy, result?.error)}
-            </p>
-          )}
+        {status === "failed" && (
+          <WidgetProblem
+            problem={hubWidgetProblem(copy, result?.error, {
+              sources: [],
+              isAdmin,
+              process: { language },
+            })}
+            copy={copy}
+            onRetry={disabled ? undefined : onRefresh}
+          />
+        )}
         {(status === "waiting" || status === "failed") &&
           result?.conversationId && (
             <Button variant="outline" size="sm" className="self-start" asChild>
@@ -1251,14 +1340,18 @@ function ProcessWidget({
           </div>
         ) : item.view.type === "summary" ? (
           result?.output ? (
-            <HubOutputView output={result.output} copy={copy} />
+            <StaleData stale={status === "failed"}>
+              <HubOutputView output={result.output} copy={copy} />
+            </StaleData>
           ) : running ? (
             <Skeleton className="h-10 w-full" />
           ) : status === "succeeded" ? (
             <p className="text-sm text-muted-foreground">{copy.empty}</p>
           ) : null
         ) : item.data ? (
-          <WidgetData view={item.view} data={item.data} copy={copy} />
+          <StaleData stale={status === "failed"}>
+            <WidgetData view={item.view} data={item.data} copy={copy} />
+          </StaleData>
         ) : running ? (
           <Skeleton className="min-h-10 w-full flex-1" />
         ) : result?.producedAt ? (
@@ -1277,6 +1370,22 @@ function ProcessWidget({
         )}
       </div>
     </WidgetFrame>
+  );
+}
+
+/** Data from an earlier refresh under a failure badge: dimmed, still usable. */
+function StaleData({
+  stale,
+  children,
+}: {
+  stale: boolean;
+  children: ReactNode;
+}) {
+  if (!stale) return <>{children}</>;
+  return (
+    <div data-stale className="flex min-h-0 flex-1 flex-col opacity-60">
+      {children}
+    </div>
   );
 }
 
