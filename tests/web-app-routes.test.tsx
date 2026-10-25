@@ -33,6 +33,9 @@ jest.mock("../apps/server-admin/web/app/hub-page", () => ({
 jest.mock("../apps/server-admin/web/app/chat-page", () => ({
   ChatPage: mockPage("chat"),
 }));
+jest.mock("../apps/server-admin/web/app/chat-next/chat-next-page", () => ({
+  ChatNextPage: mockPage("chat-next"),
+}));
 jest.mock("../apps/server-admin/web/app/tasks-page", () => ({
   TasksPage: mockPage("tasks"),
 }));
@@ -151,6 +154,9 @@ Object.assign(globalThis, {
 const { appRouter } = jest.requireActual<
   typeof import("../apps/server-admin/web/app/router")
 >("../apps/server-admin/web/app/router");
+const { setChatNext } = jest.requireActual<
+  typeof import("../apps/server-admin/web/app/chat-next/switch")
+>("../apps/server-admin/web/app/chat-next/switch");
 
 const text = (node: ReactTestInstance | string): string =>
   typeof node === "string" ? node : node.children.map(text).join("");
@@ -221,6 +227,14 @@ test("the app opens on the dashboard; a new chat has its own address", async () 
     conversationId: "chat-123",
   });
   act(() => saved.unmount());
+
+  // The next chat takes the same addresses once chosen in the account menu.
+  act(() => setChatNext(true));
+  const next = await open("/chat/chat-123");
+  expect(shown(next.root)).toBe("chat-next");
+  expect(text(next.root)).toContain("Zpět na klasický chat");
+  act(() => next.unmount());
+  act(() => setChatNext(false));
 });
 
 test("a personal service opens its own page under Connections", async () => {

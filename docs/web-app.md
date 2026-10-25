@@ -120,6 +120,50 @@ every sign-in and sign-out.
   **Restore**. The mobile app has the same list under Settings, and
   **Archive** in the drawer's row menu.
 
+## Chat (next)
+
+The chat is being rebuilt on [assistant-ui](https://github.com/assistant-ui/assistant-ui)
+(MIT, `@assistant-ui/react`), next to the classic one, so the web stops
+carrying its own thread, composer and part rendering
+([ADR 020](adr/020-web-chat-on-assistant-ui.md)). It takes the same addresses
+(`/chat`, `/chat/:id`) once chosen:
+
+- **Switch.** The account menu offers **Try the new chat** / **Back to the
+  classic chat**; `?chat=next` or `?chat=classic` in the address picks one
+  too. The choice is remembered in the browser (`localStorage["niaro.chat"]`).
+  Nothing else changes: the sidebar, search, archive and the mobile app stay
+  as they are.
+- **Transport.** The session is the thread's external store
+  (`useExternalStoreRuntime`): its stored messages, the message on its way
+  and the streamed answer (NIAR-226/227: the draft, the tool steps and a
+  write waiting for approval, which client-core already reads from the answer
+  stream) are mapped to assistant-ui messages in
+  `apps/server-admin/web/app/chat-next/transport.ts`. Sending goes through the
+  same commands as before (`conversation.create`, `message.send` with
+  mentions and the attached task, `service.resolve`), so idempotency, retry,
+  offline and the server's authority are unchanged.
+- **Parts.** Every system view is a tool-call part with a `niaro.*` name the
+  thread renders through its tool UI: the generated answer (`niaro.openui` →
+  the same `GeneratedUi`), an approval (`niaro.approval` → `ServiceActionView`),
+  the assistant's own work with its question and offered answers
+  (`niaro.work`), a sign-in (`niaro.signin`), a process offer (`niaro.offer`),
+  a skill or process draft, contacts and an old composed card. A streamed tool
+  step is one line, "Twenty CRM · Search loans · returned items 71", named as
+  the Runs page names it. **Thinking** shows only until the first word of the
+  answer; reasoning is never shown.
+- **Kept from the classic chat:** the `@` picker and chips, the attached task,
+  stop (Esc), retry, the chat's own errors, the 4,000-character limit and its
+  counter, IME-safe keys, the read-only archived chat with **Restore**,
+  message links (`?m=`), day dividers, message times, **Copy**, **Again** and
+  **Edit**.
+- **Not in the next chat (use the classic one):** typed replies to a process
+  question (its card has no **Reply**; offered answers still work), the
+  recovery of an unconfirmed process answer and the process answer notice.
+  These belong to the process runtime and will move once the next chat is the
+  only one.
+
+`tests/web-chat-next.test.tsx` runs the classic chat's cases against it.
+
 ## Search
 
 `/search` (sidebar **Search**, Ctrl/Cmd+K) is its own screen, as in

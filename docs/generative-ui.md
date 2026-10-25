@@ -71,7 +71,7 @@ Delivery is negotiated: clients that render UI add `ui=agent-openui%2F1` to `sna
 
 Containers nest one way (Stack › Tabs/Accordion › Section › Row/Grid › blocks), which keeps generated layouts shallow. A `Detail` whose value is a complete email, phone number or https URL becomes a link, as card fields did.
 
-- **Web** (`apps/server-admin/web/app/generative-ui/`): `createLibrary` and `Renderer` from `@openuidev/react-lang`, with shadcn components, the console patterns and the existing chart setup; light and dark from the tokens.
+- **Web** (`apps/server-admin/web/app/generative-ui/`): `createLibrary` and `Renderer` from `@openuidev/react-lang`, with shadcn components, the console patterns and the existing chart setup; light and dark from the tokens. The next chat ([web app](web-app.md#chat-next)) renders the same `GeneratedUi` as a `niaro.openui` tool part of the assistant-ui thread, streaming while the draft is written.
 - **Phone** (`packages/ui-catalog/GenerativeUiView.tsx`, `generative-ui-runtime.ts`, `generative-ui-components.tsx`, `generative-ui-charts.tsx`): react-lang 1.0.1 renders DOM elements, so the app has its own renderer on lang-core's streaming parser, store and evaluator, mapping the same names to the React Native UI kit; charts are drawn with `react-native-svg`.
 
 ## Actions

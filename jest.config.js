@@ -2,7 +2,7 @@ const transformIgnorePatterns =
   require("jest-expo/jest-preset").transformIgnorePatterns.map((pattern) =>
     pattern.replace(
       "|standard-navigation",
-      "|standard-navigation|mdast-util-|micromark|decode-named-character-reference|character-entities|devlop|unist-util-|ccount|escape-string-regexp|markdown-table|zwitch|longest-streak|stringify-entities",
+      "|standard-navigation|mdast-util-|micromark|decode-named-character-reference|character-entities|devlop|unist-util-|ccount|escape-string-regexp|markdown-table|zwitch|longest-streak|stringify-entities|@assistant-ui|assistant-stream|assistant-cloud|safe-content-frame|nanoid",
     ),
   );
 const moduleNameMapper = {
