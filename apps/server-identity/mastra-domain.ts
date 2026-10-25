@@ -3691,7 +3691,7 @@ export function createMastraDomain(
           state.clock.referenceNow +
           "; timezone " +
           state.clock.timeZone +
-          ". These are authoritative; never ask date, timezone or UTC offset. For relative dates use internal_datetime_resolve. " +
+          ". These are authoritative; never ask date, timezone or UTC offset. Work out dates and whole-day ranges ('today', 'next 3 months', 'last week') yourself from the current time, in the person's timezone; call internal_datetime_resolve only for a specific time of day or a weekday phrase whose timezone or daylight-saving offset matters (for example 'on Thursday at two'). " +
           "The person's app language is " +
           (state.language === "cs" ? "Czech" : "English") +
           ": write the reply and any UI in it, even when the data is in another language, unless the person writes to you in a different language. " +

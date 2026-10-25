@@ -418,7 +418,7 @@ test("plugin files: check, save as override, reset, create and delete", async (t
   const edited = {
     ...original.files,
     "index.ts": original.files["index.ts"].replace(
-      "Calculate exact dates/times on the server",
+      "Calculate an exact time on the server",
       "TEST edited: calculate exact dates/times on the server",
     ),
   };
