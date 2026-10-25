@@ -260,13 +260,21 @@ test("mobile workspace designer enforces bearer scope, roles, profile, methods, 
 
     let release!: () => void;
     let entered!: () => void;
+    let serverAborted!: () => void;
     const modelGate = new Promise<void>((resolve) => {
       release = resolve;
     });
     const modelEntered = new Promise<void>((resolve) => {
       entered = resolve;
     });
-    h.onModel(async () => {
+    // The server must notice the closed request before the model answers;
+    // otherwise a slow runner lets the turn complete first.
+    const disconnected = new Promise<void>((resolve) => {
+      serverAborted = resolve;
+    });
+    h.onModel(async (_request, signal) => {
+      if (signal?.aborted) serverAborted();
+      else signal?.addEventListener("abort", () => serverAborted());
       entered();
       await modelGate;
       return { content: "TEST mobile designer interrupted" };
@@ -298,6 +306,15 @@ test("mobile workspace designer enforces bearer scope, roles, profile, methods, 
       await modelEntered;
       abort.abort();
       await pendingTurn;
+      await Promise.race([
+        disconnected,
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(Error("The server did not notice the closed request")),
+            10_000,
+          ),
+        ),
+      ]);
     } finally {
       release();
     }

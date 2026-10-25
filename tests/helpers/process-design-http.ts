@@ -144,7 +144,10 @@ export async function designHttpFixture(
   let modelCount = 0,
     businessCount = 0;
   const requests: ModelRequest[] = [];
-  let model: (request: ModelRequest) => object | Promise<object> = () => ({
+  let model: (
+    request: ModelRequest,
+    signal?: AbortSignal,
+  ) => object | Promise<object> = () => ({
     content: "TEST design HTTP reply",
   });
   let before: (() => void | Promise<void>) | undefined;
@@ -162,7 +165,10 @@ export async function designHttpFixture(
         modelCount++;
         requests.push(request.body as ModelRequest);
       });
-      const response = await model(request.body as ModelRequest);
+      const response = await model(
+        request.body as ModelRequest,
+        request.signal,
+      );
       return {
         status: 200,
         headers: {},
