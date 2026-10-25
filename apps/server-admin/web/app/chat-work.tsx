@@ -65,6 +65,13 @@ import type { RequestActivity } from "../../../../packages/protocol/activity";
 import type { AnswerStreamStep } from "../../../../packages/protocol/answer-stream";
 import { formatRange } from "../../../../packages/ui-catalog/field-format";
 import { CardDocumentView, ServiceActionView } from "./chat-cards";
+import {
+  loopDetailLabel,
+  loopNodeLabel,
+  loopsCopy,
+  type LoopsCopy,
+} from "../loops-copy";
+import { useApp } from "./context";
 import { useChatCopy } from "./chat-copy";
 import { QuestionChoices } from "./chat-question";
 
@@ -888,8 +895,12 @@ const statusLabels = {
   unknown: "progressUnconfirmed",
   needs_input: "progressNeedsInput",
 } as const;
-/** One streamed step as a line: "Twenty CRM · Search loans · Returned items 71". */
-export function liveStepText(step: AnswerStreamStep) {
+/** One streamed step as a line: "Twenty CRM · Search loans · returned items 71".
+ * Built-in tools read as on the Runs page ("Choose actions"), not by name. */
+export function liveStepText(step: AnswerStreamStep, copy?: LoopsCopy) {
+  const label = copy
+    ? loopNodeLabel({ kind: "tool", label: step.label }, copy)
+    : step.label;
   const field = (list: AnswerStreamStep["input"], labels: string[]) =>
     list.find((entry) => labels.includes(entry.label));
   const service =
@@ -902,8 +913,10 @@ export function liveStepText(step: AnswerStreamStep) {
     ]) ?? field(step.output, ["Message"]);
   return [
     service && service.value !== step.label ? service.value : undefined,
-    step.label,
-    count ? `${count.label.toLocaleLowerCase()} ${count.value}` : undefined,
+    label,
+    count
+      ? `${(copy ? loopDetailLabel(count.label, copy) : count.label).toLocaleLowerCase()} ${count.value}`
+      : undefined,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -937,6 +950,7 @@ export function ProgressView({
   /** Called before the steps open or close, so the transcript stays put. */
   onToggle?: () => void;
 }) {
+  const loops = loopsCopy[useApp().language];
   const { copy, tr } = useChatCopy();
   const [open, setOpen] = useState(false);
   const unknown = interrupted || connection === "unavailable";
@@ -1029,7 +1043,7 @@ export function ProgressView({
               ) : (
                 <Check aria-hidden="true" className="size-3" />
               )}
-              <span>{liveStepText(step)}</span>
+              <span>{liveStepText(step, loops)}</span>
             </li>
           ))}
         </ul>
