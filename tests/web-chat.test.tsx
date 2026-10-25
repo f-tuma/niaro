@@ -1372,3 +1372,105 @@ test("while the assistant works, the streamed steps say which service is read an
     root.findAll((node) => node.props["data-testid"] === "progress-live-steps"),
   ).toHaveLength(0);
 });
+
+test("a write the stream announced is shown to review at once, once, and the stored card takes it over", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Vytvoř schůzku s Janou")],
+  };
+  const { session, sent, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const pending = {
+    type: "message.send" as const,
+    commandId: "c-2",
+    idempotencyKey: "c-2",
+    conversationId: "conv-1",
+    text: "Vytvoř schůzku s Janou",
+    language: "cs" as const,
+  };
+  const cards = () =>
+    root.findAll(
+      (node) => node.props["data-testid"] === "service-action-op-1",
+      { deep: false },
+    );
+  await act(async () =>
+    publish({
+      pending,
+      commandStates: { chat: "sending" },
+      activity: {
+        commandId: "c-2",
+        conversationId: "conv-1",
+        status: "running",
+        steps: [
+          { id: "understanding", status: "running" },
+          { id: "preparing", status: "pending" },
+        ],
+      },
+      activityConnection: "live",
+      activityApproval: {
+        toolCallId: "c1",
+        operationId: "op-1",
+        toolName: "Create meeting",
+        service: "Microsoft 365",
+        effect: "write",
+        input: { fields: [{ label: "attendee", value: "jana@example.test" }] },
+        reviewTruncated: false,
+      },
+    }),
+  );
+  // The card is there before the stored message, with the reviewed fields;
+  // the decision waits for the run to settle.
+  expect(cards()).toHaveLength(1);
+  expect(text(cards()[0]!)).toContain("Create meeting");
+  expect(text(cards()[0]!)).toContain("jana@example.test");
+  expect(button(cards()[0]!, tr("serviceApprove")).props.disabled).toBe(true);
+  // The stored message with the same operation arrives: one card, not two.
+  const stored: Message = {
+    id: "m-2",
+    role: "assistant",
+    text: "Připraveno k potvrzení.",
+    replyToCommandId: "c-2",
+    result: {
+      ...approval,
+      title: "Create meeting",
+      service: "Microsoft 365",
+      fields: [{ label: "attendee", value: "jana@example.test" }],
+      inputJson: '{"attendee":"jana@example.test"}',
+    },
+  };
+  await act(async () =>
+    publish({
+      store: storeWith([
+        {
+          ...conversation,
+          revision: 5,
+          messages: [...conversation.messages, stored],
+        },
+      ]),
+    }),
+  );
+  expect(cards()).toHaveLength(1);
+  await act(async () =>
+    publish({
+      pending: null,
+      activity: null,
+      activityApproval: null,
+      commandStates: { chat: "accepted" },
+    }),
+  );
+  expect(cards()).toHaveLength(1);
+  const approve = button(cards()[0]!, tr("serviceApprove"));
+  expect(approve.props.disabled).toBe(false);
+  await act(async () => approve.props.onClick());
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({
+    type: "service.resolve",
+    conversationId: "conv-1",
+    operationId: "op-1",
+    approved: true,
+    language: "cs",
+  });
+});

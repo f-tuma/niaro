@@ -152,6 +152,11 @@ export type CatalogRuntime = {
       conversationId: string;
       legacyQuestionProof?: CatalogContext["legacyQuestionProof"];
     },
+    /** An open answer stream follows the continuation after the decision. */
+    stream?: Pick<
+      DomainMessageContext,
+      "reportDraft" | "reportStep" | "reportApproval"
+    >,
   ) => Promise<ServiceAnswer>;
 };
 
@@ -509,6 +514,7 @@ export function createCatalogRuntime(
       reportWorkflow,
       binding,
       commandBinding,
+      stream,
     ) {
       if (commandBinding?.legacyQuestionProof) {
         const { legacyQuestionProof, ...current } = commandBinding;
@@ -534,6 +540,7 @@ export function createCatalogRuntime(
           reportWorkflow,
           binding,
           current,
+          stream,
         );
       }
       const previous = await context.serial(async () => {
@@ -559,6 +566,7 @@ export function createCatalogRuntime(
         reportWorkflow,
         binding,
         commandBinding,
+        stream,
       );
     },
   };

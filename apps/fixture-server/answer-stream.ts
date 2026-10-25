@@ -5,14 +5,16 @@ import {
   ANSWER_STREAM_MEDIA_TYPE,
   type AnswerStreamChunk,
   type AnswerStreamListener,
+  type AnswerStreamApproval,
   type AnswerStreamStep,
 } from "../../packages/protocol/answer-stream";
 import { splitDraft } from "../../packages/openui-library/program";
 
 /**
- * Streams a `message.send` run to the client as server-sent events in the
- * AI SDK UI message stream shape: the answer's draft as text deltas, each
- * tool step, the program once its fence is complete, and finally what the
+ * Streams a `message.send` or `service.resolve` run to the client as
+ * server-sent events in the AI SDK UI message stream shape: the answer's
+ * draft as text deltas, each tool step, a write that waits for the person's
+ * decision, the program once its fence is complete, and finally what the
  * JSON response would have been. The stream only shows; the run neither
  * waits for it nor stops when it closes.
  */
@@ -109,9 +111,14 @@ export function openAnswerStream(
       });
     }
   };
+  // The card the stored result will carry, a moment early, so a client can
+  // show the write to review as soon as the run stops for it.
+  const approval = (value: AnswerStreamApproval) =>
+    write({ type: "data-tool-call-approval", data: value });
   const unsubscribe = subscribe(scope, commandId, (event) => {
     if (event.type === "draft") draft(event.draft);
-    else step(event.step);
+    else if (event.type === "step") step(event.step);
+    else approval(event.approval);
   });
   const close = () => {
     if (!open) return;

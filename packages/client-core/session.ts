@@ -4,6 +4,7 @@ import {
   parseAnswerStreamEvent,
   splitServerSentEvents,
   type AnswerStreamChunk,
+  type AnswerStreamApproval,
   type AnswerStreamStep,
 } from "../protocol/answer-stream";
 import {
@@ -349,6 +350,11 @@ export type SessionState = {
   activityConnection: "waiting" | "live" | "unavailable";
   /** The streamed tool steps of the running answer, oldest first; none without a stream. */
   activitySteps?: AnswerStreamStep[] | null;
+  /**
+   * A write the running answer stopped for, as the stream announced it
+   * before the stored card arrives; the stored message then shows the card.
+   */
+  activityApproval?: AnswerStreamApproval | null;
 };
 export const commandTarget = (c: SessionCommand) =>
   c.type === "conversation.create"
@@ -410,6 +416,7 @@ export class ClientSession {
     processNotice: null,
     activity: null,
     activitySteps: null,
+    activityApproval: null,
     activityConnection: "waiting",
   };
   private listeners = new Set<() => void>();
@@ -1643,6 +1650,7 @@ export class ClientSession {
       processNotice: null,
       activity: null,
       activitySteps: null,
+      activityApproval: null,
       activityConnection: "unavailable",
     });
     this.onInvalid();
@@ -1827,7 +1835,7 @@ export class ClientSession {
   private async streamAnswer(
     path: string,
     init: RequestInit,
-    command: Extract<Command, { type: "message.send" }>,
+    command: Extract<Command, { type: "message.send" | "service.resolve" }>,
     onJson: () => void,
   ): Promise<{ response: Pick<Response, "ok" | "status">; value: unknown }> {
     const { response, controller, done } = await this.open(
@@ -1862,6 +1870,7 @@ export class ClientSession {
       };
       const steps = new Map<string, AnswerStreamStep>();
       let text = "";
+      let approval: AnswerStreamApproval | null = null;
       let result: { status: number; body: unknown } | undefined;
       const live = () => {
         if (!current()) return;
@@ -1872,6 +1881,7 @@ export class ClientSession {
           },
           activityConnection: "live",
           activitySteps: [...steps.values()],
+          activityApproval: approval,
         });
       };
       const fields = (value: unknown, key: string) => {
@@ -1923,7 +1933,9 @@ export class ClientSession {
         } else if (chunk.type === "tool-output-error") {
           const step = steps.get(chunk.toolCallId);
           if (step) steps.set(chunk.toolCallId, { ...step, status: "failed" });
-        } else if (chunk.type === "data-niaro-result") result = chunk.data;
+        } else if (chunk.type === "data-tool-call-approval")
+          approval = chunk.data;
+        else if (chunk.type === "data-niaro-result") result = chunk.data;
       };
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -3342,6 +3354,7 @@ export class ClientSession {
         pending: null,
         activity: null,
         activitySteps: null,
+        activityApproval: null,
         processNotice: this.retainedRuntimeNotice(flight),
         ...(isProcessExecutionCommand(flight.command)
           ? {
@@ -3409,6 +3422,7 @@ export class ClientSession {
       pending: null,
       activity: null,
       activitySteps: null,
+      activityApproval: null,
     });
     flight.stopActivity();
     flight.controller.abort();
@@ -3545,6 +3559,7 @@ export class ClientSession {
       processNotice: null,
       activity: null,
       activitySteps: null,
+      activityApproval: null,
       activityConnection: "waiting",
     });
     let persisted = false;
@@ -3589,7 +3604,8 @@ export class ClientSession {
       flight.deliveryStarted = true;
       flight.markReady();
       const streaming =
-        !!this.options.stream && command.type === "message.send";
+        !!this.options.stream &&
+        (command.type === "message.send" || command.type === "service.resolve");
       if (
         !streaming &&
         (command.type === "message.send" || command.type === "card.respond")
@@ -3605,9 +3621,11 @@ export class ClientSession {
         signal: flight.controller.signal,
       };
       const delivery = await Promise.race([
-        (streaming && command.type === "message.send"
+        (streaming &&
+        (command.type === "message.send" || command.type === "service.resolve")
           ? this.streamAnswer(path, init, command, () => {
-              flight.stopActivity = this.watchActivity(command);
+              if (command.type === "message.send")
+                flight.stopActivity = this.watchActivity(command);
             })
           : this.json(path, init, 115000)
         ).then((result) => ({ ...result, retired: false as const })),

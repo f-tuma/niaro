@@ -300,7 +300,7 @@ function streamResponse() {
     push: (chunk: AnswerStreamChunk | "done" | null) => push(chunk),
   };
 }
-function streamingSetup(answer: Response) {
+function streamingSetup(answer: Response | ((post: number) => Response)) {
   const engine = new FixtureEngine();
   const command = messageCommand("Choose Peter", "en", "test-stream");
   const posts: RequestInit[] = [];
@@ -311,7 +311,7 @@ function streamingSetup(answer: Response) {
         throw new Error("TEST polling is not used while streaming");
       if (init?.method === "POST") {
         posts.push(init);
-        return answer;
+        return typeof answer === "function" ? answer(posts.length - 1) : answer;
       }
       return response(engine.snapshot());
     },
@@ -513,6 +513,87 @@ test("a stream that ends without its result leaves the command pending for a ret
       chat: "network_error",
     });
     expect(f.posts).toHaveLength(1);
+  } finally {
+    f.session.stop();
+  }
+});
+
+test("a streamed approval is shown before the stored result, and the decision streams the same way", async () => {
+  jest.useRealTimers();
+  const streams = [streamResponse(), streamResponse()];
+  const f = streamingSetup((post) => streams[post]!.response);
+  try {
+    await f.session.start(false);
+    const send = f.session.send(f.command);
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+    await settle();
+    const approval = {
+      toolCallId: "c1",
+      operationId: "op-1",
+      toolName: "Create meeting",
+      service: "TEST Calendar",
+      effect: "write" as const,
+      input: { fields: [{ label: "attendee", value: "jane@example.test" }] },
+      reviewTruncated: false,
+    };
+    streams[0]!.push({ type: "start" });
+    streams[0]!.push({ type: "data-tool-call-approval", data: approval });
+    await settle();
+    expect(f.session.getSnapshot().activityApproval).toEqual(approval);
+    expect(f.session.getSnapshot().pending).not.toBeNull();
+    // The stored result takes over; the announcement ends with the run.
+    streams[0]!.push({
+      type: "data-niaro-result",
+      data: { status: 202, body: f.engine.execute(f.command) },
+    });
+    streams[0]!.push({ type: "finish" });
+    streams[0]!.push("done");
+    streams[0]!.push(null);
+    await send;
+    expect(f.session.getSnapshot().activityApproval).toBeNull();
+    expect(f.session.getSnapshot().pending).toBeNull();
+    // The decision goes over a stream of its own, like the message did.
+    const decision = f.session.send({
+      type: "service.resolve",
+      commandId: "test-resolve-1",
+      idempotencyKey: "test-resolve-1",
+      conversationId: f.command.conversationId,
+      operationId: "op-1",
+      approved: true,
+      language: "en",
+    });
+    await settle();
+    expect(f.posts).toHaveLength(2);
+    expect((f.posts[1]!.headers as Record<string, string>).Accept).toBe(
+      "text/event-stream",
+    );
+    expect(f.session.getSnapshot().commandStates["op-1"]).toBe("sending");
+    streams[1]!.push({ type: "start" });
+    streams[1]!.push({ type: "text-start", id: "t1" });
+    streams[1]!.push({ type: "text-delta", id: "t1", delta: "Created." });
+    await settle();
+    expect(f.session.getSnapshot().activity?.draft).toBe("Created.");
+    streams[1]!.push({ type: "text-end", id: "t1" });
+    streams[1]!.push({
+      type: "data-niaro-result",
+      data: {
+        status: 202,
+        body: {
+          commandId: "test-resolve-1",
+          status: "accepted",
+          code: "accepted",
+          snapshot: f.engine.snapshot(),
+        },
+      },
+    });
+    streams[1]!.push({ type: "finish" });
+    streams[1]!.push("done");
+    streams[1]!.push(null);
+    await decision;
+    expect(f.session.getSnapshot().commandStates["op-1"]).toBe("accepted");
+    expect(f.session.getSnapshot().activity).toBeNull();
+    expect(f.session.getSnapshot().pending).toBeNull();
+    expect(f.session.getSnapshot().error).toBeNull();
   } finally {
     f.session.stop();
   }

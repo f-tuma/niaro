@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import type { AnswerStreamStep } from "../../packages/protocol/answer-stream";
+import type {
+  AnswerStreamApproval,
+  AnswerStreamStep,
+} from "../../packages/protocol/answer-stream";
 import type { Scope, Language } from "../../packages/protocol";
 import type { CatalogContext, CatalogController } from "./catalog-controller";
 import type { CatalogRuntime, ServiceAnswer } from "./catalog-runtime";
@@ -33,6 +36,7 @@ import {
 import { loopText } from "./loop-redaction";
 import { IntegrationError } from "../server-integrations/transport";
 import { ServiceConnectionRequired } from "./service-oauth";
+import { presentServiceAnswer } from "./service-answer";
 import type { InferenceRunCaps } from "./inference-budget";
 
 /** Model steps for a chat answer: it may read several services and page
@@ -266,6 +270,7 @@ export function createNativeCatalogRuntime(
     resume?: { toolCallId: string; data: unknown },
     reportDraft?: (draft: string | null) => void,
     reportStep?: (step: AnswerStreamStep) => void,
+    reportApproval?: (approval: AnswerStreamApproval) => void,
   ) {
     const runtime = await nativeCatalogOwner(controller);
     const state = session.state;
@@ -446,6 +451,26 @@ export function createNativeCatalogRuntime(
                     }
                   : {}),
               });
+            // A write stopped for the person's decision: the stream gets the
+            // card's reviewed fields now; the stored result carries them too.
+            const card =
+              reportApproval &&
+              receipt &&
+              receipt.status === "awaiting_approval" &&
+              receipt.effect === "write"
+                ? presentServiceAnswer(receipt, state.language).result
+                : undefined;
+            if (reportApproval && receipt && card) {
+              reportApproval({
+                toolCallId: event.toolCallId,
+                operationId: receipt.id,
+                toolName: card.title,
+                service: card.service,
+                effect: "write",
+                input: { fields: card.fields },
+                reviewTruncated: card.reviewTruncated,
+              });
+            }
           }
           await session.save(false);
         },
@@ -1198,6 +1223,7 @@ export function createNativeCatalogRuntime(
                 },
                 messageContext?.reportDraft,
                 messageContext?.reportStep,
+                messageContext?.reportApproval,
               );
             }
             const session = await domain.begin(
@@ -1225,6 +1251,7 @@ export function createNativeCatalogRuntime(
               undefined,
               messageContext?.reportDraft,
               messageContext?.reportStep,
+              messageContext?.reportApproval,
             );
           } catch (error) {
             if (signal.reason !== REQUEST_INTERRUPTION_REASON) throw error;
@@ -1262,6 +1289,7 @@ export function createNativeCatalogRuntime(
       reportWorkflow,
       binding,
       commandBinding,
+      stream,
     ) {
       const linked = await context.serial(async () => {
         await currentActor();
@@ -1378,10 +1406,18 @@ export function createNativeCatalogRuntime(
             pending.operationId !== operationId
           )
             return resolved;
-          const next = await execute(session, signal, undefined, {
-            toolCallId: pending.toolCallId,
-            data: { resolved: true },
-          });
+          const next = await execute(
+            session,
+            signal,
+            undefined,
+            {
+              toolCallId: pending.toolCallId,
+              data: { resolved: true },
+            },
+            stream?.reportDraft,
+            stream?.reportStep,
+            stream?.reportApproval,
+          );
           return {
             ...next,
             ...(resolved.result ? { resolved: resolved.result } : {}),

@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import type { AnswerStreamStep } from "../../packages/protocol/answer-stream";
+import type {
+  AnswerStreamApproval,
+  AnswerStreamStep,
+} from "../../packages/protocol/answer-stream";
 import { z } from "zod";
 import type { NativeAgentDefinition } from "@niaro/server-agent";
 import type { ActionFailure } from "../../packages/protocol/action-failure";
@@ -741,6 +744,8 @@ export type DomainMessageContext = {
   reportDraft?: (draft: string | null) => void;
   /** Each tool step as it starts and ends, with the Runs page's safe previews. */
   reportStep?: (step: AnswerStreamStep) => void;
+  /** A write that waits for the person's decision, for an open answer stream. */
+  reportApproval?: (approval: AnswerStreamApproval) => void;
   validateRequest?: () => void;
   requestHash?: string;
   outerCommandId?: string;

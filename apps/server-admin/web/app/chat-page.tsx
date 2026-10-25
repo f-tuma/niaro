@@ -86,6 +86,7 @@ import type {
   NativeQuestion,
   WorkItem,
 } from "../../../../packages/protocol";
+import type { ServiceResult } from "../../../../packages/protocol/service-result";
 import { ACTIVITY_DRAFT_MAX } from "../../../../packages/protocol/activity";
 import { cardDocumentText } from "../../../../packages/protocol/card-document";
 import type { MessageMention } from "../../../../packages/protocol/mentions";
@@ -1045,24 +1046,7 @@ export function ChatConversation({
               workspaceId: workspace.workspaceId,
             }
           }
-          onDecide={async (approved) => {
-            if (!conversation) return false;
-            const commandId = newId();
-            await session.send({
-              type: "service.resolve",
-              commandId,
-              idempotencyKey: commandId,
-              conversationId: conversation.id,
-              operationId: result.operationId,
-              approved,
-              language,
-            });
-            // The card saves "Don't ask next time" only once this is accepted.
-            return (
-              session.getSnapshot().commandStates[result.operationId] ===
-              "accepted"
-            );
-          }}
+          onDecide={(approved) => decide(result.operationId, approved)}
         />,
       );
     if (result?.type === "crm.contacts")
@@ -1165,6 +1149,46 @@ export function ChatConversation({
       ? state.pending
       : null;
   const progressVisible = !!progressCommand;
+  // A write the stream announced before its stored card: shown at once, and
+  // left to the stored message as soon as that carries the same operation.
+  const streamedApproval: ServiceResult | undefined =
+    state.activityApproval &&
+    state.activity?.conversationId === id &&
+    !messages.some(
+      (m) =>
+        m.result?.type === "service.action" &&
+        m.result.operationId === state.activityApproval!.operationId,
+    )
+      ? {
+          type: "service.action",
+          version: 1,
+          operationId: state.activityApproval.operationId,
+          title: state.activityApproval.toolName,
+          service: state.activityApproval.service,
+          status: "awaiting_approval",
+          effect: "write",
+          fields: state.activityApproval.input.fields,
+          inputJson: "",
+          reviewTruncated: state.activityApproval.reviewTruncated,
+          summary: "",
+        }
+      : undefined;
+  // Approving or declining is the same command whichever card it comes from;
+  // "Don't ask next time" is saved only once the server accepted it.
+  const decide = async (operationId: string, approved: boolean) => {
+    if (!conversation) return false;
+    const commandId = newId();
+    await session.send({
+      type: "service.resolve",
+      commandId,
+      idempotencyKey: commandId,
+      conversationId: conversation.id,
+      operationId,
+      approved,
+      language,
+    });
+    return session.getSnapshot().commandStates[operationId] === "accepted";
+  };
   // Errors and retries are the chat's whose command caused them.
   const retryable = canRetryPending(state, id);
   const modelFailed = !!progressCommand && !!state.error?.startsWith("model_");
@@ -1431,6 +1455,21 @@ export function ChatConversation({
                         requestInterrupted ||
                         modelFailed ||
                         state.activity.status === "failed"
+                      }
+                    />
+                  )}
+                  {streamedApproval && (
+                    <ServiceActionView
+                      result={streamedApproval}
+                      disabled={busy || !online || readOnly}
+                      rememberTarget={
+                        workspace && {
+                          organizationId: workspace.organizationId,
+                          workspaceId: workspace.workspaceId,
+                        }
+                      }
+                      onDecide={(approved) =>
+                        decide(streamedApproval.operationId, approved)
                       }
                     />
                   )}

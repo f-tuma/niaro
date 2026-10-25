@@ -4,9 +4,9 @@ import { z } from "zod";
  * A chat answer streamed while it is written: the shape of an AI SDK UI
  * message stream (server-sent events, one JSON chunk per `data:` line, a
  * final `[DONE]`), so a client built on `useChat` or assistant-ui can read
- * it later. The server sends it to `POST commands` for `message.send` when
- * the request accepts `text/event-stream`; clients without that header get
- * the JSON response as before.
+ * it later. The server sends it to `POST commands` for `message.send` and
+ * `service.resolve` when the request accepts `text/event-stream`; clients
+ * without that header get the JSON response as before.
  *
  * The stream is presentation only. Nothing in it is stored, decides anything
  * or grants permission: the stored message and the command result it ends
@@ -36,10 +36,37 @@ export const AnswerStreamStepSchema = z.strictObject({
     .optional(),
 });
 export type AnswerStreamStep = z.infer<typeof AnswerStreamStepSchema>;
+/**
+ * A write that waits for the person's decision, as the stream carries it:
+ * the reviewed input as label/value pairs, like the stored card, never the
+ * arguments themselves. Deciding is still `service.resolve` on the
+ * operation; nothing in the stream approves anything.
+ */
+export const AnswerStreamApprovalSchema = z.strictObject({
+  toolCallId: z.string().min(1).max(160),
+  operationId: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),
+  /** The action's title, as the card shows it. */
+  toolName: z.string().min(1).max(100),
+  service: z.string().min(1).max(100),
+  effect: z.literal("write"),
+  input: z.strictObject({
+    fields: z
+      .array(
+        z.strictObject({
+          label: z.string().max(100),
+          value: z.string().max(1000),
+        }),
+      )
+      .max(20),
+  }),
+  reviewTruncated: z.boolean(),
+});
+export type AnswerStreamApproval = z.infer<typeof AnswerStreamApprovalSchema>;
 /** What an open stream is told by the server while the run goes on. */
 export type AnswerStreamEvent =
   | { type: "draft"; draft: string | null }
-  | { type: "step"; step: AnswerStreamStep };
+  | { type: "step"; step: AnswerStreamStep }
+  | { type: "approval"; approval: AnswerStreamApproval };
 export type AnswerStreamListener = (event: AnswerStreamEvent) => void;
 
 const chunk = <T extends string, S extends z.ZodRawShape>(type: T, shape: S) =>
@@ -68,6 +95,8 @@ export const AnswerStreamChunkSchema = z.discriminatedUnion("type", [
   }),
   /** The answer's program once its fence is complete; admission still follows. */
   chunk("data-openui", { data: z.strictObject({ program: z.string() }) }),
+  /** A write awaiting the person's decision, in the shape `@mastra/ai-sdk` emits. */
+  chunk("data-tool-call-approval", { data: AnswerStreamApprovalSchema }),
   /**
    * What the JSON response would have been: its HTTP status and body (the
    * command result, or `{ error }`). Always the last chunk before `finish`.

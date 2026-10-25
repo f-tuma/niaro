@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type {
   AnswerStreamEvent,
   AnswerStreamListener,
+  AnswerStreamApproval,
   AnswerStreamStep,
 } from "../../packages/protocol/answer-stream";
 import {
@@ -230,6 +231,11 @@ export class ModelService {
       step: (step: AnswerStreamStep) => {
         if (closed) return;
         this.notify(activityKey, { type: "step", step });
+      },
+      /** A write waiting for the person's decision, for open streams only. */
+      approval: (approval: AnswerStreamApproval) => {
+        if (closed) return;
+        this.notify(activityKey, { type: "approval", approval });
       },
       finish: (status: "succeeded" | "failed") => {
         if (closed) return;
@@ -1214,6 +1220,11 @@ export class ModelService {
                       legacyQuestionProof: (id) =>
                         this.storage.legacyQuestionProof(scope, id),
                     },
+                    {
+                      reportDraft: activity.draft,
+                      reportStep: activity.step,
+                      reportApproval: activity.approval,
+                    },
                   )
                 : await access.integrations.message(
                     command.idempotencyKey,
@@ -1282,6 +1293,7 @@ export class ModelService {
                       ...(command.session ? { session: command.session } : {}),
                       reportDraft: activity.draft,
                       reportStep: activity.step,
+                      reportApproval: activity.approval,
                       ...(validateCardRequest
                         ? { validateRequest: validateCardRequest }
                         : {}),

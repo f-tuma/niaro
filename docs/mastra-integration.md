@@ -78,6 +78,25 @@ context and exposes the action tools of the turn at every model step. The
 output processor checks the actual scoped receipts and can request a bounded
 native processor retry.
 
+### Approvals and Mastra's human-in-the-loop
+
+A write action calls `controller.invoke` with `approve: false`; its receipt
+is `awaiting_approval`, the turn records `pending = {kind: "approval",
+operationId, toolCallId}` and the Mastra run suspends (`closeOnSuspend`), which
+is Mastra's own suspension of a tool call: the person's decision later resumes
+it with `agent.resume(runId, {resolved: true}, {toolCallId})`, the same
+mechanism `requireApproval` uses underneath. Mastra's `approveToolCall` /
+`declineToolCall` are not used for the decision itself: the identity of what
+is approved lives in Niaro's receipt (operation id, action revision, personal
+sign-in pin, revision of the work item), the decision is an authenticated,
+idempotent, audited `service.resolve` on that receipt, the input was validated
+before the card was shown, and a repeated or late decision cannot run the
+write twice (Mastra issues #26133 and #26771 describe both gaps in the
+framework's own flow). What the stream carries (`data-tool-call-approval`)
+is the approval part in the shape `@mastra/ai-sdk` emits, so an AI SDK or
+assistant-ui client renders it natively, while answering it stays the
+`service.resolve` command.
+
 ### What the model knows about the services
 
 The instructions carry a "Connected services" listing: every enabled service

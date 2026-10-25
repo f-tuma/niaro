@@ -266,3 +266,71 @@ test("server-sent events split on blank lines and keep an unfinished tail", () =
   assert.equal(parseAnswerStreamEvent("not json"), undefined);
   assert.equal(parseAnswerStreamEvent('{"type":"unknown-chunk"}'), undefined);
 });
+
+test("a write that waits for the person reaches the stream as an approval chunk before the result", () => {
+  const { res, chunks } = fakeResponse();
+  let listener!: AnswerStreamListener;
+  const stream = openAnswerStream(
+    res,
+    undefined,
+    (_scope, _commandId, next) => {
+      listener = next;
+      return () => {};
+    },
+    credential().scope,
+    "TEST-command",
+    1000,
+  );
+  const step = {
+    toolCallId: "call-1",
+    label: "Create item",
+    input: [{ label: "Service", value: "TEST Items" }],
+    output: [],
+  };
+  listener({ type: "step", step: { ...step, status: "running" } });
+  listener({ type: "step", step: { ...step, status: "waiting" } });
+  listener({
+    type: "approval",
+    approval: {
+      toolCallId: "call-1",
+      operationId: "op-1",
+      toolName: "Create item",
+      service: "TEST Items",
+      effect: "write",
+      input: { fields: [{ label: "name", value: "Jan Novák" }] },
+      reviewTruncated: false,
+    },
+  });
+  stream.end({ status: 202, body: { status: "accepted" } });
+  const typed = chunks().filter(
+    (chunk): chunk is AnswerStreamChunk =>
+      chunk !== undefined && chunk !== "done",
+  );
+  assert.deepEqual(
+    typed.map((chunk) => chunk.type),
+    [
+      "start",
+      "tool-input-start",
+      "tool-input-available",
+      "tool-output-available",
+      "data-tool-call-approval",
+      "data-niaro-result",
+      "finish",
+    ],
+  );
+  assert.deepEqual(
+    typed.find((chunk) => chunk.type === "data-tool-call-approval"),
+    {
+      type: "data-tool-call-approval",
+      data: {
+        toolCallId: "call-1",
+        operationId: "op-1",
+        toolName: "Create item",
+        service: "TEST Items",
+        effect: "write",
+        input: { fields: [{ label: "name", value: "Jan Novák" }] },
+        reviewTruncated: false,
+      },
+    },
+  );
+});

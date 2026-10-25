@@ -1736,7 +1736,8 @@ export function createFixtureServer(
           command &&
           typeof command === "object" &&
           "type" in command &&
-          command.type === "message.send" &&
+          (command.type === "message.send" ||
+            command.type === "service.resolve") &&
           "commandId" in command &&
           typeof command.commandId === "string" &&
           /\btext\/event-stream\b/.test(req.headers.accept ?? "")

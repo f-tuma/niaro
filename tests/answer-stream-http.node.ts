@@ -93,7 +93,8 @@ test("a message.send that accepts an event stream gets the draft, the steps and 
   const adminKey = issueAdminKey(config.administration!.keyFile);
   const providerKey = "TEST-answer-stream-provider-key";
   const serviceKey = "TEST-answer-stream-service-key";
-  let actionName = "";
+  let actionName = "",
+    writeActionName = "";
   const call = (name: string, args: unknown) => ({
     content: null,
     tool_calls: [
@@ -113,20 +114,37 @@ test("a message.send that accepts an event stream gets the draft, the steps and 
       return {
         status: 200,
         headers: {},
-        text: JSON.stringify({ items: [{ id: "TEST-1" }, { id: "TEST-2" }] }),
+        text: JSON.stringify(
+          request.method === "POST"
+            ? { id: "TEST-new", created: true }
+            : { items: [{ id: "TEST-1" }, { id: "TEST-2" }] },
+        ),
       };
     }
     assert.equal(url.hostname, "models.example.test");
     assert.equal(request.headers?.Authorization, `Bearer ${providerKey}`);
     const body = request.body as ModelRequest;
-    const read = (body.messages ?? []).some(
-      (message) =>
-        message.role === "tool" &&
-        message.content?.includes('"status":"succeeded"'),
-    );
-    const message = read
-      ? { content: "TEST two items found" }
-      : call(actionName, {});
+    // The turn's own tool results decide the reply: none yet calls the
+    // action the person asked for; a settled write (approved or declined)
+    // is reported; a finished read is answered.
+    const messages = body.messages ?? [];
+    const lastUser = messages.map((m) => m.role).lastIndexOf("user");
+    const results = messages
+      .slice(lastUser + 1)
+      .filter((entry) => entry.role === "tool");
+    const last = results.at(-1)?.content ?? "";
+    const creating = /create/i.test(messages[lastUser]?.content ?? "");
+    const message = !results.length
+      ? creating
+        ? call(writeActionName, { name: "TEST-new" })
+        : call(actionName, {})
+      : creating
+        ? {
+            content: last.includes('"status":"succeeded"')
+              ? "TEST item created"
+              : "TEST item not created",
+          }
+        : { content: "TEST two items found" };
     return {
       status: 200,
       headers: {},
@@ -266,6 +284,39 @@ test("a message.send that accepts an event stream gets the draft, the steps and 
       "id",
     );
     actionName = "action_" + actionId.replaceAll("-", "_");
+    const writeActionId = textProperty(
+      await catalog({
+        type: "saveAction",
+        serviceId,
+        serviceRevision: CatalogSchema.parse(
+          await admin(`api/identity/catalog?${query}`),
+        ).services[0]!.revision,
+        revision: 0,
+        settings: {
+          name: "TEST Create item",
+          description: "Create an item",
+          effect: "write",
+          approval: "always",
+          enabled: true,
+          policy: { roles: ["owner", "admin", "member"], users: [] },
+          inputSchema: {
+            type: "object",
+            properties: { name: { type: "string" } },
+            required: ["name"],
+            additionalProperties: false,
+          },
+          binding: {
+            type: "http",
+            method: "POST",
+            path: "/items",
+            parameters: [],
+            body: true,
+          },
+        },
+      }),
+      "id",
+    );
+    writeActionName = "action_" + writeActionId.replaceAll("-", "_");
     await catalog({
       type: "saveRouting",
       routing: { revision: 0, planner: "jev", modelId, services: [] },
@@ -392,6 +443,201 @@ test("a message.send that accepts an event stream gets the draft, the steps and 
     const rejected = CommandResultSchema.parse(outcome.data.body);
     assert.equal(rejected.status, "rejected");
     assert.equal(rejected.code, "idempotency_conflict");
+
+    // A write stops for the person's decision: the stream announces the
+    // card's reviewed fields before the stored result, never the arguments.
+    const resolve = (id: string, operationId: string, approved: boolean) =>
+      CommandSchema.parse({
+        type: "service.resolve",
+        commandId: id,
+        idempotencyKey: id,
+        conversationId: "conversation-1",
+        operationId,
+        approved,
+        language: "en",
+      });
+    const typedChunks = async (response: Response) => {
+      assert.equal(response.status, 200);
+      assert.match(
+        response.headers.get("content-type") ?? "",
+        /^text\/event-stream/,
+      );
+      return (await readStream(response)).filter(
+        (chunk): chunk is AnswerStreamChunk => chunk !== "done",
+      );
+    };
+    const typesOf = (list: AnswerStreamChunk[]) => list.map((c) => c.type);
+    const cardOf = (body: unknown, operationId: string) => {
+      const message = CommandResultSchema.parse(
+        body,
+      ).snapshot.conversations[0]!.messages.findLast(
+        (entry) =>
+          entry.result?.type === "service.action" &&
+          entry.result.operationId === operationId,
+      );
+      assert(message && message.result?.type === "service.action");
+      return message.result;
+    };
+    const waiting = await typedChunks(
+      await send(
+        command("TEST-stream-write-1", "TEST create an item"),
+        ANSWER_STREAM_MEDIA_TYPE,
+      ),
+    );
+    const announced = waiting.find(
+      (chunk) => chunk.type === "data-tool-call-approval",
+    );
+    assert(announced && announced.type === "data-tool-call-approval");
+    assert.deepEqual(Object.keys(announced.data).sort(), [
+      "effect",
+      "input",
+      "operationId",
+      "reviewTruncated",
+      "service",
+      "toolCallId",
+      "toolName",
+    ]);
+    assert.equal(announced.data.toolName, "TEST Create item");
+    assert.equal(announced.data.service, "TEST Items");
+    assert.equal(announced.data.effect, "write");
+    assert.deepEqual(announced.data.input, {
+      fields: [{ label: "name", value: "TEST-new" }],
+    });
+    assert.equal(announced.data.reviewTruncated, false);
+    assert(
+      waiting
+        .filter((chunk) => chunk.type !== "data-niaro-result")
+        .every((chunk) => !JSON.stringify(chunk).includes("inputJson")),
+      "Only the stored result carries the write's arguments",
+    );
+    const waitingStep = waiting.find(
+      (chunk) =>
+        chunk.type === "tool-output-available" &&
+        chunk.toolCallId === announced.data.toolCallId,
+    );
+    assert(waitingStep && waitingStep.type === "tool-output-available");
+    assert.equal((waitingStep.output as { status: string }).status, "waiting");
+    assert(
+      typesOf(waiting).indexOf("data-tool-call-approval") <
+        typesOf(waiting).indexOf("data-niaro-result"),
+      "The approval is announced before the result",
+    );
+    const waitingResult = waiting.find(
+      (chunk) => chunk.type === "data-niaro-result",
+    );
+    assert(waitingResult && waitingResult.type === "data-niaro-result");
+    assert.equal(waitingResult.data.status, 202);
+    const storedCard = cardOf(
+      waitingResult.data.body,
+      announced.data.operationId,
+    );
+    assert.equal(storedCard.status, "awaiting_approval");
+    assert.deepEqual(storedCard.fields, announced.data.input.fields);
+    assert.equal(storedCard.title, announced.data.toolName);
+
+    // Approving streams the continuation: the write's step and the reply.
+    const approved = await typedChunks(
+      await send(
+        resolve("TEST-resolve-1", announced.data.operationId, true),
+        ANSWER_STREAM_MEDIA_TYPE,
+      ),
+    );
+    assert.equal(typesOf(approved)[0], "start");
+    assert.deepEqual(typesOf(approved).slice(-2), [
+      "data-niaro-result",
+      "finish",
+    ]);
+    assert.equal(
+      approved
+        .filter((chunk) => chunk.type === "text-delta")
+        .map((chunk) => (chunk.type === "text-delta" ? chunk.delta : ""))
+        .join(""),
+      "TEST item created",
+    );
+    const approvedResult = approved.find(
+      (chunk) => chunk.type === "data-niaro-result",
+    );
+    assert(approvedResult && approvedResult.type === "data-niaro-result");
+    assert.equal(approvedResult.data.status, 202);
+    const afterApproval = CommandResultSchema.parse(approvedResult.data.body);
+    assert.equal(afterApproval.status, "accepted");
+    assert.equal(
+      cardOf(approvedResult.data.body, announced.data.operationId).status,
+      "succeeded",
+    );
+    assert.equal(
+      afterApproval.snapshot.conversations[0]!.messages.at(-1)!.text,
+      "TEST item created",
+    );
+
+    // Replaying the decision with another answer is the same refusal as JSON.
+    const replayedStream = await typedChunks(
+      await send(
+        resolve("TEST-resolve-1", announced.data.operationId, false),
+        ANSWER_STREAM_MEDIA_TYPE,
+      ),
+    );
+    const replayedJson = await send(
+      resolve("TEST-resolve-1", announced.data.operationId, false),
+    );
+    assert.deepEqual(typesOf(replayedStream), [
+      "start",
+      "error",
+      "data-niaro-result",
+      "finish",
+    ]);
+    const replayedResult = replayedStream.find(
+      (chunk) => chunk.type === "data-niaro-result",
+    );
+    assert(replayedResult && replayedResult.type === "data-niaro-result");
+    assert.equal(replayedResult.data.status, 422);
+    assert.equal(replayedResult.data.status, replayedJson.status);
+    assert.deepEqual(replayedResult.data.body, await replayedJson.json());
+    assert.equal(
+      CommandResultSchema.parse(replayedResult.data.body).code,
+      "idempotency_conflict",
+    );
+
+    // Declining streams the rejected outcome.
+    const second = await typedChunks(
+      await send(
+        command("TEST-stream-write-2", "TEST create another item"),
+        ANSWER_STREAM_MEDIA_TYPE,
+      ),
+    );
+    const announcedAgain = second.find(
+      (chunk) => chunk.type === "data-tool-call-approval",
+    );
+    assert(announcedAgain && announcedAgain.type === "data-tool-call-approval");
+    assert.notEqual(
+      announcedAgain.data.operationId,
+      announced.data.operationId,
+    );
+    const declined = await typedChunks(
+      await send(
+        resolve("TEST-resolve-2", announcedAgain.data.operationId, false),
+        ANSWER_STREAM_MEDIA_TYPE,
+      ),
+    );
+    const declinedResult = declined.find(
+      (chunk) => chunk.type === "data-niaro-result",
+    );
+    assert(declinedResult && declinedResult.type === "data-niaro-result");
+    assert.equal(declinedResult.data.status, 202);
+    assert.equal(
+      cardOf(declinedResult.data.body, announcedAgain.data.operationId).status,
+      "rejected",
+    );
+    assert.equal(
+      CommandResultSchema.parse(
+        declinedResult.data.body,
+      ).snapshot.conversations[0]!.messages.at(-1)!.text,
+      "TEST item not created",
+    );
+    assert(
+      !declined.some((chunk) => chunk.type === "data-tool-call-approval"),
+      "A declined write asks for nothing more",
+    );
   } finally {
     app.emit("close");
     await identity.close();
