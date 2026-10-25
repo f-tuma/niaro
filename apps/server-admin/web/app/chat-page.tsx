@@ -1137,12 +1137,22 @@ export function ChatConversation({
           transcriptEntry(m, index),
         ];
   });
+  const pendingMessage = selectPendingChatMessage(state, id);
+  const answering =
+    state.pending?.type === "message.send" &&
+    state.pending.conversationId === id;
+  // The run of the message being answered is the Thinking line, not a card
+  // saying "Waiting for server" beneath it.
   const trailingWork = work.filter(
     (w) =>
       !referencedWork.has(w.id) &&
-      (!!w.native?.process || !isTerminalNativeWork(w)),
+      (!!w.native?.process || !isTerminalNativeWork(w)) &&
+      !(
+        answering &&
+        !w.native?.process &&
+        ["queued", "running", "waiting_system"].includes(w.status)
+      ),
   );
-  const pendingMessage = selectPendingChatMessage(state, id);
   const progressCommand =
     state.pending?.type === "message.send" &&
     state.pending.conversationId === id

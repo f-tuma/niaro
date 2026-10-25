@@ -749,10 +749,17 @@ export function ChatNextConversation({
       );
     return {
       threadMessages: thread,
+      // The run of the message being answered is the Thinking line, not a
+      // card saying "Waiting for server" beneath it.
       trailingWork: work.filter(
         (w) =>
           !referenced.has(w.id) &&
-          (!!w.native?.process || !isTerminalNativeWork(w)),
+          (!!w.native?.process || !isTerminalNativeWork(w)) &&
+          !(
+            !!progressCommand &&
+            !w.native?.process &&
+            ["queued", "running", "waiting_system"].includes(w.status)
+          ),
       ),
     };
     // The session's state object changes with every update it carries.
