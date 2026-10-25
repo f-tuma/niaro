@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import type {
+  AnswerStreamEvent,
+  AnswerStreamListener,
+  AnswerStreamStep,
+} from "../../packages/protocol/answer-stream";
 import {
   CommandSchema,
   CrmContactResultSchema,
@@ -101,6 +106,8 @@ export class ModelService {
     string,
     { value: RequestActivity; updatedAt: number }
   >();
+  /** Streams open on a command; each gets the draft and the tool steps as they happen. */
+  private listeners = new Map<string, Set<AnswerStreamListener>>();
   constructor(
     private storage: FixtureStorage,
     private router: DecisionRouter | undefined,
@@ -117,6 +124,29 @@ export class ModelService {
     return (
       this.activities.get(JSON.stringify([scope, commandId]))?.value ?? null
     );
+  }
+  /**
+   * Follows a command's run while it is open: the answer's draft and each
+   * tool step. Transient like the activity; nothing here is stored. The
+   * returned function stops following.
+   */
+  subscribe(scope: Scope, commandId: string, listener: AnswerStreamListener) {
+    const key = JSON.stringify([scope, commandId]);
+    const set = this.listeners.get(key) ?? new Set();
+    set.add(listener);
+    this.listeners.set(key, set);
+    return () => {
+      set.delete(listener);
+      if (!set.size) this.listeners.delete(key);
+    };
+  }
+  private notify(key: string, event: AnswerStreamEvent) {
+    for (const listener of this.listeners.get(key) ?? [])
+      try {
+        listener(event);
+      } catch {
+        // A listener never affects the run.
+      }
   }
   private pruneActivities() {
     for (const [key, entry] of this.activities) {
@@ -191,6 +221,15 @@ export class ModelService {
           ? { ...rest, draft: draft.slice(0, ACTIVITY_DRAFT_MAX) }
           : rest;
         publish();
+        this.notify(activityKey, {
+          type: "draft",
+          draft: activity.draft ?? null,
+        });
+      },
+      /** A tool step of the run, for open streams only. */
+      step: (step: AnswerStreamStep) => {
+        if (closed) return;
+        this.notify(activityKey, { type: "step", step });
       },
       finish: (status: "succeeded" | "failed") => {
         if (closed) return;
@@ -1242,6 +1281,7 @@ export class ModelService {
                         : {}),
                       ...(command.session ? { session: command.session } : {}),
                       reportDraft: activity.draft,
+                      reportStep: activity.step,
                       ...(validateCardRequest
                         ? { validateRequest: validateCardRequest }
                         : {}),

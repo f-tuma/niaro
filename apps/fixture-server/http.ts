@@ -1,4 +1,5 @@
 import { pipeline } from "node:stream";
+import { openAnswerStream } from "./answer-stream";
 import {
   meetingAudioRoute,
   meetingRoute,
@@ -25,6 +26,7 @@ import {
   CONVERSATION_PROJECTION_PROFILE,
   sameScope,
   OPEN_WORK_PROFILE,
+  type CommandResult,
 } from "../../packages/protocol";
 import {
   SERVER_INFO_PROFILE,
@@ -522,6 +524,39 @@ export function createFixtureServer(
       );
     }
     const origin = req.headers.origin;
+    /** The status and body a thrown error answers with. */
+    const failure = (error: unknown): { status: number; body: unknown } => {
+      if (error instanceof ModelError)
+        return { status: 503, body: { error: error.code } };
+      if (error instanceof SpeechError)
+        return { status: error.status, body: { error: error.code } };
+      if (error instanceof VoiceError)
+        return { status: error.status, body: { error: error.code } };
+      if (error instanceof AuthError || error instanceof IdentityError)
+        return { status: error.status, body: { error: error.code } };
+      if (error instanceof RangeError)
+        return { status: 413, body: { error: "payload_too_large" } };
+      const invalid =
+        error instanceof SyntaxError ||
+        (error instanceof Error && error.name === "ZodError");
+      // The class name only: messages can quote request or model content.
+      if (!invalid)
+        operatorLog(
+          "http_error",
+          {
+            path: loggedPath(req.url),
+            error:
+              error instanceof Error
+                ? error.constructor.name.slice(0, 60)
+                : typeof error,
+          },
+          "error",
+        );
+      return {
+        status: invalid ? 400 : 500,
+        body: { error: invalid ? "invalid_payload" : "fixture_error" },
+      };
+    };
     const respond = (status: number, data: unknown) => {
       res.writeHead(status, {
         "Content-Type": "application/json",
@@ -1674,6 +1709,45 @@ export function createFixtureServer(
           controller.signal,
           AbortSignal.timeout(10 * 60_000),
         ]);
+        const delivery = (result: CommandResult) => {
+          const { openWork, ...delivered } = result;
+          return {
+            status:
+              result.status === "conflict"
+                ? 409
+                : result.status === "rejected"
+                  ? 422
+                  : 202,
+            body: {
+              ...delivered,
+              ...(openWork && openWorkDelivery ? { openWork } : {}),
+              snapshot: snapshotForClient(
+                clientSnapshot(result.snapshot),
+                correlated,
+              ),
+            },
+          };
+        };
+        // A client that accepts an event stream follows the answer as it is
+        // written and gets the same result at the end; the stream is never
+        // what the run depends on, so a closed one changes nothing.
+        const stream =
+          runtimeModels &&
+          command &&
+          typeof command === "object" &&
+          "type" in command &&
+          command.type === "message.send" &&
+          "commandId" in command &&
+          typeof command.commandId === "string" &&
+          /\btext\/event-stream\b/.test(req.headers.accept ?? "")
+            ? openAnswerStream(
+                res,
+                origin && origins.includes(origin) ? origin : undefined,
+                runtimeModels.subscribe.bind(runtimeModels),
+                current.scope,
+                command.commandId,
+              )
+            : undefined;
         let result;
         try {
           result = runtimeModels
@@ -1689,57 +1763,20 @@ export function createFixtureServer(
                 signal.throwIfAborted();
                 return storage.execute(current.scope, command);
               });
+        } catch (error) {
+          if (!stream) throw error;
+          return stream.end(failure(error));
         } finally {
           modelControllers.delete(controller);
         }
-        const { openWork, ...delivered } = result;
-        return respond(
-          result.status === "conflict"
-            ? 409
-            : result.status === "rejected"
-              ? 422
-              : 202,
-          {
-            ...delivered,
-            ...(openWork && openWorkDelivery ? { openWork } : {}),
-            snapshot: snapshotForClient(
-              clientSnapshot(result.snapshot),
-              correlated,
-            ),
-          },
-        );
+        const { status, body: delivered } = delivery(result);
+        if (stream) return stream.end({ status, body: delivered });
+        return respond(status, delivered);
       }
       return respond(405, { error: "method_not_allowed" });
     } catch (error) {
-      if (error instanceof ModelError)
-        return respond(503, { error: error.code });
-      if (error instanceof SpeechError)
-        return respond(error.status, { error: error.code });
-      if (error instanceof VoiceError)
-        return respond(error.status, { error: error.code });
-      if (error instanceof AuthError || error instanceof IdentityError)
-        return respond(error.status, { error: error.code });
-      if (error instanceof RangeError)
-        return respond(413, { error: "payload_too_large" });
-      const invalid =
-        error instanceof SyntaxError ||
-        (error instanceof Error && error.name === "ZodError");
-      // The class name only: messages can quote request or model content.
-      if (!invalid)
-        operatorLog(
-          "http_error",
-          {
-            path: loggedPath(req.url),
-            error:
-              error instanceof Error
-                ? error.constructor.name.slice(0, 60)
-                : typeof error,
-          },
-          "error",
-        );
-      return respond(invalid ? 400 : 500, {
-        error: invalid ? "invalid_payload" : "fixture_error",
-      });
+      const { status, body } = failure(error);
+      return respond(status, body);
     }
   });
   const timer = setInterval(() => {

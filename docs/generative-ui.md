@@ -86,6 +86,8 @@ Read-only (archived) chats show the UI without actions.
 
 Both renderers accept partial input: lang-core re-parses the accumulated text and shows complete statements as they arrive.
 
+On the web, the answer streams over the command's own response (`Accept: text/event-stream`, see [protocol](protocol.md#streaming-a-reply)): the draft arrives as text deltas and the renderer draws each statement as it arrives; `data-openui` carries the program once its fence is complete, before admission. The phone still polls `activity` for the draft.
+
 An answer is still published only when it is complete, after admission and the checker. While the model writes it, the person sees it grow:
 
 1. The chat model call asks the provider to stream (`apps/server-integrations/mastra-model.ts`, `chat-stream.ts`). The guarded transport passes each server-sent event on as it arrives; the call still resolves only with the whole completion, assembled and validated as a non-streamed one, and the inference budget settles the usage of the stream's last event.

@@ -1412,6 +1412,7 @@ export function ChatConversation({
                   <ProgressView
                     onToggle={holdScrollOnce}
                     activity={state.activity}
+                    steps={state.activitySteps ?? undefined}
                     connection={state.activityConnection}
                     failed={modelFailed}
                     interrupted={requestInterrupted}

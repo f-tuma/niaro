@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import {
   Calendar,
+  Check,
   ChevronRight,
   CircleAlert,
   Clock,
@@ -61,6 +62,7 @@ import type {
   WorkItem,
 } from "../../../../packages/protocol";
 import type { RequestActivity } from "../../../../packages/protocol/activity";
+import type { AnswerStreamStep } from "../../../../packages/protocol/answer-stream";
 import { formatRange } from "../../../../packages/ui-catalog/field-format";
 import { CardDocumentView, ServiceActionView } from "./chat-cards";
 import { useChatCopy } from "./chat-copy";
@@ -886,6 +888,26 @@ const statusLabels = {
   unknown: "progressUnconfirmed",
   needs_input: "progressNeedsInput",
 } as const;
+/** One streamed step as a line: "Twenty CRM · Search loans · Returned items 71". */
+export function liveStepText(step: AnswerStreamStep) {
+  const field = (list: AnswerStreamStep["input"], labels: string[]) =>
+    list.find((entry) => labels.includes(entry.label));
+  const service =
+    field(step.input, ["Service"]) ?? field(step.output, ["Service"]);
+  const count =
+    field(step.output, [
+      "Returned items",
+      "Returned actions",
+      "Returned services",
+    ]) ?? field(step.output, ["Message"]);
+  return [
+    service && service.value !== step.label ? service.value : undefined,
+    step.label,
+    count ? `${count.label.toLocaleLowerCase()} ${count.value}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 /**
  * What the assistant is doing right now, as one "Thinking" line like an AI
  * chat; the server's bounded stages open beneath it on request. Uncertain
@@ -893,6 +915,7 @@ const statusLabels = {
  */
 export function ProgressView({
   activity,
+  steps,
   connection,
   interrupted,
   failed,
@@ -902,6 +925,8 @@ export function ProgressView({
   hint,
 }: {
   activity: RequestActivity | null;
+  /** The tool steps streamed so far: which service is read and what came back. */
+  steps?: AnswerStreamStep[];
   connection: "waiting" | "live" | "unavailable";
   interrupted: boolean;
   failed: boolean;
@@ -984,6 +1009,29 @@ export function ProgressView({
               </li>
             );
           })}
+        </ul>
+      )}
+      {!!steps?.length && (
+        <ul
+          data-testid="progress-live-steps"
+          className="flex flex-col gap-1 text-xs text-muted-foreground"
+        >
+          {steps.map((step) => (
+            <li
+              key={step.toolCallId}
+              data-status={step.status}
+              className="flex items-center gap-1.5 data-[status=running]:text-foreground"
+            >
+              {step.status === "running" ? (
+                <Spinner data-icon="inline-start" />
+              ) : step.status === "failed" || step.status === "cancelled" ? (
+                <CircleAlert aria-hidden="true" className="size-3" />
+              ) : (
+                <Check aria-hidden="true" className="size-3" />
+              )}
+              <span>{liveStepText(step)}</span>
+            </li>
+          ))}
         </ul>
       )}
       {(unknown || hint) && (

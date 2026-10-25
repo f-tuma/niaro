@@ -117,7 +117,9 @@ tool execution are disabled. A chat turn that reports a draft asks the provider
 to stream (`stream: true` with usage in the last event); the guarded transport
 hands each server-sent event to the model as it arrives, under the same origin,
 address and size checks, and the model passes the growing reply text to the
-draft. The SDK still receives the call only once the whole completion is
+draft, and a client that accepts an event stream gets the draft and each
+tool step over its own request (`openAnswerStream`). The SDK still receives
+the call only once the whole completion is
 assembled and validated as a non-streamed one, so tool calls, finish reasons,
 usage settlement, errors and the processors behave as before. Calls without a
 draft observer, `doGenerate`, decisions, and transports that are not marked as

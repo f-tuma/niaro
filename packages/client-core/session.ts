@@ -1,5 +1,12 @@
 import { parseMeetingRecord, parseServerValue } from "./forward-compatible";
 import {
+  ANSWER_STREAM_MEDIA_TYPE,
+  parseAnswerStreamEvent,
+  splitServerSentEvents,
+  type AnswerStreamChunk,
+  type AnswerStreamStep,
+} from "../protocol/answer-stream";
+import {
   ConnectionHttpError,
   ConnectionJsonError,
   ConnectionPayloadError,
@@ -197,6 +204,7 @@ import {
   type ProcessAnswerAttempt,
 } from "./process-answer-attempts";
 import {
+  ACTIVITY_DRAFT_MAX,
   ACTIVITY_PROFILE,
   ActivityResponseSchema,
   type RequestActivity,
@@ -236,6 +244,12 @@ export type ClientSessionOptions = {
   messageTimes?: boolean;
   /** Ask for generated UI on answers (GENERATIVE_UI_PROFILE). */
   generativeUi?: boolean;
+  /**
+   * Follow a chat answer as it is written over the command's own response
+   * (an event stream) instead of polling `activity`. A server or network that
+   * does not stream falls back to the JSON response and polling.
+   */
+  stream?: boolean;
   /** The credential has no refresh token, but `renewCredential` issues a new
    * one (the web app asks its signed-in browser session). */
   reissue?: boolean;
@@ -333,6 +347,8 @@ export type SessionState = {
   processNotice?: ProcessCommandNoticeView | null;
   activity: RequestActivity | null;
   activityConnection: "waiting" | "live" | "unavailable";
+  /** The streamed tool steps of the running answer, oldest first; none without a stream. */
+  activitySteps?: AnswerStreamStep[] | null;
 };
 export const commandTarget = (c: SessionCommand) =>
   c.type === "conversation.create"
@@ -393,6 +409,7 @@ export class ClientSession {
     error: null,
     processNotice: null,
     activity: null,
+    activitySteps: null,
     activityConnection: "waiting",
   };
   private listeners = new Set<() => void>();
@@ -1625,6 +1642,7 @@ export class ClientSession {
       error: "auth_expired",
       processNotice: null,
       activity: null,
+      activitySteps: null,
       activityConnection: "unavailable",
     });
     this.onInvalid();
@@ -1682,12 +1700,18 @@ export class ClientSession {
     })();
     return this.renewing;
   }
-  private async json(
+  /** The server address of a path, with the delivery profiles the session negotiates. */
+  private deliveryUrl(path: string) {
+    return `${this.address}/${/^(?:snapshot|events|commands|server)(?:\/|\?|$)/.test(path) ? this.messageDelivery(processWorkDeliveryPath(questionOptionsDeliveryPath(cardDeliveryPath(`${path}${path.includes("?") ? "&" : "?"}chats=${CONVERSATION_PROJECTION_PROFILE}`)), this.outputSupport ? PROCESS_OUTPUT_WORK_PROFILE : this.options.processApprovals ? PROCESS_APPROVAL_WORK_PROFILE : this.options.processQuestions ? PROCESS_QUESTION_WORK_PROFILE : PROCESS_WORK_PROFILE)) : path}`;
+  }
+  /**
+   * Opens an authenticated request and checks its status; the caller reads
+   * the body and calls `done` afterwards, also when reading fails.
+   */
+  private async open(
     path: string,
     init?: RequestInit,
     timeoutMs = 8000,
-    maxBody = 2_000_000,
-    maxUtf8Bytes?: number,
     allowForbidden = false,
   ) {
     if (this.stopped) throw new Error("session_stopped");
@@ -1707,20 +1731,22 @@ export class ClientSession {
     };
     init?.signal?.addEventListener("abort", cancel, { once: true });
     if (init?.signal?.aborted) controller.abort();
+    const done = () => {
+      clearTimeout(timer);
+      init?.signal?.removeEventListener("abort", cancel);
+      this.controllers.delete(controller);
+    };
     try {
-      const response = await this.request(
-        `${this.address}/${/^(?:snapshot|events|commands|server)(?:\/|\?|$)/.test(path) ? this.messageDelivery(processWorkDeliveryPath(questionOptionsDeliveryPath(cardDeliveryPath(`${path}${path.includes("?") ? "&" : "?"}chats=${CONVERSATION_PROJECTION_PROFILE}`)), this.outputSupport ? PROCESS_OUTPUT_WORK_PROFILE : this.options.processApprovals ? PROCESS_APPROVAL_WORK_PROFILE : this.options.processQuestions ? PROCESS_QUESTION_WORK_PROFILE : PROCESS_WORK_PROFILE)) : path}`,
-        {
-          ...init,
-          credentials: "omit",
-          headers: {
-            ...init?.headers,
-            Authorization: `Bearer ${requestedCredential.accessToken}`,
-          },
-          signal: controller.signal,
-          redirect: "error",
+      const response = await this.request(this.deliveryUrl(path), {
+        ...init,
+        credentials: "omit",
+        headers: {
+          ...init?.headers,
+          Authorization: `Bearer ${requestedCredential.accessToken}`,
         },
-      );
+        signal: controller.signal,
+        redirect: "error",
+      });
       if (this.stopped || this.invalid || controller.signal.aborted)
         throw new Error("session_stopped");
       if (
@@ -1738,31 +1764,207 @@ export class ClientSession {
         this.invalidate();
         throw new AuthenticationError("auth_expired");
       }
-      const body = await response.text();
-      // A successful response is already authorized. Do not discard it because a
-      // separate refresh fails; renew before the next request instead.
-      if (!this.renewable) this.checkAuthorization();
-      if (this.stopped || this.invalid || controller.signal.aborted)
-        throw new Error("session_stopped");
-      if (body.length > maxBody)
-        throw new ConnectionPayloadError(response.status);
-      const bodyBytes =
-        maxUtf8Bytes === undefined
-          ? undefined
-          : processReaderUtf8Bytes(body, maxUtf8Bytes);
-      if (maxUtf8Bytes !== undefined && bodyBytes! > maxUtf8Bytes)
-        throw new ConnectionPayloadError(response.status);
-      let value: unknown;
-      try {
-        value = JSON.parse(body);
-      } catch {
-        throw new ConnectionJsonError(response.status);
-      }
-      return { response, value, bodyBytes };
+      return { response, controller, done };
+    } catch (error) {
+      done();
+      throw error;
+    }
+  }
+  private async readJson(
+    response: Response,
+    controller: AbortController,
+    maxBody: number,
+    maxUtf8Bytes?: number,
+  ) {
+    const body = await response.text();
+    // A successful response is already authorized. Do not discard it because a
+    // separate refresh fails; renew before the next request instead.
+    if (!this.renewable) this.checkAuthorization();
+    if (this.stopped || this.invalid || controller.signal.aborted)
+      throw new Error("session_stopped");
+    if (body.length > maxBody)
+      throw new ConnectionPayloadError(response.status);
+    const bodyBytes =
+      maxUtf8Bytes === undefined
+        ? undefined
+        : processReaderUtf8Bytes(body, maxUtf8Bytes);
+    if (maxUtf8Bytes !== undefined && bodyBytes! > maxUtf8Bytes)
+      throw new ConnectionPayloadError(response.status);
+    let value: unknown;
+    try {
+      value = JSON.parse(body);
+    } catch {
+      throw new ConnectionJsonError(response.status);
+    }
+    return { response, value, bodyBytes };
+  }
+  private async json(
+    path: string,
+    init?: RequestInit,
+    timeoutMs = 8000,
+    maxBody = 2_000_000,
+    maxUtf8Bytes?: number,
+    allowForbidden = false,
+  ) {
+    const { response, controller, done } = await this.open(
+      path,
+      init,
+      timeoutMs,
+      allowForbidden,
+    );
+    try {
+      return await this.readJson(response, controller, maxBody, maxUtf8Bytes);
     } finally {
-      clearTimeout(timer);
-      init?.signal?.removeEventListener("abort", cancel);
-      this.controllers.delete(controller);
+      done();
+    }
+  }
+  /**
+   * Sends a chat message and follows the answer over the response: the draft
+   * as it is written and each tool step, published like polled activity, then
+   * the command result the JSON response would have carried. A server that
+   * answers JSON instead is read as such, with polling started.
+   */
+  private async streamAnswer(
+    path: string,
+    init: RequestInit,
+    command: Extract<Command, { type: "message.send" }>,
+    onJson: () => void,
+  ): Promise<{ response: Pick<Response, "ok" | "status">; value: unknown }> {
+    const { response, controller, done } = await this.open(
+      path,
+      {
+        ...init,
+        headers: { ...init.headers, Accept: ANSWER_STREAM_MEDIA_TYPE },
+      },
+      // The run's own deadline; idle streams end sooner below.
+      10 * 60_000,
+    );
+    try {
+      if (
+        !response.headers
+          .get("content-type")
+          ?.includes(ANSWER_STREAM_MEDIA_TYPE) ||
+        !response.body
+      ) {
+        onJson();
+        return await this.readJson(response, controller, 2_000_000);
+      }
+      const current = () =>
+        !this.stopped && !this.invalid && this.state.pending === command;
+      const activity: RequestActivity = {
+        commandId: command.commandId,
+        conversationId: command.conversationId,
+        status: "running",
+        steps: [
+          { id: "understanding", status: "running" },
+          { id: "preparing", status: "pending" },
+        ],
+      };
+      const steps = new Map<string, AnswerStreamStep>();
+      let text = "";
+      let result: { status: number; body: unknown } | undefined;
+      const live = () => {
+        if (!current()) return;
+        this.publish({
+          activity: {
+            ...activity,
+            ...(text ? { draft: text.slice(0, ACTIVITY_DRAFT_MAX) } : {}),
+          },
+          activityConnection: "live",
+          activitySteps: [...steps.values()],
+        });
+      };
+      const fields = (value: unknown, key: string) => {
+        const list =
+          value && typeof value === "object" && key in value
+            ? (value as Record<string, unknown>)[key]
+            : undefined;
+        return Array.isArray(list)
+          ? list.flatMap((item) =>
+              item &&
+              typeof item === "object" &&
+              typeof (item as { label?: unknown }).label === "string" &&
+              typeof (item as { value?: unknown }).value === "string"
+                ? [item as { label: string; value: string }]
+                : [],
+            )
+          : [];
+      };
+      const apply = (chunk: AnswerStreamChunk) => {
+        if (chunk.type === "text-start" || chunk.type === "text-end") text = "";
+        else if (chunk.type === "text-delta") text += chunk.delta;
+        else if (chunk.type === "tool-input-start")
+          steps.set(chunk.toolCallId, {
+            toolCallId: chunk.toolCallId,
+            label: chunk.toolName,
+            status: "running",
+            input: [],
+            output: [],
+          });
+        else if (chunk.type === "tool-input-available") {
+          const step = steps.get(chunk.toolCallId);
+          if (step) step.input = fields(chunk.input, "fields");
+        } else if (chunk.type === "tool-output-available") {
+          const step = steps.get(chunk.toolCallId);
+          if (step) {
+            const status =
+              chunk.output &&
+              typeof chunk.output === "object" &&
+              "status" in chunk.output &&
+              chunk.output.status === "waiting"
+                ? "waiting"
+                : "succeeded";
+            steps.set(chunk.toolCallId, {
+              ...step,
+              status,
+              output: fields(chunk.output, "fields"),
+            });
+          }
+        } else if (chunk.type === "tool-output-error") {
+          const step = steps.get(chunk.toolCallId);
+          if (step) steps.set(chunk.toolCallId, { ...step, status: "failed" });
+        } else if (chunk.type === "data-niaro-result") result = chunk.data;
+      };
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let idle: ReturnType<typeof setTimeout> | undefined;
+      const touch = () => {
+        clearTimeout(idle);
+        idle = setTimeout(() => controller.abort(), 60_000);
+      };
+      touch();
+      try {
+        for (;;) {
+          const { done: ended, value } = await reader.read();
+          if (ended) break;
+          touch();
+          buffer += decoder.decode(value, { stream: true });
+          const { events, rest } = splitServerSentEvents(buffer);
+          buffer = rest;
+          let finished = false;
+          for (const event of events) {
+            const chunk = parseAnswerStreamEvent(event);
+            if (chunk === "done") finished = true;
+            else if (chunk) apply(chunk);
+          }
+          if (result || finished) break;
+          live();
+        }
+      } finally {
+        clearTimeout(idle);
+        reader.cancel().catch(() => {});
+      }
+      if (this.stopped || this.invalid) throw new Error("session_stopped");
+      // A stream that ended without its result tells nothing about the run:
+      // the command stays pending and is retried or joined as before.
+      if (!result) throw new Error("network_error");
+      return {
+        response: { ok: result.status < 400, status: result.status },
+        value: result.body,
+      };
+    } finally {
+      done();
     }
   }
   async speechCapabilities(signal: AbortSignal) {
@@ -3139,6 +3341,7 @@ export class ClientSession {
       this.publish({
         pending: null,
         activity: null,
+        activitySteps: null,
         processNotice: this.retainedRuntimeNotice(flight),
         ...(isProcessExecutionCommand(flight.command)
           ? {
@@ -3201,7 +3404,12 @@ export class ClientSession {
     });
     // The acknowledged result is the fallback for json(), which discards an
     // aborted response. Publish it before aborting the original transport.
-    this.publish({ ...update, pending: null, activity: null });
+    this.publish({
+      ...update,
+      pending: null,
+      activity: null,
+      activitySteps: null,
+    });
     flight.stopActivity();
     flight.controller.abort();
     flight.markReady();
@@ -3336,6 +3544,7 @@ export class ClientSession {
       error: null,
       processNotice: null,
       activity: null,
+      activitySteps: null,
       activityConnection: "waiting",
     });
     let persisted = false;
@@ -3379,20 +3588,28 @@ export class ClientSession {
       if (!this.currentFlight(flight)) return;
       flight.deliveryStarted = true;
       flight.markReady();
-      if (command.type === "message.send" || command.type === "card.respond")
+      const streaming =
+        !!this.options.stream && command.type === "message.send";
+      if (
+        !streaming &&
+        (command.type === "message.send" || command.type === "card.respond")
+      )
         flight.stopActivity = this.watchActivity(command);
+      const path = isProcessRuntimeCommand(command)
+        ? `processes/commands?profile=${encodeURIComponent(flight.processPending?.executionProfile ?? PROCESS_QUESTION_EXECUTION_PROFILE)}`
+        : replyCorrelationPath("commands");
+      const init = {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: flight.serializedCommand,
+        signal: flight.controller.signal,
+      };
       const delivery = await Promise.race([
-        this.json(
-          isProcessRuntimeCommand(command)
-            ? `processes/commands?profile=${encodeURIComponent(flight.processPending?.executionProfile ?? PROCESS_QUESTION_EXECUTION_PROFILE)}`
-            : replyCorrelationPath("commands"),
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: flight.serializedCommand,
-            signal: flight.controller.signal,
-          },
-          115000,
+        (streaming && command.type === "message.send"
+          ? this.streamAnswer(path, init, command, () => {
+              flight.stopActivity = this.watchActivity(command);
+            })
+          : this.json(path, init, 115000)
         ).then((result) => ({ ...result, retired: false as const })),
         flight.retired.then(() => ({ retired: true as const })),
       ]);

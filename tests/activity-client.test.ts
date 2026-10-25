@@ -17,6 +17,7 @@ import {
   workflowActivity,
 } from "../packages/test-fixtures";
 import { credential, authInfo } from "./auth-fixtures";
+import type { AnswerStreamChunk } from "../packages/protocol/answer-stream";
 
 const response = (value: unknown, status = 200) =>
   ({
@@ -260,6 +261,258 @@ test("a failed request's error and retry belong to the chat that sent it", async
     expect(chatOwnsError(state, "conversation-2")).toBe(false);
     expect(canRetryPending(state, own)).toBe(true);
     expect(canRetryPending(state, "conversation-2")).toBe(false);
+  } finally {
+    f.session.stop();
+  }
+});
+
+/** An event-stream response whose chunks arrive as the test releases them. */
+function streamResponse() {
+  const encoder = new TextEncoder();
+  let push!: (chunk: AnswerStreamChunk | "done" | null) => void;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      push = (chunk) => {
+        if (chunk === null) controller.close();
+        else
+          controller.enqueue(
+            encoder.encode(
+              `data: ${chunk === "done" ? "[DONE]" : JSON.stringify(chunk)}\n\n`,
+            ),
+          );
+      };
+    },
+  });
+  const response = {
+    ok: true,
+    status: 200,
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === "content-type"
+          ? "text/event-stream; charset=utf-8"
+          : null,
+    },
+    body,
+    text: async () => "",
+  } as unknown as Response;
+  return {
+    response,
+    push: (chunk: AnswerStreamChunk | "done" | null) => push(chunk),
+  };
+}
+function streamingSetup(answer: Response) {
+  const engine = new FixtureEngine();
+  const command = messageCommand("Choose Peter", "en", "test-stream");
+  const posts: RequestInit[] = [];
+  const fetcher = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>(
+    async (url, init) => {
+      if (String(url).endsWith("auth/session")) return response(authInfo());
+      if (String(url).includes("activity?"))
+        throw new Error("TEST polling is not used while streaming");
+      if (init?.method === "POST") {
+        posts.push(init);
+        return answer;
+      }
+      return response(engine.snapshot());
+    },
+  );
+  const storage = new Map<string, string>();
+  const session = new ClientSession(
+    "https://fixture/v1/a",
+    {
+      getItem: async (key) => storage.get(key) ?? null,
+      setItem: async (key, value) => {
+        storage.set(key, value);
+      },
+    },
+    credential(),
+    fetcher,
+    () => {},
+    undefined,
+    false,
+    { stream: true },
+  );
+  return { session, engine, command, posts, fetcher };
+}
+
+test("a streamed answer publishes the draft and the steps as they arrive and ends exactly like the JSON response", async () => {
+  jest.useRealTimers();
+  const stream = streamResponse();
+  const f = streamingSetup(stream.response);
+  const plain = setup();
+  try {
+    await f.session.start(false);
+    await plain.session.start(false);
+    const send = f.session.send(f.command);
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+    await settle();
+    expect(posts(f)).toHaveLength(1);
+    expect((posts(f)[0]!.headers as Record<string, string>).Accept).toBe(
+      "text/event-stream",
+    );
+    stream.push({ type: "start" });
+    stream.push({
+      type: "tool-input-start",
+      toolCallId: "c1",
+      toolName: "Search loans",
+    });
+    stream.push({
+      type: "tool-input-available",
+      toolCallId: "c1",
+      toolName: "Search loans",
+      input: { fields: [{ label: "Service", value: "TEST CRM" }] },
+    });
+    await settle();
+    expect(f.session.getSnapshot().activityConnection).toBe("live");
+    expect(f.session.getSnapshot().activitySteps).toEqual([
+      {
+        toolCallId: "c1",
+        label: "Search loans",
+        status: "running",
+        input: [{ label: "Service", value: "TEST CRM" }],
+        output: [],
+      },
+    ]);
+    stream.push({
+      type: "tool-output-available",
+      toolCallId: "c1",
+      output: {
+        status: "succeeded",
+        fields: [{ label: "Returned items", value: "71" }],
+      },
+    });
+    stream.push({ type: "text-start", id: "t1" });
+    stream.push({ type: "text-delta", id: "t1", delta: "Peter " });
+    stream.push({ type: "text-delta", id: "t1", delta: "is chosen." });
+    await settle();
+    expect(f.session.getSnapshot().activity?.draft).toBe("Peter is chosen.");
+    expect(f.session.getSnapshot().activitySteps?.[0]?.status).toBe(
+      "succeeded",
+    );
+    expect(f.session.getSnapshot().activitySteps?.[0]?.output).toEqual([
+      { label: "Returned items", value: "71" },
+    ]);
+    // The checker sent the reply back: the draft vanishes.
+    stream.push({ type: "text-end", id: "t1" });
+    await settle();
+    expect(f.session.getSnapshot().activity?.draft).toBeUndefined();
+    // The result the JSON response would have carried.
+    const result = f.engine.execute(f.command);
+    stream.push({
+      type: "data-niaro-result",
+      data: { status: 202, body: result },
+    });
+    stream.push({ type: "finish" });
+    stream.push("done");
+    stream.push(null);
+    await send;
+    // The plain session gets the same result as JSON.
+    const plainSend = plain.session.send(plain.command);
+    plain.post.resolve(response(plain.engine.execute(plain.command), 202));
+    await plainSend;
+    const streamed = f.session.getSnapshot(),
+      json = plain.session.getSnapshot();
+    expect(streamed.activity).toBeNull();
+    expect(streamed.activitySteps).toBeNull();
+    expect(streamed.pending).toBeNull();
+    expect(streamed.commandStates).toEqual(json.commandStates);
+    expect(streamed.error).toBe(json.error);
+    const texts = (state: typeof streamed) =>
+      Object.values(state.store?.conversations ?? {}).map((conversation) =>
+        conversation.messages.map((message) => [message.role, message.text]),
+      );
+    expect(texts(streamed)).toEqual(texts(json));
+    expect(posts(f)).toHaveLength(1);
+  } finally {
+    f.session.stop();
+    plain.session.stop();
+  }
+  function posts(x: ReturnType<typeof streamingSetup>) {
+    return x.posts;
+  }
+});
+
+test("a server that answers JSON to a streaming client is read as JSON, with polling", async () => {
+  jest.useRealTimers();
+  const engine = new FixtureEngine();
+  const command = messageCommand("Choose Peter", "en", "test-stream-json");
+  const polls: string[] = [];
+  const result = engine.execute(command);
+  const fetcher = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>(
+    async (url, init) => {
+      if (String(url).endsWith("auth/session")) return response(authInfo());
+      if (String(url).includes("activity?")) {
+        polls.push(String(url));
+        return response({
+          profile: ACTIVITY_PROFILE,
+          scope: credential().scope,
+          commandId: command.commandId,
+          activity: null,
+        });
+      }
+      if (init?.method === "POST") {
+        const json = response(result, 202);
+        return {
+          ...json,
+          headers: { get: () => "application/json" },
+          body: null,
+        } as unknown as Response;
+      }
+      return response(engine.snapshot());
+    },
+  );
+  const storage = new Map<string, string>();
+  const session = new ClientSession(
+    "https://fixture/v1/a",
+    {
+      getItem: async (key) => storage.get(key) ?? null,
+      setItem: async (key, value) => {
+        storage.set(key, value);
+      },
+    },
+    credential(),
+    fetcher,
+    () => {},
+    undefined,
+    false,
+    { stream: true },
+  );
+  try {
+    await session.start(false);
+    await session.send(command);
+    expect(session.getSnapshot().pending).toBeNull();
+    expect(
+      Object.values(session.getSnapshot().store?.conversations ?? {}).map(
+        (conversation) => conversation.messages.map((message) => message.text),
+      ),
+    ).toEqual(
+      result.snapshot.conversations.map((conversation) =>
+        conversation.messages.map((message) => message.text),
+      ),
+    );
+  } finally {
+    session.stop();
+  }
+});
+
+test("a stream that ends without its result leaves the command pending for a retry, without a second send", async () => {
+  jest.useRealTimers();
+  const stream = streamResponse();
+  const f = streamingSetup(stream.response);
+  try {
+    await f.session.start(false);
+    const send = f.session.send(f.command);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    stream.push({ type: "start" });
+    stream.push({ type: "text-start", id: "t1" });
+    stream.push({ type: "text-delta", id: "t1", delta: "Half" });
+    stream.push(null);
+    await send;
+    expect(f.session.getSnapshot().pending).toEqual(f.command);
+    expect(f.session.getSnapshot().commandStates).toEqual({
+      chat: "network_error",
+    });
+    expect(f.posts).toHaveLength(1);
   } finally {
     f.session.stop();
   }

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { AnswerStreamStep } from "../../packages/protocol/answer-stream";
 import type { Scope, Language } from "../../packages/protocol";
 import type { CatalogContext, CatalogController } from "./catalog-controller";
 import type { CatalogRuntime, ServiceAnswer } from "./catalog-runtime";
@@ -264,6 +265,7 @@ export function createNativeCatalogRuntime(
     text?: string,
     resume?: { toolCallId: string; data: unknown },
     reportDraft?: (draft: string | null) => void,
+    reportStep?: (step: AnswerStreamStep) => void,
   ) {
     const runtime = await nativeCatalogOwner(controller);
     const state = session.state;
@@ -362,6 +364,14 @@ export function createNativeCatalogRuntime(
             );
             if (step) step.tool = startLoopToolDetails(event.name, event.args);
             steps.set(event.toolCallId, step);
+            if (step)
+              reportStep?.({
+                toolCallId: event.toolCallId,
+                label: step.label,
+                status: "running",
+                input: step.tool?.input ?? [],
+                output: [],
+              });
           } else if (event.type === "tool-end") {
             if (event.error) await restoreCommittedMutation();
             session.recordToolProblem(
@@ -415,6 +425,27 @@ export function createNativeCatalogRuntime(
                 status,
               });
             finishLoopStep(step, status);
+            if (step)
+              reportStep?.({
+                toolCallId: event.toolCallId,
+                label: step.label,
+                status:
+                  status === "succeeded" ||
+                  status === "waiting" ||
+                  status === "cancelled"
+                    ? status
+                    : "failed",
+                input: step.tool?.input ?? [],
+                output: step.tool?.output ?? [],
+                ...(step.tool?.failure
+                  ? {
+                      failure: {
+                        kind: step.tool.failure.kind,
+                        code: step.tool.failure.code,
+                      },
+                    }
+                  : {}),
+              });
           }
           await session.save(false);
         },
@@ -1166,6 +1197,7 @@ export function createNativeCatalogRuntime(
                   data: { answer: text },
                 },
                 messageContext?.reportDraft,
+                messageContext?.reportStep,
               );
             }
             const session = await domain.begin(
@@ -1192,6 +1224,7 @@ export function createNativeCatalogRuntime(
               text,
               undefined,
               messageContext?.reportDraft,
+              messageContext?.reportStep,
             );
           } catch (error) {
             if (signal.reason !== REQUEST_INTERRUPTION_REASON) throw error;

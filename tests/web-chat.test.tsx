@@ -1304,3 +1304,71 @@ test("while an opened chat's history loads, the composer takes text but does not
     "Kolik máme objednávek?",
   );
 });
+
+test("while the assistant works, the streamed steps say which service is read and what came back", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Kolik máme zápůjček?")],
+  };
+  const { session, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const pending = {
+    type: "message.send" as const,
+    commandId: "c-2",
+    idempotencyKey: "c-2",
+    conversationId: "conv-1",
+    text: "Kolik máme zápůjček?",
+    language: "cs" as const,
+  };
+  await act(async () =>
+    publish({
+      pending,
+      commandStates: { chat: "sending" },
+      activity: {
+        commandId: "c-2",
+        conversationId: "conv-1",
+        status: "running",
+        steps: [
+          { id: "understanding", status: "running" },
+          { id: "preparing", status: "pending" },
+        ],
+      },
+      activityConnection: "live",
+      activitySteps: [
+        {
+          toolCallId: "c1",
+          label: "Search loans",
+          status: "succeeded",
+          input: [{ label: "Service", value: "Twenty CRM" }],
+          output: [{ label: "Returned items", value: "71" }],
+        },
+        {
+          toolCallId: "c2",
+          label: "Find payouts",
+          status: "running",
+          input: [],
+          output: [],
+        },
+      ],
+    }),
+  );
+  const steps = byTestId(root, "progress-live-steps");
+  expect(text(steps)).toContain(
+    "Twenty CRM · Search loans · returned items 71",
+  );
+  expect(text(steps)).toContain("Find payouts");
+  await act(async () =>
+    publish({
+      pending: null,
+      activity: null,
+      activitySteps: null,
+      commandStates: { chat: "accepted" },
+    }),
+  );
+  expect(
+    root.findAll((node) => node.props["data-testid"] === "progress-live-steps"),
+  ).toHaveLength(0);
+});
