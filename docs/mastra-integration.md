@@ -93,9 +93,18 @@ assembled and validated as a non-streamed one, so tool calls, finish reasons,
 usage settlement, errors and the processors behave as before. Calls without a
 draft observer, `doGenerate`, decisions, and transports that are not marked as
 streaming (tests, the live evaluation harness) keep the buffered request.
-Requests share persistent per-command limits:
-12 model steps, 40 total inference calls, 12 catalog action attempts and 10
-exposed action tools; provider daily request limits also apply. These are request
+Chat requests share persistent per-command limits:
+24 model steps, 60 total inference calls, 20 catalog action attempts and 10
+exposed action tools; provider daily request limits also apply. A chat answer
+often reads several services and pages through records, so these are above
+the generic limits the process tests simulate (12 model steps, 40 inference
+calls, 12 action attempts), which stay recorded in the process test settings.
+The last two chat steps offer no tools (`toolChoice: "none"`) and tell the
+model to answer from the results it has and to say what it could not get, so
+a long request ends in an answer instead of a step-limit failure; the second
+leaves room for one checker repair. Each chat model call may write up to 8,000
+output tokens (the usage limits clamp it to the model's "Max reply"); the
+former 1,600 cut off reasoning models before a tool call or a table. These are request
 limits alongside the durable token/cost ledger. Ledger enforcement requires an
 explicit workspace policy and revision-pinned model prices; initial observe
 mode records unknown usage without claiming a financial cap. Neither type of

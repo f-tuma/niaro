@@ -64,7 +64,12 @@ export function presentServiceAnswer(
     operation.result === undefined ? "" : JSON.stringify(operation.result);
   const failurePresentation =
     operation.status === "failed" || operation.status === "unknown"
-      ? presentActionFailure(operation.failure, operation.status, language)
+      ? presentActionFailure(
+          operation.failure,
+          operation.status,
+          language,
+          operation.effect,
+        )
       : undefined;
   const summary =
     failurePresentation?.summary ??

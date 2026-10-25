@@ -57,9 +57,14 @@ for (const language of ["en", "cs"] as const) {
     const h = createTrustHarness();
     try {
       h.onChat(() => malformed(h));
+      // The request is written in the language under test, as a person
+      // using that app language would; failures follow the message.
       const request =
-        "TEST original human goal: find the right CRM contact and explain the result.\n" +
-        "Please preserve this complete request in the run details. ".repeat(12);
+        language === "cs"
+          ? "TEST původní cíl: najdi v CRM správný kontakt a vysvětli výsledek.\n" +
+            "Prosím zachovej celé zadání v podrobnostech běhu. ".repeat(12)
+          : "TEST original human goal: find the right CRM contact and explain the result.\n" +
+            "Please preserve this complete request in the run details. ".repeat(12);
       const original = CommandSchema.parse({
         ...command("TEST-fatal-" + language, language),
         text: request,

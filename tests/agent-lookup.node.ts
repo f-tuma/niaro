@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import {
+  messageLanguage,
+  DomainCommandSchema,
+} from "../apps/server-identity/mastra-domain";
 import { test } from "node:test";
-import { DomainCommandSchema } from "../apps/server-identity/mastra-domain";
 import {
   createTrustHarness,
   toolResults,
@@ -50,7 +53,11 @@ for (const text of [
         content: "Podle opakované kontroly osoba v CRM není.",
       }));
       const result = await h.send(text, { language: "cs" });
-      assert.match(reply(result), /neověřil/);
+      // The reply follows the message's language, whatever the app's.
+      assert.match(
+        reply(result),
+        messageLanguage(text) === "en" ? /have not verified/ : /neověřil/,
+      );
       assert.equal(h.network.length, 0);
       assert.equal(latest(h).modelCalls, 2);
       assert.equal(latest(h).lookupRepair, true);

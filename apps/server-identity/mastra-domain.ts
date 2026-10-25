@@ -102,12 +102,44 @@ import {
   toolOutcome,
 } from "./loop-trace";
 
+const CZECH_LETTERS = /[ěščřžůťďň]/iu;
+const CZECH_WORDS =
+  /\b(?:je|jsou|jsem|prosím|mám|máme|není|nejsou|jak|kolik|ukaž|najdi|koukni|podívej|co|kdy|který|která|které|zápůjčk\w*|termín\w*|tržb\w*|schůzk\w*|dnes|zítra|včera|také|taky|a|na|se|pro|v|ve|ze|od|po|nad|pod|že|ale|mi|mě|můj|moje|moji|další)\b/giu;
+const ENGLISH_WORDS =
+  /\b(?:the|what|show|how|please|is|are|my|me|find|when|which|today|tomorrow|and|for|with|of|to)\b/giu;
+/**
+ * The language a message is written in, when it is clearly Czech or
+ * English. The reply and every text the server writes for the turn follow
+ * it, so a Czech question in an English app gets Czech answers and errors.
+ */
+export function messageLanguage(text: string): Language | undefined {
+  const words = text.match(CZECH_WORDS)?.length ?? 0;
+  // Diacritics alone do not make a message Czech (a name, a quoted word).
+  const czech = words ? words + (CZECH_LETTERS.test(text) ? 1 : 0) : 0;
+  const english = text.match(ENGLISH_WORDS)?.length ?? 0;
+  if (czech >= 2 && czech > english) return "cs";
+  if (english >= 2 && english > czech && !CZECH_LETTERS.test(text)) return "en";
+  return undefined;
+}
 const digest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const MAX_MODEL_CALLS = 12,
   MAX_INFERENCE = 40,
   MAX_ACTION_CALLS = 12,
   MAX_EXPOSED = 10;
+/**
+ * A chat answer may read several services and page through records (a loan
+ * overview with its payouts, say), so the chat allows more than the generic
+ * limits the process tests simulate; those stay as they are, since the
+ * process test settings record them. The agent runtime's last chat steps
+ * only answer, so a run that uses them ends with what it verified.
+ */
+const CHAT_MAX_MODEL_CALLS = 24,
+  CHAT_MAX_INFERENCE = 60,
+  CHAT_MAX_ACTION_CALLS = 20;
+/** Whose limits a run uses: a person's chat, or the generic agent that
+ * process tests compare against (NATIVE_DOMAIN_SAFETY_LIMITS). */
+export type LoopLimits = "chat" | "generic";
 export const NATIVE_DOMAIN_SAFETY_LIMITS = Object.freeze({
   maxModelCalls: MAX_MODEL_CALLS,
   maxInference: MAX_INFERENCE,
@@ -1164,7 +1196,12 @@ export function createMastraDomain(
   resultCard: (id: string, language: Language) => Promise<ServiceAnswer>,
   memory?: AgentMemory,
   inferenceCaps?: InferenceRunCaps,
+  loopLimits: LoopLimits = "chat",
 ) {
+  const chat = loopLimits === "chat";
+  const maxModelCalls = chat ? CHAT_MAX_MODEL_CALLS : MAX_MODEL_CALLS,
+    maxInference = chat ? CHAT_MAX_INFERENCE : MAX_INFERENCE,
+    maxActionCalls = chat ? CHAT_MAX_ACTION_CALLS : MAX_ACTION_CALLS;
   const store = controller.store,
     plugins = createInternalPlugins(settings, {
       scope: { workspaceId: scope.workspaceId, userId: scope.userId },
@@ -2523,7 +2560,7 @@ export function createMastraDomain(
           state.inference,
           inferenceCaps,
         );
-        if (state.inference >= MAX_INFERENCE)
+        if (state.inference >= maxInference)
           throw new IdentityError(429, "catalog_budget_exhausted");
         state.inference++;
         persistLocked();
@@ -3275,7 +3312,7 @@ export function createMastraDomain(
     }
     async function prepareModel() {
       await ctx.serial(checkLocked);
-      if (state.modelCalls >= MAX_MODEL_CALLS)
+      if (state.modelCalls >= maxModelCalls)
         throw new IdentityError(429, "catalog_budget_exhausted");
       await refreshMemory();
       state.memoryChanged = false;
@@ -3836,8 +3873,11 @@ export function createMastraDomain(
           );
         return receipt;
       });
-      if (!existing && state.calls >= MAX_ACTION_CALLS)
-        return { error: "action_limit" };
+      if (!existing && state.calls >= maxActionCalls)
+        return {
+          error: "action_limit",
+          note: "No more service calls fit this request. Answer from the results you already have and say plainly which parts are missing.",
+        };
       const input = bindPluginResults(args, state.plugins);
       if (!existing && state.retryParentRunId) {
         const reusable = await ctx.serial(async () => {
@@ -4598,7 +4638,7 @@ export function createMastraDomain(
       recordRetiredDiagnostic: async () => {
         await retiredDiagnostic(false, "execution");
       },
-      modelLimitReached: () => state.modelCalls >= MAX_MODEL_CALLS,
+      modelLimitReached: () => state.modelCalls >= maxModelCalls,
       prepareModel,
       resolve,
       toolResult,
@@ -5005,7 +5045,7 @@ export function createMastraDomain(
             logicalMessageId: messageContext?.logicalMessageId,
           },
         ],
-        language,
+        language: messageLanguage(text) ?? language,
         requestHash: messageContext?.requestHash,
         clock,
         epoch,

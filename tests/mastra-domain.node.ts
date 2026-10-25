@@ -2777,7 +2777,7 @@ test("a linked write checker gets scoped receipts and reports a refused follow-u
       .domain()
       .begin(
         "TEST.partial-linked-write",
-        "Create a note and attach it to the person TEST Person",
+        "Vytvoř poznámku a připoj ji k osobě TEST Person",
         "cs",
         [],
       );
@@ -3553,7 +3553,17 @@ test("provider, global inference and model step caps persist before dispatch", a
       errorCode("catalog_provider_limit"),
     );
     assert.equal(started, 1);
-    session.state.inference = 40;
+    // A chat answer may use more than the generic process limits.
+    session.state.inference = 59;
+    await session.save();
+    const before = await f
+      .domain()
+      .begin("TEST.budget", "TEST hello", "en", []);
+    await assert.rejects(
+      before.allowance(provider.id, provider.revision, () => started++),
+      errorCode("catalog_provider_limit"),
+    );
+    session.state.inference = 60;
     await session.save();
     const replay = await f
       .domain()
@@ -3563,7 +3573,7 @@ test("provider, global inference and model step caps persist before dispatch", a
       errorCode("catalog_budget_exhausted"),
     );
     assert.equal(started, 1);
-    replay.state.modelCalls = 12;
+    replay.state.modelCalls = 24;
     await replay.save();
     await assert.rejects(
       replay.prepareModel(),

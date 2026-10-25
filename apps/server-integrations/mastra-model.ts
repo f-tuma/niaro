@@ -338,7 +338,10 @@ export type ModelCallLimits = {
  * 1,000,000 characters) and can take several minutes to write.
  */
 export const MODEL_CALL_LIMITS = {
-  chat: { timeoutMs: 110_000 },
+  // A reasoning model spends part of the allowance thinking before it calls a
+  // tool or writes a table; 1,600 tokens cut such answers off. Usage limits
+  // still clamp each request to the model's "Max reply".
+  chat: { timeoutMs: 110_000, maxOutputTokens: 8_000 },
   meeting: {
     timeoutMs: MAX_TRANSPORT_TIMEOUT_MS,
     maxRequestBytes: 4 * 1024 * 1024,

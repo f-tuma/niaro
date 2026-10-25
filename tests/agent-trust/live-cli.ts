@@ -20,6 +20,7 @@ import {
   type TrustQualityScenario,
 } from "./quality-scenarios";
 import { trustUiScenarios } from "./ui-scenarios";
+import { trustRobustnessScenarios } from "./robustness-scenarios";
 
 export const LIVE_TRUST_PROVIDER_URL = "https://openrouter.ai/api/v1";
 /** A live turn makes several model calls; the scripted 15 s deadline is too short. */
@@ -38,6 +39,7 @@ const availableScenarios = [
   ...trustScenarios,
   ...trustQualityScenarios,
   ...trustUiScenarios,
+  ...trustRobustnessScenarios,
 ];
 const valuedFlags = new Set([
   "--model",
@@ -136,7 +138,11 @@ export function parseLiveTrustArguments(
   for (const id of selectedIds)
     if (!availableScenarios.some((scenario) => scenario.id === id))
       throw new Error(`Unknown scenario: ${id}`);
-  for (const matrix of [trustQualityScenarios, trustUiScenarios])
+  for (const matrix of [
+    trustQualityScenarios,
+    trustUiScenarios,
+    trustRobustnessScenarios,
+  ])
     validateBalancedQualitySelection(
       matrix.filter((scenario) => selectedIds.includes(scenario.id)),
     );

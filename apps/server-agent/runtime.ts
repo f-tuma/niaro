@@ -88,6 +88,14 @@ export type {
 } from "./process-workflow";
 
 export const NATIVE_AGENT_MAX_STEPS = 12;
+/**
+ * The last steps of a run may not call tools: the model answers with what it
+ * has verified and says what it could not get, instead of the run ending
+ * without an answer. Two, so a checker repair still fits.
+ */
+const NATIVE_ANSWER_STEPS = 2;
+const FINAL_STEP_NOTE =
+  "[Server] You have used the steps available for this request: no more tools can be called. Answer now from the tool results you already have. Say plainly which parts of the request you could not get or verify and why (for example a service that refused, a result that was too large, or data that no connected service holds), and what the person can do about it. Never guess the missing parts.";
 
 const NATIVE_RESERVED_TOOL_INPUT_KEYS = [
   "resumeData",
@@ -285,6 +293,8 @@ export type NativeAgentInput = {
    * Presentation only: it is never stored and decides nothing.
    */
   onDraft?(draft: string | null): void;
+  /** Model steps for this run; NATIVE_AGENT_MAX_STEPS when not given. */
+  maxSteps?: number;
 };
 export type NativeAgentResult = {
   runId: string;
@@ -1275,7 +1285,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
     );
     const authority = {
       id: "niaro-step-authority",
-      async processInputStep({ messages }) {
+      async processInputStep({ messages, stepNumber }) {
         try {
           if (fatal) throw fatal;
           input.signal.throwIfAborted();
@@ -1286,14 +1296,21 @@ export function createNativeAgentRuntime(storageUrl: string) {
           firstStep = false;
           privateContext ||= prepared.privateContext !== false;
           // 1.74's processor type expects normalized streaming models; the runtime normalizes raw V4 models.
+          const answerOnly =
+            input.maxSteps !== undefined &&
+            stepNumber >= input.maxSteps - NATIVE_ANSWER_STEPS;
           return {
             model: model(
               prepared.selected,
             ) as unknown as ProcessInputStepResult["model"],
-            activeTools: session.activeTools(),
+            activeTools: answerOnly ? [] : session.activeTools(),
+            ...(answerOnly ? { toolChoice: "none" as const } : {}),
             messages: opaqueTranscriptInputs(messages),
             systemMessages: [
               { role: "system" as const, content: prepared.instructions },
+              ...(answerOnly
+                ? [{ role: "system" as const, content: FINAL_STEP_NOTE }]
+                : []),
             ],
             modelSettings: { maxRetries: 0 },
           };
@@ -1379,7 +1396,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
     const agent = createDurableAgent({
       agent: wrappedAgent,
       cache: false,
-      maxSteps: NATIVE_AGENT_MAX_STEPS,
+      maxSteps: input.maxSteps ?? NATIVE_AGENT_MAX_STEPS,
       shouldPersistSnapshot: persistNativeAgentCheckpoint,
     });
     owner.mastra.addAgent(agent, id);
@@ -1388,7 +1405,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
         runId: input.runId,
         memory: { thread: input.threadId, resource: input.resourceId },
         abortSignal: input.signal,
-        maxSteps: NATIVE_AGENT_MAX_STEPS,
+        maxSteps: input.maxSteps ?? NATIVE_AGENT_MAX_STEPS,
         toolCallConcurrency: 1,
         eagerToolExecution: false,
         maxProcessorRetries: 2,
@@ -1609,7 +1626,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
         throw new Error("niaro_native_model_failed");
       if (!session.state.pending && !finalized) {
         const code =
-          output.steps.length >= 12
+          output.steps.length >= (input.maxSteps ?? NATIVE_AGENT_MAX_STEPS)
             ? "niaro_native_step_budget_exhausted"
             : "niaro_native_finalization_failed";
         throw Object.assign(new Error(code), {

@@ -157,6 +157,9 @@ export type CatalogContext = {
   ) => void;
   transaction: <T>(run: () => Promise<T>) => Promise<T>;
 };
+/** The largest service result kept and shown to the model, in characters of JSON. */
+const MAX_RESULT_CHARACTERS = 65536;
+
 export class CatalogController {
   private turnLocks = new Set<string>();
   async withTurn<T>(id: string, run: () => Promise<T>): Promise<T> {
@@ -1003,8 +1006,24 @@ export class CatalogController {
         },
       );
       stage = "provider_response";
-      if (JSON.stringify(result).length > 65536)
-        throw new IntegrationError("integration_response_too_large", 502);
+      const size = JSON.stringify(result).length;
+      if (size > MAX_RESULT_CHARACTERS)
+        // A read that returns too much can be asked again for less; saying so
+        // lets the model narrow it instead of giving up.
+        throw new IntegrationError(
+          "integration_response_too_large",
+          502,
+          operation.effect === "read"
+            ? {
+                code: "integration_response_too_large",
+                kind: "validation",
+                stage: "provider_response",
+                retry: "correct_input",
+                message: `The result was too large (${Math.ceil(size / 1024)} KB; the limit is ${MAX_RESULT_CHARACTERS / 1024} KB). Ask for fewer records or only the fields you need, or page through it.`,
+                fields: [],
+              }
+            : undefined,
+        );
       stage = "result_commit";
       await ctx.serial(async () => {
         await validate(false, true);

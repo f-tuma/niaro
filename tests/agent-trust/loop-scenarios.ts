@@ -926,11 +926,11 @@ export const loopScenarios: TrustScenario[] = [
             assert.match(reply(result).text, /step limit/);
             assert.equal(
               h.requests.filter((request) => request.messages).length,
-              12,
+              24,
             );
             assert.equal(h.network.length, 0);
-            assert.equal(latestTurn(h).modelCalls, 12);
-            assert.equal(latestTurn(h).inference, 12);
+            assert.equal(latestTurn(h).modelCalls, 24);
+            assert.equal(latestTurn(h).inference, 24);
             assert.equal(latestTurn(h).calls, 0);
             assert.deepEqual(latestTurn(h).operations, []);
             assert.deepEqual(latestTurn(h).receipts, []);
@@ -941,7 +941,7 @@ export const loopScenarios: TrustScenario[] = [
             const invocations = await h.nativeInvocations(
               latestTurn(h).threadId,
             );
-            assert.equal(invocations.length, 12);
+            assert.equal(invocations.length, 24);
             attemptedCalls = invocations;
             assert(
               invocations.every(
@@ -960,7 +960,7 @@ export const loopScenarios: TrustScenario[] = [
             );
             assert.equal(
               new Set(invocations.map((call) => call.toolCallId)).size,
-              12,
+              24,
             );
             const failures =
               latestTurn(h).trace?.steps.filter(
@@ -968,7 +968,7 @@ export const loopScenarios: TrustScenario[] = [
               ) ?? [];
             assert.equal(
               failures.length,
-              12,
+              24,
               "Each unavailable attempt produces one completed observer pair",
             );
             assert(
@@ -1000,8 +1000,8 @@ export const loopScenarios: TrustScenario[] = [
           "exhausted-budget-after-restart",
           "Reopening the stores and retrying the same command cannot reset its inference budget",
           async () => {
-            assert.equal(latestTurn(h).modelCalls, 12);
-            assert.equal(latestTurn(h).inference, 12);
+            assert.equal(latestTurn(h).modelCalls, 24);
+            assert.equal(latestTurn(h).inference, 24);
             const inferenceRequests = h.requests.length;
             const replay = await h.send("Try an unavailable tool", {
               id: "TEST-invalid-tools",
@@ -1010,8 +1010,8 @@ export const loopScenarios: TrustScenario[] = [
             assert.match(reply(replay).text, /step limit/);
             assert.equal(h.requests.length, inferenceRequests);
             assert.equal(h.network.length, 0);
-            assert.equal(latestTurn(h).modelCalls, 12);
-            assert.equal(latestTurn(h).inference, 12);
+            assert.equal(latestTurn(h).modelCalls, 24);
+            assert.equal(latestTurn(h).inference, 24);
             assert.equal(latestTurn(h).calls, 0);
             assert.deepEqual(latestTurn(h).operations, []);
             assert.deepEqual(latestTurn(h).receipts, []);

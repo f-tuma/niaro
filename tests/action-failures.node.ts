@@ -846,3 +846,42 @@ test("REST callback marks only an authorized action dispatch and HTTP diagnostic
   );
   assert.equal(dispatched, 1);
 });
+
+test("an MCP tool error that names a wrong input is something the model can correct", () => {
+  // As Twenty's MCP reports a date filter given a datetime.
+  const failure = mcpActionFailure({
+    isError: true,
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          success: false,
+          message: "Failed to find zapujcky",
+          error:
+            "Invalid value '2026-10-24T00:00:00+02:00' for date field \"datumKonceZapujcky\". Expected format: 'YYYY-MM-DD'",
+        }),
+      },
+    ],
+  });
+  assert(failure);
+  assert.equal(failure.kind, "validation");
+  assert.equal(failure.retry, "correct_input");
+  assert.match(failure.message ?? "", /Expected format: 'YYYY-MM-DD'/);
+  // An unexplained provider failure still says to try later.
+  const opaque = providerFailure({ message: "TEST something broke" });
+  assert.equal(opaque.kind, "provider");
+  assert.equal(opaque.retry, "later");
+});
+
+test("a failed read is never told that a write needs approval", () => {
+  const failure = providerFailure({ message: "TEST something broke" });
+  const read = presentActionFailure(failure, "failed", "en", "read");
+  const write = presentActionFailure(failure, "failed", "en", "write");
+  assert.doesNotMatch(read.reply, /approval/);
+  assert.match(read.reply, /Try again later\./);
+  assert.match(write.reply, /a write still needs its required approval/);
+  assert.doesNotMatch(
+    presentActionFailure(failure, "failed", "cs", "read").reply,
+    /zápis/,
+  );
+});

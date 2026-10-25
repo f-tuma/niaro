@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { LoopLimits, DomainMessageContext } from "./mastra-domain";
 import type { Scope, Language } from "../../packages/protocol";
 import type {
   ActivityTool,
@@ -12,7 +13,6 @@ import type { CatalogController, CatalogContext } from "./catalog-controller";
 import type { IntegrationTransport } from "../server-integrations/transport";
 import type { PluginSettings } from "../server-plugins/registry";
 import type { AgentMemory } from "./agent-memory";
-import type { DomainMessageContext } from "./mastra-domain";
 import { createNativeCatalogRuntime } from "./mastra-runtime";
 import { createServiceAnswer } from "./service-answer";
 import { IdentityError } from "./error";
@@ -175,6 +175,9 @@ export function createCatalogRuntime(
       roots: import("./service-catalog").NativeTaskRoot[],
     ) => Promise<import("../../packages/protocol").WorkItem[]>;
   },
+  /** A person's chat, or the generic agent process tests compare against
+   * with the limits their settings record. */
+  loopLimits: LoopLimits = "chat",
 ): CatalogRuntime {
   const target = { organizationId, workspaceId: scope.workspaceId };
   const key = (commandId: string) =>
@@ -197,6 +200,7 @@ export function createCatalogRuntime(
     createServiceAnswer(controller, context, scope, organizationId),
     memory,
     inferenceCaps,
+    loopLimits,
   );
   let historical: Promise<CatalogRuntime> | undefined;
   const drain = () =>
@@ -273,6 +277,7 @@ export function createCatalogRuntime(
         memory,
         inferenceCaps,
         processTasks,
+        loopLimits,
       ).taskWindow!();
     const roots = processTasks
       ? await processTasks.roots()
@@ -460,6 +465,7 @@ export function createCatalogRuntime(
               memory,
               inferenceCaps,
               processTasks,
+              loopLimits,
             )
           : undefined;
       if (guarded) {
@@ -518,6 +524,7 @@ export function createCatalogRuntime(
           memory,
           inferenceCaps,
           processTasks,
+          loopLimits,
         ).resolve(
           id,
           approved,

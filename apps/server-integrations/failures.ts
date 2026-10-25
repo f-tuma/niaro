@@ -51,9 +51,18 @@ export function diagnosticText(
   return result ? result.slice(0, limit) : undefined;
 }
 
+/**
+ * A provider message that says the request itself was wrong: a value in the
+ * wrong format, an unknown field, a missing argument. MCP tools report these
+ * as a generic error, so only the message tells the model it can fix them.
+ */
+const INPUT_PROBLEM =
+  /\b(?:invalid (?:value|input|argument|date|format|filter|field|type)|expected (?:format|type|a |an |one of)|is not (?:a )?valid|must be (?:a |an |one of|in |at )|is required|required (?:field|argument|parameter)|unknown (?:field|argument|property|column)|field ['"]?[\w.-]+['"]? (?:not found|does not exist)|not found on|cannot query field|does not exist on|unrecognized (?:key|field|argument))/i;
+
 function classify(
   code: string,
   httpStatus?: number,
+  message?: string,
 ): Pick<ActionFailure, "kind" | "retry"> {
   if (code === "process_origin_changed")
     return { kind: "validation", retry: "none" };
@@ -108,6 +117,8 @@ function classify(
     return { kind: "response", retry: "none" };
   if (/unavailable|timeout|connection|network/i.test(code))
     return { kind: "connection", retry: "later" };
+  if (message && INPUT_PROBLEM.test(message))
+    return { kind: "validation", retry: "correct_input" };
   return { kind: "provider", retry: "later" };
 }
 
@@ -417,7 +428,7 @@ export function providerFailure(
       : undefined;
   return ActionFailureSchema.parse({
     code,
-    ...classify(code, httpStatus),
+    ...classify(code, httpStatus, message),
     stage: options.stage ?? "provider_response",
     ...(httpStatus ? { httpStatus } : {}),
     ...(message ? { message } : {}),

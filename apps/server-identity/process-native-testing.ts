@@ -574,6 +574,8 @@ async function observe(
         { enabled: [], timeZone: "UTC" },
         memory,
         caps,
+        undefined,
+        "generic",
       ),
     };
   }

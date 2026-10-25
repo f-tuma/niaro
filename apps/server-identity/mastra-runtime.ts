@@ -14,6 +14,7 @@ import {
   NATIVE_TASK_EXPIRY_MS,
   nativeQuestionId,
   type DomainSession,
+  type LoopLimits,
   type NativeFailureReason,
 } from "./mastra-domain";
 import { IdentityError } from "./error";
@@ -33,6 +34,9 @@ import { IntegrationError } from "../server-integrations/transport";
 import { ServiceConnectionRequired } from "./service-oauth";
 import type { InferenceRunCaps } from "./inference-budget";
 
+/** Model steps for a chat answer: it may read several services and page
+ * through records. The last two only answer (see the agent runtime). */
+const NATIVE_CHAT_MAX_STEPS = 24;
 type NativeRuntime = Awaited<
   ReturnType<(typeof import("@niaro/server-agent"))["createNativeAgentRuntime"]>
 >;
@@ -99,6 +103,7 @@ export function createNativeCatalogRuntime(
   resultCard: (id: string, language: Language) => Promise<ServiceAnswer>,
   memory?: AgentMemory,
   inferenceCaps?: InferenceRunCaps,
+  loopLimits: LoopLimits = "chat",
 ): CatalogRuntime {
   const store = controller.store;
   const target = { organizationId, workspaceId: scope.workspaceId };
@@ -111,6 +116,7 @@ export function createNativeCatalogRuntime(
     resultCard,
     memory,
     inferenceCaps,
+    loopLimits,
   );
   const resourceId = digest([
     scope.serverId,
@@ -204,7 +210,18 @@ export function createNativeCatalogRuntime(
       return "budget";
     // Native/SDK execution exceptions are safe only after retirement and full
     // current domain authorization. Their message and cause never reach storage.
-    return error instanceof Error ? "execution" : undefined;
+    if (error instanceof Error) {
+      // Operators need to tell these apart; only the error's type and code
+      // are logged, never its message, which may quote model or tool data.
+      console.warn("Native chat run failed", {
+        name: error.name.slice(0, 80),
+        code: String((error as { code?: unknown }).code ?? "").slice(0, 80),
+        cause:
+          error.cause instanceof Error ? error.cause.name.slice(0, 80) : null,
+      });
+      return "execution";
+    }
+    return undefined;
   }
   async function currentActor() {
     const actor = await context.actor(target);
@@ -319,6 +336,7 @@ export function createNativeCatalogRuntime(
             observer,
           ),
         ...(reportDraft ? { onDraft: reportDraft } : {}),
+        ...(loopLimits === "chat" ? { maxSteps: NATIVE_CHAT_MAX_STEPS } : {}),
         onEvent: async (event) => {
           if (event.type === "model-start") {
             steps.set(
