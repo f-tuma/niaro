@@ -2718,12 +2718,18 @@ export function createMastraDomain(
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
         .map(([id]) => id);
+      // The decision model is a hint, never the gate: when it sees no fit,
+      // the model still gets every service, so it can pick one or say
+      // truthfully which part no connected service holds.
       return likely.length
         ? {
             candidates: listed(likely),
             note: "Not certain; choose the fitting service.",
           }
-        : { services: [] };
+        : {
+            services: listed([...ids.keys()]),
+            note: "No service clearly fits this need. These are all the connected services: use find_actions on the one whose data the request concerns, or say that no connected service holds it.",
+          };
     }
     async function findActions(serviceName: string, need: string) {
       const catalog = await inventory();
@@ -2780,6 +2786,9 @@ export function createMastraDomain(
               )
               .flatMap(([id]) => (keys.get(id) ? [keys.get(id)!] : []))
           : pool.slice(0, 6);
+        // Same here: an empty pick exposes the closest actions instead of
+        // reporting that the service has none.
+        if (!picked.length) picked = pool.slice(0, 4);
       }
       for (const action of picked)
         state.exposed = [

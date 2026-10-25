@@ -129,3 +129,47 @@ test("a message's language is recognised when it is clear", () => {
   assert.equal(messageLanguage("TEST submitted request žluťoučký"), undefined);
   assert.equal(messageLanguage("ok"), undefined);
 });
+
+test("a decision model that sees no fitting service or action still shows the model what exists", async () => {
+  const h = createTrustHarness();
+  try {
+    h.onDecision((body) => {
+      const criteria = body.questions?.route.criteria ?? {};
+      return "fallback" in criteria ? "fallback" : undefined;
+    });
+    const seen: Record<string, unknown>[] = [];
+    h.onChat((body) => {
+      const results = (body.messages ?? [])
+        .filter((message) => message.role === "tool")
+        .map((message) => JSON.parse(message.content ?? "{}"));
+      seen.push(...results);
+      if (!results.some((result) => Array.isArray(result.services)))
+        return h.call("find_service", { need: "loans and their payouts" });
+      if (!results.some((result) => Array.isArray(result.actions)))
+        return h.call("find_actions", {
+          service: "TEST Calendar and contacts",
+          need: "loans and their payouts",
+        });
+      return { content: "No connected service holds loans." };
+    });
+    const result = await h.send("Show me our loans.", { id: "TEST-no-fit" });
+    assert.equal(result.status, "accepted");
+    const services = seen.find((r) => Array.isArray(r.services));
+    assert(services, "find_service answered");
+    assert.deepEqual(
+      (services.services as { service: string }[]).map((s) => s.service),
+      ["TEST Calendar and contacts"],
+      "Every connected service is listed when none clearly fits",
+    );
+    assert.match(String(services.note), /all the connected services/);
+    const actions = seen.find((r) => Array.isArray(r.actions));
+    assert(actions, "find_actions answered");
+    assert.equal(
+      actions.error,
+      undefined,
+      "No action_unavailable for a service that has actions",
+    );
+  } finally {
+    await h.close();
+  }
+});
