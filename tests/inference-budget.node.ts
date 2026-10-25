@@ -1376,7 +1376,16 @@ test("missing native usage keeps full holds until the run cap prevents a new act
     measuredNativeTransport(h, (raw) => {
       delete raw.usage;
     });
-    h.onChat(h.writeScript);
+    // The write is offered directly; the script still searches first, so the
+    // second model call is the one the run cap has to stop.
+    h.onChat((body) =>
+      toolResults(body).some((result) => Array.isArray(result.actions))
+        ? h.writeScript(body)
+        : h.call("find_actions", {
+            service: "TEST Calendar and contacts",
+            need: "create meeting",
+          }),
+    );
     const runtime = h.runtime();
     const args: Parameters<typeof runtime.message> = [
       "TEST-budget-missing",

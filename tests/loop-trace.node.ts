@@ -46,7 +46,16 @@ function presentationStore(h: TrustHarness) {
 test("recorded loop orders model, tool and decision steps without request, result or credentials", async () => {
   const h = createTrustHarness();
   try {
-    h.onChat(h.lookupScript);
+    // The small service's tools are offered directly; this trace is about
+    // the discovery step, so the script searches first anyway.
+    h.onChat((body) =>
+      toolResults(body).some((result) => Array.isArray(result.actions))
+        ? h.lookupScript(body)
+        : h.call("find_actions", {
+            service: "TEST Calendar and contacts",
+            need: "find contact",
+          }),
+    );
     await h.send("Find Jane Test in CRM", { id: "TEST-traced-read" });
     const { turn, trace } = saved(h, "TEST-traced-read");
     assert.equal(trace.status, "succeeded");

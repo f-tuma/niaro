@@ -83,6 +83,7 @@ const en = {
   unknownTool: "Unknown tool",
   findService: "Find a service",
   findActions: "Find available actions",
+  useActions: "Choose actions",
   composeCard: "Build a card",
   loadSkill: "Load skill",
   proposeSkill: "Draft skill",
@@ -240,6 +241,7 @@ const cs: typeof en = {
   unknownTool: "Neznámý nástroj",
   findService: "Najít službu",
   findActions: "Najít dostupné akce",
+  useActions: "Vybrat akce",
   composeCard: "Sestavit kartu",
   loadSkill: "Načíst skill",
   proposeSkill: "Navrhnout skill",
@@ -465,6 +467,7 @@ export function loopNodeLabel(
   if (node.kind === "tool") {
     const tools: Record<string, keyof LoopsCopy> = {
       find_service: "findService",
+      use_actions: "useActions",
       find_actions: "findActions",
       compose_card: "composeCard",
       internal_datetime_resolve: "resolveDate",

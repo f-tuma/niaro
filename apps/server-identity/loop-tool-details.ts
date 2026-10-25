@@ -19,6 +19,7 @@ type Field = LoopToolDetails["input"][number];
 const builtins = new Set([
   "find_service",
   "find_actions",
+  "use_actions",
   "internal_datetime_resolve",
   "compose_card",
   "ask_user",
@@ -218,6 +219,7 @@ const inputLabels: Record<string, readonly string[]> = {
   skill_load: ["Skill id"],
   skill_propose: ["Name"],
   find_actions: ["Service", "Need"],
+  use_actions: ["Actions"],
   internal_datetime_resolve: [
     "Date kind",
     "Date",
@@ -235,6 +237,7 @@ const inputLabels: Record<string, readonly string[]> = {
 const outputLabels: Record<string, readonly string[]> = {
   find_service: ["Returned services", "Service", "Candidates"],
   find_actions: ["Service", "Returned actions", "Action", "Tool", "Effect"],
+  use_actions: ["Returned actions", "Action", "Tool", "Effect", "Unknown"],
   internal_datetime_resolve: [
     "Status",
     "Reason",
@@ -346,6 +349,11 @@ export function startLoopToolDetails(
   if (object && (known === "find_service" || known === "find_actions")) {
     if (known === "find_actions") input.put("Service", object.service);
     input.put("Need", object.need);
+  } else if (object && known === "use_actions") {
+    input.put(
+      "Actions",
+      Array.isArray(object.actions) ? object.actions.join(", ") : undefined,
+    );
   } else if (object && known === "skill_load") {
     input.put("Skill id", object.skillId);
   } else if (object && known === "skill_propose") {
@@ -465,6 +473,23 @@ export function finishLoopToolDetails(
         output.put("Service", object.service);
         recorded = true;
       }
+    } else if (tool.name === "use_actions" && Array.isArray(object.actions)) {
+      output.put("Returned actions", object.actions.length);
+      for (const item of object.actions.slice(0, 3)) {
+        const action = record(item);
+        output.put("Action", action?.name);
+        output.put("Tool", action?.tool);
+        output.put("Effect", action?.effect);
+      }
+      if (Array.isArray(object.unknown) && object.unknown.length)
+        output.put(
+          "Unknown",
+          object.unknown
+            .map((item: unknown) => record(item)?.requested)
+            .filter(Boolean)
+            .join(", "),
+        );
+      recorded = true;
     } else if (tool.name === "find_actions" && Array.isArray(object.actions)) {
       output.put("Service", object.service);
       output.put("Returned actions", object.actions.length);

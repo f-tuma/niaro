@@ -621,7 +621,9 @@ for (const [label, name, args] of [
       assert.equal(h.network.length, 0);
       assert.equal(h.commandState().operations.length, 0);
       assert.equal(h.commandState().pending, undefined);
-      assert.equal(h.commandState().exposed.length, 0);
+      // The small service's two actions are tools from the first step; a
+      // rejected call adds nothing to them.
+      assert.equal(h.commandState().exposed.length, 2);
       assert.equal(h.commandState().memoryReceipts.length, 0);
       await assertPrivateRejection(h, name);
     } finally {

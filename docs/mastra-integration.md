@@ -74,9 +74,38 @@ package so framework types do not leak into the app's root dependency graph.
 ## Direct execution and current authority
 
 The input processor resolves the current configured model, rebuilds authorized
-context and exposes only discovered allowed tools at every model step. The
+context and exposes the action tools of the turn at every model step. The
 output processor checks the actual scoped receipts and can request a bounded
-native processor retry. Checker guidance lives in a tagged native MessageList
+native processor retry.
+
+### What the model knows about the services
+
+The instructions carry a "Connected services" listing: every enabled service
+with its description and every action the person may use, as `name (read|write):
+description` (120 characters each, 12 KB in all; a service over the budget is
+listed by names, and over that by its count). The model therefore sees what is
+connected before it searches, and an answer like "no service holds this" is
+grounded in the listing rather than in a search that found nothing.
+
+Action tools are exposed three ways, in this order of preference:
+
+1. **Directly from the first step** for a small service: at most 8 allowed
+   actions and 24 KB of input schemas in all (Microsoft 365 with 7 actions,
+   a web analytics service). The model calls such an action in its first
+   step. A large service (Twenty has hundreds of actions, 2–3 KB of schema
+   each) is not exposed this way, since its schemas would cost thousands of
+   tokens on every call.
+2. **`use_actions {actions}`** with up to 8 exact names from the listing
+   (an action name, its tool name, or "service action"; a name only one
+   action contains also matches, since models drop prefixes). No decision
+   model is involved. Unknown names come back with the closest action names.
+3. **`find_service` / `find_actions`** search by need, with Jev as a hint:
+   when it sees no fit, the model still gets every service, or the closest
+   actions, never an empty result.
+
+The actions the previous turn of the same chat exposed are exposed again from
+the first step, so a follow-up question calls them at once. A turn exposes at
+most 24 action tools; `use_actions` evicts the oldest beyond that. Checker guidance lives in a tagged native MessageList
 system bucket, so replacing ordinary instructions does not discard it. Jev
 remains an optional bounded selection/verification call, not a second planner.
 The console no longer offers a choice between two execution engines.
@@ -94,7 +123,7 @@ usage settlement, errors and the processors behave as before. Calls without a
 draft observer, `doGenerate`, decisions, and transports that are not marked as
 streaming (tests, the live evaluation harness) keep the buffered request.
 Chat requests share persistent per-command limits:
-24 model steps, 60 total inference calls, 20 catalog action attempts and 10
+24 model steps, 60 total inference calls, 20 catalog action attempts and 24
 exposed action tools; provider daily request limits also apply. A chat answer
 often reads several services and pages through records, so these are above
 the generic limits the process tests simulate (12 model steps, 40 inference
