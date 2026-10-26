@@ -4,19 +4,14 @@ import {
   cardFieldValueValid,
   type CardDocument,
 } from "../packages/protocol/card-document";
-import {
-  CommandSchema,
-  MessageResultSchema,
-  WorkItemSchema,
-} from "../packages/protocol";
+import { MessageResultSchema, WorkItemSchema } from "../packages/protocol";
 import { ServiceResultSchema } from "../packages/protocol/service-result";
-import { resolveCardResponse } from "../apps/server-cards/respond";
 import { FixtureEngine } from "../apps/fixture-server/engine";
 import {
   messageCommand,
   answerCommand,
 } from "../packages/client-core/commands";
-import { choosePeter, scopeFor } from "../packages/test-fixtures";
+import { choosePeter } from "../packages/test-fixtures";
 import {
   snapshotWithoutCards,
   eventsWithoutCards,
@@ -89,21 +84,8 @@ function setup() {
     messageCommand("Prepare a review", "en", "TEST-create"),
     interpretation(engine),
   );
-  const message = storeCard(engine, document());
-  const command = CommandSchema.parse({
-    type: "card.respond",
-    commandId: "TEST-answer",
-    idempotencyKey: "TEST-answer",
-    conversationId: "conversation-1",
-    messageId: message.id,
-    cardId: "TEST-card",
-    expectedCardRevision: 2,
-    actionId: "prepare",
-    language: "en",
-    values: { agenda: "TEST quarterly review", choice: "online" },
-  });
-  if (command.type !== "card.respond") throw new Error("Invalid test command");
-  return { engine, command };
+  storeCard(engine, document());
+  return { engine };
 }
 
 test("a stored card stays readable history as plain text", () => {
@@ -243,86 +225,6 @@ test("generic card controls cannot become work or service approval controls", ()
   ).toBe(false);
 });
 
-test("form answers use visible labels and offered values without performing an operation", () => {
-  const { engine, command } = setup();
-  const resolved = resolveCardResponse(engine.snapshot(), command);
-  expect(resolved).toMatchObject({
-    ok: true,
-    command: {
-      text: "Prepare a proposal\nAgenda: TEST quarterly review\nVenue: TEST online",
-    },
-  });
-  const first = engine.execute(command, interpretation(engine));
-  expect(first.status).toBe("accepted");
-  expect(first.snapshot.operations).toEqual([]);
-  expect(first.snapshot.actionProposals).toEqual([]);
-  expect(engine.data.receipts.at(-1)?.command).toEqual(command);
-  const cursor = first.snapshot.cursor;
-  expect(engine.execute(command)).toEqual(first);
-  expect(engine.snapshot().cursor).toBe(cursor);
-  expect(
-    engine.execute({
-      ...command,
-      values: { agenda: "Changed", choice: "online" },
-    }).code,
-  ).toBe("idempotency_conflict");
-});
-
-test.each([
-  { values: { agenda: "TEST" } },
-  { values: { agenda: "   ", choice: "online" } },
-  { values: { agenda: "TEST", choice: "forged" } },
-  { values: { agenda: "TEST", choice: "online", approved: true } },
-  { actionId: "approve" },
-  { messageId: "foreign-message" },
-  { cardId: "foreign-card" },
-  { expectedCardRevision: 1 },
-])(
-  "rejects changed, foreign or invalid responses before mutation (%#)",
-  (change) => {
-    const { engine, command } = setup();
-    const before = engine.snapshot();
-    expect(
-      engine.execute({ ...command, ...change }, interpretation(engine)).status,
-    ).not.toBe("accepted");
-    expect(engine.snapshot()).toEqual(before);
-  },
-);
-
-test("a newer turn and a cleared session invalidate former card controls", () => {
-  const { engine, command } = setup();
-  engine.execute(
-    messageCommand("TEST new topic", "en", "TEST-next"),
-    interpretation(engine),
-  );
-  expect(engine.execute(command, interpretation(engine)).code).toBe(
-    "revision_conflict",
-  );
-  const fresh = setup();
-  fresh.engine.startSession();
-  expect(
-    fresh.engine.execute(fresh.command, interpretation(fresh.engine)).code,
-  ).toBe("unknown_context");
-});
-
-test("commit revalidates the document after inference and persisted replay remains passive", () => {
-  const { engine, command } = setup();
-  const pending = interpretation(engine);
-  engine.execute(
-    messageCommand("TEST concurrent turn", "en", "TEST-concurrent"),
-    interpretation(engine),
-  );
-  expect(engine.execute(command, pending).code).toBe("revision_conflict");
-  const restored = new FixtureEngine(
-    "a",
-    engine.data,
-    () => {},
-    () => Date.now(),
-    scopeFor("a"),
-  );
-  expect(restored.execute(command)).toEqual(engine.execute(command));
-});
-
 test("strict older clients get plain message fallbacks and workflow entities", () => {
   const { engine } = setup();
   const legacy = snapshotWithoutCards(engine.snapshot());
@@ -366,39 +268,6 @@ test.each(["__proto__", "constructor", "toString", "prototype"])(
     ).toBe(false);
   },
 );
-
-test("a dispatched service outcome is preserved when another turn supersedes its answer card", () => {
-  const { engine, command } = setup();
-  const acceptedIntent = interpretation(engine);
-  engine.execute(
-    messageCommand("TEST later question", "en", "TEST-later"),
-    interpretation(engine),
-  );
-  const result = engine.execute(command, {
-    ...acceptedIntent,
-    serviceResult: {
-      type: "service.action",
-      version: 1,
-      operationId: "TEST-durable-operation",
-      title: "TEST Lookup",
-      service: "TEST Directory",
-      status: "succeeded",
-      effect: "read",
-      fields: [],
-      inputJson: "",
-      reviewTruncated: false,
-      summary: "TEST verified result",
-    },
-  });
-  expect(result.status).toBe("accepted");
-  expect(
-    result.snapshot.conversations[0]!.messages.at(-1)?.result,
-  ).toMatchObject({
-    operationId: "TEST-durable-operation",
-    status: "succeeded",
-  });
-  expect(engine.execute(command)).toEqual(result);
-});
 
 test("work summaries preserve an explicitly authored current revision instead of a fixed template", () => {
   const engine = new FixtureEngine();

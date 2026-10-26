@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import {
-  ScopeSchema,
-  sameScope,
-  type Scope,
-  type Snapshot,
-} from "../../packages/protocol";
+import { ScopeSchema, sameScope, type Scope } from "../../packages/protocol";
 import {
   PROCESS_START_PROFILE,
   PROCESS_START_REJECTIONS,
@@ -18,7 +13,6 @@ import {
   type ProcessStartReceipt,
 } from "../../packages/protocol/process-start";
 import { processValueSchema } from "../../packages/protocol/service-processes";
-import { resolveCardSubmission } from "../server-cards/respond";
 import { IdentityError } from "./error";
 import { assertProcessCommandUnused } from "./process-command-namespace";
 import { processDigest } from "./process-validation";
@@ -64,29 +58,6 @@ function startRejection(error: unknown): StartRejection | undefined {
   // removed or disabled model/source is a source change for this process.
   if (code === "catalog_model_unavailable" || code === "catalog_not_found")
     return "process_sources_changed";
-}
-
-/** Trusted card mapper validates the entire visible form; it never uses an action label. */
-export function assertProcessStartCardOrigin(
-  snapshot: Snapshot,
-  scope: Scope,
-  intent: ProcessStartIntent,
-  command: ProcessStartOriginalCommand,
-) {
-  if (
-    command.type !== "card.respond" ||
-    intent.origin.type !== "card" ||
-    !sameScope(snapshot.scope, scope)
-  )
-    throw new IdentityError(409, "process_origin_changed");
-  const submitted = resolveCardSubmission(snapshot, command);
-  if (
-    !submitted.ok ||
-    processDigest(submitted.document) !== intent.formDigest ||
-    processDigest([...(submitted.action.fields ?? [])].sort()) !==
-      processDigest(Object.keys(intent.fields).sort())
-  )
-    throw new IdentityError(409, "process_origin_changed");
 }
 
 /** Synchronous identity-owner admission only. No HTTP, native start or business I/O. */
@@ -220,7 +191,7 @@ export class ProcessStartStore {
         inputSchema: artifact.definition.inputSchema,
         createdAt: new Date(this.now()).toISOString(),
       });
-      if (intent.origin.type !== "card" && Object.keys(intent.fields).length)
+      if (Object.keys(intent.fields).length)
         throw new IdentityError(400, "process_input_invalid");
       validateOrigin(intent);
       this.db
@@ -450,16 +421,9 @@ export class ProcessStartStore {
         receipt = this.atomicAdmission(() => {
           if (
             command.conversationId !== intent.origin.conversationId ||
-            (command.type === "process.start" &&
-              (command.intentId !== intentId ||
-                (intent.origin.type !== "command" &&
-                  intent.origin.type !== "meeting"))) ||
-            (command.type === "card.respond" &&
-              (intent.origin.type !== "card" ||
-                command.messageId !== intent.origin.messageId ||
-                command.cardId !== intent.origin.cardId ||
-                command.expectedCardRevision !== intent.origin.cardRevision ||
-                command.actionId !== intent.origin.actionId))
+            command.intentId !== intentId ||
+            (intent.origin.type !== "command" &&
+              intent.origin.type !== "meeting")
           )
             throw new IdentityError(409, "process_origin_changed");
           if (
@@ -471,25 +435,7 @@ export class ProcessStartStore {
           )
             throw new IdentityError(409, "process_start_conflict");
           validateOrigin(intent, command);
-          const input: Record<string, unknown> =
-            command.type === "process.start" ? command.input : {};
-          if (command.type === "card.respond") {
-            if (
-              Object.keys(command.values).some(
-                (id) => !Object.hasOwn(intent.fields, id),
-              )
-            )
-              throw new IdentityError(400, "process_input_invalid");
-            for (const [field, path] of Object.entries(intent.fields)) {
-              if (!Object.hasOwn(command.values, field)) continue;
-              let object = input;
-              for (const key of path.slice(0, -1)) {
-                if (!Object.hasOwn(object, key)) object[key] = {};
-                object = object[key] as Record<string, unknown>;
-              }
-              object[path.at(-1)!] = command.values[field];
-            }
-          }
+          const input: Record<string, unknown> = command.input;
           const bounded = ProcessStartInputSchema.safeParse(input);
           const parsed = bounded.success
             ? processValueSchema(intent.inputSchema).safeParse(bounded.data)

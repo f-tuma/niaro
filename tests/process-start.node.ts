@@ -6,13 +6,9 @@ import { join } from "node:path";
 import { PROCESS_TEST_SCENARIOS } from "../apps/server-identity/service-processes";
 import { IdentityError } from "../apps/server-identity/error";
 import { processDigest } from "../apps/server-identity/process-validation";
-import { assertProcessStartCardOrigin } from "../apps/server-identity/process-start-store";
 import { serviceProcessRunIdentity } from "../apps/server-identity/service-process-journal";
 import { processCompilerVersion } from "../apps/server-agent/process-contract";
-import { FixtureEngine } from "../apps/fixture-server/engine";
-import { CardDocumentSchema } from "../packages/protocol/card-document";
-import { resolveCardSubmission } from "../apps/server-cards/respond";
-import { CardResponseCommandSchema, CommandSchema } from "../packages/protocol";
+import { CommandSchema } from "../packages/protocol";
 import { ProcessStartInputSchema } from "../packages/protocol/process-start";
 import { CatalogCommand } from "../packages/protocol/service-catalog";
 import {
@@ -480,146 +476,6 @@ test("input budget uses exact UTF-8 JSON bytes, including escaped values and key
   );
 });
 
-test("typed card submission uses frozen field paths and actual visible origin, not button prose", () =>
-  isolated((h) => {
-    const processId = h.activate(h.basic());
-    // A form stored with an answer before model-composed cards were retired.
-    const card = CardDocumentSchema.parse({
-      id: "TEST-card",
-      revision: 1,
-      title: "TEST inputs",
-      nodes: [
-        {
-          id: "person",
-          type: "input",
-          label: "TEST person",
-          kind: "text",
-          required: true,
-        },
-        { id: "go", type: "button", actionId: "start" },
-      ],
-      root: ["person", "go"],
-      actions: [
-        {
-          id: "start",
-          kind: "submit",
-          label: "TEST arbitrary label",
-          variant: "primary",
-          fields: ["person"],
-        },
-      ],
-    });
-    const engine = new FixtureEngine(
-      "TEST",
-      undefined,
-      undefined,
-      undefined,
-      scope,
-    );
-    engine.execute(
-      {
-        type: "message.send",
-        commandId: "TEST-menu",
-        idempotencyKey: "TEST-menu-key",
-        conversationId: "conversation-1",
-        language: "cs",
-        text: "TEST open process",
-      },
-      {
-        decision: {
-          kind: "reply",
-          contactId: null,
-          title: null,
-          localStart: null,
-          durationMinutes: null,
-          reply: "TEST form",
-        },
-        expectedCursor: engine.snapshot().cursor,
-        timeZone: "UTC",
-      },
-    );
-    engine.data.snapshot.conversations[0]!.messages.at(-1)!.result = {
-      type: "card.document",
-      version: 1,
-      document: card,
-    };
-    const snapshot = engine.snapshot(),
-      message = snapshot.conversations[0]!.messages.at(-1)!;
-    const response = CardResponseCommandSchema.parse({
-      type: "card.respond",
-      commandId: "TEST-submit",
-      idempotencyKey: "TEST-submit-key",
-      conversationId: "conversation-1",
-      messageId: message.id,
-      cardId: card.id,
-      expectedCardRevision: 1,
-      actionId: "start",
-      values: { person: "  TEST typed input  " },
-      language: "cs",
-    });
-    const artifact = h.registry.version(admin, processId, 1);
-    const intent = h.starts.issue(
-      admin,
-      scope,
-      {
-        processId,
-        version: 1,
-        artifactDigest: artifact.digest,
-        formDigest: processDigest(card),
-        origin: {
-          type: "card",
-          conversationId: response.conversationId,
-          messageId: response.messageId,
-          cardId: card.id,
-          cardRevision: 1,
-          actionId: "start",
-        },
-        fields: { person: ["name"] },
-      },
-      (value) => assertProcessStartCardOrigin(snapshot, scope, value, response),
-    );
-    const typed = resolveCardSubmission(snapshot, response);
-    assert(typed.ok);
-    assert.deepEqual(typed.values, response.values);
-    const receipt = h.starts.admit(
-      admin,
-      scope,
-      intent.intentId,
-      response,
-      (value, original) =>
-        assertProcessStartCardOrigin(snapshot, scope, value, original),
-    );
-    assert.equal(receipt.status, "admitted");
-    if (receipt.status === "admitted")
-      assert.deepEqual(receipt.input, { name: "  TEST typed input  " });
-    assert.deepEqual(h.counts(), []);
-    assert.deepEqual(h.models(), []);
-    engine.execute({
-      type: "message.send",
-      commandId: "TEST-next",
-      idempotencyKey: "TEST-next-key",
-      conversationId: "conversation-1",
-      language: "cs",
-      text: "TEST superseding message",
-    });
-    assert.deepEqual(
-      h.starts.admit(
-        admin,
-        scope,
-        intent.intentId,
-        response,
-        (value, original) =>
-          assertProcessStartCardOrigin(
-            engine.snapshot(),
-            scope,
-            value,
-            original,
-          ),
-      ),
-      receipt,
-    );
-  }));
-
 test("native runner consumes the exact admitted seed and subsequent passive read accepts legitimate journal progress", () =>
   isolated(async (h) => {
     const { processId, intent, command } = h.setup();
@@ -649,69 +505,6 @@ test("native runner consumes the exact admitted seed and subsequent passive read
     );
     assert.deepEqual(h.counts(), [["GET", 1]]);
     assert.deepEqual(rows(h), [1, 1, 1]);
-  }));
-
-test("nested mapped fields create own containers for inherited object names without mutating prototypes", () =>
-  isolated((h) => {
-    const inputSchema = processObject({
-      name: { type: "string" },
-      toString: processObject({ probe: { type: "string" } }),
-    });
-    const definition = ProcessDefinitionSchema.parse({
-      ...h.basic(),
-      inputSchema,
-    });
-    const processId = h.activate(definition);
-    const artifact = h.registry.version(admin, processId, 1);
-    const intent = h.starts.issue(
-      admin,
-      scope,
-      {
-        processId,
-        version: 1,
-        artifactDigest: artifact.digest,
-        formDigest: processDigest("TEST own-field-form"),
-        origin: {
-          type: "card",
-          conversationId: "conversation-1",
-          messageId: "TEST-message",
-          cardId: "TEST-own-card",
-          cardRevision: 1,
-          actionId: "start",
-        },
-        fields: { name: ["name"], detail: ["toString", "probe"] },
-      },
-      () => {},
-    );
-    const before = Object.getOwnPropertyDescriptors(Object.prototype.toString);
-    const receipt = h.starts.admit(
-      admin,
-      scope,
-      intent.intentId,
-      CardResponseCommandSchema.parse({
-        type: "card.respond",
-        commandId: "TEST-own-fields",
-        idempotencyKey: "TEST-own-fields-key",
-        language: "cs",
-        conversationId: "conversation-1",
-        messageId: "TEST-message",
-        cardId: "TEST-own-card",
-        expectedCardRevision: 1,
-        actionId: "start",
-        values: { name: "TEST", detail: "TEST probe" },
-      }),
-      () => {},
-    );
-    assert.equal(receipt.status, "admitted");
-    if (receipt.status === "admitted")
-      assert.deepEqual(receipt.input, {
-        name: "TEST",
-        toString: { probe: "TEST probe" },
-      });
-    assert.deepEqual(
-      Object.getOwnPropertyDescriptors(Object.prototype.toString),
-      before,
-    );
   }));
 
 for (const table of [

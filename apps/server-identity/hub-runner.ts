@@ -243,7 +243,6 @@ export class HubRunner {
     ) => {
       signal.throwIfAborted();
       if (
-        intent.origin.type === "card" ||
         intent.origin.conversationId !== original.conversationId ||
         !this.deps.conversationExists(access.scope, original.conversationId)
       )

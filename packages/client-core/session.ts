@@ -372,18 +372,16 @@ export const commandTarget = (c: SessionCommand) =>
           ? c.intentId
           : c.type === "process.answer"
             ? `${c.workItemId}:${c.questionId}:${c.questionRevision}`
-            : c.type === "card.respond"
-              ? `${c.messageId}:${c.cardId}:${c.expectedCardRevision}`
-              : c.type === "input.submit"
-                ? c.inputRequestId
-                : c.type === "message.send"
-                  ? (c.context?.inputRequestId ?? "chat")
-                  : c.type === "task.open"
-                    ? c.workItemId
-                    : c.type === "operation.reconcile" ||
-                        c.type === "service.resolve"
-                      ? c.operationId
-                      : c.proposalId;
+            : c.type === "input.submit"
+              ? c.inputRequestId
+              : c.type === "message.send"
+                ? (c.context?.inputRequestId ?? "chat")
+                : c.type === "task.open"
+                  ? c.workItemId
+                  : c.type === "operation.reconcile" ||
+                      c.type === "service.resolve"
+                    ? c.operationId
+                    : c.proposalId;
 
 /** One session is permanently bound to one normalized endpoint. Never retarget it. */
 /** Tolerated difference between the phone's and the server's clocks. */
@@ -3639,10 +3637,7 @@ export class ClientSession {
       const streaming =
         !!this.options.stream &&
         (command.type === "message.send" || command.type === "service.resolve");
-      if (
-        !streaming &&
-        (command.type === "message.send" || command.type === "card.respond")
-      )
+      if (!streaming && command.type === "message.send")
         flight.stopActivity = this.watchActivity(command);
       const path = isProcessRuntimeCommand(command)
         ? `processes/commands?profile=${encodeURIComponent(flight.processPending?.executionProfile ?? PROCESS_QUESTION_EXECUTION_PROFILE)}`
@@ -3971,9 +3966,7 @@ export class ClientSession {
     return interruption;
   }
   /** Informational polling cannot send/retry a command or overwrite its outcome. */
-  private watchActivity(
-    command: Extract<Command, { type: "message.send" | "card.respond" }>,
-  ) {
+  private watchActivity(command: Extract<Command, { type: "message.send" }>) {
     let active = true;
     // While the answer is being written, its draft is read twice as often.
     let drafting = false;

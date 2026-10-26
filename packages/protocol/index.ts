@@ -1,11 +1,6 @@
 import { z } from "zod";
 import { MessageMentionSchema } from "./mentions";
-import {
-  PassiveCardDocumentSchema,
-  CardResultSchema,
-  CardIdSchema,
-  CardValuesSchema,
-} from "./card-document";
+import { PassiveCardDocumentSchema, CardResultSchema } from "./card-document";
 import { ServiceResultSchema } from "./service-result";
 import { ServiceConnectionCardSchema } from "./service-oauth";
 import { ProcessWorkSchema } from "./process-work";
@@ -575,17 +570,6 @@ export const ProposalContextSchema = z.strictObject({
   workItemId: id,
   expectedProposalRevision: revision,
 });
-export const CardResponseCommandSchema = z.strictObject({
-  ...command,
-  type: z.literal("card.respond"),
-  conversationId: id,
-  messageId: id,
-  cardId: CardIdSchema,
-  expectedCardRevision: revision,
-  actionId: CardIdSchema,
-  values: CardValuesSchema,
-  language: LanguageSchema,
-});
 /** The person's own name for a chat; empty brings back the server's title. */
 export const ConversationTitleSchema = z
   .string()
@@ -647,7 +631,6 @@ export const CommandSchema = z.discriminatedUnion("type", [
     expectedWorkRevision: revision,
     language: LanguageSchema,
   }),
-  CardResponseCommandSchema,
   z.strictObject({
     ...command,
     type: z.literal("service.resolve"),

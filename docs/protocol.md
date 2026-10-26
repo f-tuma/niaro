@@ -59,7 +59,7 @@ A native question (`WorkItem.native.question`) may offer answers: `options` (2�
 
 Documents use semantic nodes and child references rather than task templates or arbitrary executable layout. The shared validator checks tree integrity, IDs, references, supported icons and primitives, form values, visible actions and size/depth budgets; the server's typed `CardBuilder` builds passive documents only.
 
-`card.respond` answers a form of such a stored card from older app builds. It carries the normal command and idempotency IDs, conversation/message/card IDs, expected card revision, action ID, declared values and language. The server derives user intent from the stored visible label and field definitions. A newer turn, wrong scope, mismatched revision, invalid value or undeclared field is rejected. Before external dispatch, the current request is checked again. A durable result from a dispatch already in progress is preserved if another turn supersedes its source during the network call. `reply` and `submit` do not authorize a service operation: `service.resolve` and `proposal.decide` retain their explicit consent boundaries. Render, replay and local expansion remain passive.
+The `card.respond` command, which answered a form of such a stored card, was removed on October 26, 2026 (NIAR-223): no client sends it, a server refuses it as an invalid command, and its old receipts are dropped when the workflow database opens. A stored card is history that renders as text. `service.resolve` and `proposal.decide` keep their explicit consent boundaries.
 
 ## Message times and result types (optional)
 
@@ -77,7 +77,7 @@ Four commands change the person's chat list for all of their clients. They use t
 What deletion removes and what stays:
 
 - The chat's messages (history ledger and live snapshot), its title and name, short-term memory and contact context. Deleting restarts the event log at a new floor (as other entity removals do): retained events held message copies, and other clients learn about the change through `events` → `409` → new snapshot. The client then re-reads its chat list (`ClientSession.getDirectoryVersion()`).
-- Receipts stay for idempotency, without what the person wrote: the request text of the chat's `message.send` receipts becomes `[deleted]`, tags and an attached task are dropped, and `card.respond` values are emptied. A replay of such a command is then an `idempotency_conflict`, never a new turn.
+- Receipts stay for idempotency, without what the person wrote: the request text of the chat's `message.send` receipts becomes `[deleted]`, and tags and an attached task are dropped. A replay of such a command is then an `idempotency_conflict`, never a new turn.
 - An archived chat's stored session copy (`conversation_sessions`) is emptied.
 - A tombstone keeps the id, revision and dates so the id is never reused. A finished task that still points at the chat keeps an empty conversation entity (no messages) in the snapshot, because work references must resolve.
 - The main chat (`conversation-1`) and a hub item's chat (`chat-hub-…`) are addressed by fixed ids, so deleting one empties it instead: it leaves the list and returns as a new chat with its next message.

@@ -185,8 +185,7 @@ An action tool binds its native tool-call ID to a durable business operation
 before I/O. It calls the actual CatalogController. Approval suspends that native
 tool call and projects the existing typed service card. Authenticated
 `service.resolve` approves the exact server operation and stored revisions;
-native resume data alone never grants permission. `card.respond` continues to
-serve composable forms, not service approvals. Terminal and unknown receipts
+native resume data alone never grants permission. Terminal and unknown receipts
 remain passive, and an unknown write prevents another automatic write in its run.
 
 Conversation and run locks survive the transition from waiting for a human to

@@ -23,6 +23,6 @@ System UI (approvals, questions with options, sign-in, process offers, hub widge
 
 A new kind of visual needs a component in the spec and both renderers; a new arrangement needs nothing. Model text in the UI is still untrusted: admission bounds its shape and actions, and the consistency checker judges its claims with the reply, but neither proves factual truth. Follow-up buttons never act on their own, so a write keeps its explicit approval.
 
-Stored model-composed cards show their text. `card.respond` still resolves a form of such a stored card for older app builds; it is not produced any more and can be removed with the internal card origin of process starts.
+Stored model-composed cards show their text. `card.respond` and the card origin of process starts were removed on October 26, 2026 (NIAR-223).
 
 Chat answers are still published once complete (after the checker). While the model writes, the provider streams and the answer's raw text, program included, is offered as a transient draft in request progress (`agent-activity/4`); both clients draw it with the streaming renderers, inert, and replace it with the stored message, which may differ (a checker repair, a system answer). A draft program is not admitted, so it never acts and is never kept. Live-model use of UI is measured with the `ui.*` trust matrix; how the checker judges a contradicting UI is not.

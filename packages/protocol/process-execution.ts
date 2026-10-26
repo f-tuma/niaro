@@ -69,7 +69,7 @@ export const ProcessInputRequestSchema = z.strictObject({
   version,
   artifactDigest: digest,
   language: LanguageSchema,
-  origin: ProcessStartOriginSchema.refine((v) => v.type !== "card"),
+  origin: ProcessStartOriginSchema,
 });
 export type ProcessInputRequest = z.infer<typeof ProcessInputRequestSchema>;
 /** Server-built semantic controls. No remote UI, scripts, prompts or source credentials. */
@@ -79,7 +79,7 @@ export const ProcessInputFormSchema = z.strictObject({
   language: LanguageSchema,
   ...summary,
   inputSchema,
-  origin: ProcessStartOriginSchema.refine((v) => v.type !== "card"),
+  origin: ProcessStartOriginSchema,
 });
 export type ProcessInputForm = z.infer<typeof ProcessInputFormSchema>;
 export const ProcessInputCardSchema = z

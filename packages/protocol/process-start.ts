@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CardResponseCommandSchema, LanguageSchema } from "./index";
+import { LanguageSchema } from "./index";
 import { CardIdSchema } from "./card-document";
 import { IdentityId } from "./identity";
 import { HumanTaskId } from "./human-tasks";
@@ -27,14 +27,6 @@ export const MeetingProcessSourceSchema = z.enum([
 ]);
 export type MeetingProcessSource = z.infer<typeof MeetingProcessSourceSchema>;
 export const ProcessStartOriginSchema = z.discriminatedUnion("type", [
-  z.strictObject({
-    type: z.literal("card"),
-    conversationId: commandId,
-    messageId: commandId,
-    cardId: CardIdSchema,
-    cardRevision: revision,
-    actionId: CardIdSchema,
-  }),
   z.strictObject({
     type: z.literal("command"),
     conversationId: commandId,
@@ -169,10 +161,7 @@ export const ProcessStartCommandSchema = z.strictObject({
   input: ProcessStartInputSchema,
 });
 export type ProcessStartCommand = z.infer<typeof ProcessStartCommandSchema>;
-export const ProcessStartOriginalCommandSchema = z.union([
-  ProcessStartCommandSchema,
-  CardResponseCommandSchema,
-]);
+export const ProcessStartOriginalCommandSchema = ProcessStartCommandSchema;
 export type ProcessStartOriginalCommand = z.infer<
   typeof ProcessStartOriginalCommandSchema
 >;

@@ -4,7 +4,6 @@ import {
   GeneratedUiSchema,
   type GeneratedUi,
 } from "../../packages/protocol/generative-ui";
-import { resolveCardResponse } from "../server-cards/respond";
 import { workCard } from "../server-cards/adapters";
 import {
   archivableConversation,
@@ -870,14 +869,9 @@ export class FixtureEngine {
     }
     const before = structuredClone(this.data);
     const previousMemory = this.data.conversationMemory;
-    const effective =
-      command.type === "card.respond"
-        ? resolveCardResponse(this.snapshot(), command)
-        : undefined;
-    const memoryCommand = effective?.ok ? effective.command : command;
     const messageText =
-      memoryCommand.type === "message.send" && !memoryCommand.context
-        ? memoryCommand.text
+      command.type === "message.send" && !command.context
+        ? command.text
         : undefined;
     const initialMemory = interpretation
       ? this.currentMemory(interpretation.timeZone, messageText)
@@ -889,16 +883,7 @@ export class FixtureEngine {
           (conversation) => conversation.id === command.conversationId,
         )
       ) {
-        const resolved =
-          command.type === "card.respond"
-            ? resolveCardResponse(this.snapshot(), command)
-            : undefined;
-        const submitted =
-          command.type === "message.send"
-            ? command
-            : resolved?.ok
-              ? resolved.command
-              : undefined;
+        const submitted = command.type === "message.send" ? command : undefined;
         if (submitted) this.message(submitted.text, command.commandId, "user");
         this.message(
           interpretation.terminal.reply,
@@ -1113,20 +1098,6 @@ export class FixtureEngine {
     )
       return this.archiveConversation(command);
     if ("language" in command) this.cardLanguage = command.language;
-    if (command.type === "card.respond") {
-      const answer = resolveCardResponse(this.snapshot(), command, {
-        // A completed dispatch has a durable operation receipt. Preserve that
-        // outcome even if another turn superseded the card during the network call.
-        allowSuperseded: !!interpretation?.serviceResult,
-      });
-      if (!answer.ok)
-        return this.result(
-          command,
-          answer.reason === "revision_conflict" ? "conflict" : "rejected",
-          answer.reason,
-        );
-      return this.handle(answer.command, interpretation);
-    }
     if (
       !this.data.snapshot.conversations.some(
         (c) => c.id === command.conversationId,

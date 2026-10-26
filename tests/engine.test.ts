@@ -1,6 +1,4 @@
 import { FixtureEngine } from "../apps/fixture-server/engine";
-import { CardDocumentSchema } from "../packages/protocol/card-document";
-import { resolveCardResponse } from "../apps/server-cards/respond";
 import { CommandSchema, type Command } from "../packages/protocol";
 import {
   answerCommand,
@@ -375,103 +373,6 @@ test.each(["task.open", "service.resolve"] as const)(
   },
 );
 
-test.each([true, false])(
-  "a card rejection preserves only validated submitted values (valid=%s)",
-  (valid) => {
-    const engine = new FixtureEngine();
-    // A form stored with an answer before model-composed cards were retired.
-    const card = CardDocumentSchema.parse({
-      id: "TEST-card",
-      revision: 1,
-      title: "TEST collect task",
-      nodes: [
-        {
-          id: "name",
-          type: "input",
-          label: "Name",
-          kind: "text",
-          required: true,
-        },
-        { id: "button", type: "button", actionId: "submit" },
-      ],
-      root: ["name", "button"],
-      actions: [
-        {
-          id: "submit",
-          label: "Submit",
-          kind: "submit",
-          variant: "primary",
-          fields: ["name"],
-        },
-      ],
-    });
-    engine.execute(messageCommand("TEST create a task", "en", "TEST-start"), {
-      decision: {
-        kind: "reply",
-        contactId: null,
-        title: null,
-        localStart: null,
-        durationMinutes: null,
-        reply: "TEST provide a name",
-      },
-      expectedCursor: engine.snapshot().cursor,
-      timeZone: "UTC",
-    });
-    engine.data.snapshot.conversations[0]!.messages.at(-1)!.result = {
-      type: "card.document",
-      version: 1,
-      document: card,
-    };
-    const before = engine.snapshot();
-    const command = CommandSchema.parse({
-      type: "card.respond",
-      commandId: "TEST-submit",
-      idempotencyKey: "TEST-submit",
-      conversationId: "conversation-1",
-      language: "en",
-      messageId: before.conversations[0]!.messages.at(-1)!.id,
-      cardId: valid ? card.id : "TEST-forged",
-      expectedCardRevision: 1,
-      actionId: "submit",
-      values: { name: "TEST task name" },
-    });
-    if (command.type !== "card.respond") throw Error("Invalid test command");
-    const submitted = resolveCardResponse(before, command);
-    const result = engine.execute(command, {
-      decision: {
-        kind: "reply",
-        contactId: null,
-        title: null,
-        localStart: null,
-        durationMinutes: null,
-        reply: null,
-      },
-      expectedCursor: before.cursor,
-      timeZone: "UTC",
-      terminal: {
-        status: "rejected",
-        code: "integration_unavailable",
-        reply: "TEST This service has not been configured.",
-      },
-    });
-    const added = result.snapshot.conversations[0]!.messages.slice(
-      before.conversations[0]!.messages.length,
-    );
-    expect(added).toHaveLength(valid ? 2 : 1);
-    if (submitted.ok)
-      expect(added[0]).toMatchObject({
-        role: "user",
-        text: submitted.command.text,
-      });
-    expect(added.at(-1)).toMatchObject({
-      role: "assistant",
-      replyToCommandId: command.commandId,
-    });
-    expect(engine.execute(command).snapshot.conversations).toEqual(
-      result.snapshot.conversations,
-    );
-  },
-);
 test("an open item brought to a message stays on that person's message only", () => {
   const e = new FixtureEngine();
   const humanTask = { id: "meeting:TEST:0", title: "Arrange the next meeting" };

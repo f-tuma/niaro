@@ -61,6 +61,28 @@ const LegacyDatabase = z.strictObject({
 });
 /** Preserve legacy work/receipts. Unfinished contact selection now prepares a proposal. */
 export function migrateDatabase(raw: unknown): unknown {
+  // Receipts of the removed card.respond command are dropped on import.
+  if (
+    raw &&
+    typeof raw === "object" &&
+    "receipts" in raw &&
+    Array.isArray(raw.receipts)
+  )
+    raw = {
+      ...raw,
+      receipts: raw.receipts.filter(
+        (receipt: unknown) =>
+          !(
+            receipt &&
+            typeof receipt === "object" &&
+            "command" in receipt &&
+            receipt.command &&
+            typeof receipt.command === "object" &&
+            "type" in receipt.command &&
+            receipt.command.type === "card.respond"
+          ),
+      ),
+    };
   if (
     raw &&
     typeof raw === "object" &&

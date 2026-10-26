@@ -53,7 +53,6 @@ import type {
   CatalogRuntime,
   ServiceAnswer,
 } from "../server-identity/catalog-runtime";
-import { resolveCardResponse } from "../server-cards/respond";
 import { operatorLog } from "./operator-log";
 import { en, translate, type TranslationKey } from "../../packages/i18n";
 import {
@@ -344,7 +343,7 @@ export class ModelService {
         if (
           combined.reason !== REQUEST_INTERRUPTION_REASON ||
           entry.nativeStarted ||
-          !["message.send", "card.respond"].includes(command.type)
+          command.type !== "message.send"
         )
           throw error;
         await validateSession();
@@ -936,72 +935,7 @@ export class ModelService {
       )
     )
       return run(() => this.storage.execute(scope, originalCommand));
-    let effectiveCommand = originalCommand;
-    if (originalCommand.type === "card.respond") {
-      const response = await run(() =>
-        resolveCardResponse(
-          this.storage.snapshot(scope, originalCommand.conversationId),
-          originalCommand,
-        ),
-      );
-      if (!response.ok && access?.integrations?.recoverResult) {
-        const historical = await run(() =>
-          resolveCardResponse(
-            this.storage.snapshot(scope, originalCommand.conversationId),
-            originalCommand,
-            {
-              allowSuperseded: true,
-            },
-          ),
-        );
-        const recovered = await access.integrations.recoverResult({
-          commandId: originalCommand.idempotencyKey,
-          text: historical.ok ? historical.command.text : "",
-          language: originalCommand.language,
-          requestHash,
-        });
-        if (historical.ok) {
-          if (recovered?.result)
-            return run(() =>
-              this.storage.execute(scope, originalCommand, {
-                decision: {
-                  kind: "reply",
-                  contactId: null,
-                  title: null,
-                  localStart: null,
-                  durationMinutes: null,
-                  reply: recovered.reply.slice(0, 800),
-                },
-                expectedCursor: this.storage.snapshot(
-                  scope,
-                  originalCommand.conversationId,
-                ).cursor,
-                timeZone: "UTC",
-                serviceResult: recovered.result,
-              }),
-            );
-        }
-      }
-      if (!response.ok)
-        return run(() => this.storage.execute(scope, originalCommand));
-      // The server derives the user text from the current, scoped card. Keep
-      // the original response command for receipts and commit-time validation.
-      effectiveCommand = response.command;
-    }
-    const command = effectiveCommand;
-    const validateCardRequest =
-      originalCommand.type === "card.respond"
-        ? () => {
-            // Catalog calls this with its request queue already held. Reentering
-            // access.run would deadlock; this scoped workflow read is synchronous.
-            const current = resolveCardResponse(
-              this.storage.snapshot(scope, originalCommand.conversationId),
-              originalCommand,
-            );
-            if (!current.ok)
-              throw new IdentityError(409, "card_context_changed");
-          }
-        : undefined;
+    const command = originalCommand;
     let activeKey: string | undefined;
     let trackedActivity: ReturnType<ModelService["startActivity"]> | undefined;
     try {
@@ -1294,9 +1228,6 @@ export class ModelService {
                       reportDraft: activity.draft,
                       reportStep: activity.step,
                       reportApproval: activity.approval,
-                      ...(validateCardRequest
-                        ? { validateRequest: validateCardRequest }
-                        : {}),
                     },
                   );
           if (result) {

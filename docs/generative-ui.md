@@ -99,7 +99,7 @@ A draft program is not admitted, which is why it is never interactive and never 
 
 The program is stored with its message and re-renders from history. The model's own thread keeps the program as its text (subject to the private-response projection above), so a follow-up can change it.
 
-Messages stored with an old model-composed card (`result.type: "card.document"`) render as text: the message, then the card's title and text content (`cardDocumentText`). No data migration is needed. The server still resolves `card.respond` for such a stored card from older app builds; new clients no longer show card forms.
+Messages stored with an old model-composed card (`result.type: "card.document"`) render as text: the message, then the card's title and text content (`cardDocumentText`). No data migration is needed. Card forms are gone: the `card.respond` command was removed (NIAR-223) and no client shows a card's controls.
 
 ## Server cards
 

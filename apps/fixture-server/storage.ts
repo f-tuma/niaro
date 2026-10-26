@@ -140,6 +140,14 @@ export class FixtureStorage {
             ON conversation_session_command(scope_key,conversation_id);
           PRAGMA user_version=1;
         `);
+        // The card.respond command (forms of model-composed cards) was
+        // removed in October 2026; its receipts can no longer be parsed and
+        // no client sends the command again, so they are dropped.
+        this.db
+          .prepare(
+            "DELETE FROM receipts WHERE json_extract(payload,'$.command.type')='card.respond'",
+          )
+          .run();
         this.history = new ConversationHistory(this.db, this.now);
         this.history.migrate();
         // Follows the history through triggers; backfills once, bounded.
@@ -707,13 +715,6 @@ export class FixtureStorage {
         AND json_extract(payload,'$.command.type')='message.send'`,
       )
       .run(DELETED_TEXT, key, id);
-    this.db
-      .prepare(
-        `UPDATE receipts SET payload=json_set(payload,'$.command.values',json('{}'))
-        WHERE scope_key=? AND json_extract(payload,'$.command.conversationId')=?
-        AND json_extract(payload,'$.command.type')='card.respond'`,
-      )
-      .run(key, id);
     // A server-owned chat that continues starts a new native generation, so
     // its next turn cannot resume the deleted assistant thread.
     this.newGeneration(scope, command, "deleted");

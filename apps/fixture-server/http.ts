@@ -1115,7 +1115,6 @@ export function createFixtureServer(
                 );
                 if (
                   !sameScope(snapshot.scope, access.scope) ||
-                  intent.origin.type === "card" ||
                   intent.origin.conversationId !== command.conversationId ||
                   !snapshot.conversations.some(
                     (c) => c.id === command.conversationId,
