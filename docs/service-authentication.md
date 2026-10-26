@@ -69,6 +69,16 @@ current hostname. `POST /admin/api/identity/auth-providers/draft` requires compa
 management rights and returns public callback metadata. The optional `creationId`
 on save is create-only and cannot reuse any existing or deleted provider ID.
 
+The callback's code exchange and profile read are network calls to the provider
+(each bounded by a 15-second timeout). They run outside the serialized identity
+queue, at most four callbacks at a time, so a slow provider delays only the
+people signing in through it: sign-outs, membership changes and provider edits
+are answered meanwhile. After the provider answers, the flow is checked again
+against the current browser session, invitation, membership and provider
+revision before a link or session is created, and an authorization code is
+claimed exactly once, so a callback that was overtaken by a revision or
+revocation is refused.
+
 First linking requires an already authenticated server account. The provider's
 verified subject is bound to that account; matching email addresses never merge
 accounts or create memberships. Different email addresses are allowed because the

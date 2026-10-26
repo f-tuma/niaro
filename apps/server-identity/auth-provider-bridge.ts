@@ -107,8 +107,10 @@ export function nativeFactory(row: AuthProviderSnapshot): OAuthProvider {
 }
 
 /** Immutable native-provider snapshot. Rebuild after registry writes, sharing the
- * same store/DB/secret. The caller must serialize handlers with registry/session
- * mutations; per-provider I/O is time bounded but currently holds that queue.
+ * same store/DB/secret. Registry and session mutations stay serialized; the
+ * callback's provider I/O (time bounded) runs outside that queue, a few at a
+ * time, because the flow store checks session, invitation, membership and
+ * provider revision again after the I/O and a code is claimed once (NIAR-22).
  * runStart is server-only and MUST surround a strictly sanitized start request.
  */
 export function createAuthProviderBridge(

@@ -194,7 +194,7 @@ import {
 } from "../../packages/protocol/service-oauth";
 import { exchangeOAuthCode } from "../server-integrations/service-oauth";
 
-import { AuthProviderStore } from "./auth-providers";
+import { AuthProviderStore, type AuthProviderSnapshot } from "./auth-providers";
 import { ServerSettingsStore, serverSettingsDefaults } from "./server-settings";
 import {
   ImportServerSettingsSchema,
@@ -209,6 +209,7 @@ import {
   createAuthProviderBridge,
   providerCallbackOutcome,
 } from "./auth-provider-bridge";
+import type { OAuthProvider } from "@better-auth/core/oauth2";
 import {
   SaveAuthProviderSchema,
   DeleteAuthProviderSchema,
@@ -323,6 +324,8 @@ function privateFile(file: string) {
   if (!stat.isFile() || stat.mode & 0o077 || stat.uid !== process.getuid?.())
     throw Error("Identity files must be private and owned by this user");
 }
+/** Provider callbacks exchanging a code at the same time; more wait their turn. */
+const CALLBACK_CONCURRENCY = 4;
 export async function openIdentity(
   config: ServerConfig,
   options: {
@@ -331,6 +334,8 @@ export async function openIdentity(
     integrationTransport?: IntegrationTransport;
     speechProcessor?: Pick<SpeechProcessor, "process">;
     hosting?: HostedOptions & { autostart?: boolean };
+    /** Synthetic sign-in providers for tests; never an operator setting. */
+    authProviderFactory?: (row: AuthProviderSnapshot) => OAuthProvider;
   } = {},
 ) {
   const settings = config.administration?.identity;
@@ -378,7 +383,11 @@ export async function openIdentity(
       "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=1000;",
     );
     const authProviders = new AuthProviderStore(db, secret, settings.baseURL);
-    const bridge = createAuthProviderBridge(authProviders);
+    const bridge = createAuthProviderBridge(authProviders, {
+      ...(options.authProviderFactory
+        ? { factory: options.authProviderFactory }
+        : {}),
+    });
     let service: IdentityService | undefined;
     const oauthGrants = new McpAccessStore(db, {
       checkServer: (id) => service?.mcpServerId() === id,
@@ -492,7 +501,11 @@ export async function openIdentity(
         store: authProviders,
         bridge,
         rebuild: async () => {
-          const nextBridge = createAuthProviderBridge(authProviders);
+          const nextBridge = createAuthProviderBridge(authProviders, {
+            ...(options.authProviderFactory
+              ? { factory: options.authProviderFactory }
+              : {}),
+          });
           const nextAuth = await createIdentityAuth(
             db!,
             secret,
@@ -634,6 +647,8 @@ export class IdentityService {
   private memoryMaintenance: ReturnType<typeof setInterval>;
   private workflowServerId?: string;
   private pending: Promise<unknown> = Promise.resolve();
+  private callbacksActive?: number;
+  private callbackQueue?: (() => void)[];
   private invitations: Invitations;
   private appLogins: AppLogin;
   private accountSecurity: AccountSecurity;
@@ -3573,6 +3588,90 @@ export class IdentityService {
       };
     });
   }
+  /**
+   * One provider's OAuth callback: the code exchange and profile read are
+   * network calls of up to 15 s each, so they run outside the identity
+   * queue, a few at a time. The flow store checks the session, invitation,
+   * membership and provider revision again after the I/O, and a code is
+   * claimed once, so nothing here needs the queue (NIAR-22).
+   */
+  private async providerCallback(
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+  ): Promise<boolean> {
+    await this.callbackSlot();
+    try {
+      const outcome: { reason?: string } = {};
+      const response = await providerCallbackOutcome.run(outcome, () =>
+        this.auth.handler(
+          new Request(`${this.baseURL}${url.pathname}${url.search}`, {
+            headers: this.headers(req),
+          }),
+        ),
+      );
+      this.setAuthCookies(res, response);
+      const result: unknown = await response
+        .clone()
+        .json()
+        .catch(() => null);
+      // The OAuth provider's fresh-session hook can return the newly
+      // signed MCP resume in JSON while the SSO callback retains an older
+      // Location header. Keep the provider's normalized query intact.
+      const canonicalMcpResume =
+        result &&
+        typeof result === "object" &&
+        "redirect" in result &&
+        result.redirect === true &&
+        "url" in result
+          ? mcpConsentRedirect(result.url, this.baseURL)
+          : undefined;
+      let location = canonicalMcpResume ?? response.headers.get("location");
+      if (location && new URL(location, this.baseURL).origin === this.baseURL) {
+        // A rejection the person can fix names its reason on the page.
+        if (outcome.reason) {
+          const target = new URL(location, this.baseURL);
+          if (target.searchParams.has("error")) {
+            target.searchParams.set("error", outcome.reason);
+            location = target.href;
+          }
+        }
+        res.writeHead(302, {
+          Location: location,
+          "Cache-Control": "no-store",
+        });
+        res.end();
+        return true;
+      }
+      res.writeHead(302, {
+        Location: "/admin/settings?error=auth_provider_failed",
+        "Cache-Control": "no-store",
+      });
+      res.end();
+      return true;
+    } finally {
+      this.callbackDone();
+    }
+  }
+  /** At most CALLBACK_CONCURRENCY callbacks exchange codes at once. */
+  private callbackSlot() {
+    // Lazily, since tests build the service from its prototype alone.
+    const queue = (this.callbackQueue ??= []);
+    if ((this.callbacksActive ?? 0) < CALLBACK_CONCURRENCY) {
+      this.callbacksActive = (this.callbacksActive ?? 0) + 1;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) =>
+      queue.push(() => {
+        this.callbacksActive = (this.callbacksActive ?? 0) + 1;
+        resolve();
+      }),
+    );
+  }
+  private callbackDone() {
+    this.callbacksActive = (this.callbacksActive ?? 1) - 1;
+    this.callbackQueue?.shift()?.();
+  }
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const result = this.pending.then(fn);
     this.pending = result.catch(() => undefined);
@@ -4720,6 +4819,15 @@ export class IdentityService {
         return respond(400, { error: "identity_invalid_input" });
       return respond(500, { error: "memory_unavailable" });
     }
+    // A provider's callback waits on the provider, not on the queue.
+    if (
+      req.method === "GET" &&
+      /^\/admin\/auth\/callback\/ap_[a-f0-9]{32}$/.test(url.pathname)
+    ) {
+      if (req.headers.host !== new URL(this.baseURL).host)
+        return respond(403, { error: "identity_origin_denied" });
+      return this.providerCallback(req, res, url);
+    }
     return this.serial(async () => {
       const operator = isOperator();
       try {
@@ -5075,62 +5183,6 @@ export class IdentityService {
           if (req.headers.host !== new URL(this.baseURL).host)
             throw new IdentityError(403, "identity_origin_denied");
           const route = url.pathname.slice("/admin/auth/".length);
-          if (
-            /^callback\/ap_[a-f0-9]{32}$/.test(route) &&
-            req.method === "GET"
-          ) {
-            const outcome: { reason?: string } = {};
-            const response = await providerCallbackOutcome.run(outcome, () =>
-              this.auth.handler(
-                new Request(`${this.baseURL}${url.pathname}${url.search}`, {
-                  headers: this.headers(req),
-                }),
-              ),
-            );
-            this.setAuthCookies(res, response);
-            const result: unknown = await response
-              .clone()
-              .json()
-              .catch(() => null);
-            // The OAuth provider's fresh-session hook can return the newly
-            // signed MCP resume in JSON while the SSO callback retains an older
-            // Location header. Keep the provider's normalized query intact.
-            const canonicalMcpResume =
-              result &&
-              typeof result === "object" &&
-              "redirect" in result &&
-              result.redirect === true &&
-              "url" in result
-                ? mcpConsentRedirect(result.url, this.baseURL)
-                : undefined;
-            let location =
-              canonicalMcpResume ?? response.headers.get("location");
-            if (
-              location &&
-              new URL(location, this.baseURL).origin === this.baseURL
-            ) {
-              // A rejection the person can fix names its reason on the page.
-              if (outcome.reason) {
-                const target = new URL(location, this.baseURL);
-                if (target.searchParams.has("error")) {
-                  target.searchParams.set("error", outcome.reason);
-                  location = target.href;
-                }
-              }
-              res.writeHead(302, {
-                Location: location,
-                "Cache-Control": "no-store",
-              });
-              res.end();
-              return true;
-            }
-            res.writeHead(302, {
-              Location: "/admin/settings?error=auth_provider_failed",
-              "Cache-Control": "no-store",
-            });
-            res.end();
-            return true;
-          }
           if (
             req.method !== "POST" ||
             !["sign-in/email", "sign-out"].includes(route)
