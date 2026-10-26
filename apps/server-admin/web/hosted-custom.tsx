@@ -93,6 +93,8 @@ const en = {
   unknown: "The package or version was not found.",
   invalid: "Check the definition",
   notJson: "Not a definition file.",
+  jsonKept:
+    "The JSON is not a complete definition; the form shows what could be read.",
   exists: "This server is already running for the organization.",
   limit: "The server limit has been reached.",
   error: "The request failed. Try again.",
@@ -144,6 +146,7 @@ const cs: typeof en = {
   unknown: "Balíček nebo verze nebyla nalezena.",
   invalid: "Zkontroluj definici",
   notJson: "Tohle není soubor s definicí.",
+  jsonKept: "JSON není úplná definice; formulář ukazuje, co z něj šlo přečíst.",
   exists: "Tento server pro organizaci už běží.",
   limit: "Byl dosažen limit počtu serverů.",
   error: "Požadavek selhal. Zkus to znovu.",
@@ -458,6 +461,54 @@ function CustomForm({
     }
   };
   const fromText = mode === "json" ? parsedText() : undefined;
+  /**
+   * What an incomplete or invalid JSON still says, field by field, so the
+   * form can take it over; a field that cannot be read keeps its value.
+   */
+  const fillPartial = (raw: unknown) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+    const o = raw as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+    if (str(o.name) !== undefined) setName(str(o.name)!);
+    const s =
+      o.source && typeof o.source === "object" && !Array.isArray(o.source)
+        ? (o.source as Record<string, unknown>)
+        : undefined;
+    if (s && "npm" in s) {
+      setSource("npm");
+      if (str(s.npm) !== undefined) setPkg(str(s.npm)!);
+      if (str(s.version) !== undefined) setVersion(str(s.version)!);
+      setBin(str(s.bin));
+    } else if (s && "image" in s) {
+      setSource("image");
+      if (str(s.image) !== undefined) setImage(str(s.image)!);
+      if (s.port !== undefined) setPort(String(s.port));
+    }
+    if (Array.isArray(o.args))
+      setArgs(o.args.filter((a) => typeof a === "string").join("\n"));
+    const envObject =
+      o.env && typeof o.env === "object" && !Array.isArray(o.env)
+        ? (o.env as Record<string, unknown>)
+        : undefined;
+    const secretNames = Array.isArray(o.secrets)
+      ? o.secrets.filter((n): n is string => typeof n === "string")
+      : undefined;
+    if (envObject || secretNames)
+      setEnv([
+        ...Object.entries(envObject ?? {}).map(([n, v]) => ({
+          name: n,
+          value: typeof v === "string" ? v : String(v ?? ""),
+          secret: false,
+        })),
+        ...(secretNames ?? []).map((n) => ({
+          name: n,
+          value: values[n] ?? "",
+          secret: true,
+        })),
+      ]);
+    if (o.memoryMb !== undefined) setMemory(String(o.memoryMb));
+    if (str(o.path) !== undefined) setPath(str(o.path)!);
+  };
   function switchMode(next: "form" | "json") {
     setInvalid(null);
     if (next === mode) return;
@@ -467,13 +518,29 @@ function CustomForm({
       setMode("json");
       return;
     }
+    // The form always opens: a draft that is not a complete definition yet
+    // must not lock the person in the JSON view. What it says is taken over;
+    // the first problem is shown so it can be fixed in the form.
     const parsed = parsedText();
-    if (!parsed?.success) {
-      setInvalid(parsed ? issue(parsed.error, copy) : copy.notJson);
-      return;
-    }
     lookup.reset();
-    fill(parsed.data);
+    if (parsed?.success) fill(parsed.data);
+    else {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(text);
+      } catch {
+        raw = undefined;
+      }
+      if (raw === undefined) setInvalid(copy.notJson);
+      else {
+        fillPartial(raw);
+        setInvalid(
+          parsed
+            ? `${copy.jsonKept} ${issue(parsed.error, copy)}`
+            : copy.jsonKept,
+        );
+      }
+    }
     setMode("form");
   }
   async function pick(files: FileList | null) {

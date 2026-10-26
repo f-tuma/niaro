@@ -560,13 +560,10 @@ function ChatRow({
           aria-current={active ? "page" : undefined}
           title={title}
         >
-          <span>{title}</span>
           {running && (
-            <Spinner
-              aria-label={copy.answering}
-              className="ml-auto size-3 shrink-0"
-            />
+            <Spinner aria-label={copy.answering} className="size-3 shrink-0" />
           )}
+          <span className="truncate">{title}</span>
         </Link>
       </SidebarMenuButton>
       <DropdownMenu>
