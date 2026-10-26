@@ -2,6 +2,7 @@ import React from "react";
 import TestRenderer, { act, type ReactTestInstance } from "react-test-renderer";
 import { webcrypto } from "node:crypto";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { clearDrafts } from "../apps/server-admin/web/app/chat-store";
 import {
   commandTarget,
   type ClientSession,
@@ -449,8 +450,18 @@ async function render(
     );
   });
   await act(async () => {});
+  mounted.push(renderer);
   return renderer;
 }
+// The elapsed-time ticker keeps an interval while a progress line is shown;
+// unmounting after each test stops it so the worker exits cleanly.
+const mounted: TestRenderer.ReactTestRenderer[] = [];
+afterEach(async () => {
+  for (const renderer of mounted.splice(0)) {
+    await act(async () => renderer.unmount());
+  }
+  clearDrafts();
+});
 const text = (node: ReactTestInstance | string): string =>
   typeof node === "string" ? node : node.children.map(text).join("");
 function button(root: ReactTestInstance, label: string) {
@@ -744,7 +755,7 @@ test("the streamed steps say which service is read and what came back, one line 
     (node) => node.props["data-testid"] === "live-step",
   );
   expect(steps.map(text)).toEqual([
-    "Twenty CRM · Search loans · returned items 71",
+    "Twenty CRM · Search loans · 71 záznamů",
     "Find payouts",
   ]);
   expect(steps[1]!.props["data-status"]).toBe("running");

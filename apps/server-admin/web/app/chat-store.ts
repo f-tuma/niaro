@@ -23,6 +23,10 @@ export const draftKey = (identityKey: string, conversationId: string) =>
 export function readDraft(key: string) {
   return drafts.get(key);
 }
+/** Forgets every draft; tests use it between renders. */
+export function clearDrafts() {
+  drafts.clear();
+}
 export function saveDraft(key: string, draft: ChatDraft) {
   if (draft.text || draft.context || draft.task || draft.mentions?.length)
     drafts.set(key, draft);

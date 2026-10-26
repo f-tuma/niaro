@@ -94,8 +94,9 @@ export function UserText({ text }: { text: string }) {
 /** One streamed tool step, as one line like the Runs page names it. */
 function StepPart({
   args,
-}: ToolCallMessagePartProps<{ step: AnswerStreamStep }>) {
+}: ToolCallMessagePartProps<{ step: AnswerStreamStep; count?: number }>) {
   const loops = loopsCopy[useApp().language];
+  const { tr } = useChatCopy();
   const step = args.step;
   return (
     <div
@@ -110,7 +111,10 @@ function StepPart({
       ) : (
         <Check aria-hidden="true" className="size-3" />
       )}
-      <span>{liveStepText(step, loops)}</span>
+      <span>
+        {liveStepText(step, loops, tr)}
+        {(args.count ?? 1) > 1 ? ` × ${args.count}` : ""}
+      </span>
     </div>
   );
 }

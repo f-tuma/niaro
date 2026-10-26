@@ -90,6 +90,13 @@ import { ACTIVITY_DRAFT_MAX } from "../../../../../packages/protocol/activity";
 import type { MessageMention } from "../../../../../packages/protocol/mentions";
 import type { ProcessOfferResult } from "../../../../../packages/protocol/process-offer";
 import { useApp, useAppSession } from "../context";
+import {
+  humanizeLabel,
+  liveStepService,
+  useElapsedSeconds,
+} from "../chat-work";
+import { loopsCopy } from "../../loops-copy";
+import type { AnswerStreamStep } from "../../../../../packages/protocol/answer-stream";
 import { chatChangeError, useChatCopy } from "../chat-copy";
 import { useMessageLink } from "../message-link";
 import {
@@ -142,6 +149,7 @@ import {
   streamedApproval,
   threadText,
   type ChatMessage,
+  TOOL,
 } from "./transport";
 
 /**
@@ -1264,6 +1272,19 @@ function AssistantMessage() {
   const stopped = live && message.status?.type === "incomplete";
   const failed = stopped && message.status?.reason === "error";
   const thinking = live && !stopped && !text;
+  // "Thinking" becomes "Reading Twenty CRM" while a service answers.
+  const reading = thinking
+    ? message.content.find(
+        (part): part is Extract<typeof part, { type: "tool-call" }> =>
+          part.type === "tool-call" &&
+          part.toolName === TOOL.step &&
+          (part.args as { step?: AnswerStreamStep }).step?.status === "running",
+      )
+    : undefined;
+  const readingStep = (reading?.args as { step?: AnswerStreamStep } | undefined)
+    ?.step;
+  const loops = loopsCopy[useApp().language];
+  const elapsed = useElapsedSeconds(thinking);
   return (
     <>
       {meta.day !== undefined && <DaySeparator day={meta.day} />}
@@ -1287,14 +1308,21 @@ function AssistantMessage() {
                   <CircleAlert aria-hidden="true" className="size-4" />
                 )}
                 <span data-thinking={stopped ? undefined : ""}>
-                  {tr(
-                    failed
-                      ? "progressFailed"
-                      : stopped
-                        ? "progressUnknown"
-                        : "progressThinking",
-                  )}
+                  {failed
+                    ? tr("progressFailed")
+                    : stopped
+                      ? tr("progressUnknown")
+                      : readingStep
+                        ? tr("progressReading").replace(
+                            "{service}",
+                            liveStepService(readingStep) ??
+                              humanizeLabel(readingStep.label, loops),
+                          )
+                        : tr("progressThinking")}
                 </span>
+                {elapsed !== null && (
+                  <span className="text-xs tabular-nums">· {elapsed} s</span>
+                )}
               </div>
               {stopped && (
                 <p className="text-xs">

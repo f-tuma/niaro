@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Calendar,
   Check,
@@ -65,12 +65,7 @@ import type { RequestActivity } from "../../../../packages/protocol/activity";
 import type { AnswerStreamStep } from "../../../../packages/protocol/answer-stream";
 import { formatRange } from "../../../../packages/ui-catalog/field-format";
 import { CardDocumentView, ServiceActionView } from "./chat-cards";
-import {
-  loopDetailLabel,
-  loopNodeLabel,
-  loopsCopy,
-  type LoopsCopy,
-} from "../loops-copy";
+import { loopNodeLabel, loopsCopy, type LoopsCopy } from "../loops-copy";
 import { useApp } from "./context";
 import { useChatCopy } from "./chat-copy";
 import { QuestionChoices } from "./chat-question";
@@ -895,31 +890,117 @@ const statusLabels = {
   unknown: "progressUnconfirmed",
   needs_input: "progressNeedsInput",
 } as const;
-/** One streamed step as a line: "Twenty CRM · Search loans · returned items 71".
- * Built-in tools read as on the Runs page ("Choose actions"), not by name. */
-export function liveStepText(step: AnswerStreamStep, copy?: LoopsCopy) {
+/**
+ * Steps the person is not shown: the assistant's own bookkeeping (finding a
+ * service, loading actions, resolving a date, memory, skills). What remains is
+ * what touches the person's services and the web.
+ */
+const INTERNAL_STEPS = new Set([
+  "find_service",
+  "find_actions",
+  "use_actions",
+  "internal_datetime_resolve",
+  "ask_user",
+  "compose_card",
+  "memory_search",
+  "memory_remember",
+  "memory_revise",
+  "memory_forget",
+  "verified_prior_read",
+  "skill_load",
+  "skill_propose",
+  "process_propose",
+  "process_offer",
+  "human_task_create",
+  "human_task_close",
+  "hub_list",
+  "hub_add",
+  "hub_add_widget",
+  "hub_set_widget",
+  "hub_set_view",
+  "hub_refresh",
+  "hub_remove",
+]);
+export const isInternalStep = (step: Pick<AnswerStreamStep, "label">) =>
+  INTERNAL_STEPS.has(step.label) || /^hub_/.test(step.label);
+/** "search_companies" reads as "Search companies"; a title stays as it is. */
+const humanize = (label: string) =>
+  /^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(label)
+    ? label.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())
+    : label;
+const stepField = (list: AnswerStreamStep["input"], labels: string[]) =>
+  list.find((entry) => labels.includes(entry.label));
+/** A step's label as shown: the Runs name, else a readable tool name. */
+export const humanizeLabel = (label: string, copy?: LoopsCopy) =>
+  humanize(copy ? loopNodeLabel({ kind: "tool", label }, copy) : label);
+/** The service a step touches, when the step says so. */
+export function liveStepService(step: AnswerStreamStep) {
+  return (
+    stepField(step.input, ["Service"]) ?? stepField(step.output, ["Service"])
+  )?.value;
+}
+/** One streamed step as a line: "Twenty CRM · Search companies · 71 records". */
+export function liveStepText(
+  step: AnswerStreamStep,
+  copy?: LoopsCopy,
+  tr?: (key: TranslationKey) => string,
+) {
   const label = copy
     ? loopNodeLabel({ kind: "tool", label: step.label }, copy)
     : step.label;
-  const field = (list: AnswerStreamStep["input"], labels: string[]) =>
-    list.find((entry) => labels.includes(entry.label));
-  const service =
-    field(step.input, ["Service"]) ?? field(step.output, ["Service"]);
-  const count =
-    field(step.output, [
-      "Returned items",
-      "Returned actions",
-      "Returned services",
-    ]) ?? field(step.output, ["Message"]);
+  const service = liveStepService(step);
+  const items = stepField(step.output, ["Returned items"]);
+  const message = stepField(step.output, ["Message"]);
+  const count = items
+    ? tr
+      ? tr("stepRecords").replace("{n}", items.value)
+      : `${items.value} records`
+    : message
+      ? message.value.replace(/…$/, "")
+      : undefined;
+  const failed =
+    step.status === "failed" ? (tr ? tr("stepFailed") : "failed") : undefined;
   return [
-    service && service.value !== step.label ? service.value : undefined,
-    label,
-    count
-      ? `${(copy ? loopDetailLabel(count.label, copy) : count.label).toLocaleLowerCase()} ${count.value}`
-      : undefined,
+    service && service !== step.label ? service : undefined,
+    humanize(label === step.label ? label : label),
+    count,
+    failed,
   ]
     .filter(Boolean)
     .join(" · ");
+}
+/**
+ * The steps as the person sees them: internal ones left out, a step repeated
+ * right after itself counted once ("× 2"), the latest status of the group.
+ */
+export function summarizeLiveSteps(steps: readonly AnswerStreamStep[]) {
+  const groups: { key: string; step: AnswerStreamStep; count: number }[] = [];
+  for (const step of steps) {
+    if (isInternalStep(step)) continue;
+    const last = groups.at(-1);
+    if (last && last.step.label === step.label) {
+      last.count += 1;
+      last.step = step;
+    } else groups.push({ key: step.toolCallId, step, count: 1 });
+  }
+  return groups;
+}
+/** Seconds since the progress appeared, from five seconds on. */
+export function useElapsedSeconds(active: boolean) {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const started = Date.now();
+    const timer = setInterval(
+      () => setSeconds(Math.round((Date.now() - started) / 1000)),
+      1000,
+    );
+    return () => {
+      clearInterval(timer);
+      setSeconds(0);
+    };
+  }, [active]);
+  return active && seconds >= 5 ? seconds : null;
 }
 /**
  * What the assistant is doing right now, as one "Thinking" line like an AI
@@ -955,12 +1036,25 @@ export function ProgressView({
   const [open, setOpen] = useState(false);
   const unknown = interrupted || connection === "unavailable";
   const stopped = unknown || failed || activity?.status === "failed";
-  const title =
+  const shownSteps = summarizeLiveSteps(steps ?? []);
+  const reading = shownSteps.find((group) => group.step.status === "running");
+  const elapsed = useElapsedSeconds(!stopped);
+  // "Thinking" becomes "Reading Twenty CRM" while a service answers and
+  // "Writing" once the reply is on its way.
+  const phase =
     failed || activity?.status === "failed"
-      ? "progressFailed"
+      ? tr("progressFailed")
       : unknown
-        ? "progressUnknown"
-        : "progressThinking";
+        ? tr("progressUnknown")
+        : reading
+          ? tr("progressReading").replace(
+              "{service}",
+              liveStepService(reading.step) ??
+                humanizeLabel(reading.step.label, loops),
+            )
+          : activity?.draft
+            ? tr("progressWriting")
+            : tr("progressThinking");
   const rows =
     activity?.steps.flatMap((step) => [
       { ...step, calls: 1 },
@@ -984,7 +1078,10 @@ export function ProgressView({
         className="group flex items-center gap-1.5 self-start rounded-sm text-muted-foreground outline-offset-4 hover:text-foreground focus-visible:outline-2 disabled:cursor-default"
       >
         {stopped && <CircleAlert aria-hidden="true" className="size-4" />}
-        <span data-thinking={stopped ? undefined : ""}>{tr(title)}</span>
+        <span data-thinking={stopped ? undefined : ""}>{phase}</span>
+        {elapsed !== null && (
+          <span className="text-xs tabular-nums">· {elapsed} s</span>
+        )}
         {rows.length > 0 && (
           <ChevronRight
             aria-hidden="true"
@@ -1025,14 +1122,14 @@ export function ProgressView({
           })}
         </ul>
       )}
-      {!!steps?.length && (
+      {shownSteps.length > 0 && (
         <ul
           data-testid="progress-live-steps"
           className="flex flex-col gap-1 text-xs text-muted-foreground"
         >
-          {steps.map((step) => (
+          {shownSteps.map(({ key, step, count }) => (
             <li
-              key={step.toolCallId}
+              key={key}
               data-status={step.status}
               className="flex items-center gap-1.5 data-[status=running]:text-foreground"
             >
@@ -1043,7 +1140,10 @@ export function ProgressView({
               ) : (
                 <Check aria-hidden="true" className="size-3" />
               )}
-              <span>{liveStepText(step, loops)}</span>
+              <span>
+                {liveStepText(step, loops, tr)}
+                {count > 1 ? ` × ${count}` : ""}
+              </span>
             </li>
           ))}
         </ul>

@@ -7,6 +7,7 @@ import type {
 } from "../../../../../packages/protocol/answer-stream";
 import type { ServiceResult } from "../../../../../packages/protocol/service-result";
 import { isTerminalNativeWork } from "../../../../../packages/client-core/store";
+import { summarizeLiveSteps } from "../chat-work";
 import { splitDraft } from "../../../../../packages/openui-library/program";
 import type { MentionItem } from "../chat-composer";
 
@@ -235,11 +236,11 @@ export function liveMessage({
         }
       : { type: "running" },
     content: [
-      ...steps.map((step) =>
+      ...summarizeLiveSteps(steps).map(({ key, step, count }) =>
         tool(
           TOOL.step,
-          `step:${step.toolCallId}`,
-          { step },
+          `step:${key}`,
+          { step, count },
           step.status !== "running",
         ),
       ),
