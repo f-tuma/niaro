@@ -8,6 +8,10 @@ import {
   ModelDiscoveryRequest,
   ServiceIconRequest,
   ServiceProbeRequest,
+  PersonalServiceCommand,
+  type PersonalServiceCommandValue,
+  PersonalServiceList,
+  PERSONAL_SERVICES_LIMIT,
 } from "../../packages/protocol/service-catalog";
 import { ServiceCatalogStore, type CatalogActor } from "./service-catalog";
 import { InferenceBudgetCommandSchema } from "../../packages/protocol/inference-budget";
@@ -22,6 +26,7 @@ import {
   IntegrationError,
   jsonResponse,
   sameEndpoint,
+  validateEndpoint,
   type IntegrationTransport,
 } from "../server-integrations/transport";
 import { listModels } from "../server-integrations/models";
@@ -272,6 +277,217 @@ export class CatalogController {
       return { dataUrl };
     });
   }
+  /**
+   * A service's tools from its address: MCP (initialize, tools/list) or the
+   * OpenAPI document next to it. `guard` runs before each remote call with
+   * the catalog queue held, so authority is current when the call goes out.
+   */
+  private async readTools(
+    service: { url: string; protocol?: "mcp" | "openapi" },
+    headers: Record<string, string>,
+    signal: AbortSignal,
+    guard: (start?: () => void) => Promise<void>,
+  ) {
+    const openapi = async () => {
+      let document: unknown;
+      for (const url of [
+        service.url.replace(/\/$/, "") + "/openapi.json",
+        service.url.replace(/\/$/, "") + "/swagger.json",
+      ]) {
+        const response = await this.transport({
+          url,
+          headers,
+          signal,
+          beforeDispatch: guard,
+        });
+        if (response.status === 404) continue;
+        document = jsonResponse(response);
+        break;
+      }
+      if (!document) throw new IntegrationError("integration_openapi_required");
+      return {
+        protocol: "openapi" as const,
+        ...discoverOpenAPI(document, service.url),
+      };
+    };
+    const mcp = async () => {
+      const session = new McpSession(
+        this.transport,
+        service.url,
+        headers,
+        signal,
+        guard,
+      );
+      await session.initialize();
+      let discovery = await session.discover();
+      // A catalogue server (Twenty) lists choices first; a person's own
+      // service takes them all, within the action limit.
+      if (discovery.choices)
+        discovery = await session.discover(
+          discovery.choices.slice(0, 200).map((choice) => choice.name),
+        );
+      return { protocol: "mcp" as const, ...discovery };
+    };
+    if (service.protocol === "mcp") return mcp();
+    if (service.protocol === "openapi") return openapi();
+    try {
+      return await mcp();
+    } catch (error) {
+      if (signal.aborted || error instanceof IdentityError) throw error;
+      try {
+        return await openapi();
+      } catch (fallback) {
+        if (signal.aborted || fallback instanceof IdentityError) throw fallback;
+        throw new IdentityError(422, "catalog_personal_unreachable");
+      }
+    }
+  }
+  /** A person's own service: added, renamed, read again or removed by its owner. */
+  private async personalCommand(
+    input: PersonalServiceCommandValue,
+    context: CatalogContext,
+    signal: AbortSignal,
+  ) {
+    const { organizationId, workspaceId } = input;
+    const actor = await context.serial(() => context.actor(input));
+    const guard = async (start?: () => void) => {
+      await context.serial(async () => {
+        const current = await context.actor(input);
+        if (current.userId !== actor.userId)
+          throw new IdentityError(403, "identity_forbidden");
+        start?.();
+      });
+    };
+    const audit = (
+      action:
+        | "catalog.personal_service_added"
+        | "catalog.personal_service_changed"
+        | "catalog.personal_service_removed",
+      targetId: string,
+      details: Record<string, unknown>,
+    ) =>
+      context.audit({
+        organizationId,
+        workspaceId,
+        actorId: actor.userId,
+        source: "console",
+        action,
+        targetId,
+        outcome: "succeeded",
+        details,
+      });
+    if (input.type === "add") {
+      const policy = this.store.personalServicesPolicy(workspaceId);
+      if (policy === "off")
+        throw new IdentityError(403, "catalog_personal_services_off");
+      if (
+        this.store.personalServices(workspaceId, actor.userId).length >=
+        PERSONAL_SERVICES_LIMIT
+      )
+        throw new IdentityError(409, "identity_limit");
+      validateEndpoint(input.url, []);
+      const auth = input.apiKey
+        ? ({ type: "bearer" } as const)
+        : ({ type: "none" } as const);
+      const tools = await this.readTools(
+        { url: input.url },
+        authHeaders(auth, input.apiKey ?? ""),
+        signal,
+        guard,
+      );
+      const name = input.name ?? new URL(input.url).hostname;
+      return context.serial(() =>
+        context.transaction(async () => {
+          const id = this.store.addPersonalService(
+            workspaceId,
+            actor.userId,
+            { name, url: input.url, protocol: tools.protocol, auth },
+            input.apiKey,
+            policy === "free" ? "active" : "pending",
+          );
+          const imported = this.store.importPersonalActions(
+            workspaceId,
+            id,
+            this.store.service(workspaceId, id).revision,
+            tools.actions,
+            "readOnly" in tools ? (tools.readOnly ?? []) : [],
+          );
+          audit("catalog.personal_service_added", id, {
+            revision: this.store.service(workspaceId, id).revision,
+            added: imported.added,
+            enabled: policy === "free",
+          });
+          return this.store.personalSummary(
+            this.store.service(workspaceId, id),
+          );
+        }),
+      );
+    }
+    if (input.type === "rediscover") {
+      const { service, key } = await context.serial(async () => ({
+        service: this.store.ownedService(workspaceId, input.id, actor.userId),
+        key: this.store.credential(workspaceId, input.id),
+      }));
+      if (service.revision !== input.revision)
+        throw new IdentityError(409, "catalog_conflict");
+      const tools = await this.readTools(
+        service,
+        authHeaders(service.auth, key),
+        signal,
+        guard,
+      );
+      return context.serial(() =>
+        context.transaction(async () => {
+          const imported = this.store.importPersonalActions(
+            workspaceId,
+            input.id,
+            input.revision,
+            tools.actions,
+            "readOnly" in tools ? (tools.readOnly ?? []) : [],
+          );
+          audit("catalog.personal_service_changed", input.id, {
+            previousRevision: input.revision,
+            added: imported.added,
+          });
+          return this.store.personalSummary(
+            this.store.service(workspaceId, input.id),
+          );
+        }),
+      );
+    }
+    return context.serial(() =>
+      context.transaction(async () => {
+        if (input.type === "rename") {
+          this.store.renamePersonalService(
+            workspaceId,
+            input.id,
+            input.revision,
+            actor.userId,
+            input.name,
+          );
+          audit("catalog.personal_service_changed", input.id, {
+            previousRevision: input.revision,
+            revision: input.revision + 1,
+          });
+          return this.store.personalSummary(
+            this.store.service(workspaceId, input.id),
+          );
+        }
+        this.store.removePersonalService(
+          workspaceId,
+          input.id,
+          input.revision,
+          actor.userId,
+        );
+        // Running work of this person loses the service's authority.
+        context.change(organizationId);
+        audit("catalog.personal_service_removed", input.id, {
+          revision: input.revision,
+        });
+        return { id: input.id };
+      }),
+    );
+  }
   async handle(
     method: string,
     url: URL,
@@ -400,7 +616,9 @@ export class CatalogController {
                 ? "catalog.ai_changed"
                 : input.type === "saveRouting"
                   ? "catalog.routing_changed"
-                  : "catalog.service_changed",
+                  : input.type === "reviewPersonalService"
+                    ? "catalog.personal_service_reviewed"
+                    : "catalog.service_changed",
             targetId: id,
             outcome: "succeeded",
             details: {},
@@ -429,6 +647,27 @@ export class CatalogController {
     if (this.active >= 8) throw new IdentityError(429, "catalog_busy");
     this.active++;
     try {
+      if (path === "/personal/list") {
+        const target = CatalogTarget.parse(payload);
+        return await context.serial(async () => {
+          const actor = await context.actor(target);
+          return PersonalServiceList.parse({
+            ...target,
+            policy: this.store.personalServicesPolicy(target.workspaceId),
+            limit: PERSONAL_SERVICES_LIMIT,
+            services: this.store.personalServices(
+              target.workspaceId,
+              actor.userId,
+            ),
+          });
+        });
+      }
+      if (path === "/personal/command")
+        return await this.personalCommand(
+          PersonalServiceCommand.parse(payload),
+          context,
+          signal,
+        );
       if (path.startsWith("/oauth/"))
         return await handleServiceOAuth(
           path.slice(7),

@@ -921,14 +921,17 @@ export function personalPermissions(
   actor: CatalogActor,
 ) {
   const service = catalog.service(target.workspaceId, target.serviceId);
-  const requiredFor = catalog.oauth?.requiredFor(
-    target.workspaceId,
-    service.id,
-  );
+  // A service the person connected themselves is theirs to manage in full.
+  const requiredFor = service.personal
+    ? service.personal.userId === actor.userId
+      ? ("all" as const)
+      : undefined
+    : catalog.oauth?.requiredFor(target.workspaceId, service.id);
   if (
     !requiredFor ||
     requiredFor === "none" ||
-    !catalog.mayConnect(target.workspaceId, service, actor)
+    (!service.personal &&
+      !catalog.mayConnect(target.workspaceId, service, actor))
   )
     throw new IdentityError(404, "catalog_not_found");
   return PersonalServicePermissions.parse({

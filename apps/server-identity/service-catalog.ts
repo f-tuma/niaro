@@ -23,7 +23,13 @@ import {
   CatalogModelSchema,
   CatalogModelSettings,
   Routing,
+  PersonalServicesPolicy,
+  type PersonalServicesPolicyValue,
+  PersonalServiceSummary,
+  twentyReadTool,
+  PERSONAL_SERVICES_LIMIT,
   type ActionInvokeRequest,
+  type PersonalOwnershipValue,
 } from "../../packages/protocol/service-catalog";
 import { normalizeModelCapabilities } from "../server-integrations/model-capabilities";
 import { validateEndpoint } from "../server-integrations/transport";
@@ -173,7 +179,8 @@ export class ServiceCatalogStore {
     this.key = Buffer.from(
       hkdfSync("sha256", secret, "agent-server", "service-catalog/v1", 32),
     );
-    db.exec(`CREATE TABLE IF NOT EXISTS agent_catalog (
+    db.exec(`CREATE TABLE IF NOT EXISTS agent_catalog_personal (workspace_id TEXT PRIMARY KEY, policy TEXT NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS agent_catalog (
       id TEXT PRIMARY KEY, scope_id TEXT NOT NULL, kind TEXT NOT NULL, revision INTEGER NOT NULL, data TEXT NOT NULL, secret TEXT
     ) STRICT;
     CREATE INDEX IF NOT EXISTS agent_catalog_scope ON agent_catalog(scope_id,kind);
@@ -486,10 +493,15 @@ export class ServiceCatalogStore {
   }
   /** Passive access decision shared by execution inventory and action dispatch. */
   serviceAllowed(
-    service: Pick<Service, "access">,
+    service: Pick<Service, "access" | "personal">,
     workspace: string,
     actor: CatalogActor,
   ) {
+    if (service.personal)
+      return (
+        service.personal.userId === actor.userId &&
+        service.personal.status === "active"
+      );
     if (!service.access) return true;
     const roles = service.access.workspaceRoles.length
       ? this.workspaceRoles.forUser(workspace, actor.userId)
@@ -549,8 +561,178 @@ export class ServiceCatalogStore {
     serviceId: string,
     effect: "read" | "write",
   ) {
+    if (this.ownership(workspaceId, serviceId)) return true;
     const required = this.oauth?.requiredFor(workspaceId, serviceId) ?? "none";
     return required === "all" || (required === "writes" && effect === "write");
+  }
+  /** Who connected a service for themselves, if anyone. */
+  ownership(
+    workspaceId: string,
+    serviceId: string,
+  ): PersonalOwnershipValue | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT data FROM agent_catalog WHERE scope_id=? AND kind='service' AND id=?",
+      )
+      .get(workspaceId, serviceId);
+    if (!row) return undefined;
+    const data = JSON.parse(String(row.data)) as {
+      personal?: PersonalOwnershipValue;
+    };
+    return data.personal;
+  }
+  personalServicesPolicy(workspaceId: string): PersonalServicesPolicyValue {
+    const row = this.db
+      .prepare("SELECT policy FROM agent_catalog_personal WHERE workspace_id=?")
+      .get(workspaceId);
+    return row ? PersonalServicesPolicy.parse(row.policy) : "review";
+  }
+  /** The services this person connected for themselves. */
+  personalServices(workspaceId: string, userId: string) {
+    return this.rows(workspaceId, "service")
+      .map((r) => this.service(workspaceId, r.id))
+      .filter((s) => s.personal?.userId === userId)
+      .map((s) => this.personalSummary(s));
+  }
+  personalSummary(service: Service) {
+    return PersonalServiceSummary.parse({
+      id: service.id,
+      revision: service.revision,
+      name: service.name,
+      url: service.url,
+      protocol: service.protocol,
+      icon: service.icon,
+      iconSource: service.iconSource,
+      status: service.personal!.status,
+      ...(service.personal!.reason ? { reason: service.personal!.reason } : {}),
+      addedAt: service.personal!.addedAt,
+      reads: service.actions.filter((a) => a.effect === "read").length,
+      writes: service.actions.filter((a) => a.effect === "write").length,
+    });
+  }
+  /**
+   * A service the person connects for themselves. Only public HTTPS
+   * addresses: the operator's private allowlist is for administrators.
+   */
+  addPersonalService(
+    workspaceId: string,
+    userId: string,
+    settings: {
+      name: string;
+      url: string;
+      protocol: "openapi" | "mcp";
+      auth: Service["auth"];
+    },
+    apiKey: string | undefined,
+    status: "pending" | "active",
+  ) {
+    validateEndpoint(settings.url, []);
+    if (
+      this.personalServices(workspaceId, userId).length >=
+      PERSONAL_SERVICES_LIMIT
+    )
+      throw new IdentityError(409, "identity_limit");
+    if (this.rows(workspaceId, "service").length >= 100)
+      throw new IdentityError(409, "identity_limit");
+    if (settings.auth.type !== "none" && !apiKey)
+      throw new IdentityError(400, "catalog_key_required");
+    const personal: PersonalOwnershipValue = {
+      userId,
+      status,
+      addedAt: new Date().toISOString(),
+    };
+    return this.save(
+      workspaceId,
+      "service",
+      undefined,
+      0,
+      ServiceSettings.parse({
+        name: settings.name,
+        url: settings.url,
+        protocol: settings.protocol,
+        icon: "plug",
+        iconSource: "favicon",
+        auth: settings.auth,
+        enabled: true,
+        personal,
+      }),
+      settings.auth.type === "none" ? "" : apiKey,
+    );
+  }
+  /** The owner's own service, or not found: nobody else sees it. */
+  ownedService(workspaceId: string, id: string, userId: string) {
+    const service = this.service(workspaceId, id);
+    if (service.personal?.userId !== userId)
+      throw new IdentityError(404, "catalog_not_found");
+    return service;
+  }
+  renamePersonalService(
+    workspaceId: string,
+    id: string,
+    revision: number,
+    userId: string,
+    name: string,
+  ) {
+    const service = this.ownedService(workspaceId, id, userId);
+    const {
+      id: _id,
+      revision: _revision,
+      hasCredential: _c,
+      modelId: _m,
+      actions: _a,
+      ...settings
+    } = service;
+    this.save(workspaceId, "service", id, revision, { ...settings, name });
+  }
+  removePersonalService(
+    workspaceId: string,
+    id: string,
+    revision: number,
+    userId: string,
+  ) {
+    this.ownedService(workspaceId, id, userId);
+    this.command({
+      type: "removeService",
+      organizationId: this.workspaceOrganization(workspaceId),
+      workspaceId,
+      id,
+      revision,
+    });
+  }
+  /** The actions a personal service's discovery found, enabled at once:
+   * reads without approval, changes confirmed one by one. */
+  importPersonalActions(
+    workspaceId: string,
+    serviceId: string,
+    revision: number,
+    actions: Parameters<ServiceCatalogStore["importActions"]>[3],
+    readOnlyNames: readonly string[],
+  ) {
+    const reads = new Set(readOnlyNames.map((name) => `mcp:${name}`));
+    return this.importActions(
+      workspaceId,
+      serviceId,
+      revision,
+      actions.map((action) => {
+        const effect =
+          action.effect === "read" ||
+          reads.has(action.sourceKey) ||
+          (action.binding.type === "mcp" &&
+            action.binding.catalogTool !== undefined &&
+            twentyReadTool(action.binding.catalogTool))
+            ? ("read" as const)
+            : ("write" as const);
+        return {
+          ...action,
+          effect,
+          approval:
+            effect === "read" ? ("never" as const) : ("always" as const),
+          enabled: true,
+          policy: { roles: [], users: [] },
+        };
+      }),
+      { ready: true },
+    );
   }
   /** The person's own choice for a personal action; undefined for shared ones. */
   personalChoice(
@@ -604,6 +786,7 @@ export class ServiceCatalogStore {
   mayConnect(workspaceId: string, service: Service, actor: CatalogActor) {
     return (
       service.enabled &&
+      !service.personal &&
       this.serviceAllowed(service, workspaceId, actor) &&
       service.actions.some(
         (action) =>
@@ -673,8 +856,16 @@ export class ServiceCatalogStore {
       organizationId: orgId,
       workspaceId,
       canManage: manage,
+      personalServices: this.personalServicesPolicy(workspaceId),
       services: this.rows(workspaceId, "service")
         .map((r) => this.service(workspaceId, r.id))
+        .filter(
+          (s) =>
+            manage ||
+            !s.personal ||
+            (s.personal.userId === actor.userId &&
+              s.personal.status === "active"),
+        )
         .map((s) =>
           manage
             ? s
@@ -906,6 +1097,9 @@ export class ServiceCatalogStore {
           (!input.id || !this.credential(ws, input.id))
         )
           throw new IdentityError(400, "catalog_key_required");
+        const personal = input.id
+          ? this.service(ws, input.id).personal
+          : undefined;
         return this.save(
           ws,
           "service",
@@ -913,6 +1107,7 @@ export class ServiceCatalogStore {
           input.revision,
           {
             ...input.settings,
+            ...(personal ? { personal } : {}),
             access:
               input.settings.access ??
               (input.id ? this.service(ws, input.id).access : undefined),
@@ -920,6 +1115,38 @@ export class ServiceCatalogStore {
           input.settings.auth.type === "none" ? "" : input.apiKey,
         );
       }
+      case "reviewPersonalService": {
+        const service = this.service(ws, input.id);
+        if (!service.personal)
+          throw new IdentityError(404, "catalog_not_found");
+        const {
+          id: _id,
+          revision: _revision,
+          hasCredential: _c,
+          modelId: _m,
+          actions: _a,
+          ...settings
+        } = service;
+        this.save(ws, "service", input.id, input.revision, {
+          ...settings,
+          personal: {
+            ...service.personal,
+            status: input.decision === "approve" ? "active" : "rejected",
+            ...(input.decision === "reject" && input.reason
+              ? { reason: input.reason }
+              : {}),
+            reviewedAt: new Date().toISOString(),
+          },
+        });
+        return input.id;
+      }
+      case "savePersonalServicesPolicy":
+        this.db
+          .prepare(
+            "INSERT INTO agent_catalog_personal VALUES (?,?) ON CONFLICT(workspace_id) DO UPDATE SET policy=excluded.policy",
+          )
+          .run(ws, input.policy);
+        return ws;
       case "removeService":
         // Processes owned by or calling this service would silently stop
         // working; they must be deleted or changed first.
@@ -1198,6 +1425,7 @@ export class ServiceCatalogStore {
     serviceId: string,
     revision: number,
     actions: DiscoveredAction[],
+    options: { ready?: boolean } = {},
   ) {
     const service = this.service(ws, serviceId);
     if (service.revision !== revision)
@@ -1214,8 +1442,10 @@ export class ServiceCatalogStore {
       this.validateBinding(service, { ...action, id: "new", revision: 0 });
       this.save(serviceId, "action", undefined, 0, {
         ...action,
-        enabled: false,
-        approval: "always",
+        // An administrator's import arrives off and ungranted; a person's
+        // own service arrives on, with the person's choices deciding.
+        enabled: options.ready ?? false,
+        approval: options.ready ? action.approval : "always",
         policy: { roles: [], users: [] },
       });
       added++;

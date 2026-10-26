@@ -43,6 +43,28 @@ export const ApiAuth = z.discriminatedUnion("type", [
     header: z.string().regex(/^x-[a-z0-9-]{1,60}$/i),
   }),
 ]);
+/** A service a person connected for themselves: it serves only its owner,
+ * and only once an administrator has approved it where the workspace asks
+ * for that. */
+export const PersonalServiceStatus = z.enum(["pending", "active", "rejected"]);
+export const PersonalOwnership = z.strictObject({
+  userId: IdentityId,
+  status: PersonalServiceStatus,
+  addedAt: z.iso.datetime(),
+  /** Why an administrator rejected it, for its owner. */
+  reason: z.string().trim().max(500).optional(),
+  reviewedBy: IdentityId.optional(),
+  reviewedAt: z.iso.datetime().optional(),
+});
+export type PersonalOwnershipValue = z.infer<typeof PersonalOwnership>;
+/** Whether members may connect their own services: not at all, after an
+ * administrator's review, or at once. */
+export const PersonalServicesPolicy = z.enum(["off", "review", "free"]);
+export type PersonalServicesPolicyValue = z.infer<
+  typeof PersonalServicesPolicy
+>;
+/** How many services one person may connect in a workspace. */
+export const PERSONAL_SERVICES_LIMIT = 5;
 export const ServiceSettings = z.strictObject({
   name: IdentityName,
   /** What the service is for, in the words the assistant routes by. */
@@ -53,6 +75,8 @@ export const ServiceSettings = z.strictObject({
   iconSource: z.enum(["favicon", "custom"]).default("favicon"),
   auth: ApiAuth,
   enabled: z.boolean(),
+  /** Set only through the person's own "Add service"; never by saveService. */
+  personal: PersonalOwnership.optional(),
   access: z
     .strictObject({
       roles: z.array(OrganizationRole).max(3),
@@ -259,6 +283,8 @@ export const CatalogSchema = z.strictObject({
     )
     .max(100)
     .default([]),
+  /** For managers: whether members may connect their own services. */
+  personalServices: PersonalServicesPolicy.default("review"),
 });
 export const CatalogTarget = z.strictObject({
   organizationId: IdentityId,
@@ -277,8 +303,22 @@ export const CatalogCommand = z.discriminatedUnion("type", [
     type: z.literal("saveService"),
     id: IdentityId.optional(),
     revision: Revision,
-    settings: ServiceSettings,
+    settings: ServiceSettings.omit({ personal: true }),
     apiKey: credential,
+  }),
+  /** An administrator's decision on a service a member connected. */
+  z.strictObject({
+    ...target,
+    type: z.literal("reviewPersonalService"),
+    id: IdentityId,
+    revision: Revision,
+    decision: z.enum(["approve", "reject"]),
+    reason: z.string().trim().max(500).optional(),
+  }),
+  z.strictObject({
+    ...target,
+    type: z.literal("savePersonalServicesPolicy"),
+    policy: PersonalServicesPolicy,
   }),
   z.strictObject({
     ...target,
@@ -486,3 +526,62 @@ export type ServiceAction = z.infer<typeof ServiceActionSchema>;
 export type Provider = z.infer<typeof ProviderSchema>;
 export type CatalogModel = z.infer<typeof CatalogModelSchema>;
 export type Catalog = z.infer<typeof CatalogSchema>;
+
+/** The person's own services: added with an address and a key, reviewed
+ * where the workspace asks for it, and managed by their owner alone. */
+export const PersonalServiceCommand = z.discriminatedUnion("type", [
+  z.strictObject({
+    ...target,
+    type: z.literal("add"),
+    url: ServiceUrl,
+    apiKey: credential.optional(),
+    name: IdentityName.optional(),
+  }),
+  z.strictObject({
+    ...target,
+    type: z.literal("rename"),
+    id: IdentityId,
+    revision: Revision,
+    name: IdentityName,
+  }),
+  z.strictObject({
+    ...target,
+    type: z.literal("remove"),
+    id: IdentityId,
+    revision: Revision,
+  }),
+  /** Reads the service's tools again and adds the new ones. */
+  z.strictObject({
+    ...target,
+    type: z.literal("rediscover"),
+    id: IdentityId,
+    revision: Revision,
+  }),
+]);
+export type PersonalServiceCommandValue = z.infer<
+  typeof PersonalServiceCommand
+>;
+export const PersonalServiceSummary = z.strictObject({
+  id: IdentityId,
+  revision: Revision,
+  name: IdentityName,
+  url: ServiceUrl,
+  protocol: z.enum(["openapi", "mcp"]),
+  icon: ServiceIcon,
+  iconSource: z.enum(["favicon", "custom"]),
+  status: PersonalServiceStatus,
+  reason: z.string().max(500).optional(),
+  addedAt: z.iso.datetime(),
+  /** How many of its actions read and how many change something. */
+  reads: z.number().int().min(0),
+  writes: z.number().int().min(0),
+});
+export type PersonalServiceSummaryValue = z.infer<
+  typeof PersonalServiceSummary
+>;
+export const PersonalServiceList = CatalogTarget.extend({
+  policy: PersonalServicesPolicy,
+  limit: z.number().int().positive(),
+  services: z.array(PersonalServiceSummary).max(100),
+});
+export type PersonalServiceListValue = z.infer<typeof PersonalServiceList>;

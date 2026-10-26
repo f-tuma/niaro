@@ -21,6 +21,12 @@ export const AuditAction = z.enum([
   "catalog.action_invoked",
   /** A person changed what their own assistant may do with a personal-sign-in service. */
   "catalog.personal_policy_changed",
+  /** A person connected a service of their own, changed or removed it. */
+  "catalog.personal_service_added",
+  "catalog.personal_service_changed",
+  "catalog.personal_service_removed",
+  /** An administrator approved or rejected a person's own service. */
+  "catalog.personal_service_reviewed",
   "organization.created",
   "account.created",
   "workspace.created",
@@ -133,6 +139,8 @@ export const AuditDetails = z.strictObject({
   reason: AuditReason.optional(),
   /** Result of an automatic OAuth probe of a service address. */
   oauthProbe: z.enum(["configured", "metadata", "none"]).optional(),
+  /** Actions a person's own service gained when its tools were read. */
+  added: z.number().int().nonnegative().optional(),
 });
 export const AuditRecordSchema = z.strictObject({
   organizationId: IdentityId,
