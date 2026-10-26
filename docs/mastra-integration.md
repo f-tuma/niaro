@@ -131,6 +131,15 @@ the first step, so a follow-up question calls them at once. A turn exposes at
 most 24 action tools; `use_actions` evicts the oldest beyond that. Checker guidance lives in a tagged native MessageList
 system bucket, so replacing ordinary instructions does not discard it. Jev
 remains an optional bounded selection/verification call, not a second planner.
+
+The consistency check (Jev judging whether the reply answers the request
+from the receipts) runs only where the answer carries risk: a write this
+turn with any outcome, an item created or closed in Tasks, an explicit
+contact lookup, or an unresolved failed or rejected write. A read-only
+answer goes out without it. The check costs a model call per turn and, in
+production, returned low-confidence "incomplete" verdicts on plain answers,
+which cost a repair round and sometimes replaced a correct reply with a
+refusal (NIAR-229).
 The console no longer offers a choice between two execution engines.
 
 Provider calls retain Niaro's endpoint, credentials, guarded transport, personal

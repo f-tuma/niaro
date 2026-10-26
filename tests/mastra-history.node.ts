@@ -300,9 +300,10 @@ test("expiry while Jev answers cannot publish the previously valid context", asy
       }
       return newTopic(body);
     });
-    h.onChat(() => ({ content: "TEST public answer" }));
+    // A contact lookup is one of the turns the checker still judges
+    // (a plain read-only answer no longer goes through it).
     await assert.rejects(
-      direct(h, "TEST-history-checker-expiry", "Explain a triangle."),
+      direct(h, "TEST-history-checker-expiry", "Find Jane Test again."),
       (error: unknown) =>
         error instanceof IdentityError && error.code === "catalog_conflict",
     );

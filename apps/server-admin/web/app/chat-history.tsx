@@ -563,7 +563,7 @@ function ChatRow({
           {running && (
             <Spinner aria-label={copy.answering} className="size-3 shrink-0" />
           )}
-          <span className="truncate">{title}</span>
+          <span className="min-w-0 flex-1 truncate">{title}</span>
         </Link>
       </SidebarMenuButton>
       <DropdownMenu>

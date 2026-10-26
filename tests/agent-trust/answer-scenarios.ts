@@ -7,6 +7,7 @@ import {
 import type { ServiceResult } from "../../packages/protocol/service-result";
 import {
   createTrustHarness,
+  toolResults,
   type ModelRequest,
   type TrustHarness,
 } from "./harness";
@@ -339,22 +340,36 @@ export const answerScenarios: TrustScenario[] = [
     id: "ui-claims-checker-wiring",
     title: "A checker rejection removes unsupported UI claims before repair",
     run: async (probe) => {
-      const h = createTrustHarness({ signal: probe.signal });
+      // The turn writes (approval not required here), so the checker still
+      // judges it; a read-only answer no longer goes through the checker.
+      const h = createTrustHarness({
+        signal: probe.signal,
+        writeApproval: "never",
+      });
       probe.defer(() => h.close());
       try {
-        let calls = 0;
-        h.onChat(() =>
-          ++calls === 1
+        let answers = 0;
+        h.onChat((body) => {
+          const results = toolResults(body);
+          if (!results.some((result) => result.status === "succeeded"))
+            return h.call(h.tool("Create meeting"), {
+              body: {
+                attendee: "jane@example.test",
+                start: "2026-10-01T12:00:00Z",
+                end: "2026-10-01T12:30:00Z",
+              },
+            });
+          return ++answers === 1
             ? {
                 content:
                   'The meeting was created.\n\n```openui-lang\nroot = Stack([Heading("Meeting created"), Badge("Created successfully", "success")])\n```',
               }
-            : { content: "I cannot verify that a meeting was created." },
-        );
+            : { content: "I cannot verify that a meeting was created." };
+        });
         h.onDecision((body) =>
           body.questions?.route.criteria.complete ? "incomplete" : undefined,
         );
-        const result = await h.send("Tell me whether a meeting was created.", {
+        const result = await h.send("Create the meeting with Jane.", {
           id: "TEST-unsupported-ui",
         });
         await probe.check(
@@ -376,21 +391,21 @@ export const answerScenarios: TrustScenario[] = [
         );
         await probe.check(
           "claims.rejected-body-removed",
-          "Rejected claims disappear from the final message and durable turn without an external effect",
+          "Rejected claims disappear from the final message and durable turn; the repair adds no external effect",
           () => {
             const message = result.snapshot.conversations[0]!.messages.at(-1)!;
             assert.equal(
               message.text,
               "I cannot verify that a meeting was created.",
             );
-            assert.equal(message.result, undefined);
             assert.equal(message.ui, undefined);
             const saved = h.catalog.latestTurn(
               h.scope.workspaceId,
               h.scope.userId,
             )?.value as { answer?: { ui?: unknown } } | undefined;
             assert.equal(saved?.answer?.ui, undefined);
-            assert.equal(h.network.length, 0);
+            // The one write the turn made; the repair added no call.
+            assert.equal(h.network.length, 1);
           },
         );
         probe.observe("measurementBoundary", {

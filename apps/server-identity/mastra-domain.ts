@@ -3377,11 +3377,23 @@ export function createMastraDomain(
         await save();
         return state.answer;
       }
-      if (
-        !state.checked ||
+      // The checker judges what carries risk: a write this turn (any
+      // outcome), an item changed in Tasks, a contact lookup or an
+      // unresolved failure. A read-only answer goes out without it: the
+      // check costs a model call and, in production, produced false
+      // "incomplete" verdicts on plain answers (NIAR-229).
+      const writesThisTurn = (await receipts()).some(
+        (receipt) => receipt.effect === "write",
+      );
+      const checkNeeded =
         lookupRequired ||
-        failedWrite ||
-        activeRejectedWrite
+        !!failedWrite ||
+        !!activeRejectedWrite ||
+        writesThisTurn ||
+        taskChanges.length > 0;
+      if (
+        checkNeeded &&
+        (!state.checked || lookupRequired || failedWrite || activeRejectedWrite)
       ) {
         const alreadyChecked = state.checked;
         state.checked = true;

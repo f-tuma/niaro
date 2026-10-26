@@ -342,6 +342,20 @@ function uiSummary(report: TrustReport, selectedIds: string[]) {
   };
 }
 
+function timingSummary(durations: readonly number[]) {
+  const sorted = [...durations].sort((a, b) => a - b);
+  const at = (q: number) =>
+    sorted.length
+      ? sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!
+      : 0;
+  return {
+    runs: sorted.length,
+    medianMs: at(0.5),
+    p90Ms: at(0.9),
+    maxMs: sorted.at(-1) ?? 0,
+  };
+}
+
 export function buildLiveTrustReport(
   report: TrustReport,
   options: LiveTrustOptions,
@@ -383,6 +397,9 @@ export function buildLiveTrustReport(
           durationMs: scenario.durationMs,
         })),
       },
+      // How long an answer takes end to end, so a loop change can be judged
+      // on time as well as on outcome.
+      timing: timingSummary(report.scenarios.map((s) => s.durationMs)),
       pricingBasis:
         "caller-supplied per-million-token rates; verify against provider before run; local pre-dispatch reservation is not a provider-side spending guarantee",
       caps: options.caps,

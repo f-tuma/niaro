@@ -683,14 +683,13 @@ test("an observed successful retry replaces a failed read card without erasing t
     assert(!JSON.stringify(visible.result.card).includes(validation.message!));
     assert.equal(receipts[0]!.failure?.code, validation.code);
     assert(turn.trace?.steps.some((step) => step.status === "failed"));
-    const checker = h.requests.findLast(
-      (request) => request.questions?.route.criteria.complete,
-    );
-    assert.deepEqual(
-      (checker!.state!.actionReceipts as Record<string, any>[]).map(
-        (receipt) => receipt.status,
+    // A recovered read carries no risk the checker would judge: the answer
+    // goes out without a checker call.
+    assert.equal(
+      h.requests.findLast(
+        (request) => request.questions?.route.criteria.complete,
       ),
-      ["failed", "succeeded"],
+      undefined,
     );
   } finally {
     await h.close();
