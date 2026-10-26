@@ -4978,8 +4978,13 @@ test("an answer's UI program travels beside its reply; a refused one is asked ag
           'root = Stack([Heading("TEST Sales"), Metric("TEST Q3", 120)])',
       },
     });
-    // The checker judged the UI's claims together with the reply.
-    assert(JSON.stringify(f.decisionBodies.at(-1)).includes("generatedUi"));
+    // A read-only answer is not checked (NIAR-229): no decision carried the
+    // UI's claims; a turn that writes sends them to the checker.
+    assert(
+      !f.decisionBodies.some((body) =>
+        JSON.stringify(body).includes("generatedUi"),
+      ),
+    );
     assert.deepEqual(
       DomainCommandSchema.parse(
         f.store.turn(next.state.runId, target.workspaceId, userId),
