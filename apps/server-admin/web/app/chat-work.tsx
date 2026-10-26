@@ -1,9 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Calendar,
-  Check,
-  ChevronRight,
-  CircleAlert,
   Clock,
   MessageSquare,
   RefreshCw,
@@ -61,12 +58,10 @@ import type {
   Operation,
   WorkItem,
 } from "../../../../packages/protocol";
-import type { RequestActivity } from "../../../../packages/protocol/activity";
 import type { AnswerStreamStep } from "../../../../packages/protocol/answer-stream";
 import { formatRange } from "../../../../packages/ui-catalog/field-format";
 import { CardDocumentView, ServiceActionView } from "./chat-cards";
-import { loopNodeLabel, loopsCopy, type LoopsCopy } from "../loops-copy";
-import { useApp } from "./context";
+import { loopNodeLabel, type LoopsCopy } from "../loops-copy";
 import { useChatCopy } from "./chat-copy";
 import { QuestionChoices } from "./chat-question";
 
@@ -863,33 +858,6 @@ function ProposalReview({
   );
 }
 
-type StepStatus =
-  | "running"
-  | "pending"
-  | "succeeded"
-  | "failed"
-  | "unknown"
-  | "needs_input";
-const stepLabels = {
-  understanding: "progressUnderstanding",
-  crm: "progressCrm",
-  preparing: "progressPreparing",
-  datetime: "progressDatetime",
-} as const;
-const workflowLabels = {
-  service: "progressService",
-  action: "progressAction",
-  inputs: "progressInputs",
-  execute: "progressExecute",
-} as const;
-const statusLabels = {
-  running: "progressRunning",
-  pending: "progressPending",
-  succeeded: "progressDone",
-  failed: "progressStopped",
-  unknown: "progressUnconfirmed",
-  needs_input: "progressNeedsInput",
-} as const;
 /**
  * Steps the person is not shown: the assistant's own bookkeeping (finding a
  * service, loading actions, resolving a date, memory, skills). What remains is
@@ -1015,174 +983,6 @@ export function useElapsedSeconds(active: boolean) {
   }, [active]);
   return active && seconds >= 5 ? seconds : null;
 }
-/**
- * What the assistant is doing right now, as one "Thinking" line like an AI
- * chat; the server's bounded stages open beneath it on request. Uncertain
- * delivery offers a safe resend of the same command.
- */
-export function ProgressView({
-  activity,
-  steps,
-  connection,
-  interrupted,
-  failed,
-  onRetry,
-  retryDisabled,
-  onToggle,
-  hint,
-}: {
-  activity: RequestActivity | null;
-  /** The tool steps streamed so far: which service is read and what came back. */
-  steps?: AnswerStreamStep[];
-  connection: "waiting" | "live" | "unavailable";
-  interrupted: boolean;
-  failed: boolean;
-  /** Why the request stopped, in one line; replaces the generic hint. */
-  hint?: string;
-  onRetry?: () => void;
-  retryDisabled: boolean;
-  /** Called before the steps open or close, so the transcript stays put. */
-  onToggle?: () => void;
-}) {
-  const loops = loopsCopy[useApp().language];
-  const { copy, tr } = useChatCopy();
-  const [open, setOpen] = useState(false);
-  const unknown = interrupted || connection === "unavailable";
-  const stopped = unknown || failed || activity?.status === "failed";
-  const shownSteps = summarizeLiveSteps(steps ?? []);
-  const reading = shownSteps.find((group) => group.step.status === "running");
-  const elapsed = useElapsedSeconds(!stopped);
-  // "Thinking" becomes "Reading Twenty CRM" while a service answers and
-  // "Writing" once the reply is on its way.
-  const phase =
-    failed || activity?.status === "failed"
-      ? tr("progressFailed")
-      : unknown
-        ? tr("progressUnknown")
-        : reading
-          ? tr("progressReading").replace(
-              "{service}",
-              liveStepService(reading.step) ??
-                humanizeLabel(reading.step.label, loops),
-            )
-          : activity?.draft
-            ? tr("progressWriting")
-            : tr("progressThinking");
-  const rows =
-    activity?.steps.flatMap((step) => [
-      { ...step, calls: 1 },
-      ...(step.id === "understanding" ? (activity.tools ?? []) : []),
-    ]) ?? [];
-  return (
-    <div
-      data-testid="request-progress"
-      role="status"
-      aria-live="polite"
-      className="flex flex-col gap-1.5 text-sm"
-    >
-      <button
-        type="button"
-        aria-expanded={open}
-        disabled={!rows.length}
-        onClick={() => {
-          onToggle?.();
-          setOpen((value) => !value);
-        }}
-        className="group flex items-center gap-1.5 self-start rounded-sm text-muted-foreground outline-offset-4 hover:text-foreground focus-visible:outline-2 disabled:cursor-default"
-      >
-        {stopped && <CircleAlert aria-hidden="true" className="size-4" />}
-        <span data-thinking={stopped ? undefined : ""}>{phase}</span>
-        {elapsed !== null && (
-          <span className="text-xs tabular-nums">· {elapsed} s</span>
-        )}
-        {rows.length > 0 && (
-          <ChevronRight
-            aria-hidden="true"
-            className="size-3.5 transition-transform group-aria-expanded:rotate-90"
-          />
-        )}
-      </button>
-      {rows.length > 0 && (
-        <ul
-          hidden={!open}
-          className="flex flex-col gap-1 border-l pl-3 text-xs text-muted-foreground"
-        >
-          {rows.map((step) => {
-            const status: StepStatus =
-              unknown && step.status === "running" ? "unknown" : step.status;
-            const workflow =
-              step.id === "understanding" ? activity?.workflow : undefined;
-            const label = workflow
-              ? tr(workflowLabels[workflow.stage])
-              : `${tr(stepLabels[step.id])}${step.calls > 1 ? ` · ${step.calls}×` : ""}`;
-            return (
-              <li
-                key={step.id}
-                data-testid={`progress-step-${step.id}-${status}`}
-                data-status={status}
-                className="data-[status=pending]:opacity-50 data-[status=running]:text-foreground"
-              >
-                {label}
-                {status === "failed" ||
-                status === "needs_input" ||
-                status === "unknown" ? (
-                  <span> · {tr(statusLabels[status])}</span>
-                ) : (
-                  <span className="sr-only">{tr(statusLabels[status])}</span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {shownSteps.length > 0 && (
-        <ul
-          aria-live="off"
-          data-testid="progress-live-steps"
-          className="flex flex-col gap-1 text-xs text-muted-foreground"
-        >
-          {shownSteps.map(({ key, step, count }) => (
-            <li
-              key={key}
-              data-status={step.status}
-              className="flex items-center gap-1.5 data-[status=running]:text-foreground"
-            >
-              {step.status === "running" ? (
-                <Spinner data-icon="inline-start" />
-              ) : step.status === "failed" || step.status === "cancelled" ? (
-                <CircleAlert aria-hidden="true" className="size-3" />
-              ) : (
-                <Check aria-hidden="true" className="size-3" />
-              )}
-              <span>
-                {liveStepText(step, loops, tr)}
-                {count > 1 ? ` × ${count}` : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {(unknown || hint) && (
-        <p className="text-xs text-muted-foreground">
-          {hint ?? tr(failed ? "progressFailedHint" : "progressUnavailable")}
-        </p>
-      )}
-      {onRetry && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="self-start"
-          disabled={retryDisabled}
-          onClick={onRetry}
-        >
-          <RefreshCw data-icon="inline-start" aria-hidden="true" />
-          {copy.retry}
-        </Button>
-      )}
-    </div>
-  );
-}
-
 /** A process answer whose delivery is uncertain or was refused. */
 export function AnswerRecoveryView({
   question,

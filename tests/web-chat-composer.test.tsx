@@ -19,7 +19,7 @@ import {
   MENTIONS_PROFILE,
   type MentionDirectory,
 } from "../packages/protocol/mentions";
-import { ChatConversation } from "../apps/server-admin/web/app/chat-page";
+import { ChatNextConversation } from "../apps/server-admin/web/app/chat-next/chat-next-page";
 import { draftKey, saveDraft } from "../apps/server-admin/web/app/chat-store";
 import {
   ChatHistoryNav,
@@ -40,6 +40,19 @@ import { ConversationOpenWorkError } from "../packages/client-core/conversation-
 
 if (!globalThis.crypto?.randomUUID)
   Object.defineProperty(globalThis, "crypto", { value: webcrypto });
+// assistant-ui's thread root listens on the document for Escape and the
+// generated UI's renderer adds a style; the test renderer has no DOM, so
+// they get a page that hears nothing and keeps nothing.
+if (typeof document === "undefined")
+  Object.defineProperty(globalThis, "document", {
+    value: {
+      addEventListener() {},
+      removeEventListener() {},
+      createElement: () => ({}),
+      head: { appendChild() {} },
+    },
+    configurable: true,
+  });
 
 const mockApp: { session?: unknown } = {};
 jest.mock("@tanstack/react-router", () => {
@@ -251,7 +264,7 @@ async function render(element: React.ReactElement) {
 }
 const renderChat = (session: ClientSession, routeId?: string) =>
   render(
-    <ChatConversation
+    <ChatNextConversation
       session={session}
       routeId={routeId}
       onSaved={jest.fn()}

@@ -509,9 +509,9 @@ beforeEach(() => {
 });
 
 /**
- * The next chat (assistant-ui) next to the classic one: the same commands,
- * the same cards, the thread's own parts. Every test here is a classic chat
- * test the next chat must pass the same way.
+ * The chat on assistant-ui: the same commands and cards as before, rendered
+ * as the thread's own parts. tests/web-chat.test.tsx holds the rest of the
+ * chat's cases.
  */
 
 test("a new chat is created on the server before its first message, then gets its address", async () => {

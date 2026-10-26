@@ -53,6 +53,7 @@ import {
   ClientSession,
   commandTarget,
   type SessionCommand,
+  type SessionState,
 } from "../../../../../packages/client-core/session";
 import { messageCommand } from "../../../../../packages/client-core/commands";
 import {
@@ -63,10 +64,21 @@ import {
   runningChat,
   selectPendingChatMessage,
 } from "../../../../../packages/client-core/chat-view";
-import { isProcessReply } from "../../../../../packages/client-core/reply-context";
+import {
+  isProcessReply,
+  recordedProcessAnswer,
+  type ReplyContext,
+} from "../../../../../packages/client-core/reply-context";
+import {
+  assertProcessAnswerTarget,
+  captureProcessAnswerTarget,
+  processAnswerCommand,
+  type ProcessAnswerTarget,
+} from "../../../../../packages/client-core/process-answers";
 import {
   captureProcessNoticeOwner,
   isReservedProcessRecoveryCopy,
+  processNoticeCopy,
   selectProcessCommandNotice,
 } from "../../../../../packages/client-core/process-command-notice";
 import {
@@ -83,7 +95,6 @@ import type {
   ConversationSummary,
   HumanTaskReference,
   NativeQuestion,
-  ReplyInput,
   WorkItem,
 } from "../../../../../packages/protocol";
 import { ACTIVITY_DRAFT_MAX } from "../../../../../packages/protocol/activity";
@@ -91,6 +102,7 @@ import type { MessageMention } from "../../../../../packages/protocol/mentions";
 import type { ProcessOfferResult } from "../../../../../packages/protocol/process-offer";
 import { useApp, useAppSession } from "../context";
 import {
+  AnswerRecoveryView,
   humanizeLabel,
   liveStepService,
   useElapsedSeconds,
@@ -252,8 +264,7 @@ export function ChatNextConversation({
     const handed = routeId ? null : takeHumanTask();
     return {
       text: saved?.text ?? "",
-      // A process answer drafted in the classic chat stays there.
-      context: isProcessReply(saved?.context) ? undefined : saved?.context,
+      context: saved?.context,
       task: handed ?? saved?.task,
       mentions: saved?.mentions ?? [],
     };
@@ -268,14 +279,22 @@ export function ChatNextConversation({
     setHasDraft(!!text.trim());
   }, []);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const [context, setContextState] = useState<ReplyInput | undefined>(
+  const [context, setContextState] = useState<ReplyContext | undefined>(
     initial.context,
   );
-  const contextRef = useRef<ReplyInput | undefined>(initial.context);
+  const contextRef = useRef<ReplyContext | undefined>(initial.context);
+  // A typed answer to a process question that the server accepted but has
+  // not recorded yet: the question stays above the composer until it does.
+  const [answerCaption, setAnswerCaption] = useState<{
+    context: ReplyContext;
+    target: string;
+    command: SessionCommand;
+  }>();
   const [replyError, setReplyError] = useState<TranslationKey | null>(null);
-  const setContext = useCallback((next: ReplyInput | undefined) => {
+  const setContext = useCallback((next: ReplyContext | undefined) => {
     contextRef.current = next;
     setContextState(next);
+    setAnswerCaption(undefined);
     setReplyError(null);
   }, []);
   const [attachedTask, setAttachedTask] = useState<
@@ -486,7 +505,7 @@ export function ChatNextConversation({
    */
   const submitMessage = (
     value: string,
-    replyContext: ReplyInput | null | undefined = contextRef.current,
+    replyContext: ReplyContext | null | undefined = contextRef.current,
     options: {
       withoutProcess?: true;
       mentions?: MessageMention[];
@@ -526,20 +545,47 @@ export function ChatNextConversation({
     const task =
       !replyContext && !options.detached ? attachedTaskRef.current : undefined;
     const commandId = newId();
-    const command: SessionCommand = {
-      ...messageCommand(text, language, commandId, replyContext ?? undefined),
-      ...(replyContext ? {} : { conversationId: id }),
-      ...(task ? { humanTask: task } : {}),
-      ...(!replyContext && options.withoutProcess
-        ? { withoutProcess: true as const }
-        : {}),
-      ...(mentions.length ? { mentions } : {}),
-    };
-    rememberMentions(
-      value,
-      [...picked, ...sentMentions(value, directory)],
-      mentions,
-    );
+    const processReply = isProcessReply(replyContext);
+    let command: SessionCommand;
+    try {
+      command = isProcessReply(replyContext)
+        ? // A typed answer to a process question goes to that question's
+          // exact revision; the target was captured when the reply started.
+          processAnswerCommand(
+            session.getSnapshot().store!,
+            replyContext.target,
+            {
+              commandId,
+              idempotencyKey: commandId,
+              answer: text,
+              language,
+            },
+          )
+        : {
+            ...messageCommand(
+              text,
+              language,
+              commandId,
+              replyContext ?? undefined,
+            ),
+            ...(replyContext ? {} : { conversationId: id }),
+            ...(task ? { humanTask: task } : {}),
+            ...(!replyContext && options.withoutProcess
+              ? { withoutProcess: true as const }
+              : {}),
+            ...(mentions.length ? { mentions } : {}),
+          };
+    } catch {
+      if (!options.detached && !draftRef.current.trim()) setComposerText(value);
+      setReplyError("process_question_changed");
+      return;
+    }
+    if (!processReply)
+      rememberMentions(
+        value,
+        [...picked, ...sentMentions(value, directory)],
+        mentions,
+      );
     const restore = () => {
       if (!options.detached && !draftRef.current.trim()) setComposerText(value);
     };
@@ -547,9 +593,23 @@ export function ChatNextConversation({
       .send(command, false, undefined, noticeOwner)
       .then(() => {
         const current = session.getSnapshot();
-        const recorded = isUserMessageRecorded(current.store, command);
         const accepted =
           current.commandStates[commandTarget(command)] === "accepted";
+        if (processReply) {
+          if (!accepted) {
+            restore();
+            return;
+          }
+          // The question stays shown until the run records the answer.
+          if (contextRef.current === replyContext)
+            setAnswerCaption({
+              context: replyContext!,
+              target: commandTarget(command),
+              command,
+            });
+          return;
+        }
+        const recorded = isUserMessageRecorded(current.store, command);
         if (task && (recorded || accepted))
           setAttachedTask((attached) =>
             attached?.id === task.id ? undefined : attached,
@@ -563,9 +623,34 @@ export function ChatNextConversation({
       })
       .catch((error: unknown) => {
         restore();
-        setReplyError(sendErrorKey(error, "chatSendFailed"));
+        setReplyError(
+          sendErrorKey(
+            error,
+            processReply ? "process_question_rejected" : "chatSendFailed",
+          ),
+        );
       });
   };
+  // The accepted process answer retires its question once the run records
+  // it exactly; a lost or refused one is offered for review below the thread.
+  useEffect(() => {
+    if (!answerCaption || contextRef.current !== answerCaption.context) return;
+    if (
+      !recordedProcessAnswer(
+        state.store,
+        answerCaption.context,
+        answerCaption.command,
+      )
+    )
+      return;
+    // After this render, so the record and the cleared question do not
+    // cascade in one commit.
+    const clear = setTimeout(() => {
+      if (alive.current && contextRef.current === answerCaption.context)
+        setContext(undefined);
+    }, 0);
+    return () => clearTimeout(clear);
+  }, [state.store, answerCaption, setContext]);
 
   const live = historySelection && !historySelection.readOnly && online;
   const conversationMessages = conversation?.messages;
@@ -613,16 +698,33 @@ export function ChatNextConversation({
   });
 
   const replyToWork = (w: WorkItem) => {
-    // A process question is answered in the classic chat; here only the
-    // assistant's own questions take a typed reply.
     const replyInput =
       w.native?.question ?? store?.inputRequests[w.inputRequestIds[0] ?? ""];
-    if (!replyInput || w.native?.process?.question) return;
-    setContext({ ...replyInput });
+    try {
+      if (w.native?.process?.question) {
+        const current = session.getSnapshot();
+        if (!current.store || current.status !== "online")
+          throw new Error("process_question_changed");
+        setContext({
+          kind: "process",
+          target: captureProcessAnswerTarget(
+            current.store,
+            w.id,
+            w.conversationId,
+          ),
+        });
+      } else if (replyInput) setContext({ ...replyInput });
+      else return;
+    } catch {
+      setReplyError("process_question_changed");
+      return;
+    }
     requestAnimationFrame(() => composerRef.current?.focus());
   };
   const answerQuestion = (question: NativeQuestion, answer: string) => {
-    if (contextRef.current?.id === question.id) setContext(undefined);
+    const current = contextRef.current;
+    if (current && !isProcessReply(current) && current.id === question.id)
+      setContext(undefined);
     submitMessage(answer, { ...question }, { detached: true, mentions: [] });
   };
   const shortcutQuestion = [...work]
@@ -844,11 +946,28 @@ export function ChatNextConversation({
       : null;
   const otherChatRunning =
     !!otherChat && runningChat(state) === otherChat.conversationId;
-  const currentContext = selectReplyInput(store, context);
-  const validContext =
-    !!context &&
-    currentContext?.status === "open" &&
-    currentContext.revision === context.revision;
+  let validContext = false;
+  if (isProcessReply(context)) {
+    try {
+      if (store) {
+        assertProcessAnswerTarget(store, context.target);
+        validContext = true;
+      }
+    } catch {
+      /* The question stays visible until it is cleared. */
+    }
+  } else if (context) {
+    const currentContext = selectReplyInput(store, context);
+    validContext =
+      currentContext?.status === "open" &&
+      currentContext.revision === context.revision;
+  }
+  const waitingForProcessAnswer =
+    isProcessReply(context) &&
+    answerCaption?.context === context &&
+    state.commandStates[answerCaption.target] === "accepted" &&
+    !state.error &&
+    !recordedProcessAnswer(state.store, context, answerCaption.command);
   const hasConversation =
     messages.length > 0 || trailingWork.length > 0 || !!pending;
   const inputDisabled = !valid || (!!context && !validContext);
@@ -1028,6 +1147,21 @@ export function ChatNextConversation({
                       <NextWorkCard work={w} />
                     </article>
                   ))}
+                  {(state.answerAttempts ?? []).map((attempt) => (
+                    <AnswerRecovery
+                      key={attempt.command.commandId}
+                      attempt={attempt}
+                      chatId={id}
+                      session={session}
+                      state={state}
+                      noticeOwner={noticeOwner}
+                      onReview={(target, answer) => {
+                        setContext(Object.freeze({ kind: "process", target }));
+                        setComposerText(answer);
+                        composerRef.current?.focus();
+                      }}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -1157,6 +1291,7 @@ export function ChatNextConversation({
                   onDetachTask={() => setAttachedTask(undefined)}
                   context={context}
                   validContext={validContext}
+                  waitingForAnswer={waitingForProcessAnswer}
                   onClearContext={() => setContext(undefined)}
                   disabled={inputDisabled}
                   sendBlocked={!online || busy || historyLoading}
@@ -1392,7 +1527,7 @@ const messageComponents = { UserMessage, AssistantMessage };
 /**
  * The composer: assistant-ui's composer text in the app's field, with the
  * "@" picker, the attached item, the reply context, the counter and IME-safe
- * keys of the classic chat. Enter sends through the thread's runtime.
+ * keys. Enter sends through the thread's runtime.
  */
 function Composer({
   composerRef,
@@ -1405,6 +1540,7 @@ function Composer({
   onDetachTask,
   context,
   validContext,
+  waitingForAnswer,
   onClearContext,
   disabled,
   sendBlocked,
@@ -1419,8 +1555,9 @@ function Composer({
   setPicked: (update: (current: MentionItem[]) => MentionItem[]) => void;
   attachedTask?: HumanTaskReference;
   onDetachTask: () => void;
-  context?: ReplyInput;
+  context?: ReplyContext;
   validContext: boolean;
+  waitingForAnswer: boolean;
   onClearContext: () => void;
   disabled: boolean;
   sendBlocked: boolean;
@@ -1548,10 +1685,18 @@ function Composer({
             <InputGroupText>
               <span className="line-clamp-2 min-w-0 font-normal">
                 <span className="text-muted-foreground">
-                  {tr(validContext ? "replyTo" : "inputContextChanged")}
+                  {tr(
+                    waitingForAnswer
+                      ? "process_question_pending"
+                      : validContext
+                        ? "replyTo"
+                        : "inputContextChanged",
+                  )}
                   {": "}
                 </span>
-                {context.question}
+                {isProcessReply(context)
+                  ? context.target.question.question
+                  : context.question}
               </span>
             </InputGroupText>
             <InputGroupButton
@@ -1739,5 +1884,104 @@ function Composer({
         </div>
       )}
     </form>
+  );
+}
+
+/**
+ * A typed process answer the server accepted but the run did not record, or
+ * refused: review it in the composer, send it again or discard it.
+ */
+function AnswerRecovery({
+  attempt,
+  chatId,
+  session,
+  state,
+  noticeOwner,
+  onReview,
+}: {
+  attempt: NonNullable<SessionState["answerAttempts"]>[number];
+  chatId: string;
+  session: ClientSession;
+  state: SessionState;
+  noticeOwner: ReturnType<typeof captureProcessNoticeOwner>;
+  onReview: (target: ProcessAnswerTarget, answer: string) => void;
+}) {
+  const navigate = useNavigate();
+  const { tr } = useChatCopy();
+  const store = state.store;
+  const online = state.status === "online";
+  const busy = !!state.pending || !!state.answerRecoveryBlocked;
+  let canReview = false;
+  if (online && store && !busy && attempt.outcome !== "unknown") {
+    try {
+      assertProcessAnswerTarget(store, attempt.target);
+      canReview = true;
+    } catch {
+      // A retained answer cannot silently move to a later question.
+    }
+  }
+  const notice =
+    state.processNotice?.notice.commandId === attempt.command.commandId
+      ? state.processNotice
+      : undefined;
+  const explanation = notice
+    ? notice.errorSource.kind === "local"
+      ? tr(notice.errorSource.code)
+      : (() => {
+          const selected = processNoticeCopy(notice.notice);
+          return selected
+            ? tr(selected.key) +
+                (selected.detailKey ? ` ${tr(selected.detailKey)}` : "")
+            : undefined;
+        })()
+    : attempt.outcome === "accepted"
+      ? tr("processResultUnavailable")
+      : attempt.error
+        ? tr(
+            sendErrorKey(new Error(attempt.error), "process_question_rejected"),
+          )
+        : undefined;
+  return (
+    <AnswerRecoveryView
+      question={attempt.target.question.question}
+      answer={attempt.command.answer}
+      outcome={attempt.outcome}
+      explanation={explanation}
+      canReview={canReview}
+      canRetry={
+        !state.answerRecoveryBlocked &&
+        online &&
+        state.pending?.commandId === attempt.command.commandId &&
+        state.commandStates[commandTarget(attempt.command)] !== "sending"
+      }
+      canDiscard={!state.answerRecoveryBlocked}
+      onRetry={() => void session.retry(noticeOwner)}
+      onReview={() => {
+        const current = session.getSnapshot();
+        if (
+          !current.store ||
+          current.answerRecoveryBlocked ||
+          current.status !== "online" ||
+          current.pending
+        )
+          return;
+        try {
+          assertProcessAnswerTarget(current.store, attempt.target);
+        } catch {
+          return;
+        }
+        if (attempt.target.conversationId !== chatId) {
+          void navigate({
+            to: "/chat/$conversationId",
+            params: { conversationId: attempt.target.conversationId },
+          });
+          return;
+        }
+        onReview(attempt.target, attempt.command.answer);
+      }}
+      onDiscard={() =>
+        void session.discardProcessAnswerAttempt(attempt.command.commandId)
+      }
+    />
   );
 }

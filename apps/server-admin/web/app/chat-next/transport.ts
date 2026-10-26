@@ -82,7 +82,7 @@ const tool = (
 });
 
 /**
- * A stored message as thread parts, with the classic chat's rules: a write
+ * A stored message as thread parts: a write
  * waiting for approval is a card, anything else an action did is told in
  * words; a finished native action needs no card. `null` is a message with
  * nothing to show.

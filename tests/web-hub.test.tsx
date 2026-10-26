@@ -16,7 +16,7 @@ import {
   type HubDashboardV3Command,
 } from "../packages/protocol/hub";
 import { hubOverlaps } from "../packages/protocol/hub-dashboard";
-import { ChatConversation } from "../apps/server-admin/web/app/chat-page";
+import { ChatNextConversation } from "../apps/server-admin/web/app/chat-next/chat-next-page";
 import {
   HubDashboardView,
   hubGreeting,
@@ -36,6 +36,19 @@ import { translate } from "../packages/i18n";
 
 if (!globalThis.crypto?.randomUUID)
   Object.defineProperty(globalThis, "crypto", { value: webcrypto });
+// assistant-ui's thread root listens on the document for Escape and the
+// generated UI's renderer adds a style; the test renderer has no DOM, so
+// they get a page that hears nothing and keeps nothing.
+if (typeof document === "undefined")
+  Object.defineProperty(globalThis, "document", {
+    value: {
+      addEventListener() {},
+      removeEventListener() {},
+      createElement: () => ({}),
+      head: { appendChild() {} },
+    },
+    configurable: true,
+  });
 
 const mockNavigate = jest.fn();
 jest.mock("@tanstack/react-router", () => {
@@ -867,7 +880,7 @@ test("asking from the dashboard opens a new chat with the question ready", async
   );
   // The new chat starts with it in the composer; sending starts the chat.
   const chat = await render(
-    <ChatConversation session={session} onSaved={jest.fn()} />,
+    <ChatNextConversation session={session} onSaved={jest.fn()} />,
   );
   expect(chat.findByType("textarea").props.value).toBe(
     "Kolik mám firem v CRM?",

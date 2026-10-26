@@ -18,13 +18,26 @@ import type {
 import { ACTIVITY_DRAFT_MAX } from "../packages/protocol/activity";
 import type { ServiceResult } from "../packages/protocol/service-result";
 import type { ProcessOfferResult } from "../packages/protocol/process-offer";
-import { ChatConversation } from "../apps/server-admin/web/app/chat-page";
+import { ChatNextConversation } from "../apps/server-admin/web/app/chat-next/chat-next-page";
 import { takeProcessOffer } from "../apps/server-admin/web/app/offer-handoff";
 import { groupChatsByDay } from "../apps/server-admin/web/app/chat-history";
 import { translate } from "../packages/i18n";
 
 if (!globalThis.crypto?.randomUUID)
   Object.defineProperty(globalThis, "crypto", { value: webcrypto });
+// assistant-ui's thread root listens on the document for Escape and the
+// generated UI's renderer adds a style; the test renderer has no DOM, so
+// they get a page that hears nothing and keeps nothing.
+if (typeof document === "undefined")
+  Object.defineProperty(globalThis, "document", {
+    value: {
+      addEventListener() {},
+      removeEventListener() {},
+      createElement: () => ({}),
+      head: { appendChild() {} },
+    },
+    configurable: true,
+  });
 
 const mockNavigate = jest.fn();
 jest.mock("@tanstack/react-router", () => {
@@ -416,7 +429,7 @@ async function render(
   await act(async () => {
     renderer = TestRenderer.create(
       <QueryClientProvider client={new QueryClient()}>
-        <ChatConversation
+        <ChatNextConversation
           session={session}
           routeId={routeId}
           onSaved={onSaved}
@@ -499,59 +512,6 @@ beforeEach(() => {
   mockNavigate.mockReset();
 });
 
-test("a new chat is created on the server before its first message, then gets its address", async () => {
-  const { session, sent } = fakeSession(storeWith([]));
-  const onSaved = jest.fn();
-  const root = (await render(session, undefined, onSaved)).root;
-  expect(text(root)).toContain("S čím ti můžu pomoct?");
-  await type(root, "Ahoj, najdi Jana");
-  expect(sent.map((command) => command.type)).toEqual([
-    "conversation.create",
-    "message.send",
-  ]);
-  const [create, message] = sent as [
-    Extract<SessionCommand, { type: "conversation.create" }>,
-    Extract<SessionCommand, { type: "message.send" }>,
-  ];
-  expect(create.conversationId).toMatch(/^chat-[0-9a-f-]{36}$/);
-  // The chat's own key makes a retried creation the same command.
-  expect(create.commandId).toBe(create.conversationId.slice("chat-".length));
-  expect(create.idempotencyKey).toBe(create.commandId);
-  expect(message).toMatchObject({
-    conversationId: create.conversationId,
-    text: "Ahoj, najdi Jana",
-    language: "cs",
-  });
-  expect(message.session).toBeUndefined();
-  expect(onSaved).toHaveBeenCalledWith(create.conversationId);
-  // An accepted message clears the composer.
-  expect(root.findByType("textarea").props.value).toBe("");
-});
-
-test("a sent message leaves the composer at once and returns if it isn't accepted", async () => {
-  const conversation: Conversation = {
-    id: "conv-1",
-    revision: 1,
-    messages: [],
-  };
-  const { session, publish } = fakeSession(storeWith([conversation]), {
-    "conv-1": { conversation: summary("conv-1") },
-  });
-  let finish!: () => void;
-  (session.send as jest.Mock).mockImplementationOnce(
-    () => new Promise<void>((resolve) => (finish = resolve)),
-  );
-  const root = (await render(session, "conv-1")).root;
-  await type(root, "Najdi Jana");
-  // While the assistant works, the text is in the chat, not in the composer.
-  expect(root.findByType("textarea").props.value).toBe("");
-  await act(async () => {
-    publish({ commandStates: { chat: "rejected" } });
-    finish();
-  });
-  expect(root.findByType("textarea").props.value).toBe("Najdi Jana");
-});
-
 test("Shift+Enter keeps writing and an empty draft sends nothing", async () => {
   const { session, sent } = fakeSession(storeWith([]));
   const root = (await render(session)).root;
@@ -575,38 +535,6 @@ test("Shift+Enter keeps writing and an empty draft sends nothing", async () => {
     }),
   );
   expect(sent).toEqual([]);
-});
-
-test("approving a prepared write resolves exactly that operation in its chat", async () => {
-  const conversation: Conversation = {
-    id: "conv-1",
-    revision: 4,
-    messages: [
-      user("m-1", "Založ Jana Nováka"),
-      {
-        id: "m-2",
-        role: "assistant",
-        text: "Připravil jsem zápis.",
-        result: approval,
-      },
-    ],
-  };
-  const { session, sent } = fakeSession(storeWith([conversation]), {
-    "conv-1": { conversation: summary("conv-1") },
-  });
-  const root = (await render(session, "conv-1")).root;
-  const card = byTestId(root, "service-action-op-1");
-  expect(text(card)).toContain("Jan Novák");
-  await act(async () => button(card, tr("serviceApprove")).props.onClick());
-  expect(sent).toHaveLength(1);
-  expect(sent[0]).toMatchObject({
-    type: "service.resolve",
-    conversationId: "conv-1",
-    operationId: "op-1",
-    approved: true,
-    language: "cs",
-  });
-  expect(sent[0]!.commandId).toBe(sent[0]!.idempotencyKey);
 });
 
 test("a finished action shows only the answer's words, no receipt card", async () => {
@@ -683,32 +611,6 @@ test("a task's native approval carries the work item and the revision it was sho
     expectedWorkRevision: 7,
     approved: false,
   });
-});
-
-test("an archived chat is read only: no composer, no live cards, a way to a new chat", async () => {
-  const conversation: Conversation = {
-    id: "archived-1",
-    revision: 4,
-    messages: [
-      user("m-1", "Založ Jana"),
-      { id: "m-2", role: "assistant", text: "Hotovo?", result: approval },
-    ],
-  };
-  const { session, sent } = fakeSession(storeWith([conversation]), {
-    "archived-1": { conversation: summary("archived-1", { readOnly: true }) },
-  });
-  const root = (await render(session, "archived-1")).root;
-  expect(root.findAllByType("textarea")).toHaveLength(0);
-  const bar = byTestId(root, "read-only-composer");
-  expect(text(bar)).toContain("Jen ke čtení");
-  expect(bar.findByType("a").props.href).toBe("/chat");
-  // History text only: an archived approval can never be decided here.
-  expect(
-    root.findAll((node) => node.props["data-testid"] === "service-action-op-1"),
-  ).toHaveLength(0);
-  expect(text(root)).toContain("Hotovo?");
-  expect(sent).toEqual([]);
-  expect(session.refresh).not.toHaveBeenCalled();
 });
 
 test("an archived chat opened by its address can be restored and then continues", async () => {
@@ -914,136 +816,6 @@ test("an offer from an earlier answer can no longer be used", async () => {
   expect(button(card, "Bez procesu").props.disabled).toBe(true);
 });
 
-test("while the assistant works, the composer offers stop and progress is shown", async () => {
-  const conversation: Conversation = {
-    id: "conv-1",
-    revision: 4,
-    messages: [user("m-1", "Ahoj")],
-  };
-  const { session, publish } = fakeSession(storeWith([conversation]), {
-    "conv-1": { conversation: summary("conv-1") },
-  });
-  const root = (await render(session, "conv-1")).root;
-  await act(async () =>
-    publish({
-      pending: {
-        type: "message.send",
-        commandId: "c-2",
-        idempotencyKey: "c-2",
-        conversationId: "conv-1",
-        text: "Najdi Jana",
-        language: "cs",
-      },
-      commandStates: { chat: "sending" },
-    }),
-  );
-  expect(text(byTestId(root, "pending-message"))).toContain("Najdi Jana");
-  expect(byTestId(root, "request-progress")).toBeTruthy();
-  await act(async () => button(root, "Zastavit").props.onClick());
-  expect(session.interruptPending).toHaveBeenCalled();
-  // An uncertain delivery is resent as the same command.
-  await act(async () =>
-    publish({
-      commandStates: { chat: "network_error" },
-      error: "network_error",
-    }),
-  );
-  await act(async () =>
-    button(byTestId(root, "request-progress"), "Zkusit znovu").props.onClick(),
-  );
-  expect(session.retry).toHaveBeenCalled();
-});
-
-test("an answer is shown as it is written, inert, and the stored reply replaces it", async () => {
-  const conversation: Conversation = {
-    id: "conv-1",
-    revision: 4,
-    messages: [user("m-1", "Kolik máme objednávek?")],
-  };
-  const { session, publish } = fakeSession(storeWith([conversation]), {
-    "conv-1": { conversation: summary("conv-1") },
-  });
-  const root = (await render(session, "conv-1")).root;
-  const pending = {
-    type: "message.send" as const,
-    commandId: "c-2",
-    idempotencyKey: "c-2",
-    conversationId: "conv-1",
-    text: "Kolik máme objednávek?",
-    language: "cs" as const,
-  };
-  const running = {
-    commandId: "c-2",
-    conversationId: "conv-1",
-    status: "running" as const,
-    steps: [
-      { id: "understanding" as const, status: "running" as const },
-      { id: "preparing" as const, status: "pending" as const },
-    ],
-  };
-  await act(async () =>
-    publish({
-      pending,
-      commandStates: { chat: "sending" },
-      activity: {
-        ...running,
-        // The opening fence is still being typed.
-        draft: "Za září **340** objednávek.\n``",
-      },
-    }),
-  );
-  const draft = byTestId(root, "answer-draft");
-  expect(text(draft)).toContain("340");
-  expect(text(draft)).not.toContain("``");
-  expect(
-    draft.findAll((node) => node.props["data-testid"] === "generated-ui"),
-  ).toHaveLength(0);
-  await act(async () =>
-    publish({
-      activity: {
-        ...running,
-        draft: [
-          "Za září **340** objednávek.",
-          "```openui-lang",
-          "root = Stack([b])",
-          'b = Buttons([Button("Detail", @ToAssistant("Ukaž detail"), "primary")])',
-        ].join("\n"),
-      },
-    }),
-  );
-  const ui = byTestId(byTestId(root, "answer-draft"), "generated-ui");
-  // Nothing in a draft can be acted on.
-  expect(button(ui, "Detail").props.disabled).toBe(true);
-  // The stored message replaces the draft; a draft is never part of the chat.
-  await act(async () =>
-    publish({
-      pending: null,
-      activity: null,
-      commandStates: { chat: "accepted" },
-      store: storeWith([
-        {
-          ...conversation,
-          revision: 5,
-          messages: [
-            ...conversation.messages,
-            {
-              id: "m-2",
-              role: "assistant",
-              text: "V září bylo 340 objednávek.",
-              replyToCommandId: "c-2",
-            },
-          ],
-        },
-      ]),
-    }),
-  );
-  expect(
-    root.findAll((node) => node.props["data-testid"] === "answer-draft"),
-  ).toHaveLength(0);
-  expect(text(root)).toContain("V září bylo 340 objednávek.");
-  expect(text(root)).not.toContain("Za září");
-});
-
 test("a finished turn stays in an opened chat while its history is read again", async () => {
   const conversation: Conversation = {
     id: "conv-1",
@@ -1220,7 +992,7 @@ test("a lost connection dims the draft and says once what to do", async () => {
       commandConversationId: "conv-1",
     }),
   );
-  expect(text(byTestId(root, "answer-draft"))).not.toContain("Přerušeno");
+  expect(text(root)).not.toContain("Přerušeno");
   await act(async () =>
     publish({
       commandStates: { chat: "network_error" },
@@ -1234,10 +1006,10 @@ test("a lost connection dims the draft and says once what to do", async () => {
   expect(button(progress, "Zkusit znovu")).toBeTruthy();
   // The progress block explains it; no second alert below.
   expect(has(root, "chat-error")).toBe(false);
-  const draft = byTestId(root, "answer-draft");
-  expect(text(draft)).toContain("Přerušeno");
+  // The draft dims and says it was interrupted, once.
+  expect(text(root)).toContain("Přerušeno");
   expect(
-    draft.findAll((node) => node.props["data-stopped"] === true),
+    root.findAll((node) => node.props["data-stopped"] === true),
   ).toHaveLength(1);
   // A model failure is said once, where the answer stopped.
   await act(async () => publish({ error: "model_timeout" }));
@@ -1268,13 +1040,13 @@ test("a draft cut at the stream's limit says the answer goes on", async () => {
       activity: { ...running, draft: "Začátek odpovědi" },
     }),
   );
-  expect(text(byTestId(root, "answer-draft"))).not.toContain("ještě píšu");
+  expect(text(root)).not.toContain("ještě píšu");
   await act(async () =>
     publish({
       activity: { ...running, draft: "a".repeat(ACTIVITY_DRAFT_MAX) },
     }),
   );
-  expect(text(byTestId(root, "answer-draft"))).toContain("…ještě píšu");
+  expect(text(root)).toContain("…ještě píšu");
 });
 
 test("a reconnect keeps the composer editable; only sending waits", async () => {
@@ -1314,172 +1086,4 @@ test("while an opened chat's history loads, the composer takes text but does not
   expect(root.findByType("textarea").props.value).toBe(
     "Kolik máme objednávek?",
   );
-});
-
-test("while the assistant works, the streamed steps say which service is read and what came back", async () => {
-  const conversation: Conversation = {
-    id: "conv-1",
-    revision: 4,
-    messages: [user("m-1", "Kolik máme zápůjček?")],
-  };
-  const { session, publish } = fakeSession(storeWith([conversation]), {
-    "conv-1": { conversation: summary("conv-1") },
-  });
-  const root = (await render(session, "conv-1")).root;
-  const pending = {
-    type: "message.send" as const,
-    commandId: "c-2",
-    idempotencyKey: "c-2",
-    conversationId: "conv-1",
-    text: "Kolik máme zápůjček?",
-    language: "cs" as const,
-  };
-  await act(async () =>
-    publish({
-      pending,
-      commandStates: { chat: "sending" },
-      activity: {
-        commandId: "c-2",
-        conversationId: "conv-1",
-        status: "running",
-        steps: [
-          { id: "understanding", status: "running" },
-          { id: "preparing", status: "pending" },
-        ],
-      },
-      activityConnection: "live",
-      activitySteps: [
-        {
-          toolCallId: "c1",
-          label: "Search loans",
-          status: "succeeded",
-          input: [{ label: "Service", value: "Twenty CRM" }],
-          output: [{ label: "Returned items", value: "71" }],
-        },
-        {
-          toolCallId: "c2",
-          label: "Find payouts",
-          status: "running",
-          input: [],
-          output: [],
-        },
-      ],
-    }),
-  );
-  const steps = byTestId(root, "progress-live-steps");
-  expect(text(steps)).toContain("Twenty CRM · Search loans · 71 záznamů");
-  expect(text(steps)).toContain("Find payouts");
-  await act(async () =>
-    publish({
-      pending: null,
-      activity: null,
-      activitySteps: null,
-      commandStates: { chat: "accepted" },
-    }),
-  );
-  expect(
-    root.findAll((node) => node.props["data-testid"] === "progress-live-steps"),
-  ).toHaveLength(0);
-});
-
-test("a write the stream announced is shown to review at once, once, and the stored card takes it over", async () => {
-  const conversation: Conversation = {
-    id: "conv-1",
-    revision: 4,
-    messages: [user("m-1", "Vytvoř schůzku s Janou")],
-  };
-  const { session, sent, publish } = fakeSession(storeWith([conversation]), {
-    "conv-1": { conversation: summary("conv-1") },
-  });
-  const root = (await render(session, "conv-1")).root;
-  const pending = {
-    type: "message.send" as const,
-    commandId: "c-2",
-    idempotencyKey: "c-2",
-    conversationId: "conv-1",
-    text: "Vytvoř schůzku s Janou",
-    language: "cs" as const,
-  };
-  const cards = () =>
-    root.findAll(
-      (node) => node.props["data-testid"] === "service-action-op-1",
-      { deep: false },
-    );
-  await act(async () =>
-    publish({
-      pending,
-      commandStates: { chat: "sending" },
-      activity: {
-        commandId: "c-2",
-        conversationId: "conv-1",
-        status: "running",
-        steps: [
-          { id: "understanding", status: "running" },
-          { id: "preparing", status: "pending" },
-        ],
-      },
-      activityConnection: "live",
-      activityApproval: {
-        toolCallId: "c1",
-        operationId: "op-1",
-        toolName: "Create meeting",
-        service: "Microsoft 365",
-        effect: "write",
-        input: { fields: [{ label: "attendee", value: "jana@example.test" }] },
-        reviewTruncated: false,
-      },
-    }),
-  );
-  // The card is there before the stored message, with the reviewed fields;
-  // the decision waits for the run to settle.
-  expect(cards()).toHaveLength(1);
-  expect(text(cards()[0]!)).toContain("Create meeting");
-  expect(text(cards()[0]!)).toContain("jana@example.test");
-  expect(button(cards()[0]!, tr("serviceApprove")).props.disabled).toBe(true);
-  // The stored message with the same operation arrives: one card, not two.
-  const stored: Message = {
-    id: "m-2",
-    role: "assistant",
-    text: "Připraveno k potvrzení.",
-    replyToCommandId: "c-2",
-    result: {
-      ...approval,
-      title: "Create meeting",
-      service: "Microsoft 365",
-      fields: [{ label: "attendee", value: "jana@example.test" }],
-      inputJson: '{"attendee":"jana@example.test"}',
-    },
-  };
-  await act(async () =>
-    publish({
-      store: storeWith([
-        {
-          ...conversation,
-          revision: 5,
-          messages: [...conversation.messages, stored],
-        },
-      ]),
-    }),
-  );
-  expect(cards()).toHaveLength(1);
-  await act(async () =>
-    publish({
-      pending: null,
-      activity: null,
-      activityApproval: null,
-      commandStates: { chat: "accepted" },
-    }),
-  );
-  expect(cards()).toHaveLength(1);
-  const approve = button(cards()[0]!, tr("serviceApprove"));
-  expect(approve.props.disabled).toBe(false);
-  await act(async () => approve.props.onClick());
-  expect(sent).toHaveLength(1);
-  expect(sent[0]).toMatchObject({
-    type: "service.resolve",
-    conversationId: "conv-1",
-    operationId: "op-1",
-    approved: true,
-    language: "cs",
-  });
 });

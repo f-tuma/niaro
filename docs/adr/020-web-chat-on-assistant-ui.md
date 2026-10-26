@@ -1,6 +1,6 @@
 # ADR 020 — The web chat on assistant-ui
 
-Date: 2026-10-25. Status: implemented next to the classic chat, behind a switch (NIAR-228).
+Date: 2026-10-25. Status: implemented; since 2026-10-26 the only chat, the classic page and the switch are removed (NIAR-228).
 
 ## Context
 
@@ -14,12 +14,12 @@ Rebuild the web chat on [assistant-ui](https://github.com/assistant-ui/assistant
 - **System UI as tool parts.** Every system view is a tool-call part with a `niaro.*` name rendered by a tool UI: the generated answer, an approval, the assistant's work with its question, a sign-in, a process offer, a skill or process draft, contacts, an old card. A streamed tool step is a part too, shown as one line in the Runs page's words. Reasoning is never a part.
 - **assistant-ui owns the thread, the viewport and the message parts; the app owns the composer.** The composer's text lives in assistant-ui's composer and sends through it, but the field, the `@` picker, the attached task, the limit and the IME keys are the app's, because the design system's `InputGroup` and the picker's keyboard rules would not survive `ComposerPrimitive.Input`.
 - **Nothing leaves the server.** No CDN-loaded code; assistant-cloud is a dependency of the package but is never configured and does not reach the bundle (no cloud host in `dist-admin/app.js`).
-- **The switch.** `localStorage["niaro.chat"]` or `?chat=next|classic`, with an item in the account menu. The classic chat is untouched beyond the route picking one of the two.
+- **The switch** (`localStorage["niaro.chat"]`, `?chat=next|classic`, an account-menu item) carried the new chat next to the classic one for one day; both are gone since October 26.
 
 ## Consequences
 
 The bundle grows by about 109 kB gzip (assistant-ui and its store, plus the `radix-ui` bump to 1.8 that both now share). The classic chat's tests run against the next chat (`tests/web-chat-next.test.tsx`), so a difference is a failure, not a surprise.
 
-Typed replies to a process question, the recovery of an unconfirmed process answer and the process notice stay in the classic chat for now; they belong to the process runtime and move when the next chat becomes the only one, which also retires `chat-page.tsx`. Questions with options, approvals and the attached task already work in both.
+Typed replies to a process question, the recovery of an unconfirmed process answer and the process notice moved into this chat on October 26, when `chat-page.tsx` was retired; its tests now run against this chat.
 
 assistant-ui's external store treats a running thread whose last message is the person's as having an "optimistic" empty answer; the next chat always shows its own live answer message while a request runs, so the two never meet. The thread message ids are the server's; the live answer is `live:<commandId>` and the pending message `pending:<commandId>`, so a settled turn replaces them in place.
