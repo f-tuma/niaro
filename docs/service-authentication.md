@@ -255,3 +255,12 @@ settings.
 Provider account mapping, Better Auth sessions and mobile device sessions are retained.
 The explicit account-link endpoint is session-bound and rejects cross-company links;
 there is no implicit email merge or automatic membership creation.
+
+## Verification status
+
+Sign-in providers, personal service sign-in, permissions and the callback
+queue are covered by synthetic providers in tests (`tests/auth-providers.node.ts`,
+`tests/service-auth-http.node.ts`, `tests/auth-provider-callback-queue.node.ts`).
+Microsoft 365 personal sign-in has been used on the development server. A live
+check of personal OAuth and the identity of a service's effect (NIAR-46), and
+personal sign-in to the pilot's CRM, are still open.

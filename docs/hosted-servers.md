@@ -282,3 +282,11 @@ by URL.
 
 Dokploy restarts, updates and logs the application; Niaro does not supervise
 it.
+
+## Verification status
+
+Definitions, the process runtime and the compose output are covered by
+synthetic tests (`tests/hosted-servers.node.ts`). The Microsoft 365 npm definition
+has run as a hosted server on the development server. Running an image MCP
+server as its own Dokploy application next to Niaro follows the steps above
+and has not been exercised end to end on a production host yet.

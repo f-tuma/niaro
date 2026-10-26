@@ -1,54 +1,23 @@
 # Native Mastra integration for Niaro
 
-The October 7 extension adds workspace-owned processes using the same native
-designer/compiler/qualification/runtime, durable public chat history with
-per-chat native continuation, and canonical encrypted saved payloads in Mastra
-Memory. See [the decision](adr/018-native-saved-memory-and-conversation-identity.md)
-and [current operator instructions](self-hosting.md). Isolated acceptance is
-separate from the earlier development server; the October 2 startup and Studio
-notes below are historical checkpoints.
+Mastra is the runtime of every chat turn and every process run. This guide
+describes how the server drives it: what the model knows, how tools are
+exposed, how a turn is bounded, checked, streamed and stored. The older
+"progressive execution" in [services, actions and AI routing](service-catalog.md#decision-mode-jev)
+is legacy: stored turns from before October 2026 replay that way, new turns do
+not use it.
 
-Implementation approved October 2, 2026. New catalog commands now use native
-Mastra execution in the working tree. The development server was started from
-this working tree on October 2 at the user's request. The [isolated prototype](../spikes/mastra/README.md) is
-historical evidence, separate from the application implementation.
-
-The conversational service builder is the main next direction.
-Its [typed definitions and immutable registry](service-processes.md) are now
-implemented. They are configuration and metadata for this same
-runtime. The compiler turns standalone agents and action/agent/branch/return
-definitions into real native workflows with an internal scoped runner. Native
-chat and Jev share the durable [inference budget](inference-budget.md); custom Agent/Memory steps use the same owner and parent ledger, with
-frozen process caps. The [native Tasks projection and explicit goal return](native-tasks.md) now use
-the same scoped run and question/approval authority. Builder UI and
-public execution remain open. The latest backend slice is local code;
-it has not been loaded by restarting the user's running instance.
-
-The existing launcher remains `node --import tsx apps/reference-server/cli.ts
-start .servers/current.json`. The local development instance listens on
-`127.0.0.1:8793`, with its authenticated console at
-`https://assistant.example.com/admin/loops`. Startup was preceded by a stopped-server
-backup and database integrity checks. HTTPS availability and the rendered
-Loops list/graph were checked; all 82 historical turns and invocation state
-counts were preserved. This is development startup, not production acceptance
-or a live-provider/device evaluation. Existing unknown receipts remain passive.
-
-For local inspection, an isolated Mastra Studio explorer is running at
-`http://127.0.0.1:4111`. Its temporary project is
-`/tmp/niaro-mastra-studio`, with CLI 1.32.1 and the same pinned core/memory/libSQL
-versions. Restart it from that directory with
-`MASTRA_TELEMETRY_DISABLED=1 node node_modules/mastra/dist/index.js dev`.
-It exposes three synthetic tools, native conversation Memory, an offline model
-and a three-step contact/review/receipt workflow. The Studio UI's workflow
-run → suspension → explicit approval → success was checked; external effects
-are always zero. No real Niaro database or credentials are attached.
-
-Studio expects Mastra's REST API, so this explorer is separate from the
-authenticated Niaro `/v1` server and its dynamically scoped agents. Actual
-Niaro runs remain visible in Loops. A direct Studio integration needs a scoped,
-authorized Mastra API adapter; exporting the private runtime to an unrestricted
-Studio endpoint would bypass the application's command boundary. This temporary
-explorer is for inspection, not another product execution engine.
+**Verification status (October 26, 2026).** The loop mechanics are covered by
+synthetic suites with a scripted model and scripted Jev
+(`tests/agent-trust.node.ts` and the `tests/mastra-*.node.ts`,
+`tests/agent-*.node.ts` suites). Live-model behaviour is measured with
+`pnpm eval:trust:live` on `openai/gpt-6-luna`: the `robust.*` matrix (6 of 6,
+median 23–27 s) and the `ui.*` matrix (12 of 12, median 6 s) on October 24–25,
+see [agent trust](agent-trust.md). The pilot company runs the same build in
+production; what the live Jev checker decides on real answers, and the
+calendar and personal-OAuth chains (NIAR-46, NIAR-47), still await live
+verification. The paragraphs below that mention a date are implementation
+history kept for context.
 
 Mastra owns the agent/tool loop, conversation history, native run/tool-call
 identity and durable execution checkpoints. Niaro supplies direct tools,

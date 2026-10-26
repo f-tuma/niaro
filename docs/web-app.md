@@ -239,3 +239,12 @@ change in chat offers **Don't ask next time**. Rules and API in
 Everyone with workspace access gets chat, tasks, meetings, processes (including their own
 personal processes) and connections. Providers, services, models, limits,
 people and the other server settings stay in administration.
+
+## Verification status
+
+The web app is covered by Jest UI tests (`tests/web-*.test.tsx`, including
+the next chat on assistant-ui) with a scripted session, and by checks in a
+real browser on the development server when a change lands. Live-model
+behaviour in the chat is measured separately ([agent trust](agent-trust.md));
+there is no automated end-to-end browser suite, and the owner's visual
+approval of the next chat on the development server is still open (NIAR-228).

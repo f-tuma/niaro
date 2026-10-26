@@ -1,5 +1,14 @@
 # Voice reliability measurements — September 25, 2026
 
+**Status (October 26, 2026).** Voice is a function of the mobile app; the web
+app has no voice and voice is outside the pilot ([pilot](pilot.md)). Both
+transcription modes detect the spoken language from the recording; the app
+language chooses only interface and review text, as
+[services, actions and AI routing](service-catalog.md#speech-transcription)
+now states too. The measurements below are synthetic-corpus and
+development-phone results; physical acceptance of Czech speech is still open
+(NIAR-42, NIAR-45).
+
 The current local `small` + Silero path works through an actual browser recording, OpenRouter interpretation and an isolated Radicale event. **Czech speech quality is not accepted:** the synthetic corpus passes 12/20 cases and still contains unreviewed critical-word mismatches. Physical speech, microphone routing, iOS and Bluetooth remain unverified.
 
 September 30 correction: a physical-phone report exposed Czech speech being sent with the default English interface locale. Both interpreter prompts now detect the spoken language from the recording and preserve it without translation. Direct STT omits the optional language hint, and local Whisper uses automatic language detection. The wire `language` still selects interface/review text; it does not constrain the microphone's language. Endpointing again waits for 1.8 seconds of silence with both spectral and energy metering, preserving a 1.3-second thinking pause before a name or time. These changes address identifiable request and capture defects; the historical corpus scores below do not measure the revised prompts or establish physical speech accuracy.

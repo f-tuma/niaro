@@ -175,10 +175,19 @@ dropped silently:
 
 ## Not in v1
 
-- Pre-exposing a tagged service's actions: the agent is instructed to start
-  with that service, but its actions are still discovered by `find_actions`.
+- Pre-exposing a tagged service's actions beyond what every turn gets: the
+  agent is told to start with that service; a small service's actions are
+  tools from the first step and a large one's are loaded by name
+  ([Mastra integration](mastra-integration.md#what-the-model-knows-about-the-services)).
 - Binary files (PDF, images), scripts or code execution in skills.
 - Promoting a personal skill to a company skill, version history and
   restoring a deleted skill.
 - Saving a proposal or editing skills in the mobile app (it shows a note).
 - Editing an existing skill from chat (`skill_propose` creates a new one).
+
+## Verification status
+
+Skill storage, access, proposals and their use in a turn are covered by
+synthetic tests with a scripted model. How often a live model loads a skill
+when it should, and follows it, is not measured yet; the live matrices
+([agent trust](agent-trust.md)) do not include a skill scenario.
