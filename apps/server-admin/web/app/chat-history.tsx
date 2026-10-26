@@ -121,22 +121,29 @@ export function groupChatsByDay(
 ) {
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
-  const day = 86_400_000;
+  // Calendar days, not 24-hour spans: a daylight-saving night is 23 or 25 hours.
+  const daysAgo = (n: number) => {
+    const date = new Date(startOfToday);
+    date.setDate(date.getDate() - n);
+    return date.getTime();
+  };
+  const startOfYesterday = daysAgo(1),
+    startOfLastWeek = daysAgo(7);
   const groups: { label: string; conversations: ConversationSummary[] }[] = [];
   for (const conversation of conversations) {
-    const at = new Date(conversation.updatedAt);
-    const age = startOfToday.getTime() - at.getTime();
+    const date = new Date(conversation.updatedAt);
+    const at = date.getTime();
     const label =
-      age <= 0
+      at >= startOfToday.getTime()
         ? labels.today
-        : age <= day
+        : at >= startOfYesterday
           ? labels.yesterday
-          : age <= 7 * day
+          : at >= startOfLastWeek
             ? labels.lastWeek
             : capitalize(
-                at.toLocaleDateString(language === "cs" ? "cs-CZ" : "en-GB", {
+                date.toLocaleDateString(language === "cs" ? "cs-CZ" : "en-GB", {
                   month: "long",
-                  ...(at.getFullYear() === startOfToday.getFullYear()
+                  ...(date.getFullYear() === startOfToday.getFullYear()
                     ? {}
                     : { year: "numeric" }),
                 }),

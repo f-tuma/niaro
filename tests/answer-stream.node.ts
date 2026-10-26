@@ -267,6 +267,72 @@ test("server-sent events split on blank lines and keep an unfinished tail", () =
   assert.equal(parseAnswerStreamEvent('{"type":"unknown-chunk"}'), undefined);
 });
 
+test("a step or approval card beyond the schema's limits is clipped, not dropped", () => {
+  const { res, chunks } = fakeResponse();
+  let listener!: AnswerStreamListener;
+  const stream = openAnswerStream(
+    res,
+    undefined,
+    (_scope, _commandId, next) => {
+      listener = next;
+      return () => {};
+    },
+    credential().scope,
+    "TEST-command",
+    1000,
+  );
+  listener({
+    type: "step",
+    step: {
+      toolCallId: "call-1",
+      label: "x".repeat(400),
+      status: "running",
+      input: Array.from({ length: 20 }, (_, i) => ({
+        label: `f${i}`,
+        value: "v".repeat(5000),
+      })),
+      output: [],
+    },
+  });
+  listener({
+    type: "approval",
+    approval: {
+      toolCallId: "call-1",
+      operationId: "op-1",
+      toolName: "y".repeat(300),
+      service: "TEST Items",
+      effect: "write",
+      input: {
+        fields: Array.from({ length: 30 }, (_, i) => ({
+          label: `f${i}`,
+          value: "v".repeat(5000),
+        })),
+      },
+      reviewTruncated: false,
+    },
+  });
+  stream.end({ status: 202, body: { status: "accepted" } });
+  const typed = chunks().filter(
+    (chunk): chunk is AnswerStreamChunk =>
+      chunk !== undefined && chunk !== "done",
+  );
+  const started = typed.find((chunk) => chunk.type === "tool-input-start");
+  assert(started && started.type === "tool-input-start");
+  assert.equal(started.toolName.length, 160);
+  const available = typed.find(
+    (chunk) => chunk.type === "tool-input-available",
+  );
+  assert(available && available.type === "tool-input-available");
+  const fields = (available.input as { fields: { value: string }[] }).fields;
+  assert.equal(fields.length, 12);
+  assert.equal(fields[0]!.value.length, 1000);
+  const card = typed.find((chunk) => chunk.type === "data-tool-call-approval");
+  assert(card && card.type === "data-tool-call-approval");
+  assert.equal(card.data.toolName.length, 100);
+  assert.equal(card.data.input.fields.length, 20);
+  assert.equal(card.data.reviewTruncated, true);
+});
+
 test("a write that waits for the person reaches the stream as an approval chunk before the result", () => {
   const { res, chunks } = fakeResponse();
   let listener!: AnswerStreamListener;

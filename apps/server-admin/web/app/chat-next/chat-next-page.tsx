@@ -568,25 +568,33 @@ export function ChatNextConversation({
   };
 
   const live = historySelection && !historySelection.readOnly && online;
-  const liveMessages = conversation?.messages ?? [];
-  const lastRead = historyMessages.at(-1)?.id;
-  const lastReadAt = liveMessages.findIndex((m) => m.id === lastRead);
-  const newer =
-    live && (lastReadAt >= 0 || !historyMessages.length)
-      ? liveMessages.slice(lastReadAt + 1)
-      : [];
-  const messages: ChatMessage[] = historySelection
-    ? [
-        ...historyMessages.map(
-          (message) =>
-            (live
-              ? liveMessages.find((m) => m.id === message.id)
-              : undefined) ?? message,
-        ),
-        ...newer,
-      ]
-    : liveMessages;
-  const work = store ? selectConversationWork(store, id) : [];
+  const conversationMessages = conversation?.messages;
+  // Memoised on their real inputs: the session publishes on every streamed
+  // chunk, and assistant-ui caches converted messages by object identity.
+  const messages: ChatMessage[] = useMemo(() => {
+    const liveMessages = conversationMessages ?? [];
+    const lastRead = historyMessages.at(-1)?.id;
+    const lastReadAt = liveMessages.findIndex((m) => m.id === lastRead);
+    const newer =
+      live && (lastReadAt >= 0 || !historyMessages.length)
+        ? liveMessages.slice(lastReadAt + 1)
+        : [];
+    return historySelection
+      ? [
+          ...historyMessages.map(
+            (message) =>
+              (live
+                ? liveMessages.find((m) => m.id === message.id)
+                : undefined) ?? message,
+          ),
+          ...newer,
+        ]
+      : liveMessages;
+  }, [historySelection, historyMessages, conversationMessages, live]);
+  const work = useMemo(
+    () => (store ? selectConversationWork(store, id) : []),
+    [store, id],
+  );
   const stale = !online || !!store?.stale || !!store?.needsSnapshot;
   useMessageLink({
     container: contentRef,
@@ -672,8 +680,11 @@ export function ChatNextConversation({
   // The thread: stored messages with the day they start, the message on its
   // way and the answer being written.
   const pending = selectPendingChatMessage(state, id);
+  // The run continues after an approval: its draft and steps are shown the
+  // same way as the message's own run.
   const progressCommand =
-    state.pending?.type === "message.send" &&
+    (state.pending?.type === "message.send" ||
+      state.pending?.type === "service.resolve") &&
     state.pending.conversationId === id
       ? state.pending
       : null;

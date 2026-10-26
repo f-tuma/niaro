@@ -65,10 +65,13 @@ export function DaySeparator({ day }: { day: number }) {
   const { tr, language } = useChatCopy();
   const today = startOfDay(new Date());
   const date = new Date(day);
+  // Calendar days, not 24-hour spans: a daylight-saving night is 23 or 25 hours.
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
   const label =
     day === today
       ? tr("chatsToday")
-      : today - day <= 86_400_000 && today > day
+      : day === yesterday.getTime()
         ? tr("chatsYesterday")
         : date.toLocaleDateString(locale(language), {
             weekday: "long",

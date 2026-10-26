@@ -3,8 +3,9 @@ import { useSyncExternalStore } from "react";
 /**
  * Which chat the person uses: the classic one, or the next one built on
  * assistant-ui (NIAR-228) while it is tried next to it. `?chat=next` or
- * `?chat=classic` in the address picks one and is remembered in
- * localStorage (`niaro.chat`); the account menu switches the same way.
+ * `?chat=classic` in the address picks one for this page; the account
+ * menu's choice is remembered in localStorage (`niaro.chat`), so a pasted
+ * link does not change what the browser's other accounts see.
  */
 const KEY = "niaro.chat";
 type Choice = "classic" | "next";
@@ -13,8 +14,7 @@ const listeners = new Set<() => void>();
 function read(): Choice {
   try {
     const asked = new URLSearchParams(window.location.search).get("chat");
-    if (asked === "next" || asked === "classic")
-      window.localStorage.setItem(KEY, asked);
+    if (asked === "next" || asked === "classic") return asked;
     return window.localStorage.getItem(KEY) === "next" ? "next" : "classic";
   } catch {
     return "classic";

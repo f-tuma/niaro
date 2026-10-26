@@ -3,12 +3,62 @@ import type { Scope } from "../../packages/protocol";
 import {
   ANSWER_STREAM_KEEP_ALIVE_MS,
   ANSWER_STREAM_MEDIA_TYPE,
+  AnswerStreamApprovalSchema,
+  AnswerStreamStepSchema,
   type AnswerStreamChunk,
   type AnswerStreamListener,
   type AnswerStreamApproval,
   type AnswerStreamStep,
 } from "../../packages/protocol/answer-stream";
 import { splitDraft } from "../../packages/openui-library/program";
+
+const clip = (value: string, max: number) =>
+  value.length > max ? value.slice(0, max - 1) + "…" : value;
+const clipFields = (
+  fields: readonly { label: string; value: string }[],
+  max: number,
+) =>
+  fields
+    .slice(0, max)
+    .map((f) => ({ label: clip(f.label, 100), value: clip(f.value, 1000) }));
+/**
+ * A step as the schema allows it: a long title or value is clipped rather
+ * than dropped by the client's parser, which would hide the step.
+ */
+function boundedStep(step: AnswerStreamStep): AnswerStreamStep | undefined {
+  const parsed = AnswerStreamStepSchema.safeParse({
+    ...step,
+    toolCallId: clip(step.toolCallId, 160),
+    label: clip(step.label, 160),
+    input: clipFields(step.input, 12),
+    output: clipFields(step.output, 12),
+    ...(step.failure
+      ? {
+          failure: {
+            kind: clip(step.failure.kind, 40),
+            code: clip(step.failure.code, 80),
+          },
+        }
+      : {}),
+  });
+  return parsed.success ? parsed.data : undefined;
+}
+function boundedApproval(
+  approval: AnswerStreamApproval,
+): AnswerStreamApproval | undefined {
+  const parsed = AnswerStreamApprovalSchema.safeParse({
+    ...approval,
+    toolCallId: clip(approval.toolCallId, 160),
+    toolName: clip(approval.toolName, 100),
+    service: clip(approval.service, 100),
+    input: {
+      fields: clipFields(approval.input.fields, 20),
+    },
+    reviewTruncated:
+      approval.reviewTruncated || approval.input.fields.length > 20,
+  });
+  return parsed.success ? parsed.data : undefined;
+}
 
 /**
  * Streams a `message.send` or `service.resolve` run to the client as
@@ -82,7 +132,9 @@ export function openAnswerStream(
       write({ type: "data-openui", data: { program } });
     }
   };
-  const step = (value: AnswerStreamStep) => {
+  const step = (raw: AnswerStreamStep) => {
+    const value = boundedStep(raw);
+    if (!value) return;
     if (value.status === "running") {
       write({
         type: "tool-input-start",
@@ -113,8 +165,10 @@ export function openAnswerStream(
   };
   // The card the stored result will carry, a moment early, so a client can
   // show the write to review as soon as the run stops for it.
-  const approval = (value: AnswerStreamApproval) =>
-    write({ type: "data-tool-call-approval", data: value });
+  const approval = (raw: AnswerStreamApproval) => {
+    const value = boundedApproval(raw);
+    if (value) write({ type: "data-tool-call-approval", data: value });
+  };
   const unsubscribe = subscribe(scope, commandId, (event) => {
     if (event.type === "draft") draft(event.draft);
     else if (event.type === "step") step(event.step);

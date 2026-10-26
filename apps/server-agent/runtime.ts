@@ -263,6 +263,8 @@ export type NativeAgentSession = {
 export type NativeAgentDefinition = {
   name: string;
   description: string;
+  /** The service an action tool belongs to, for the person's view of a step. */
+  service?: string;
   parameters: Record<string, unknown>;
   /** Trusted domain compiler; validates without mutating or coercing supplied JSON. */
   validate(

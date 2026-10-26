@@ -179,6 +179,33 @@ test("HTTP diagnostics preserve safe validation fields and redact exact credenti
   assert(serialized.includes("[redacted]"));
 });
 
+test("an MCP error that asks to sign in or lacks a permission is not an input to correct", () => {
+  const classify = (message: string) =>
+    mcpActionFailure({ success: false, message })!;
+  for (const message of [
+    "Authentication is required to call this tool",
+    "Login is required",
+    "API key is required",
+    "Unauthorized",
+  ]) {
+    const failure = classify(message);
+    assert.equal(failure.kind, "connection", message);
+    assert.equal(failure.retry, "reconnect", message);
+  }
+  for (const message of [
+    "You must be an admin to delete people",
+    "Permission is required for this workspace",
+    "Approval is required before sending",
+  ]) {
+    const failure = classify(message);
+    assert.equal(failure.kind, "permission", message);
+    assert.equal(failure.retry, "none", message);
+  }
+  const input = classify("Field 'email' is required");
+  assert.equal(input.kind, "validation");
+  assert.equal(input.retry, "correct_input");
+});
+
 test("HTTP authentication, permission, rate limit and outage have distinct next steps", () => {
   for (const [status, kind, retry] of [
     [401, "connection", "reconnect"],

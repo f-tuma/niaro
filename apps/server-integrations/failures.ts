@@ -59,6 +59,8 @@ export function diagnosticText(
 const INPUT_PROBLEM =
   /\b(?:invalid (?:value|input|argument|date|format|filter|field|type)|expected (?:format|type|a |an |one of)|is not (?:a )?valid|must be (?:a |an |one of|in |at )|is required|required (?:field|argument|parameter)|unknown (?:field|argument|property|column)|field ['"]?[\w.-]+['"]? (?:not found|does not exist)|not found on|cannot query field|does not exist on|unrecognized (?:key|field|argument))/i;
 
+const ACCESS_PROBLEM =
+  /\b(?:(?:authentication|authori[sz]ation|login|sign.?in|api.?key|token|credential|permission|approval|consent)s?\s+(?:is|are)\s+(?:required|missing|invalid|expired)|must be (?:an? )?(?:admin|administrator|owner|member|signed in|logged in|authenticated)|unauthori[sz]ed|unauthenticated|not authenticated|forbidden|access denied|not allowed)\b/i;
 function classify(
   code: string,
   httpStatus?: number,
@@ -117,6 +119,12 @@ function classify(
     return { kind: "response", retry: "none" };
   if (/unavailable|timeout|connection|network/i.test(code))
     return { kind: "connection", retry: "later" };
+  // "Authentication is required" or "You must be an admin" read like input
+  // problems to the regex below; they are a connection or a permission.
+  if (message && ACCESS_PROBLEM.test(message))
+    return /permission|admin|forbidden|not allowed|approval/i.test(message)
+      ? { kind: "permission", retry: "none" }
+      : { kind: "connection", retry: "reconnect" };
   if (message && INPUT_PROBLEM.test(message))
     return { kind: "validation", retry: "correct_input" };
   return { kind: "provider", retry: "later" };

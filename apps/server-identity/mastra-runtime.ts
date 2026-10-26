@@ -41,6 +41,10 @@ import type { InferenceRunCaps } from "./inference-budget";
 
 /** Model steps for a chat answer: it may read several services and page
  * through records. The last two only answer (see the agent runtime). */
+const record = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 const NATIVE_CHAT_MAX_STEPS = 24;
 type NativeRuntime = Awaited<
   ReturnType<(typeof import("@niaro/server-agent"))["createNativeAgentRuntime"]>
@@ -295,6 +299,18 @@ export function createNativeCatalogRuntime(
           definition.description.split(":")[0]!.slice(0, 160),
         ]),
     );
+    // The streamed step names its service ("Twenty CRM · Search companies").
+    const actionServices = new Map(
+      definitions.flatMap((definition) =>
+        definition.service ? [[definition.name, definition.service]] : [],
+      ),
+    );
+    const streamedInput = (name: string, input: AnswerStreamStep["input"]) => {
+      const service = actionServices.get(name);
+      return service && !input.some((field) => field.label === "Service")
+        ? [{ label: "Service", value: service }, ...input].slice(0, 12)
+        : input;
+    };
     const steps = new Map<string, ReturnType<typeof startLoopStep>>();
     // A mutation may commit and then lose its return value. Its business checkpoint
     // must survive native error handling, which runs in a different database.
@@ -374,7 +390,7 @@ export function createNativeCatalogRuntime(
                 toolCallId: event.toolCallId,
                 label: step.label,
                 status: "running",
-                input: step.tool?.input ?? [],
+                input: streamedInput(event.name, step.tool?.input ?? []),
                 output: [],
               });
           } else if (event.type === "tool-end") {
@@ -423,7 +439,13 @@ export function createNativeCatalogRuntime(
                       : toolOutcome(event.output);
             if (step?.tool)
               step.tool = finishLoopToolDetails(step.tool, {
-                output: committedMemory ? committedMemory.result : event.output,
+                // A service action's tool result is opaque to the model;
+                // the step shows how many records the receipt holds.
+                output: committedMemory
+                  ? committedMemory.result
+                  : receipt && receipt.status === "succeeded"
+                    ? { ...record(event.output), data: receipt.result }
+                    : event.output,
                 error: committedMemory ? undefined : event.error,
                 unavailable: event.unavailable,
                 invalidArguments: event.invalidArguments,
@@ -440,7 +462,7 @@ export function createNativeCatalogRuntime(
                   status === "cancelled"
                     ? status
                     : "failed",
-                input: step.tool?.input ?? [],
+                input: streamedInput(event.name, step.tool?.input ?? []),
                 output: step.tool?.output ?? [],
                 ...(step.tool?.failure
                   ? {

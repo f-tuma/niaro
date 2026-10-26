@@ -14,6 +14,7 @@ import {
   sanitizeActionFailure,
 } from "../server-integrations/failures";
 import { loopText } from "./loop-redaction";
+import { unwrapMcpText } from "./bounded-preview";
 
 type Field = LoopToolDetails["input"][number];
 const builtins = new Set([
@@ -252,6 +253,27 @@ const outputLabels: Record<string, readonly string[]> = {
   memory_revise: ["Receipt status", "Revision"],
   memory_forget: ["Receipt status", "Revision"],
 };
+/** A service action's output as the person sees it: how many records came back. */
+const ACTION_OUTPUT_LABELS: readonly string[] = ["Returned items"];
+const labelsFor = (table: Record<string, readonly string[]>, name: string) =>
+  table[name] ??
+  (table === outputLabels && /^action_/.test(name)
+    ? ACTION_OUTPUT_LABELS
+    : undefined);
+/** The longest list a read returned, at most three levels deep; never its items. */
+function returnedItems(value: unknown, depth = 0): number | undefined {
+  if (Array.isArray(value)) return value.length;
+  const object = record(value);
+  if (!object || depth >= 3) return undefined;
+  let best: number | undefined;
+  for (const [key, item] of Object.entries(object)) {
+    if (key === "content" || key === "input") continue;
+    const count = returnedItems(item, depth + 1);
+    if (count !== undefined && (best === undefined || count > best))
+      best = count;
+  }
+  return best;
+}
 const memoryStatuses = new Set([
   "candidate",
   "active",
@@ -286,6 +308,7 @@ function validField(
     [
       "Returned services",
       "Returned actions",
+      "Returned items",
       "Candidates",
       "Revision",
       "Days",
@@ -549,6 +572,12 @@ export function finishLoopToolDetails(
     ) {
       output.put("Status", object.answered === true ? "answered" : "asked");
       recorded = true;
+    } else if (/^action_/.test(tool.name) && object.status === "succeeded") {
+      const count = returnedItems(unwrapMcpText(object.data));
+      if (count !== undefined) {
+        output.put("Returned items", count);
+        recorded = true;
+      }
     } else if (
       outputLabels[tool.name]?.includes("Receipt status") &&
       typeof object.status === "string" &&
@@ -645,13 +674,13 @@ export function sanitizeLoopToolDetails(
   };
   const input = project(
     tool.input,
-    inputLabels[name],
+    labelsFor(inputLabels, name),
     tool.inputRecorded,
     false,
   );
   const output = project(
     tool.output,
-    outputLabels[name],
+    labelsFor(outputLabels, name),
     tool.outputRecorded,
     true,
   );
@@ -662,10 +691,12 @@ export function sanitizeLoopToolDetails(
     input: input.fields,
     output: output.fields,
     inputRecorded:
-      tool.inputRecorded && !!inputLabels[name] && input.fields.length > 0,
+      tool.inputRecorded &&
+      !!labelsFor(inputLabels, name) &&
+      input.fields.length > 0,
     outputRecorded:
       tool.outputRecorded &&
-      !!outputLabels[name] &&
+      !!labelsFor(outputLabels, name) &&
       (tool.output.length === 0 || output.fields.length > 0),
     inputTruncated: tool.inputTruncated || input.truncated,
     outputTruncated: tool.outputTruncated || output.truncated,

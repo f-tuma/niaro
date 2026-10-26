@@ -320,6 +320,8 @@ type ProcessPending = z.infer<typeof ProcessPendingSchema>;
 export type ProcessPendingView = Readonly<
   Pick<ProcessPending, "command" | "target" | "outcome" | "error" | "notice">
 >;
+/** Streamed draft and steps are published at most this often. */
+const LIVE_INTERVAL_MS = 80;
 const PROCESS_PENDING_MAX_BYTES = 2_000_000;
 const RETRY_SOURCE_MAX_COMMANDS = 500;
 function utf8Bytes(raw: string) {
@@ -1884,6 +1886,22 @@ export class ClientSession {
           activityApproval: approval,
         });
       };
+      // The model writes many small chunks a second; the thread is rebuilt
+      // for each publish, so they are shown at most every LIVE_INTERVAL_MS.
+      let lastLive = 0;
+      let liveTimer: ReturnType<typeof setTimeout> | undefined;
+      const scheduleLive = () => {
+        const due = lastLive + LIVE_INTERVAL_MS - Date.now();
+        if (due <= 0) {
+          lastLive = Date.now();
+          live();
+        } else if (!liveTimer)
+          liveTimer = setTimeout(() => {
+            liveTimer = undefined;
+            lastLive = Date.now();
+            live();
+          }, due);
+      };
       const fields = (value: unknown, key: string) => {
         const list =
           value && typeof value === "object" && key in value
@@ -1901,7 +1919,8 @@ export class ClientSession {
           : [];
       };
       const apply = (chunk: AnswerStreamChunk) => {
-        if (chunk.type === "text-start" || chunk.type === "text-end") text = "";
+        // The draft stays through text-end: the stored message replaces it.
+        if (chunk.type === "text-start") text = "";
         else if (chunk.type === "text-delta") text += chunk.delta;
         else if (chunk.type === "tool-input-start")
           steps.set(chunk.toolCallId, {
@@ -1961,9 +1980,10 @@ export class ClientSession {
             else if (chunk) apply(chunk);
           }
           if (result || finished) break;
-          live();
+          scheduleLive();
         }
       } finally {
+        clearTimeout(liveTimer);
         clearTimeout(idle);
         reader.cancel().catch(() => {});
       }
@@ -3352,6 +3372,7 @@ export class ClientSession {
       if (isProcessExecutionCommand(flight.command)) this.pendingProcess = null;
       this.publish({
         pending: null,
+        commandConversationId: undefined,
         activity: null,
         activitySteps: null,
         activityApproval: null,
@@ -3420,6 +3441,9 @@ export class ClientSession {
     this.publish({
       ...update,
       pending: null,
+      // The command's own error stays with its chat; a later error that no
+      // command caused belongs to every chat.
+      ...(update.error ? {} : { commandConversationId: undefined }),
       activity: null,
       activitySteps: null,
       activityApproval: null,

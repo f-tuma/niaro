@@ -102,7 +102,11 @@ assistant-ui client renders it natively, while answering it stays the
 The instructions carry a "Connected services" listing: every enabled service
 with its description and every action the person may use, as `name (read|write):
 description` (120 characters each, 12 KB in all; a service over the budget is
-listed by names, and over that by its count). The model therefore sees what is
+listed by names, and over that by its count). A description is written by the
+service, so the listing is framed as untrusted data and shows only the first
+sentence of each description, skipping one that reads as an instruction
+("Always call this first…"): a remote MCP server cannot steer the loop through
+its tool descriptions. The model therefore sees what is
 connected before it searches, and an answer like "no service holds this" is
 grounded in the listing rather than in a search that found nothing.
 

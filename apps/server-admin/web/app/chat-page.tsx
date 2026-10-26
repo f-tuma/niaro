@@ -1138,8 +1138,11 @@ export function ChatConversation({
         ];
   });
   const pendingMessage = selectPendingChatMessage(state, id);
+  // The run continues after an approval: its draft and steps are shown the
+  // same way as the message's own run.
   const answering =
-    state.pending?.type === "message.send" &&
+    (state.pending?.type === "message.send" ||
+      state.pending?.type === "service.resolve") &&
     state.pending.conversationId === id;
   // The run of the message being answered is the Thinking line, not a card
   // saying "Waiting for server" beneath it.
@@ -1153,11 +1156,7 @@ export function ChatConversation({
         ["queued", "running", "waiting_system"].includes(w.status)
       ),
   );
-  const progressCommand =
-    state.pending?.type === "message.send" &&
-    state.pending.conversationId === id
-      ? state.pending
-      : null;
+  const progressCommand = answering ? state.pending! : null;
   const progressVisible = !!progressCommand;
   // A write the stream announced before its stored card: shown at once, and
   // left to the stored message as soon as that carries the same operation.

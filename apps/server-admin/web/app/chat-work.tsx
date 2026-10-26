@@ -949,7 +949,14 @@ export function liveStepText(
     ? loopNodeLabel({ kind: "tool", label: step.label }, copy)
     : step.label;
   const service = liveStepService(step);
-  const items = stepField(step.output, ["Returned items"]);
+  // The count of the outermost list: "Returned items" or "data · companies · Returned items".
+  const items = step.output
+    .filter(
+      (entry) =>
+        entry.label === "Returned items" ||
+        entry.label.endsWith(" · Returned items"),
+    )
+    .sort((a, b) => a.label.length - b.label.length)[0];
   const message = stepField(step.output, ["Message"]);
   const count = items
     ? tr
@@ -1124,6 +1131,7 @@ export function ProgressView({
       )}
       {shownSteps.length > 0 && (
         <ul
+          aria-live="off"
           data-testid="progress-live-steps"
           className="flex flex-col gap-1 text-xs text-muted-foreground"
         >
