@@ -49,6 +49,7 @@ import { useApp, useAppSession, type AppWorkspace } from "./context";
 import { useAppCopy } from "./copy";
 import { useMenuCopy, type MenuCopy } from "./menu-copy";
 import { MenuPage } from "./menu-page";
+import { OwnServices } from "./own-services";
 
 /** A sign-in in another tab is given ten minutes, like the server's attempt. */
 const ATTEMPT_MS = 10 * 60_000;
@@ -268,6 +269,7 @@ function SignIns({
           </EmptyHeader>
         </Empty>
       )}
+      <OwnServices workspace={workspace} />
     </MenuPage>
   );
 }
@@ -408,7 +410,7 @@ export function ServiceMark({
   workspace,
   size = "sm",
 }: {
-  service: PersonalSignIn;
+  service: Pick<PersonalSignIn, "serviceId" | "icon" | "iconSource">;
   workspace: AppWorkspace;
   size?: "sm" | "lg";
 }) {

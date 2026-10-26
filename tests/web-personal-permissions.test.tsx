@@ -8,6 +8,7 @@ import type {
 import type { Service } from "../packages/protocol/service-catalog";
 import type { ServiceResult } from "../packages/protocol/service-result";
 import { ConnectionDetailPage } from "../apps/server-admin/web/app/connection-detail";
+import { ConnectionsPage } from "../apps/server-admin/web/app/connections-page";
 import { signInDetails } from "../apps/server-admin/web/app/connections-page";
 import { menuCopy } from "../apps/server-admin/web/app/menu-copy";
 import { ServiceActionView } from "../apps/server-admin/web/app/chat-cards";
@@ -148,12 +149,15 @@ jest.mock(
       Section: ({
         title,
         toolbar,
+        actions,
         children,
       }: {
         title: string;
         toolbar?: React.ReactNode;
+        actions?: React.ReactNode;
         children: React.ReactNode;
-      }) => React.createElement("section", null, title, toolbar, children),
+      }) =>
+        React.createElement("section", null, title, toolbar, actions, children),
     };
   },
   { virtual: true },
@@ -621,6 +625,152 @@ describe("console: action access presentation", () => {
     expect(actionAccess(action({}), copy)).toEqual({
       tone: "warning",
       label: copy.noAccess,
+    });
+  });
+});
+
+describe("own services", () => {
+  const own = (patch: Record<string, unknown> = {}) => ({
+    id: "svc-mail",
+    revision: 2,
+    name: "Tracker",
+    url: "https://tracker.example.test/mcp",
+    protocol: "mcp",
+    icon: "plug",
+    iconSource: "custom",
+    status: "pending",
+    addedAt: "2026-10-26T10:00:00.000Z",
+    reads: 3,
+    writes: 1,
+    ...patch,
+  });
+  function serveOwn(services: Record<string, unknown>[], policy = "review") {
+    const commands: unknown[] = [];
+    mockApi.mockImplementation(async (path: string, body: unknown) => {
+      if (path === "identity/catalog/oauth/list")
+        return { ...mockTarget, services: [] };
+      if (path === "identity/catalog/personal/list")
+        return { ...mockTarget, policy, limit: 5, services };
+      if (path === "identity/catalog/personal/command") {
+        commands.push(body);
+        const input = body as { type: string; url?: string; name?: string };
+        if (input.type === "add") {
+          const added = own({
+            id: "svc-new",
+            name: input.name ?? "new.example.test",
+            url: input.url,
+          });
+          services.push(added);
+          return added;
+        }
+        if (input.type === "remove") {
+          services.splice(0, services.length);
+          return { id: "svc-mail" };
+        }
+        return services[0];
+      }
+      if (path === "identity/catalog/oauth/permissions")
+        return permissions({ requiredFor: "all" });
+      throw new Error(`unexpected ${path}`);
+    });
+    return commands;
+  }
+
+  test("the list shows the person's own services with their state, and adds one with an address and a key", async () => {
+    const services = [own()];
+    const commands = serveOwn(services);
+    const root = (await render(<ConnectionsPage />)).root;
+    const ownRows = () =>
+      root.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props["data-testid"] === "own-service",
+      );
+    const rows = ownRows();
+    expect(rows).toHaveLength(1);
+    expect(text(rows[0]!)).toContain("Tracker");
+    expect(text(rows[0]!)).toContain("Čeká na schválení");
+    expect(text(rows[0]!)).toContain("3 čtení · 1 změn");
+    // Add: the form sends only what was typed.
+    const addButton = root.findAll(
+      (node) =>
+        node.type === "button" &&
+        typeof node.props.onClick === "function" &&
+        text(node).includes("Přidat službu"),
+    )[0]!;
+    await act(async () => addButton.props.onClick());
+    const inputs = root.findAll((node) => node.type === "input");
+    await act(async () =>
+      inputs[0]!.props.onChange({
+        target: { value: "https://new.example.test/mcp" },
+      }),
+    );
+    await act(async () =>
+      inputs[1]!.props.onChange({ target: { value: "TEST-key" } }),
+    );
+    const form = root.find(
+      (node) => node.props["data-testid"] === "own-service-form",
+    );
+    await act(async () => form.props.onSubmit({ preventDefault() {} }));
+    await flush();
+    expect(commands).toEqual([
+      {
+        ...mockTarget,
+        type: "add",
+        url: "https://new.example.test/mcp",
+        apiKey: "TEST-key",
+      },
+    ]);
+    expect(ownRows()).toHaveLength(2);
+  });
+
+  test("with adding turned off the section says so and offers nothing", async () => {
+    serveOwn([], "off");
+    const root = (await render(<ConnectionsPage />)).root;
+    expect(text(root)).toContain("Správce vypnul přidávání vlastních služeb.");
+    // The section's own button is gone; the host-rendered sheet's submit
+    // button is not an entry point.
+    expect(
+      root.findAll(
+        (node) =>
+          node.type === "button" &&
+          node.props.type !== "submit" &&
+          text(node).includes("Přidat službu"),
+      ),
+    ).toHaveLength(0);
+  });
+
+  test("a pending service's page explains the wait; an approved one has the permissions and can be removed", async () => {
+    const services = [own()];
+    const commands = serveOwn(services);
+    const pending = (await render(<ConnectionDetailPage />)).root;
+    expect(text(pending)).toContain("Tracker");
+    expect(text(pending)).toContain(
+      "Než ji asistent začne používat, musí ji schválit správce.",
+    );
+    expect(text(pending)).not.toContain("Co může tvůj asistent dělat");
+    services[0] = own({ status: "active" });
+    const active = (await render(<ConnectionDetailPage />)).root;
+    expect(text(active)).toContain("Připraveno");
+    expect(text(active)).toContain("Najít e-maily");
+    const rejected = own({ status: "rejected", reason: "TEST cizí server" });
+    services[0] = rejected;
+    const refused = (await render(<ConnectionDetailPage />)).root;
+    expect(text(refused)).toContain("Správce ji zamítl: TEST cizí server");
+    const remove = byHost(refused, "DropdownMenuItem").find(
+      (node) => text(node) === "Odebrat",
+    )!;
+    await act(async () => remove.props.onSelect());
+    const confirm = byHost(refused, "ConfirmAction").find(
+      (node) => node.props.title === "Odebrat tuto službu?",
+    )!;
+    await act(async () => confirm.props.onConfirm());
+    await flush();
+    expect(commands.at(-1)).toEqual({
+      ...mockTarget,
+      type: "remove",
+      id: "svc-mail",
+      revision: 2,
     });
   });
 });

@@ -496,6 +496,9 @@ function useNeedsAttention(
       const service = catalog?.services.find((s) => s.id === entry.serviceId);
       return service?.enabled ? [{ ...entry, name: service.name }] : [];
     }),
+    review: (catalog?.services ?? [])
+      .filter((s) => s.personal?.status === "pending")
+      .map((s) => ({ serviceId: s.id, name: s.name })),
     requests,
     limit,
   });
@@ -519,7 +522,7 @@ function NeedsAttention({
               ? CircleX
               : row.key === "retest"
                 ? FlaskConical
-                : row.key === "signIn"
+                : row.key === "signIn" || row.key === "review"
                   ? PlugZap
                   : Gauge;
           const title =
@@ -529,7 +532,9 @@ function NeedsAttention({
                 ? plural(language, row.count, copy.retestCount)
                 : row.key === "signIn"
                   ? copy.nobodySignedIn.replace("{service}", row.name)
-                  : copy.requestsShare.replace("{p}", String(row.percent));
+                  : row.key === "review"
+                    ? copy.ownServiceReview.replace("{service}", row.name)
+                    : copy.requestsShare.replace("{p}", String(row.percent));
           const content = (
             <>
               <ItemMedia>
@@ -552,12 +557,16 @@ function NeedsAttention({
           );
           return (
             <Item
-              key={row.key === "signIn" ? `signIn:${row.serviceId}` : row.key}
+              key={
+                row.key === "signIn" || row.key === "review"
+                  ? `${row.key}:${row.serviceId}`
+                  : row.key
+              }
               asChild
               variant="row"
               size="row"
             >
-              {row.key === "signIn" ? (
+              {row.key === "signIn" || row.key === "review" ? (
                 <Link
                   to="/services/$serviceId"
                   params={{ serviceId: row.serviceId }}

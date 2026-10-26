@@ -77,6 +77,7 @@ import {
   SheetDescription,
 } from "@admin/components/ui/sheet";
 import {
+  AlertTitle,
   AlertAction,
   Alert,
   AlertDescription,
@@ -161,6 +162,104 @@ function serviceState(service: Service, copy: CatalogState["copy"]) {
       : null;
 }
 
+const ownServiceTone = (status: "pending" | "active" | "rejected") =>
+  status === "pending" ? "warning" : status === "active" ? "info" : "danger";
+const ownServiceLabel = (
+  status: "pending" | "active" | "rejected",
+  copy: CatalogState["copy"],
+) =>
+  `${copy.ownService} · ${
+    status === "pending"
+      ? copy.ownServicePending
+      : status === "active"
+        ? copy.ownServiceActive
+        : copy.ownServiceRejected
+  }`;
+
+/** Whether members may connect services of their own, for the workspace. */
+function OwnServicesPolicy({ state }: { state: CatalogState }) {
+  const { copy } = state;
+  const policy = state.query.data?.personalServices ?? "review";
+  return (
+    <Select
+      value={policy}
+      disabled={state.busy}
+      onValueChange={(value) =>
+        void state.mutate("command", {
+          type: "savePersonalServicesPolicy",
+          policy: value,
+        })
+      }
+    >
+      <SelectTrigger
+        aria-label={copy.ownServicesPolicy}
+        title={copy.ownServicesPolicyHint}
+        data-testid="own-services-policy"
+      >
+        <span className="text-muted-foreground">{copy.ownServicesPolicy}:</span>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="off">{copy.ownServicesOff}</SelectItem>
+        <SelectItem value="review">{copy.ownServicesReview}</SelectItem>
+        <SelectItem value="free">{copy.ownServicesFree}</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** The administrator's decision on a member's own service. */
+function OwnServiceReview({
+  state,
+  service,
+}: {
+  state: CatalogState;
+  service: Service;
+}) {
+  const { copy } = state;
+  const [reason, setReason] = useState("");
+  const decide = (decision: "approve" | "reject") =>
+    void state.mutate("command", {
+      type: "reviewPersonalService",
+      id: service.id,
+      revision: service.revision,
+      decision,
+      ...(decision === "reject" && reason.trim()
+        ? { reason: reason.trim() }
+        : {}),
+    });
+  return (
+    <Alert data-testid="own-service-review">
+      <AlertTitle>{copy.ownServiceReviewTitle}</AlertTitle>
+      <AlertDescription>
+        <p>{copy.ownServiceReviewHint}</p>
+        <p className="font-mono text-xs">{service.url}</p>
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <Input
+            aria-label={copy.ownServiceRejectReason}
+            placeholder={copy.ownServiceRejectReason}
+            className="max-w-sm"
+            maxLength={500}
+            value={reason}
+            disabled={state.busy}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <Button
+            variant="outline"
+            disabled={state.busy}
+            onClick={() => decide("reject")}
+          >
+            {copy.ownServiceReject}
+          </Button>
+          <Button disabled={state.busy} onClick={() => decide("approve")}>
+            {copy.ownServiceApprove}
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function Services() {
   const state = useCatalog(),
     { copy } = state;
@@ -201,14 +300,18 @@ function Services() {
           )
         }
         actions={
-          canManage &&
-          all.length > 0 && (
-            <Button asChild>
-              <Link to="/services/new">
-                <Plus data-icon="inline-start" aria-hidden="true" />
-                {copy.addService}
-              </Link>
-            </Button>
+          canManage && (
+            <>
+              <OwnServicesPolicy state={state} />
+              {all.length > 0 && (
+                <Button asChild>
+                  <Link to="/services/new">
+                    <Plus data-icon="inline-start" aria-hidden="true" />
+                    {copy.addService}
+                  </Link>
+                </Button>
+              )}
+            </>
           )
         }
       />
@@ -284,9 +387,16 @@ function ServiceCard({
       <CardHeader>
         <div className="flex items-start justify-between gap-3">
           <ServiceAvatar service={service} state={state} />
-          {status && (
-            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-          )}
+          <div className="flex flex-wrap justify-end gap-1">
+            {service.personal && (
+              <StatusBadge tone={ownServiceTone(service.personal.status)}>
+                {ownServiceLabel(service.personal.status, copy)}
+              </StatusBadge>
+            )}
+            {status && (
+              <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -889,6 +999,21 @@ function ServiceDetail({
         media={<ServiceAvatar service={service} state={state} size="lg" />}
         meta={
           <>
+            {service.personal && (
+              <StatusBadge tone={ownServiceTone(service.personal.status)}>
+                {ownServiceLabel(service.personal.status, copy)}
+              </StatusBadge>
+            )}
+            {service.personal && (
+              <span className="text-xs text-muted-foreground">
+                {copy.ownServiceOf.replace(
+                  "{name}",
+                  state.scope.detail.data?.members.find(
+                    (m) => m.userId === service.personal?.userId,
+                  )?.name ?? copy.member,
+                )}
+              </span>
+            )}
             {/* Managers see on/off on the header switch instead. */}
             {status && (service.enabled || !canManage) && (
               <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
@@ -955,6 +1080,9 @@ function ServiceDetail({
           </>
         }
       />
+      {canManage && service.personal?.status === "pending" && (
+        <OwnServiceReview state={state} service={service} />
+      )}
       <ConfirmAction
         open={confirmDelete}
         onOpenChange={setConfirmDelete}

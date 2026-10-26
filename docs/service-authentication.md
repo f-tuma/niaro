@@ -185,6 +185,32 @@ invalidates existing connections and pending consents. Existing operation pins s
 checked, so an approval made with one account never runs under another or under the
 shared credential.
 
+### A person's own services
+
+Besides the services an administrator connects, a person can connect a service
+of their own under **Connections → My services → Add service**: an address (an
+MCP server or an API with an OpenAPI document, HTTPS only) and an API key,
+optionally a name. The server reads the service's tools itself: it tries MCP
+first, then `/openapi.json` and `/swagger.json`. Tools the server labels
+read-only (`readOnlyHint`, Twenty's read names) and GET operations become reads
+that run without approval; everything else is a change that asks before it
+runs. The service belongs to that person: its key is encrypted for it alone,
+only its owner's chat sees it, and the owner manages it like a personal
+sign-in service (**What your assistant can do**, rename, read the tools again,
+remove). At most five own services per person and workspace.
+
+**Services → Members' own services** sets the workspace policy: _Not allowed_,
+_After an administrator's approval_ (the default) or _At once_. Under approval
+the service waits: its owner sees _Waiting for approval_, no chat uses it, and
+administrators see it under **Needs attention** and on the service's page with
+**Approve** and **Reject** (with an optional reason the owner reads).
+Administrators see every own service in Services with who added it; a
+rejected or pending one stays invisible to every chat. An administrator's save
+keeps the ownership and cannot grant one. Private addresses stay for the
+operator's allowlist; the listing in the model's instructions frames the
+service's descriptions as untrusted data like any other. Adding, changing,
+removing and reviewing are audited.
+
 ### Who manages the assistant's permissions
 
 A personal sign-in means the person, not the administrator, decides what their

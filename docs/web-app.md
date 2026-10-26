@@ -225,6 +225,13 @@ _Turn all on_ / _Turn all off_ per group. Each change saves at once. A waiting
 change in chat offers **Don't ask next time**. Rules and API in
 [who manages the assistant's permissions](service-authentication.md#who-manages-the-assistants-permissions).
 
+**My services** below lists the services the person connected themselves and
+offers **Add service**: an address and an API key, nothing more. The row shows
+the state (_Waiting for approval_, _Rejected_ with the reason, _Ready_) and how
+many reads and changes the service offers; its page has the same permissions
+as above once approved, plus rename, read the tools again and remove. See
+[a person's own services](service-authentication.md#a-persons-own-services).
+
 ## Roles
 
 Everyone with workspace access gets chat, tasks, meetings, processes (including their own

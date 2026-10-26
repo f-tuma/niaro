@@ -26,6 +26,7 @@ export type AttentionRow =
   | { key: "failed"; count: number }
   | { key: "retest"; count: number }
   | { key: "signIn"; serviceId: string; name: string }
+  | { key: "review"; serviceId: string; name: string }
   | { key: "requests"; percent: number };
 
 /**
@@ -39,12 +40,20 @@ export function needsAttention(input: {
   retests: number | null;
   /** Enabled services that need each person's sign-in, with how many have one. */
   signIn?: readonly { serviceId: string; name: string; connected: number }[];
+  /** Services members connected for themselves that wait for a decision. */
+  review?: readonly { serviceId: string; name: string }[];
   requests: number;
   limit: number;
 }): AttentionRow[] {
   const rows: AttentionRow[] = [];
   if (input.failedToday) rows.push({ key: "failed", count: input.failedToday });
   if (input.retests) rows.push({ key: "retest", count: input.retests });
+  for (const service of input.review ?? [])
+    rows.push({
+      key: "review",
+      serviceId: service.serviceId,
+      name: service.name,
+    });
   for (const service of input.signIn ?? [])
     if (!service.connected)
       rows.push({

@@ -114,6 +114,44 @@ const en = {
   permissionsChanged:
     "Your settings changed elsewhere. Showing the current ones.",
   permissionsLoadFailed: "Permissions didn't load.",
+
+  // Own services
+  ownServices: "My services",
+  ownServicesHint:
+    "Connect a service with its address and API key. Your assistant reads from it at once and asks before every change.",
+  ownServicesOff: "An administrator has turned off adding your own services.",
+  ownServicesEmpty: "No service of your own yet",
+  ownServiceAdd: "Add service",
+  ownServiceAddTitle: "Add your own service",
+  ownServiceUrl: "Address",
+  ownServiceUrlHint:
+    "An MCP server or an API with an OpenAPI document, over HTTPS.",
+  ownServiceKey: "API key",
+  ownServiceKeyHint:
+    "Sent as a bearer token. Leave empty when the service needs none.",
+  ownServiceName: "Name",
+  ownServiceNameHint: "Optional; the address is used otherwise.",
+  ownServiceAdding: "Reading the service's tools…",
+  ownServicePending: "Waiting for approval",
+  ownServicePendingHint:
+    "An administrator has to approve it before your assistant can use it.",
+  ownServiceRejected: "Rejected",
+  ownServiceRejectedHint: "An administrator rejected it: {reason}",
+  ownServiceRejectedNoReason: "An administrator rejected it.",
+  ownServiceActive: "Ready",
+  ownServiceTools: "{reads} reading · {writes} changes",
+  ownServiceRename: "Rename",
+  ownServiceRenameTitle: "Rename the service",
+  ownServiceRediscover: "Read tools again",
+  ownServiceRemove: "Remove",
+  ownServiceRemoveTitle: "Remove this service?",
+  ownServiceRemoveHint: "Your assistant loses it, with every setting you made.",
+  ownServiceUnreachable:
+    "That address answered neither as an MCP server nor with an OpenAPI document. Check the address and the key.",
+  ownServiceLimit: "You have reached the number of services you can add.",
+  ownServiceFailed: "That didn't work. Try again.",
+  ownServiceConflict: "The service changed meanwhile. Showing the current one.",
+  ownServiceSave: "Save",
 };
 export type MenuCopy = typeof en;
 const cs: MenuCopy = {
@@ -224,6 +262,43 @@ const cs: MenuCopy = {
   permissionsSaveFailed: "Nepovedlo se uložit. Zkus to znovu.",
   permissionsChanged: "Nastavení se mezitím změnilo, ukazuju aktuální.",
   permissionsLoadFailed: "Oprávnění se nenačetla.",
+
+  // Own services
+  ownServices: "Moje služby",
+  ownServicesHint:
+    "Připoj službu adresou a API klíčem. Asistent z ní hned čte a před každou změnou se zeptá.",
+  ownServicesOff: "Správce vypnul přidávání vlastních služeb.",
+  ownServicesEmpty: "Zatím žádná vlastní služba",
+  ownServiceAdd: "Přidat službu",
+  ownServiceAddTitle: "Přidat vlastní službu",
+  ownServiceUrl: "Adresa",
+  ownServiceUrlHint: "MCP server nebo API s OpenAPI dokumentem, přes HTTPS.",
+  ownServiceKey: "API klíč",
+  ownServiceKeyHint:
+    "Posílá se jako bearer token. Nech prázdné, pokud služba žádný nepotřebuje.",
+  ownServiceName: "Název",
+  ownServiceNameHint: "Nepovinné; jinak se použije adresa.",
+  ownServiceAdding: "Načítám nástroje služby…",
+  ownServicePending: "Čeká na schválení",
+  ownServicePendingHint:
+    "Než ji asistent začne používat, musí ji schválit správce.",
+  ownServiceRejected: "Zamítnuto",
+  ownServiceRejectedHint: "Správce ji zamítl: {reason}",
+  ownServiceRejectedNoReason: "Správce ji zamítl.",
+  ownServiceActive: "Připraveno",
+  ownServiceTools: "{reads} čtení · {writes} změn",
+  ownServiceRename: "Přejmenovat",
+  ownServiceRenameTitle: "Přejmenovat službu",
+  ownServiceRediscover: "Načíst nástroje znovu",
+  ownServiceRemove: "Odebrat",
+  ownServiceRemoveTitle: "Odebrat tuto službu?",
+  ownServiceRemoveHint: "Asistent o ni přijde i se vším, co jsi nastavil.",
+  ownServiceUnreachable:
+    "Adresa neodpověděla ani jako MCP server, ani OpenAPI dokumentem. Zkontroluj adresu a klíč.",
+  ownServiceLimit: "Víc služeb už přidat nemůžeš.",
+  ownServiceFailed: "To se nepovedlo. Zkus to znovu.",
+  ownServiceConflict: "Služba se mezitím změnila, ukazuju aktuální.",
+  ownServiceSave: "Uložit",
 };
 export const menuCopy = { en, cs };
 export function useMenuCopy(): MenuCopy {

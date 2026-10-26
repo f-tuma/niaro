@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { RefreshCw, Search } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
 import { Card } from "@admin/components/ui/card";
@@ -49,6 +49,13 @@ import { useAppCopy } from "./copy";
 import { useMenuCopy, type MenuCopy } from "./menu-copy";
 import { MenuPage } from "./menu-page";
 import {
+  OwnServiceMenu,
+  ownServiceState,
+  ownServiceTools,
+  useOwnServices,
+} from "./own-services";
+import type { PersonalServiceSummaryValue } from "../../../../packages/protocol/service-catalog";
+import {
   DisconnectMenu,
   ServiceMark,
   SignInButton,
@@ -87,7 +94,18 @@ function ConnectionDetail({
   const appCopy = useAppCopy();
   const signIns = useSignIns(session, workspace);
   const service = signIns.services.find((s) => s.serviceId === serviceId);
+  const own = useOwnServices(workspace);
+  const mine = own.services.find((s) => s.id === serviceId);
   const back = { to: "/connections" as const, label: appCopy.connections };
+  if (!service && mine)
+    return (
+      <OwnServiceDetail
+        service={mine}
+        own={own}
+        workspace={workspace}
+        back={back}
+      />
+    );
   if (signIns.query.isError)
     return (
       <MenuPage>
@@ -107,7 +125,7 @@ function ConnectionDetail({
         </Alert>
       </MenuPage>
     );
-  if (signIns.query.isPending)
+  if (signIns.query.isPending || own.query.isPending)
     return (
       <MenuPage>
         <div role="status" aria-label={appCopy.loading}>
@@ -188,6 +206,74 @@ function ConnectionDetail({
         workspace={workspace}
         serviceId={service.serviceId}
       />
+    </MenuPage>
+  );
+}
+
+/** A service the person connected themselves: its state, its menu and the
+ * assistant's permissions once an administrator let it through. */
+function OwnServiceDetail({
+  service,
+  own,
+  workspace,
+  back,
+}: {
+  service: PersonalServiceSummaryValue;
+  own: ReturnType<typeof useOwnServices>;
+  workspace: AppWorkspace;
+  back: { to: "/connections"; label: string };
+}) {
+  const copy = useMenuCopy();
+  const navigate = useNavigate();
+  const state = ownServiceState(service, copy);
+  return (
+    <MenuPage>
+      <PageHeader
+        title={service.name}
+        back={back}
+        media={
+          <ServiceMark
+            service={{
+              serviceId: service.id,
+              icon: service.icon,
+              iconSource: service.iconSource,
+            }}
+            workspace={workspace}
+            size="lg"
+          />
+        }
+        meta={
+          <>
+            <StatusDot tone={state.tone} size="sm">
+              {state.label}
+            </StatusDot>
+            <span className="text-xs text-muted-foreground">
+              {ownServiceTools(service, copy)} · {new URL(service.url).host}
+            </span>
+          </>
+        }
+        actions={
+          <OwnServiceMenu
+            service={service}
+            own={own}
+            copy={copy}
+            onRemoved={() => void navigate({ to: "/connections" })}
+          />
+        }
+      />
+      {own.error && (
+        <Alert variant="destructive">
+          <AlertDescription>{copy[own.error]}</AlertDescription>
+        </Alert>
+      )}
+      {state.hint && (
+        <Alert>
+          <AlertDescription>{state.hint}</AlertDescription>
+        </Alert>
+      )}
+      {service.status === "active" && (
+        <PersonalPermissions workspace={workspace} serviceId={service.id} />
+      )}
     </MenuPage>
   );
 }
