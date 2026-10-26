@@ -104,12 +104,15 @@ const ReceiptSchema = z.strictObject({
   status: z.enum(["accepted", "conflict", "rejected"]),
   code: CommandResultSchema.shape.code,
 });
+export type Receipt = z.infer<typeof ReceiptSchema>;
 export const DatabaseSchema = z.strictObject({
   version: z.literal(2),
   snapshot: SnapshotSchema,
   events: z.array(EventSchema).max(1000),
   eventFloor: z.number().int().nonnegative().default(0),
-  receipts: z.array(ReceiptSchema).max(2000),
+  /** The most recent receipts only; the storage keeps every receipt and
+   * answers for the older ones through `olderReceipt`. */
+  receipts: z.array(ReceiptSchema),
   pending: z.array(
     z.strictObject({
       workItemId: z.string(),
@@ -244,6 +247,13 @@ export class FixtureEngine {
     },
     /** Chats in the person's archive: read-only until restored. */
     private archivedConversation?: (id: string) => boolean,
+    /** A receipt older than the loaded window, by command id or
+     * idempotency key, so a retry from long ago still replays its outcome
+     * and never dispatches again. */
+    private olderReceipt?: (
+      commandId: string,
+      idempotencyKey: string,
+    ) => Receipt | undefined,
   ) {
     this.calendar = calendar ? CalendarTargetSchema.parse(calendar) : undefined;
     this.data = data
@@ -773,13 +783,19 @@ export class FixtureEngine {
     // Native work is stopped by its runtime before this receipt is written.
     return this.result(command, "rejected", "integration_unavailable");
   }
+  /** The receipt of a command id or idempotency key, however old. */
+  private receiptOf(commandId: string, idempotencyKey = commandId) {
+    return (
+      this.data.receipts.find(
+        (r) =>
+          r.command.commandId === commandId ||
+          r.command.idempotencyKey === idempotencyKey,
+      ) ?? this.olderReceipt?.(commandId, idempotencyKey)
+    );
+  }
   replay(raw: unknown): CommandResult | undefined {
     const command = CommandSchema.parse(raw);
-    const existing = this.data.receipts.find(
-      (r) =>
-        r.command.commandId === command.commandId ||
-        r.command.idempotencyKey === command.idempotencyKey,
-    );
+    const existing = this.receiptOf(command.commandId, command.idempotencyKey);
     if (existing)
       return JSON.stringify(existing.command) === JSON.stringify(command)
         ? this.result(command, existing.status, existing.code)
@@ -802,9 +818,7 @@ export class FixtureEngine {
         ? { commandId: command.commandId, task: command.humanTask }
         : undefined;
     if (command.type === "message.send" && command.retryOf) {
-      const parent = this.data.receipts.find(
-        (receipt) => receipt.command.commandId === command.retryOf,
-      );
+      const parent = this.receiptOf(command.retryOf, command.retryOf);
       const intent = (value: typeof command) => {
         const {
           commandId: _commandId,
@@ -828,8 +842,6 @@ export class FixtureEngine {
     }
     const existing = this.replay(command);
     if (existing) return existing;
-    if (this.data.receipts.length >= 2000)
-      throw new Error("Fixture capacity reached; reset the demo");
     // A deleted chat takes no further turns, answers or names.
     if (
       command.type !== "conversation.delete" &&

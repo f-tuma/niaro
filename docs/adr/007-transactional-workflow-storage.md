@@ -12,7 +12,7 @@ HTTP returns success only after commit. The retained event table is the durable 
 
 Pending worker jobs and their next due time commit with the transition. Startup polls stored jobs without needing a connected client. One failed account does not starve other due accounts. The simulator preserves pending → executing → succeeded across crashes; future external integrations still need provider idempotency and reconciliation of uncertain outcomes.
 
-The event suffix remains bounded to 1,000 events. An older or future cursor returns `409 snapshot_required`. Receipts are **not pruned**: at 2,000 receipts per scope, new commands fail until an explicit demo reset; existing IDs still deduplicate. Other existing fixture schema limits also remain. This is bounded reference storage, not a production retention or capacity policy.
+The event suffix remains bounded to 1,000 events. An older or future cursor returns `409 snapshot_required`. Receipts are **not pruned** and have no capacity stop (since NIAR-25, October 2026; before it, the 2,000th receipt per scope refused new commands until a demo reset). Each command loads only the scope's newest 500 receipts into the engine; an id or idempotency key older than that window is looked up in the table, so a retry from any time replays its recorded outcome and a changed payload under an old id is still `idempotency_conflict`. Other existing fixture schema limits remain. The table grows with use; an operator retention policy for receipts is still open.
 
 ## Runtime and server ownership
 

@@ -73,6 +73,12 @@ export function acquireServerLock(directory: string) {
 }
 
 /** A committed event log is the polling transport's outbox. Reads never consume it. */
+/**
+ * How many of a scope's newest receipts the engine loads for each command.
+ * Receipts are never pruned: a command older than this window is still
+ * deduplicated through a lookup by id, so no retry ever dispatches twice.
+ */
+export const RECENT_RECEIPTS = 500;
 export class FixtureStorage {
   private db: DatabaseSync;
   private history!: ConversationHistory;
@@ -215,12 +221,15 @@ export class FixtureStorage {
           )
           .all(key)
           .map((r) => JSON.parse(String(r.payload))),
+        // The engine works on the recent receipts; every receipt stays in
+        // the table and older ones are looked up by id (`olderReceipt`).
         receipts: this.db
           .prepare(
-            "SELECT payload FROM receipts WHERE scope_key=? ORDER BY rowid",
+            "SELECT payload FROM receipts WHERE scope_key=? ORDER BY rowid DESC LIMIT ?",
           )
-          .all(key)
-          .map((r) => JSON.parse(String(r.payload))),
+          .all(key, RECENT_RECEIPTS)
+          .map((r) => JSON.parse(String(r.payload)))
+          .reverse(),
       }),
     );
   }
@@ -299,9 +308,24 @@ export class FixtureStorage {
         shell: (id) => this.history.shell(scope, id),
       },
       (id) => this.history.archived(scope, id),
+      (commandId, idempotencyKey) =>
+        this.receipt(scope, commandId, idempotencyKey),
     );
     if (conversationId) engine.selectConversation(conversationId);
     return engine;
+  }
+  /** A stored receipt by command id or idempotency key, however old. */
+  private receipt(scope: Scope, commandId: string, idempotencyKey: string) {
+    const row = this.db
+      .prepare(
+        "SELECT payload FROM receipts WHERE scope_key=? AND (command_id=? OR idempotency_key=?) LIMIT 1",
+      )
+      .get(keyFor(scope), commandId, idempotencyKey);
+    return row
+      ? DatabaseSchema.shape.receipts.element.parse(
+          JSON.parse(String(row.payload)),
+        )
+      : undefined;
   }
   syncNativeWork(
     scope: Scope,
@@ -571,9 +595,7 @@ export class FixtureStorage {
   legacyQuestionProof(scope: Scope, idempotencyKey: string) {
     const data = this.load(scope);
     if (!data || !sameScope(data.snapshot.scope, scope)) return undefined;
-    const receipt = data.receipts.find(
-      (r) => r.command.idempotencyKey === idempotencyKey,
-    );
+    const receipt = this.receipt(scope, idempotencyKey, idempotencyKey);
     if (
       !receipt ||
       receipt.status !== "accepted" ||
