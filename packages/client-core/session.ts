@@ -1887,12 +1887,14 @@ export class ClientSession {
         });
       };
       // The model writes many small chunks a second; the thread is rebuilt
-      // for each publish, so they are shown at most every LIVE_INTERVAL_MS.
+      // for each publish, so text is shown at most every LIVE_INTERVAL_MS.
       let lastLive = 0;
       let liveTimer: ReturnType<typeof setTimeout> | undefined;
       const scheduleLive = () => {
         const due = lastLive + LIVE_INTERVAL_MS - Date.now();
         if (due <= 0) {
+          clearTimeout(liveTimer);
+          liveTimer = undefined;
           lastLive = Date.now();
           live();
         } else if (!liveTimer)
@@ -1974,12 +1976,19 @@ export class ClientSession {
           const { events, rest } = splitServerSentEvents(buffer);
           buffer = rest;
           let finished = false;
+          // A step or an approval card is shown at once; only the text
+          // deltas, which come many a second, wait for the interval.
+          let urgent = false;
           for (const event of events) {
             const chunk = parseAnswerStreamEvent(event);
             if (chunk === "done") finished = true;
-            else if (chunk) apply(chunk);
+            else if (chunk) {
+              apply(chunk);
+              if (chunk.type !== "text-delta") urgent = true;
+            }
           }
           if (result || finished) break;
+          if (urgent) lastLive = 0;
           scheduleLive();
         }
       } finally {

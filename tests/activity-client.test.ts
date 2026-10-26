@@ -344,7 +344,8 @@ test("a streamed answer publishes the draft and the steps as they arrive and end
     await f.session.start(false);
     await plain.session.start(false);
     const send = f.session.send(f.command);
-    const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+    // Past the client's 80 ms text interval.
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 120));
     await settle();
     expect(posts(f)).toHaveLength(1);
     expect((posts(f)[0]!.headers as Record<string, string>).Accept).toBe(
@@ -392,10 +393,11 @@ test("a streamed answer publishes the draft and the steps as they arrive and end
     expect(f.session.getSnapshot().activitySteps?.[0]?.output).toEqual([
       { label: "Returned items", value: "71" },
     ]);
-    // The checker sent the reply back: the draft vanishes.
+    // The checker sent the reply back; the draft stays until the stored message lands.
     stream.push({ type: "text-end", id: "t1" });
     await settle();
-    expect(f.session.getSnapshot().activity?.draft).toBeUndefined();
+    // The draft stays until the stored message replaces it: no flicker.
+    expect(f.session.getSnapshot().activity?.draft).toBe("Peter is chosen.");
     // The result the JSON response would have carried.
     const result = f.engine.execute(f.command);
     stream.push({
@@ -525,7 +527,8 @@ test("a streamed approval is shown before the stored result, and the decision st
   try {
     await f.session.start(false);
     const send = f.session.send(f.command);
-    const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+    // Past the client's 80 ms text interval.
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 120));
     await settle();
     const approval = {
       toolCallId: "c1",
