@@ -18,10 +18,6 @@ import type {
 import type { ServiceResult } from "../packages/protocol/service-result";
 import { ChatNextConversation } from "../apps/server-admin/web/app/chat-next/chat-next-page";
 import {
-  chatNextEnabled,
-  setChatNext,
-} from "../apps/server-admin/web/app/chat-next/switch";
-import {
   MENTIONS_PROFILE,
   type MentionDirectory,
 } from "../packages/protocol/mentions";
@@ -517,14 +513,6 @@ beforeEach(() => {
  * the same cards, the thread's own parts. Every test here is a classic chat
  * test the next chat must pass the same way.
  */
-
-test("the next chat is off until chosen, by the menu or the address", () => {
-  expect(chatNextEnabled()).toBe(false);
-  setChatNext(true);
-  expect(chatNextEnabled()).toBe(true);
-  setChatNext(false);
-  expect(chatNextEnabled()).toBe(false);
-});
 
 test("a new chat is created on the server before its first message, then gets its address", async () => {
   const { session, sent } = fakeSession(storeWith([]));

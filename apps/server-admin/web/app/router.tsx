@@ -4,9 +4,7 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { AppShell } from "./shell";
-import { ChatPage } from "./chat-page";
 import { ChatNextPage } from "./chat-next/chat-next-page";
-import { useChatNext } from "./chat-next/switch";
 import { HubPage } from "./hub-page";
 import { TasksPage } from "./tasks-page";
 import { MeetingsPage } from "./meetings-page";
@@ -28,10 +26,9 @@ const home = createRoute({
   component: HubPage,
 });
 // One chat page for "/chat" (a new chat) and "/chat/$id", so a new chat keeps
-// its state when its first message gives it an address. The next chat
-// (assistant-ui) takes the same addresses while it is tried.
+// its state when its first message gives it an address.
 function ChatRoute() {
-  return useChatNext() ? <ChatNextPage /> : <ChatPage />;
+  return <ChatNextPage />;
 }
 const chatLayout = createRoute({
   getParentRoute: () => root,

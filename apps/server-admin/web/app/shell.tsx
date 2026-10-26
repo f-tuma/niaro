@@ -74,7 +74,6 @@ import {
 import { designCs, designEn } from "../process-design-copy";
 import { useApp } from "./context";
 import { useAppCopy, type AppCopy } from "./copy";
-import { setChatNext, useChatNext } from "./chat-next/switch";
 import { MeetingRecordingBadge } from "./meeting-recorder";
 import { ChatHistoryNav } from "./chat-history";
 import { useSearchCopy } from "./search-copy";
@@ -349,7 +348,6 @@ function UserMenu() {
   const { isMobile } = useSidebar();
   const edits = useProcessEditsGuard();
   const theme = useTheme();
-  const chatNext = useChatNext();
   const name = identity.user?.name ?? copy.account;
   const email = identity.user?.email ?? "";
   const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
@@ -396,13 +394,6 @@ function UserMenu() {
                 <Archive aria-hidden="true" />
                 {copy.archivedChats}
               </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              data-testid="chat-switch"
-              onSelect={() => setChatNext(!chatNext)}
-            >
-              <Sparkles aria-hidden="true" />
-              {chatNext ? copy.classicChat : copy.tryNewChat}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuSub>
