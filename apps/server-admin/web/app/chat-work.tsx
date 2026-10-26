@@ -960,7 +960,13 @@ export function liveStepText(
   const message = stepField(step.output, ["Message"]);
   const count = items
     ? tr
-      ? tr("stepRecords").replace("{n}", items.value)
+      ? tr(
+          Number(items.value) === 1
+            ? "stepRecord"
+            : Number(items.value) >= 2 && Number(items.value) <= 4
+              ? "stepRecordsFew"
+              : "stepRecords",
+        ).replace("{n}", items.value)
       : `${items.value} records`
     : message
       ? message.value.replace(/…$/, "")
