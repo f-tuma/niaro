@@ -954,6 +954,12 @@ export function personalPermissions(
       service.id,
       actor.userId,
     ),
+    // The owner finds, describes and removes the actions of an approved own
+    // service, unless administrators keep that to themselves.
+    ...(service.personal?.status === "active" &&
+    catalog.personalManagement(target.workspaceId) === "owner"
+      ? { manage: true, serviceRevision: service.revision }
+      : {}),
     actions: service.actions.flatMap((action) => {
       const choice = action.enabled
         ? catalog.personalChoice(
@@ -967,6 +973,7 @@ export function personalPermissions(
         ? [
             {
               id: action.id,
+              ...(service.personal ? { revision: action.revision } : {}),
               name: action.name,
               description: action.description,
               effect: action.effect,

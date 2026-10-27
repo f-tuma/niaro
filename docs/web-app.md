@@ -229,7 +229,9 @@ change in chat offers **Don't ask next time**. Rules and API in
 offers **Add service**: an address and an API key, nothing more. The row shows
 the state (_Waiting for approval_, _Rejected_ with the reason, _Ready_) and how
 many reads and changes the service offers; its page has the same permissions
-as above once approved, plus rename, read the tools again and remove. See
+as above once approved, plus **Find actions**, an edit per action (name, what
+it is for, only reads or changes something, remove), rename and remove,
+unless administrators manage the actions (then: read the tools again). See
 [a person's own services](service-authentication.md#a-persons-own-services).
 
 ## Roles

@@ -73,6 +73,8 @@ function failureKey(error: unknown): keyof MenuCopy {
     if (error.code === "catalog_personal_services_off") return "ownServicesOff";
     if (error.code === "identity_limit") return "ownServiceLimit";
     if (error.code === "catalog_conflict") return "ownServiceConflict";
+    if (error.code === "catalog_personal_managed")
+      return "ownServiceManagedByAdmins";
     if (error.code === "integration_origin_denied") return "ownServiceUrlHint";
   }
   return "ownServiceFailed";
@@ -192,6 +194,8 @@ export function useOwnServices(workspace: AppWorkspace) {
     signIn: (service: PersonalServiceSummaryValue) => void signIn(service),
     services: query.data?.services ?? [],
     policy: query.data?.policy ?? "review",
+    /** Whether owners find, describe and remove their services' actions. */
+    management: query.data?.management ?? "owner",
     limit: query.data?.limit ?? 0,
     busy,
     error,
@@ -216,6 +220,37 @@ export function useOwnServices(workspace: AppWorkspace) {
         type: "remove",
         id: service.id,
         revision: service.revision,
+      }),
+    addActions: (service: PersonalServiceSummaryValue, keys: string[]) =>
+      command(service.id, {
+        type: "addActions",
+        id: service.id,
+        revision: service.revision,
+        keys,
+      }),
+    editAction: (
+      service: PersonalServiceSummaryValue,
+      action: { id: string; revision: number },
+      fields: { name: string; description: string; effect: "read" | "write" },
+    ) =>
+      command(service.id, {
+        type: "editAction",
+        id: service.id,
+        revision: service.revision,
+        actionId: action.id,
+        actionRevision: action.revision,
+        ...fields,
+      }),
+    removeAction: (
+      service: PersonalServiceSummaryValue,
+      action: { id: string; revision: number },
+    ) =>
+      command(service.id, {
+        type: "removeAction",
+        id: service.id,
+        revision: service.revision,
+        actionId: action.id,
+        actionRevision: action.revision,
       }),
   };
 }
@@ -538,7 +573,8 @@ function AddOwnServiceSheet({
   );
 }
 
-/** The "…" menu of an own service: rename, read tools again, remove. */
+/** The "…" menu of an own service: rename, read tools again (where the
+ * owner does not choose the actions themselves), remove. */
 export function OwnServiceMenu({
   service,
   own,
@@ -568,13 +604,15 @@ export function OwnServiceMenu({
           <Pencil aria-hidden="true" />
           {copy.ownServiceRename}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={disabled}
-          onSelect={() => void own.rediscover(service)}
-        >
-          <RefreshCw aria-hidden="true" />
-          {copy.ownServiceRediscover}
-        </DropdownMenuItem>
+        {(own.management !== "owner" || service.status !== "active") && (
+          <DropdownMenuItem
+            disabled={disabled}
+            onSelect={() => void own.rediscover(service)}
+          >
+            <RefreshCw aria-hidden="true" />
+            {copy.ownServiceRediscover}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           variant="destructive"
           disabled={disabled}

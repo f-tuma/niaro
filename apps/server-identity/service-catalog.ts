@@ -23,7 +23,9 @@ import {
   CatalogModelSchema,
   CatalogModelSettings,
   Routing,
+  PersonalServicesManagement,
   PersonalServicesPolicy,
+  type PersonalServicesManagementValue,
   type PersonalServicesPolicyValue,
   PersonalServiceSummary,
   twentyReadTool,
@@ -192,6 +194,16 @@ export class ServiceCatalogStore {
     CREATE TABLE IF NOT EXISTS agent_service_turn_cursor (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, turn_id TEXT NOT NULL REFERENCES agent_service_turn(id), PRIMARY KEY(workspace_id,user_id)) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_task_selection (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, turn_id TEXT NOT NULL REFERENCES agent_service_turn(id), PRIMARY KEY(workspace_id,user_id)) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_conversation_cursor (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, server_id TEXT NOT NULL, conversation_id TEXT NOT NULL, turn_id TEXT NOT NULL REFERENCES agent_service_turn(id), PRIMARY KEY(workspace_id,user_id,server_id,conversation_id)) STRICT;`);
+    // Who manages members' own services came after the policy itself.
+    if (
+      !db
+        .prepare("PRAGMA table_info(agent_catalog_personal)")
+        .all()
+        .some((column) => column.name === "management")
+    )
+      db.exec(
+        "ALTER TABLE agent_catalog_personal ADD COLUMN management TEXT NOT NULL DEFAULT 'owner'",
+      );
     this.inferenceBudget = new InferenceBudgetStore(db);
     // A write interrupted after dispatch must never be retried automatically.
     for (const row of db
@@ -596,6 +608,28 @@ export class ServiceCatalogStore {
       .get(workspaceId);
     return row ? PersonalServicesPolicy.parse(row.policy) : "review";
   }
+  /** Whether members manage the actions of their own services themselves. */
+  personalManagement(workspaceId: string): PersonalServicesManagementValue {
+    const row = this.db
+      .prepare(
+        "SELECT management FROM agent_catalog_personal WHERE workspace_id=?",
+      )
+      .get(workspaceId);
+    return row ? PersonalServicesManagement.parse(row.management) : "owner";
+  }
+  /**
+   * The owner's own service they may manage: theirs, approved, and the
+   * workspace leaves its actions to owners.
+   */
+  managedService(workspaceId: string, id: string, userId: string) {
+    const service = this.ownedService(workspaceId, id, userId);
+    if (
+      service.personal?.status !== "active" ||
+      this.personalManagement(workspaceId) !== "owner"
+    )
+      throw new IdentityError(403, "catalog_personal_managed");
+    return service;
+  }
   /** The services this person connected for themselves. */
   personalServices(workspaceId: string, userId: string) {
     return this.rows(workspaceId, "service")
@@ -894,6 +928,7 @@ export class ServiceCatalogStore {
       workspaceId,
       canManage: manage,
       personalServices: this.personalServicesPolicy(workspaceId),
+      personalManagement: this.personalManagement(workspaceId),
       services: this.rows(workspaceId, "service")
         .map((r) => this.service(workspaceId, r.id))
         .filter(
@@ -1180,9 +1215,13 @@ export class ServiceCatalogStore {
       case "savePersonalServicesPolicy":
         this.db
           .prepare(
-            "INSERT INTO agent_catalog_personal VALUES (?,?) ON CONFLICT(workspace_id) DO UPDATE SET policy=excluded.policy",
+            "INSERT INTO agent_catalog_personal (workspace_id,policy,management) VALUES (?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET policy=excluded.policy,management=excluded.management",
           )
-          .run(ws, input.policy);
+          .run(
+            ws,
+            input.policy ?? this.personalServicesPolicy(ws),
+            input.management ?? this.personalManagement(ws),
+          );
         return ws;
       case "removeService":
         // Processes owned by or calling this service would silently stop

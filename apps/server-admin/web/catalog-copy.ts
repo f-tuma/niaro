@@ -46,6 +46,11 @@ const en = {
   ownServicesOff: "Not allowed",
   ownServicesReview: "After an administrator's approval",
   ownServicesFree: "At once",
+  ownServicesManagement: "Their actions",
+  ownServicesManagementHint:
+    "Who finds, describes and removes the actions of a member's own service. Owners always switch actions on and off.",
+  ownServicesByOwner: "Managed by the owner",
+  ownServicesByAdmins: "Managed by administrators",
   ownService: "Own service",
   ownServiceOf: "Added by {name}",
   ownServicePending: "Waiting for approval",
@@ -351,6 +356,11 @@ const cs: Record<keyof typeof en, string> = {
   ownServicesOff: "Nepovoleno",
   ownServicesReview: "Po schválení správcem",
   ownServicesFree: "Hned",
+  ownServicesManagement: "Jejich akce",
+  ownServicesManagementHint:
+    "Kdo u vlastní služby člena hledá, popisuje a odebírá akce. Zapínat a vypínat akce může vlastník vždy.",
+  ownServicesByOwner: "Spravuje vlastník",
+  ownServicesByAdmins: "Spravují správci",
   ownService: "Vlastní služba",
   ownServiceOf: "Přidal(a) {name}",
   ownServicePending: "Čeká na schválení",

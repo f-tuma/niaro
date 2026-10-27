@@ -157,6 +157,27 @@ const en = {
   ownServiceSignInHint:
     "Sign in with your account; your assistant reads the service's tools right after.",
   ownServiceSigningIn: "Finish signing in in the new tab…",
+  ownServiceManagedByAdmins:
+    "Administrators manage this service's actions; you can switch them on and off.",
+  actionsFind: "Find actions",
+  actionsFindTitle: "Actions of {name}",
+  actionsFindHint:
+    "Everything the service offers. Choose what your assistant should be able to use.",
+  actionsFindFailed: "The service's actions didn't load. Try again.",
+  actionsAdded: "Added",
+  actionsAdd: "Add {n}",
+  actionsNone: "The service offers nothing more.",
+  actionEdit: "Edit {name}",
+  actionEditTitle: "Edit action",
+  actionName: "Name",
+  actionDescription: "What it is for",
+  actionDescriptionHint: "Your assistant decides by this when to use it.",
+  actionEffect: "What it does",
+  actionReads: "Only reads",
+  actionReadsHint: "Runs without asking.",
+  actionWrites: "Changes something",
+  actionWritesHint: "Asks you first, unless you say otherwise.",
+  actionRemove: "Remove action",
 };
 export type MenuCopy = typeof en;
 const cs: MenuCopy = {
@@ -309,6 +330,26 @@ const cs: MenuCopy = {
   ownServiceSignInHint:
     "Přihlas se svým účtem; asistent hned potom načte nástroje služby.",
   ownServiceSigningIn: "Dokonči přihlášení v nové kartě…",
+  ownServiceManagedByAdmins:
+    "Akce této služby spravují správci; zapínat a vypínat je můžeš ty.",
+  actionsFind: "Najít akce",
+  actionsFindTitle: "Akce služby {name}",
+  actionsFindHint: "Vše, co služba nabízí. Vyber, co má asistent umět použít.",
+  actionsFindFailed: "Akce služby se nenačetly. Zkus to znovu.",
+  actionsAdded: "Přidáno",
+  actionsAdd: "Přidat {n}",
+  actionsNone: "Služba nic dalšího nenabízí.",
+  actionEdit: "Upravit {name}",
+  actionEditTitle: "Upravit akci",
+  actionName: "Název",
+  actionDescription: "K čemu slouží",
+  actionDescriptionHint: "Podle toho asistent pozná, kdy ji použít.",
+  actionEffect: "Co dělá",
+  actionReads: "Jen čte",
+  actionReadsHint: "Spustí se bez ptaní.",
+  actionWrites: "Něco mění",
+  actionWritesHint: "Nejdřív se tě zeptá, pokud neřekneš jinak.",
+  actionRemove: "Odebrat akci",
 };
 export const menuCopy = { en, cs };
 export function useMenuCopy(): MenuCopy {

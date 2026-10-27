@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { RefreshCw, Search } from "lucide-react";
+import { Pencil, Plus, RefreshCw, Search } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
 import { Card } from "@admin/components/ui/card";
 import { Skeleton } from "@admin/components/ui/skeleton";
@@ -56,6 +56,7 @@ import {
   useOwnServices,
 } from "./own-services";
 import type { PersonalServiceSummaryValue } from "../../../../packages/protocol/service-catalog";
+import { EditActionSheet, FindActionsSheet } from "./own-service-actions";
 import {
   DisconnectMenu,
   ServiceMark,
@@ -278,7 +279,11 @@ function OwnServiceDetail({
         </Alert>
       )}
       {service.status === "active" && service.signIn !== "needed" && (
-        <PersonalPermissions workspace={workspace} serviceId={service.id} />
+        <PersonalPermissions
+          workspace={workspace}
+          serviceId={service.id}
+          owner={{ service, own }}
+        />
       )}
     </MenuPage>
   );
@@ -308,9 +313,16 @@ type Change = {
 export function PersonalPermissions({
   workspace,
   serviceId,
+  owner,
 }: {
   workspace: AppWorkspace;
   serviceId: string;
+  /** The person's own service: they find, describe and remove its actions
+   * too, where the server says they manage it. */
+  owner?: {
+    service: PersonalServiceSummaryValue;
+    own: ReturnType<typeof useOwnServices>;
+  };
 }) {
   const copy = useMenuCopy();
   const client = useQueryClient();
@@ -329,6 +341,8 @@ export function PersonalPermissions({
     retry: false,
   });
   const [search, setSearch] = useState("");
+  const [finding, setFinding] = useState(false);
+  const [editing, setEditing] = useState<PersonalActionPermission | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<
     "permissionsSaveFailed" | "permissionsChanged" | null
@@ -395,6 +409,7 @@ export function PersonalPermissions({
       </div>
     );
   const data = query.data;
+  const manage = data.manage && owner ? owner : undefined;
   const term = search.trim().toLocaleLowerCase();
   const matches = (action: PersonalActionPermission) =>
     `${action.name} ${action.description}`.toLocaleLowerCase().includes(term);
@@ -424,7 +439,35 @@ export function PersonalPermissions({
           </InputGroup>
         )
       }
+      actions={
+        manage && (
+          <Button variant="outline" size="sm" onClick={() => setFinding(true)}>
+            <Plus data-icon="inline-start" aria-hidden="true" />
+            {copy.actionsFind}
+          </Button>
+        )
+      }
     >
+      {manage && (
+        <FindActionsSheet
+          service={manage.service}
+          own={manage.own}
+          workspace={workspace}
+          copy={copy}
+          open={finding}
+          onOpenChange={setFinding}
+        />
+      )}
+      {manage && editing && (
+        <EditActionSheet
+          key={editing.id}
+          service={manage.service}
+          action={editing}
+          own={manage.own}
+          copy={copy}
+          onClose={() => setEditing(null)}
+        />
+      )}
       <div className="flex flex-col gap-6">
         {notice && (
           <Alert
@@ -434,6 +477,11 @@ export function PersonalPermissions({
           >
             <AlertDescription>{copy[notice]}</AlertDescription>
           </Alert>
+        )}
+        {owner && !data.manage && (
+          <p className="text-sm text-muted-foreground">
+            {copy.ownServiceManagedByAdmins}
+          </p>
         )}
         {data.requiredFor === "writes" && (
           <p className="text-sm text-muted-foreground">
@@ -459,6 +507,7 @@ export function PersonalPermissions({
               actions={group.all.filter(matches)}
               disabled={saving}
               onChange={(changes) => void save(changes)}
+              onEdit={manage ? setEditing : undefined}
             />
           ))
         )}
@@ -480,12 +529,15 @@ function PermissionGroup({
   actions,
   disabled,
   onChange,
+  onEdit,
 }: {
   copy: MenuCopy;
   title: string;
   actions: PersonalActionPermission[];
   disabled: boolean;
   onChange(changes: Change[]): void;
+  /** The owner of the service edits the action itself. */
+  onEdit?: (action: PersonalActionPermission) => void;
 }) {
   if (!actions.length) return null;
   const allOn = actions.every((action) => action.enabled);
@@ -559,6 +611,17 @@ function PermissionGroup({
                     </SelectItem>
                   </SelectContent>
                 </Select>
+              )}
+              {onEdit && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={copy.actionEdit.replace("{name}", action.name)}
+                  disabled={disabled}
+                  onClick={() => onEdit(action)}
+                >
+                  <Pencil aria-hidden="true" />
+                </Button>
               )}
               <Switch
                 aria-label={action.name}

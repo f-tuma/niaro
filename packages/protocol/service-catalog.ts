@@ -63,6 +63,12 @@ export const PersonalServicesPolicy = z.enum(["off", "review", "free"]);
 export type PersonalServicesPolicyValue = z.infer<
   typeof PersonalServicesPolicy
 >;
+/** Who manages the actions of a member's own service: its owner (finds,
+ * describes and removes them), or administrators alone. */
+export const PersonalServicesManagement = z.enum(["owner", "administrators"]);
+export type PersonalServicesManagementValue = z.infer<
+  typeof PersonalServicesManagement
+>;
 /** How many services one person may connect in a workspace. */
 export const PERSONAL_SERVICES_LIMIT = 5;
 export const ServiceSettings = z.strictObject({
@@ -285,6 +291,8 @@ export const CatalogSchema = z.strictObject({
     .default([]),
   /** For managers: whether members may connect their own services. */
   personalServices: PersonalServicesPolicy.default("review"),
+  /** For managers: who manages the actions of members' own services. */
+  personalManagement: PersonalServicesManagement.default("owner"),
 });
 export const CatalogTarget = z.strictObject({
   organizationId: IdentityId,
@@ -318,7 +326,8 @@ export const CatalogCommand = z.discriminatedUnion("type", [
   z.strictObject({
     ...target,
     type: z.literal("savePersonalServicesPolicy"),
-    policy: PersonalServicesPolicy,
+    policy: PersonalServicesPolicy.optional(),
+    management: PersonalServicesManagement.optional(),
   }),
   z.strictObject({
     ...target,
@@ -557,7 +566,62 @@ export const PersonalServiceCommand = z.discriminatedUnion("type", [
     id: IdentityId,
     revision: Revision,
   }),
+  /** Where the owner manages the service: every tool it offers, to choose from. */
+  z.strictObject({
+    ...target,
+    type: z.literal("findActions"),
+    id: IdentityId,
+    revision: Revision,
+  }),
+  /** Adds the chosen tools (their `key` from findActions) as actions. */
+  z.strictObject({
+    ...target,
+    type: z.literal("addActions"),
+    id: IdentityId,
+    revision: Revision,
+    keys: z
+      .array(z.string().min(1).max(1200))
+      .min(1)
+      .max(200)
+      .refine((keys) => new Set(keys).size === keys.length),
+  }),
+  /** How the assistant sees one action: its name, what it is for, and
+   * whether it only reads or changes something. */
+  z.strictObject({
+    ...target,
+    type: z.literal("editAction"),
+    id: IdentityId,
+    revision: Revision,
+    actionId: IdentityId,
+    actionRevision: Revision,
+    name: IdentityName,
+    description: z.string().trim().max(2000),
+    effect: z.enum(["read", "write"]),
+  }),
+  z.strictObject({
+    ...target,
+    type: z.literal("removeAction"),
+    id: IdentityId,
+    revision: Revision,
+    actionId: IdentityId,
+    actionRevision: Revision,
+  }),
 ]);
+/** One tool an own service offers, for its owner to add or leave out. */
+export const PersonalActionChoice = z.strictObject({
+  key: z.string().min(1).max(1200),
+  name: z.string().min(1).max(200),
+  description: z.string().max(2000),
+  /** The service's own hint; the owner decides when adding. */
+  effect: z.enum(["read", "write"]),
+  added: z.boolean(),
+});
+export const PersonalActionChoices = z.strictObject({
+  id: IdentityId,
+  revision: Revision,
+  choices: z.array(PersonalActionChoice).max(1000),
+});
+export type PersonalActionChoicesValue = z.infer<typeof PersonalActionChoices>;
 export type PersonalServiceCommandValue = z.infer<
   typeof PersonalServiceCommand
 >;
@@ -587,6 +651,7 @@ export type PersonalServiceSummaryValue = z.infer<
 >;
 export const PersonalServiceList = CatalogTarget.extend({
   policy: PersonalServicesPolicy,
+  management: PersonalServicesManagement.default("owner"),
   limit: z.number().int().positive(),
   services: z.array(PersonalServiceSummary).max(100),
 });

@@ -9,6 +9,7 @@ import {
   PERSONAL_SERVICES_LIMIT,
 } from "../packages/protocol/service-catalog";
 import { PersonalServicePermissions } from "../packages/protocol/service-oauth";
+import { PersonalActionChoices } from "../packages/protocol/service-catalog";
 import { ServiceOAuthStore } from "../apps/server-identity/service-oauth";
 import {
   ServiceCatalogStore,
@@ -390,6 +391,146 @@ test("the owner renames the service and reads its tools again when the server gr
       revision: added.revision,
     }),
     code("catalog_conflict"),
+  );
+});
+
+test("the owner finds the service's actions, adds the chosen ones, describes them and removes one; administrators can keep that to themselves", async () => {
+  const server = mcpServer({ tools: ["list_items"] });
+  const h = fixture(server.transport);
+  h.as("TEST-owner", "owner");
+  h.admin({ type: "savePersonalServicesPolicy", policy: "free" });
+  h.as("TEST-alice");
+  const added = await h.add({ apiKey: undefined });
+  const permissions = async () =>
+    PersonalServicePermissions.parse(
+      await h.call("oauth/permissions", { serviceId: added.id }),
+    );
+  assert.equal((await permissions()).manage, true);
+  server.tools.push("create_item", "delete_item");
+  const found = PersonalActionChoices.parse(
+    await h.call("personal/command", {
+      type: "findActions",
+      id: added.id,
+      revision: added.revision,
+    }),
+  );
+  assert.deepEqual(
+    found.choices.map((c) => [c.name, c.effect, c.added]),
+    [
+      ["list_items", "read", true],
+      ["create_item", "write", false],
+      ["delete_item", "write", false],
+    ],
+  );
+  // Only the chosen tool is added; finding changed nothing.
+  const grown = PersonalServiceSummary.parse(
+    await h.call("personal/command", {
+      type: "addActions",
+      id: added.id,
+      revision: found.revision,
+      keys: [found.choices[1]!.key],
+    }),
+  );
+  assert.deepEqual([grown.reads, grown.writes], [1, 1]);
+  const create = (await permissions()).actions.find(
+    (a) => a.name === "create_item",
+  )!;
+  assert.equal(create.approval, "always");
+  // The owner says it only reads and describes it for the assistant: it no
+  // longer asks, and running work learns of it.
+  const epoch = h.epoch();
+  const edited = PersonalServiceSummary.parse(
+    await h.call("personal/command", {
+      type: "editAction",
+      id: added.id,
+      revision: grown.revision,
+      actionId: create.id,
+      actionRevision: create.revision,
+      name: "Preview item",
+      description: "TEST shows what a new item would look like",
+      effect: "read",
+    }),
+  );
+  assert.ok(h.epoch() > epoch);
+  const preview = (await permissions()).actions.find(
+    (a) => a.id === create.id,
+  )!;
+  assert.deepEqual(
+    [preview.name, preview.description, preview.effect, preview.approval],
+    [
+      "Preview item",
+      "TEST shows what a new item would look like",
+      "read",
+      "never",
+    ],
+  );
+  // And back to a change: it asks before each run again.
+  const again = PersonalServiceSummary.parse(
+    await h.call("personal/command", {
+      type: "editAction",
+      id: added.id,
+      revision: edited.revision,
+      actionId: create.id,
+      actionRevision: preview.revision,
+      name: "Preview item",
+      description: "",
+      effect: "write",
+    }),
+  );
+  const written = (await permissions()).actions.find(
+    (a) => a.id === create.id,
+  )!;
+  assert.deepEqual([written.effect, written.approval], ["write", "always"]);
+  const removed = PersonalServiceSummary.parse(
+    await h.call("personal/command", {
+      type: "removeAction",
+      id: added.id,
+      revision: again.revision,
+      actionId: create.id,
+      actionRevision: written.revision,
+    }),
+  );
+  assert.deepEqual([removed.reads, removed.writes], [1, 0]);
+  // Someone else cannot touch it.
+  h.as("TEST-bob");
+  await assert.rejects(
+    h.call("personal/command", {
+      type: "findActions",
+      id: added.id,
+      revision: removed.revision,
+    }),
+    code("catalog_not_found"),
+  );
+  // Administrators keep the actions to themselves: the owner keeps only the
+  // switches.
+  h.as("TEST-owner", "owner");
+  h.admin({ type: "savePersonalServicesPolicy", management: "administrators" });
+  assert.equal(h.inventory().personalManagement, "administrators");
+  assert.equal(h.inventory().personalServices, "free");
+  h.as("TEST-alice");
+  assert.equal((await h.list()).management, "administrators");
+  assert.equal((await permissions()).manage, false);
+  await assert.rejects(
+    h.call("personal/command", {
+      type: "findActions",
+      id: added.id,
+      revision: removed.revision,
+    }),
+    code("catalog_personal_managed"),
+  );
+});
+
+test("a pending service is not managed until it is approved", async () => {
+  const h = fixture(mcpServer().transport);
+  const added = await h.add({ apiKey: undefined });
+  assert.equal(added.status, "pending");
+  await assert.rejects(
+    h.call("personal/command", {
+      type: "findActions",
+      id: added.id,
+      revision: added.revision,
+    }),
+    code("catalog_personal_managed"),
   );
 });
 

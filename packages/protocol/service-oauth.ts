@@ -188,6 +188,8 @@ export type PersonalSignInList = z.infer<typeof PersonalSignInList>;
  * for their own assistant. Only actions an administrator left on appear. */
 export const PersonalActionPermission = z.strictObject({
   id: IdentityId,
+  /** For the owner's edits of an own service's action. */
+  revision: Revision.optional(),
   name: IdentityName,
   description: z.string().max(2000),
   effect: z.enum(["read", "write"]),
@@ -202,6 +204,10 @@ export const PersonalServicePermissions = CatalogTarget.extend({
   requiredFor: z.enum(["writes", "all"]),
   /** The person's own revision for this service; `revision` for the save. */
   revision: Revision,
+  /** The owner of an own service may find, describe and remove its actions
+   * (unless administrators keep that to themselves); `serviceRevision` for those. */
+  manage: z.boolean().default(false),
+  serviceRevision: Revision.optional(),
   actions: z.array(PersonalActionPermission).max(1000),
 });
 export type PersonalServicePermissions = z.infer<

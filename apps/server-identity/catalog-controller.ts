@@ -10,8 +10,10 @@ import {
   ServiceProbeRequest,
   PersonalServiceCommand,
   type PersonalServiceCommandValue,
+  PersonalActionChoices,
   PersonalServiceList,
   PERSONAL_SERVICES_LIMIT,
+  twentyReadTool,
 } from "../../packages/protocol/service-catalog";
 import { ServiceCatalogStore, type CatalogActor } from "./service-catalog";
 import { InferenceBudgetCommandSchema } from "../../packages/protocol/inference-budget";
@@ -21,6 +23,7 @@ import {
   discoverOpenAPI,
   invokeAction,
   McpSession,
+  type DiscoveredAction,
 } from "../server-integrations/discovery";
 import {
   IntegrationError,
@@ -343,6 +346,74 @@ export class CatalogController {
     }
   }
   /**
+   * Every tool an own service offers, as choices for its owner; with `keys`,
+   * also the chosen ones as actions to import. A catalogue server (Twenty)
+   * describes only the tools asked for.
+   */
+  private async ownTools(
+    service: { url: string; protocol: "mcp" | "openapi" },
+    headers: Record<string, string>,
+    signal: AbortSignal,
+    guard: (start?: () => void) => Promise<void>,
+    keys?: readonly string[],
+  ) {
+    let discovery: {
+      actions: DiscoveredAction[];
+      readOnly?: string[];
+      choices?: { name: string; description: string; sourceKey: string }[];
+    };
+    let session: McpSession | undefined;
+    if (service.protocol === "mcp") {
+      session = new McpSession(
+        this.transport,
+        service.url,
+        headers,
+        signal,
+        guard,
+      );
+      await session.initialize();
+      discovery = await session.discover();
+    } else {
+      const tools = await this.readTools(service, headers, signal, guard);
+      discovery = tools;
+    }
+    const reads = new Set(
+      (discovery.readOnly ?? []).flatMap((name) => [`mcp:${name}`, name]),
+    );
+    const choices = discovery.choices
+      ? discovery.choices.map((choice) => ({
+          key: choice.sourceKey,
+          name: choice.name,
+          description: choice.description,
+          effect: twentyReadTool(choice.name)
+            ? ("read" as const)
+            : ("write" as const),
+        }))
+      : discovery.actions.map((action) => ({
+          key: action.sourceKey,
+          name: action.name,
+          description: action.description,
+          effect:
+            action.effect === "read" || reads.has(action.sourceKey)
+              ? ("read" as const)
+              : ("write" as const),
+        }));
+    if (!keys) return { choices, actions: [], readOnly: [] };
+    const chosen = choices.filter((choice) => keys.includes(choice.key));
+    if (chosen.length !== keys.length)
+      throw new IdentityError(409, "catalog_conflict");
+    if (discovery.choices && session)
+      discovery = await session.discover(chosen.map((choice) => choice.name));
+    const wanted = new Set(keys);
+    return {
+      choices,
+      actions: discovery.choices
+        ? discovery.actions
+        : discovery.actions.filter((action) => wanted.has(action.sourceKey)),
+      readOnly: discovery.readOnly ?? [],
+    };
+  }
+  /**
    * A person's own MCP service that signs in with their account: the service
    * is stored without tools, its OAuth metadata is found and a client
    * registered (as for an administrator's MCP service), and the owner signs
@@ -522,37 +593,171 @@ export class CatalogController {
         }),
       );
     }
-    if (input.type === "rediscover") {
-      // A service the person signs in to is read with their own token,
-      // renewed first when it lapsed.
+    /** The owner's service and how to call it: a service the person signs
+     * in to is read with their own token, renewed first when it lapsed. */
+    const owned = async (id: string, revision: number, manage: boolean) => {
       await this.refreshPersonal(
-        { organizationId, workspaceId, serviceId: input.id },
+        { organizationId, workspaceId, serviceId: id },
         context,
         signal,
       );
-      const { service, headers } = await context.serial(async () => {
-        const service = this.store.ownedService(
-          workspaceId,
-          input.id,
-          actor.userId,
-        );
+      const found = await context.serial(async () => {
+        const service = manage
+          ? this.store.managedService(workspaceId, id, actor.userId)
+          : this.store.ownedService(workspaceId, id, actor.userId);
         const personal = this.store.personalToken(
           workspaceId,
-          input.id,
+          id,
           actor.userId,
         );
         return {
           service,
           headers: personal
             ? { Authorization: `Bearer ${personal}` }
-            : authHeaders(
-                service.auth,
-                this.store.credential(workspaceId, input.id),
-              ),
+            : authHeaders(service.auth, this.store.credential(workspaceId, id)),
         };
       });
-      if (service.revision !== input.revision)
+      if (found.service.revision !== revision)
         throw new IdentityError(409, "catalog_conflict");
+      return found;
+    };
+    if (input.type === "findActions" || input.type === "addActions") {
+      const { service, headers } = await owned(input.id, input.revision, true);
+      const tools = await this.ownTools(
+        service,
+        headers,
+        signal,
+        guard,
+        input.type === "addActions" ? input.keys : undefined,
+      );
+      if (input.type === "findActions")
+        return PersonalActionChoices.parse({
+          id: service.id,
+          revision: service.revision,
+          choices: tools.choices.slice(0, 1000).map((choice) => ({
+            ...choice,
+            added: service.actions.some(
+              (action) =>
+                action.sourceKey === choice.key ||
+                action.sourceKey === `mcp:${choice.name}`,
+            ),
+          })),
+        });
+      return context.serial(() =>
+        context.transaction(async () => {
+          this.store.managedService(workspaceId, input.id, actor.userId);
+          const imported = this.store.importPersonalActions(
+            workspaceId,
+            input.id,
+            input.revision,
+            tools.actions,
+            tools.readOnly,
+          );
+          audit("catalog.personal_service_changed", input.id, {
+            previousRevision: input.revision,
+            added: imported.added,
+          });
+          return this.store.personalSummary(
+            this.store.service(workspaceId, input.id),
+          );
+        }),
+      );
+    }
+    if (input.type === "editAction" || input.type === "removeAction") {
+      return context.serial(() =>
+        context.transaction(async () => {
+          const service = this.store.managedService(
+            workspaceId,
+            input.id,
+            actor.userId,
+          );
+          if (service.revision !== input.revision)
+            throw new IdentityError(409, "catalog_conflict");
+          const action = service.actions.find((a) => a.id === input.actionId);
+          if (!action) throw new IdentityError(404, "catalog_not_found");
+          if (action.revision !== input.actionRevision)
+            throw new IdentityError(409, "catalog_conflict");
+          if (input.type === "removeAction") {
+            this.store.command({
+              organizationId,
+              workspaceId,
+              type: "removeAction",
+              serviceId: service.id,
+              serviceRevision: service.revision,
+              id: action.id,
+              revision: action.revision,
+            });
+            // Running work of this person loses the action's authority.
+            context.change(organizationId);
+          } else {
+            const {
+              id: _id,
+              revision: _revision,
+              sourceKey: _sourceKey,
+              ...settings
+            } = action;
+            this.store.command({
+              organizationId,
+              workspaceId,
+              type: "saveAction",
+              serviceId: service.id,
+              serviceRevision: service.revision,
+              id: action.id,
+              revision: action.revision,
+              settings: {
+                ...settings,
+                name: input.name,
+                description: input.description,
+                effect: input.effect,
+                approval: input.effect === "read" ? "never" : "always",
+              },
+            });
+            if (input.effect !== action.effect) {
+              // A change asks before each run again until the owner says
+              // otherwise; whether the action is on stays as it was.
+              const key = {
+                organizationId,
+                workspaceId,
+                serviceId: service.id,
+              };
+              const before = this.store.personalChoice(
+                workspaceId,
+                service.id,
+                action,
+                actor.userId,
+              );
+              this.store.personalPolicy.save(
+                { ...key, userId: actor.userId },
+                this.store.personalPolicy.revision(
+                  workspaceId,
+                  service.id,
+                  actor.userId,
+                ),
+                [
+                  {
+                    action: { id: action.id, effect: input.effect },
+                    choice: {
+                      enabled: before?.enabled ?? true,
+                      approval: input.effect === "read" ? "never" : "always",
+                    },
+                  },
+                ],
+              );
+              context.change(organizationId);
+            }
+          }
+          audit("catalog.personal_service_changed", input.id, {
+            previousRevision: input.revision,
+            revision: this.store.service(workspaceId, input.id).revision,
+          });
+          return this.store.personalSummary(
+            this.store.service(workspaceId, input.id),
+          );
+        }),
+      );
+    }
+    if (input.type === "rediscover") {
+      const { service, headers } = await owned(input.id, input.revision, false);
       const tools = await this.readTools(service, headers, signal, guard);
       return context.serial(() =>
         context.transaction(async () => {
@@ -772,6 +977,7 @@ export class CatalogController {
           return PersonalServiceList.parse({
             ...target,
             policy: this.store.personalServicesPolicy(target.workspaceId),
+            management: this.store.personalManagement(target.workspaceId),
             limit: PERSONAL_SERVICES_LIMIT,
             services: this.store.personalServices(
               target.workspaceId,

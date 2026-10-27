@@ -13,6 +13,7 @@ import { signInDetails } from "../apps/server-admin/web/app/connections-page";
 import { menuCopy } from "../apps/server-admin/web/app/menu-copy";
 import { ServiceActionView } from "../apps/server-admin/web/app/chat-cards";
 import { ServiceActionList } from "../apps/server-admin/web/service-action-list";
+import { OwnServicesPolicy } from "../apps/server-admin/web/catalog-services";
 import { ServiceAccess } from "../apps/server-admin/web/service-access";
 import {
   useCatalogCopy,
@@ -102,6 +103,7 @@ jest.mock("@admin/components/ui/tooltip", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/badge", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/kbd", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/checkbox", () => host(), { virtual: true });
+jest.mock("@admin/components/ui/textarea", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/table", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/toggle-group", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/field", () => host(), { virtual: true });
@@ -227,6 +229,7 @@ const permissions = (
   name: "Pošta",
   requiredFor: "all",
   revision: 3,
+  manage: false,
   actions: [
     {
       id: "read-1",
@@ -605,6 +608,45 @@ describe("console: personal-sign-in service", () => {
   });
 });
 
+describe("console: members' own services", () => {
+  test("who manages their actions is chosen next to whether members may add them", async () => {
+    let copy!: CatalogCopy;
+    const Capture = () => {
+      copy = useCatalogCopy();
+      return null;
+    };
+    await render(<Capture />);
+    const mutate = jest.fn();
+    const state = (personalServices: string) =>
+      ({
+        copy,
+        busy: false,
+        query: {
+          data: {
+            canManage: true,
+            personalServices,
+            personalManagement: "owner",
+          },
+        },
+        mutate,
+      }) as unknown as CatalogState;
+    const { root } = await render(
+      <OwnServicesPolicy state={state("review")} />,
+    );
+    const management = byHost(root, "Select").find(
+      (node) => node.props.value === "owner",
+    )!;
+    await act(async () => management.props.onValueChange("administrators"));
+    expect(mutate).toHaveBeenCalledWith("command", {
+      type: "savePersonalServicesPolicy",
+      management: "administrators",
+    });
+    // With adding turned off there is nothing to manage.
+    const off = (await render(<OwnServicesPolicy state={state("off")} />)).root;
+    expect(byHost(off, "Select")).toHaveLength(1);
+  });
+});
+
 describe("console: action access presentation", () => {
   type Action = Service["actions"][number];
   const action = (policy: Partial<Action["policy"]>) =>
@@ -644,13 +686,17 @@ describe("own services", () => {
     writes: 1,
     ...patch,
   });
-  function serveOwn(services: Record<string, unknown>[], policy = "review") {
+  function serveOwn(
+    services: Record<string, unknown>[],
+    policy = "review",
+    management: "owner" | "administrators" = "owner",
+  ) {
     const commands: unknown[] = [];
     mockApi.mockImplementation(async (path: string, body: unknown) => {
       if (path === "identity/catalog/oauth/list")
         return { ...mockTarget, services: [] };
       if (path === "identity/catalog/personal/list")
-        return { ...mockTarget, policy, limit: 5, services };
+        return { ...mockTarget, policy, management, limit: 5, services };
       if (path === "identity/catalog/personal/command") {
         commands.push(body);
         const input = body as { type: string; url?: string; name?: string };
@@ -667,10 +713,43 @@ describe("own services", () => {
           services.splice(0, services.length);
           return { id: "svc-mail" };
         }
+        if (input.type === "findActions")
+          return {
+            id: "svc-mail",
+            revision: 2,
+            choices: [
+              {
+                key: "mcp:list_items",
+                name: "list_items",
+                description: "TEST lists items",
+                effect: "read",
+                added: true,
+              },
+              {
+                key: "mcp:create_item",
+                name: "create_item",
+                description: "TEST creates an item",
+                effect: "write",
+                added: false,
+              },
+            ],
+          };
         return services[0];
       }
       if (path === "identity/catalog/oauth/permissions")
-        return permissions({ requiredFor: "all" });
+        return permissions({
+          requiredFor: "all",
+          ...(management === "owner"
+            ? {
+                manage: true,
+                serviceRevision: 2,
+                actions: permissions().actions.map((action) => ({
+                  ...action,
+                  revision: 1,
+                })),
+              }
+            : {}),
+        });
       throw new Error(`unexpected ${path}`);
     });
     return commands;
@@ -772,5 +851,96 @@ describe("own services", () => {
       id: "svc-mail",
       revision: 2,
     });
+  });
+
+  test("the owner finds the service's actions, adds the chosen one and edits an action", async () => {
+    const services = [own({ status: "active" })];
+    const commands = serveOwn(services);
+    const root = (await render(<ConnectionDetailPage />)).root;
+    // The list of tools is read only when the owner opens it.
+    expect(commands).toEqual([]);
+    await act(async () => button(root, "Najít akce").props.onClick());
+    await flush();
+    expect(commands).toEqual([
+      { ...mockTarget, type: "findActions", id: "svc-mail", revision: 2 },
+    ]);
+    expect(text(root)).toContain("TEST creates an item");
+    const boxes = byHost(root, "Checkbox");
+    expect(boxes.map((box) => [box.props.checked, box.props.disabled])).toEqual(
+      [
+        [true, true],
+        [false, false],
+      ],
+    );
+    await act(async () => boxes[1]!.props.onCheckedChange(true));
+    await act(async () => button(root, "Přidat 1").props.onClick());
+    await flush();
+    expect(commands.at(-1)).toEqual({
+      ...mockTarget,
+      type: "addActions",
+      id: "svc-mail",
+      revision: 2,
+      keys: ["mcp:create_item"],
+    });
+    // Each action has its own edit; the owner says a change only reads.
+    const edit = root.find(
+      (node) =>
+        node.type === "button" &&
+        node.props["aria-label"] === "Upravit Najít e-maily",
+    );
+    await act(async () => edit.props.onClick());
+    const effect = byHost(root, "RadioGroup").find(
+      (node) => node.props.value === "read",
+    )!;
+    await act(async () => effect.props.onValueChange("write"));
+    const description = root.find(
+      (node) =>
+        node.type === "textarea" || node.props["data-host"] === "Textarea",
+    );
+    await act(async () =>
+      description.props.onChange({ target: { value: "TEST hledá poštu" } }),
+    );
+    const form = root
+      .findAll(
+        (node) =>
+          node.type === "form" && typeof node.props.onSubmit === "function",
+      )
+      .at(-1)!;
+    await act(async () => form.props.onSubmit({ preventDefault() {} }));
+    await flush();
+    expect(commands.at(-1)).toEqual({
+      ...mockTarget,
+      type: "editAction",
+      id: "svc-mail",
+      revision: 2,
+      actionId: "read-1",
+      actionRevision: 1,
+      name: "Najít e-maily",
+      description: "TEST hledá poštu",
+      effect: "write",
+    });
+  });
+
+  test("where administrators manage the actions, the owner keeps the switches and is told so", async () => {
+    serveOwn([own({ status: "active" })], "review", "administrators");
+    const root = (await render(<ConnectionDetailPage />)).root;
+    expect(text(root)).toContain("Akce této služby spravují správci");
+    expect(
+      root.findAll(
+        (node) => node.type === "button" && text(node).includes("Najít akce"),
+      ),
+    ).toHaveLength(0);
+    expect(
+      root.findAll(
+        (node) =>
+          typeof node.props["aria-label"] === "string" &&
+          node.props["aria-label"].startsWith("Upravit "),
+      ),
+    ).toHaveLength(0);
+    expect(
+      byHost(root, "DropdownMenuItem").some(
+        (node) => text(node) === "Načíst nástroje znovu",
+      ),
+    ).toBe(true);
   });
 });

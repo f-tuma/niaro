@@ -196,8 +196,24 @@ read-only (`readOnlyHint`, Twenty's read names) and GET operations become reads
 that run without approval; everything else is a change that asks before it
 runs. The service belongs to that person: its key is encrypted for it alone,
 only its owner's chat sees it, and the owner manages it like a personal
-sign-in service (**What your assistant can do**, rename, read the tools again,
-remove). At most five own services per person and workspace.
+sign-in service (**What your assistant can do**, rename, remove). At most five
+own services per person and workspace.
+
+**The owner manages the actions.** Once approved, the service's page offers
+**Find actions**: everything the service offers right now (a catalogue server
+such as Twenty lists its tools, others their whole tool list or OpenAPI
+operations), with the service's own read or change hint and what is already
+added; the owner ticks what the assistant may use and adds it. Each action
+has an edit: its name, what it is for (the assistant decides by it) and
+whether it _only reads_ (runs without asking) or _changes something_ (asks
+first until the owner says otherwise), and **Remove action**. Changing a read
+to a change asks again before each run, and running work picks up a changed
+or removed action at once. The commands are `findActions`, `addActions`,
+`editAction` and `removeAction` on `personal/command`; each checks the
+service's revision. **Services → Their actions** keeps this to
+administrators instead (_Managed by administrators_): the owner then keeps
+the switches and approvals, sees why, and reads the tools again as before;
+administrators edit the actions on the service's page.
 
 **Services → Members' own services** sets the workspace policy: _Not allowed_,
 _After an administrator's approval_ (the default) or _At once_. Under approval

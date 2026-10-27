@@ -177,34 +177,68 @@ const ownServiceLabel = (
   }`;
 
 /** Whether members may connect services of their own, for the workspace. */
-function OwnServicesPolicy({ state }: { state: CatalogState }) {
+export function OwnServicesPolicy({ state }: { state: CatalogState }) {
   const { copy } = state;
   const policy = state.query.data?.personalServices ?? "review";
+  const management = state.query.data?.personalManagement ?? "owner";
   return (
-    <Select
-      value={policy}
-      disabled={state.busy}
-      onValueChange={(value) =>
-        void state.mutate("command", {
-          type: "savePersonalServicesPolicy",
-          policy: value,
-        })
-      }
-    >
-      <SelectTrigger
-        aria-label={copy.ownServicesPolicy}
-        title={copy.ownServicesPolicyHint}
-        data-testid="own-services-policy"
+    <>
+      <Select
+        value={policy}
+        disabled={state.busy}
+        onValueChange={(value) =>
+          void state.mutate("command", {
+            type: "savePersonalServicesPolicy",
+            policy: value,
+          })
+        }
       >
-        <span className="text-muted-foreground">{copy.ownServicesPolicy}:</span>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="off">{copy.ownServicesOff}</SelectItem>
-        <SelectItem value="review">{copy.ownServicesReview}</SelectItem>
-        <SelectItem value="free">{copy.ownServicesFree}</SelectItem>
-      </SelectContent>
-    </Select>
+        <SelectTrigger
+          aria-label={copy.ownServicesPolicy}
+          title={copy.ownServicesPolicyHint}
+          data-testid="own-services-policy"
+        >
+          <span className="text-muted-foreground">
+            {copy.ownServicesPolicy}:
+          </span>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="off">{copy.ownServicesOff}</SelectItem>
+          <SelectItem value="review">{copy.ownServicesReview}</SelectItem>
+          <SelectItem value="free">{copy.ownServicesFree}</SelectItem>
+        </SelectContent>
+      </Select>
+      {policy !== "off" && (
+        <Select
+          value={management}
+          disabled={state.busy}
+          onValueChange={(value) =>
+            void state.mutate("command", {
+              type: "savePersonalServicesPolicy",
+              management: value,
+            })
+          }
+        >
+          <SelectTrigger
+            aria-label={copy.ownServicesManagement}
+            title={copy.ownServicesManagementHint}
+            data-testid="own-services-management"
+          >
+            <span className="text-muted-foreground">
+              {copy.ownServicesManagement}:
+            </span>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="owner">{copy.ownServicesByOwner}</SelectItem>
+            <SelectItem value="administrators">
+              {copy.ownServicesByAdmins}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      )}
+    </>
   );
 }
 
