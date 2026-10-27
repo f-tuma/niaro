@@ -287,6 +287,10 @@ export async function handleServiceOAuth(
       user = await session();
     if (actor.userId !== user.userId || (management && actor.role === "member"))
       throw new IdentityError(403, "identity_forbidden");
+    // A person's own service is signed in to by its owner alone.
+    const owner = catalog.service(input.workspaceId, input.serviceId).personal;
+    if (owner && owner.userId !== actor.userId && !management)
+      throw new IdentityError(404, "catalog_not_found");
     return {
       actor,
       user,
@@ -764,7 +768,10 @@ async function probeOAuth(
           // A shared key needs bearer or header auth; "none" stores none.
           service.auth.type === "none"
         ) {
-          const scopes = advertisedScopes(found);
+          // A person's own server is asked for no scope, so it grants its
+          // default (Notion advertises an administrative scope next to it);
+          // an administrator's takes what it advertises, else Twenty's.
+          const scopes = service.personal ? [] : advertisedScopes(found);
           revision = store.save(
             initial.target,
             revision,
@@ -776,7 +783,7 @@ async function probeOAuth(
             },
             {},
           ).revision;
-          openGate(catalog, target);
+          if (!service.personal) openGate(catalog, target);
         }
         ctx.change(target.organizationId);
       }),
@@ -856,11 +863,13 @@ export function personalSignIns(
     })
     .services.filter(
       (service) =>
-        catalog.mayConnect(target.workspaceId, service, actor) ||
-        (service.enabled &&
-          service.actions.some(
-            (action) => action.enabled && catalog.allowed(action, actor),
-          )),
+        // A person's own service is signed in to from My services.
+        !service.personal &&
+        (catalog.mayConnect(target.workspaceId, service, actor) ||
+          (service.enabled &&
+            service.actions.some(
+              (action) => action.enabled && catalog.allowed(action, actor),
+            ))),
     )
     .flatMap((service): PersonalSignIn[] => {
       const status = store.status(

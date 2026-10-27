@@ -211,6 +211,33 @@ operator's allowlist; the listing in the model's instructions frames the
 service's descriptions as untrusted data like any other. Adding, changing,
 removing and reviewing are audited.
 
+**Own services that sign in with the person's account.** Leaving the key
+empty adds a service that signs in instead (Notion's hosted MCP server, Linear
+and other MCP servers that follow the MCP authorization spec). The server finds
+the OAuth metadata (RFC 9728 protected resource, RFC 8414 authorization server,
+with its defaults for fields a server leaves out), registers a public client
+dynamically and asks for no scope, so the service grants its default. The
+owner then signs in from **My services** (only the owner can); the tools are
+read with their own token right after. Tokens that say nothing about the
+account (most MCP servers issue opaque tokens) make the connection itself the
+account: it gets its own subject, kept across every refresh. A server without
+OAuth metadata, or without dynamic registration, is refused and nothing is
+kept.
+
+### Keeping sign-ins alive
+
+A connection whose access token lapsed but has a refresh token is shown as
+connected: it is renewed before the next call that needs it, so nobody is
+asked to sign in again. Renewal runs once per connection at a time; a second
+call waits for it, because a service that rotates refresh tokens treats a
+second refresh with the old one as reuse and revokes the whole grant. In the
+background the server renews tokens that lapse within 30 minutes, each
+connection at most every 6 hours, starting a minute after the server starts,
+so refresh tokens that a provider keeps only while they are used (Microsoft,
+Google) do not run out between two uses. Only the provider's explicit refusal
+(`invalid_grant`) disconnects; an outage leaves the connection for the next
+attempt. Tokens without a stated lifetime are used for up to 30 days.
+
 ### Who manages the assistant's permissions
 
 A personal sign-in means the person, not the administrator, decides what their

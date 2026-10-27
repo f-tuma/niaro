@@ -450,6 +450,17 @@ test("configuration/URL changes invalidate credentials and expiry requires recon
     db.prepare(
       "UPDATE agent_service_oauth_connection SET data=json_set(data,'$.expiresAt',?)",
     ).run(Date.now() - 1);
+    // A lapsed token that can be renewed is still a working sign-in: it is
+    // refreshed before the next call, nobody is asked to sign in again.
+    assert.equal(
+      store.status(target, actor.userId).connection.status,
+      "connected",
+    );
+    assert.equal(store.connectedPeople(target), 1);
+    // Without a refresh token, a lapsed token needs the person again.
+    db.prepare(
+      "UPDATE agent_service_oauth_connection SET data=json_set(data,'$.refreshable',json('false'))",
+    ).run();
     assert.equal(
       store.status(target, actor.userId).connection.status,
       "expired",
@@ -750,9 +761,10 @@ test("tokens are refreshed ahead of expiry for the same account only, and never 
     db.prepare(
       "UPDATE agent_service_oauth_connection SET data=json_set(data,'$.expiresAt',?)",
     ).run(Date.now() - 1);
-    assert.throws(
-      () => store.resolve(graph, actor.userId, "write"),
-      /service_oauth_reconnect_required/,
+    // Renewable: still shown as connected, renewed before the next call.
+    assert.equal(
+      store.status(graph, actor.userId).connection.status,
+      "connected",
     );
     const snapshot = store.refreshSnapshot(graph, actor.userId)!;
     assert.equal(snapshot.refreshToken, "graph-refresh-1");

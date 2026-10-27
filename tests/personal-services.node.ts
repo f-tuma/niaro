@@ -158,6 +158,22 @@ function fixture(transport: IntegrationTransport) {
         role,
       }),
     );
+  /** The sign-in callback carries only state and code, no workspace. */
+  const finish = (state: string | null, code = "TEST-code") =>
+    controller.handle(
+      "POST",
+      new URL(
+        "https://agent.example.test/admin/api/identity/catalog/oauth/finish",
+      ),
+      { state, code },
+      context,
+      new AbortController().signal,
+    );
+  const keep = () =>
+    controller.keepConnectionsFresh(
+      { serial: context.serial, transaction: context.transaction },
+      new AbortController().signal,
+    );
   return {
     db,
     catalog,
@@ -168,6 +184,8 @@ function fixture(transport: IntegrationTransport) {
     list,
     add,
     inventory,
+    keep,
+    finish,
     epoch: () => epoch,
   };
 }
@@ -409,4 +427,180 @@ test("an administrator's save keeps the ownership, and cannot grant one", async 
       },
     }),
   );
+});
+
+/**
+ * A Notion-like MCP server: no key, OAuth with dynamic client registration,
+ * opaque tokens without an account in them, rotating refresh tokens.
+ */
+function oauthServer() {
+  const origin = "https://notes.example.test";
+  const counts = { register: 0, code: 0, refresh: 0 };
+  let access = "TEST-access-1",
+    refresh = "TEST-refresh-1";
+  const transport: IntegrationTransport = async (req) => {
+    await req.beforeDispatch?.(() => {});
+    const url = new URL(req.url);
+    const json = (status: number, body: unknown) => ({
+      status,
+      headers: { "content-type": "application/json" },
+      text: JSON.stringify(body),
+    });
+    if (url.pathname === "/.well-known/oauth-authorization-server")
+      return json(200, {
+        issuer: origin,
+        authorization_endpoint: `${origin}/authorize`,
+        token_endpoint: `${origin}/token`,
+        registration_endpoint: `${origin}/register`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code", "refresh_token"],
+        code_challenge_methods_supported: ["S256"],
+        token_endpoint_auth_methods_supported: ["none"],
+      });
+    if (url.pathname === "/register") {
+      counts.register++;
+      assert.equal(
+        "scope" in (req.body as Record<string, unknown>),
+        false,
+        "no scope is requested",
+      );
+      return json(201, {
+        client_id: "TEST-notes-client",
+        token_endpoint_auth_method: "none",
+      });
+    }
+    if (url.pathname === "/token") {
+      const body = req.body as Record<string, string>;
+      if (body.grant_type === "authorization_code") counts.code++;
+      else {
+        counts.refresh++;
+        // A reused refresh token is refused, as rotating servers do.
+        if (body.refresh_token !== refresh)
+          return json(400, { error: "invalid_grant" });
+        access = `TEST-access-${counts.refresh + 1}`;
+        refresh = `TEST-refresh-${counts.refresh + 1}`;
+      }
+      return json(200, {
+        access_token: access,
+        refresh_token: refresh,
+        token_type: "bearer",
+        expires_in: 3600,
+      });
+    }
+    if (url.pathname === "/mcp") {
+      if (
+        (req.headers as Record<string, string>).Authorization !==
+        `Bearer ${access}`
+      )
+        return json(401, { error: "unauthorized" });
+      const body = req.body as { id?: number; method: string };
+      return json(200, {
+        jsonrpc: "2.0",
+        id: body.id,
+        result:
+          body.method === "initialize"
+            ? { protocolVersion: "2025-06-18", capabilities: { tools: {} } }
+            : body.method === "tools/list"
+              ? {
+                  tools: [
+                    {
+                      name: "search_pages",
+                      inputSchema: { type: "object", properties: {} },
+                      annotations: { readOnlyHint: true },
+                    },
+                    {
+                      name: "create_page",
+                      inputSchema: { type: "object", properties: {} },
+                    },
+                  ],
+                }
+              : {},
+      });
+    }
+    return json(404, {});
+  };
+  return { transport, counts, origin };
+}
+
+test("a service that signs in with the person's account is added without a key, signed in to by its owner alone, then read", async () => {
+  const server = oauthServer();
+  const h = fixture(server.transport);
+  h.as("TEST-owner", "owner");
+  h.admin({ type: "savePersonalServicesPolicy", policy: "free" });
+  h.as("TEST-alice");
+  const added = await h.add({ apiKey: undefined, url: `${server.origin}/mcp` });
+  assert.equal(added.signIn, "needed");
+  assert.deepEqual([added.reads, added.writes], [0, 0]);
+  assert.equal(server.counts.register, 1);
+  // Bob may not start a sign-in on Alice's service.
+  h.as("TEST-bob");
+  await assert.rejects(
+    h.call("oauth/start", {
+      serviceId: added.id,
+      revision: added.signInRevision,
+    }),
+    code("catalog_not_found"),
+  );
+  // Alice signs in.
+  h.as("TEST-alice");
+  const started = (await h.call("oauth/start", {
+    serviceId: added.id,
+    revision: added.signInRevision,
+  })) as { authorizationUrl: string };
+  const authorize = new URL(started.authorizationUrl);
+  assert.equal(authorize.searchParams.has("scope"), false);
+  await h.finish(authorize.searchParams.get("state"));
+  let [mine] = (await h.list()).services;
+  assert.equal(mine?.signIn, "connected");
+  // Its tools are read with Alice's own token.
+  mine = PersonalServiceSummary.parse(
+    await h.call("personal/command", {
+      type: "rediscover",
+      id: added.id,
+      revision: mine!.revision,
+    }),
+  );
+  assert.deepEqual([mine.reads, mine.writes], [1, 1]);
+  assert.equal(h.inventory().services[0]?.actions.length, 2);
+});
+
+test("a lapsed sign-in stays connected and is renewed once, also in the background, even when two calls need it at the same time", async () => {
+  const server = oauthServer();
+  const h = fixture(server.transport);
+  h.as("TEST-owner", "owner");
+  h.admin({ type: "savePersonalServicesPolicy", policy: "free" });
+  h.as("TEST-alice");
+  const added = await h.add({ apiKey: undefined, url: `${server.origin}/mcp` });
+  const started = (await h.call("oauth/start", {
+    serviceId: added.id,
+    revision: added.signInRevision,
+  })) as { authorizationUrl: string };
+  await h.finish(new URL(started.authorizationUrl).searchParams.get("state"));
+  const lapse = () =>
+    h.db
+      .prepare(
+        "UPDATE agent_service_oauth_connection SET data=json_set(data,'$.expiresAt',?)",
+      )
+      .run(Date.now() - 1000);
+  lapse();
+  // The person is not asked to sign in again.
+  assert.equal((await h.list()).services[0]?.signIn, "connected");
+  // Two reads at once: one refresh, the second waits for it. A second
+  // refresh with the rotated token would have revoked the grant.
+  const revision = (await h.list()).services[0]!.revision;
+  const both = await Promise.allSettled([
+    h.call("personal/command", { type: "rediscover", id: added.id, revision }),
+    h.call("personal/command", { type: "rediscover", id: added.id, revision }),
+  ]);
+  assert.equal(server.counts.refresh, 1);
+  assert.ok(both.some((r) => r.status === "fulfilled"));
+  assert.equal((await h.list()).services[0]?.signIn, "connected");
+  // In the background: a lapsing token is renewed, at most once per interval.
+  lapse();
+  const keeper = await h.keep();
+  assert.deepEqual(keeper, { renewed: 1, failed: 0 });
+  assert.equal(server.counts.refresh, 2);
+  lapse();
+  assert.deepEqual(await h.keep(), { renewed: 0, failed: 0 });
+  assert.equal(server.counts.refresh, 2);
 });

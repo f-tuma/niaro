@@ -128,7 +128,7 @@ const en = {
     "An MCP server or an API with an OpenAPI document, over HTTPS.",
   ownServiceKey: "API key",
   ownServiceKeyHint:
-    "Sent as a bearer token. Leave empty when the service needs none.",
+    "Sent as a bearer token. Leave it empty for services you sign in to with your own account, such as Notion.",
   ownServiceName: "Name",
   ownServiceNameHint: "Optional; the address is used otherwise.",
   ownServiceAdding: "Reading the service's tools…",
@@ -152,6 +152,11 @@ const en = {
   ownServiceFailed: "That didn't work. Try again.",
   ownServiceConflict: "The service changed meanwhile. Showing the current one.",
   ownServiceSave: "Save",
+  ownServiceSignIn: "Sign in",
+  ownServiceSignInNeeded: "Sign in needed",
+  ownServiceSignInHint:
+    "Sign in with your account; your assistant reads the service's tools right after.",
+  ownServiceSigningIn: "Finish signing in in the new tab…",
 };
 export type MenuCopy = typeof en;
 const cs: MenuCopy = {
@@ -275,7 +280,7 @@ const cs: MenuCopy = {
   ownServiceUrlHint: "MCP server nebo API s OpenAPI dokumentem, přes HTTPS.",
   ownServiceKey: "API klíč",
   ownServiceKeyHint:
-    "Posílá se jako bearer token. Nech prázdné, pokud služba žádný nepotřebuje.",
+    "Posílá se jako bearer token. Nech prázdné u služeb, kam se přihlašuješ svým účtem, třeba Notion.",
   ownServiceName: "Název",
   ownServiceNameHint: "Nepovinné; jinak se použije adresa.",
   ownServiceAdding: "Načítám nástroje služby…",
@@ -299,6 +304,11 @@ const cs: MenuCopy = {
   ownServiceFailed: "To se nepovedlo. Zkus to znovu.",
   ownServiceConflict: "Služba se mezitím změnila, ukazuju aktuální.",
   ownServiceSave: "Uložit",
+  ownServiceSignIn: "Přihlásit se",
+  ownServiceSignInNeeded: "Potřebuje přihlášení",
+  ownServiceSignInHint:
+    "Přihlas se svým účtem; asistent hned potom načte nástroje služby.",
+  ownServiceSigningIn: "Dokonči přihlášení v nové kartě…",
 };
 export const menuCopy = { en, cs };
 export function useMenuCopy(): MenuCopy {

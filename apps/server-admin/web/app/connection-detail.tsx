@@ -50,6 +50,7 @@ import { useMenuCopy, type MenuCopy } from "./menu-copy";
 import { MenuPage } from "./menu-page";
 import {
   OwnServiceMenu,
+  OwnSignInButton,
   ownServiceState,
   ownServiceTools,
   useOwnServices,
@@ -253,12 +254,17 @@ function OwnServiceDetail({
           </>
         }
         actions={
-          <OwnServiceMenu
-            service={service}
-            own={own}
-            copy={copy}
-            onRemoved={() => void navigate({ to: "/connections" })}
-          />
+          <>
+            {service.signIn === "needed" && service.status !== "rejected" && (
+              <OwnSignInButton service={service} own={own} copy={copy} />
+            )}
+            <OwnServiceMenu
+              service={service}
+              own={own}
+              copy={copy}
+              onRemoved={() => void navigate({ to: "/connections" })}
+            />
+          </>
         }
       />
       {own.error && (
@@ -271,7 +277,7 @@ function OwnServiceDetail({
           <AlertDescription>{state.hint}</AlertDescription>
         </Alert>
       )}
-      {service.status === "active" && (
+      {service.status === "active" && service.signIn !== "needed" && (
         <PersonalPermissions workspace={workspace} serviceId={service.id} />
       )}
     </MenuPage>

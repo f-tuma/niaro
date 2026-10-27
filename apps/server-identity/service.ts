@@ -645,6 +645,9 @@ export class IdentityService {
   /** Personal processes drafted in chat and saved from their card. */
   private processProposals?: ProcessProposals;
   private memoryMaintenance: ReturnType<typeof setInterval>;
+  /** Renews personal sign-ins in the background (NIAR-231). */
+  private connectionKeeper: ReturnType<typeof setInterval>;
+  private connectionKeeperAbort = new AbortController();
   private workflowServerId?: string;
   private pending: Promise<unknown> = Promise.resolve();
   private callbacksActive?: number;
@@ -823,6 +826,23 @@ export class IdentityService {
       60 * 60 * 1000,
     );
     this.memoryMaintenance.unref();
+    const keep = () => {
+      if (this.closing) return;
+      void this.catalog
+        .keepConnectionsFresh(
+          {
+            serial: (run) => this.serial(run),
+            transaction: (run) => this.transaction(run),
+          },
+          this.connectionKeeperAbort.signal,
+        )
+        .catch((error) => logFailure("Service sign-in renewal", error));
+    };
+    this.connectionKeeper = setInterval(keep, 15 * 60 * 1000);
+    this.connectionKeeper.unref();
+    // Once soon after start, so sign-ins that lapsed while the server was
+    // down are renewed before anyone opens the app.
+    setTimeout(keep, 60_000).unref();
   }
   async initializeMemory() {
     await this.memory.purgeExpiredAll();
@@ -1216,6 +1236,13 @@ export class IdentityService {
           workspaceId,
           input.serviceId,
         );
+        // A person's own service is signed in to by its owner alone.
+        const owner = this.catalog.store.service(
+          workspaceId,
+          input.serviceId,
+        ).personal;
+        if (owner && owner.userId !== actor.userId)
+          throw new IdentityError(404, "catalog_not_found");
         const status = this.catalog.store.oauth!.status(target, actor.userId);
         if (action === "start")
           return ServiceConnectionStart.parse(
@@ -3682,6 +3709,8 @@ export class IdentityService {
     await this.hubScheduler.stop();
     await this.mcpTaskRunner?.close();
     clearInterval(this.memoryMaintenance);
+    clearInterval(this.connectionKeeper);
+    this.connectionKeeperAbort.abort();
     clearInterval(this.meetingSweep);
     await this.meetingProcessor.close();
     await this.hosted?.close();

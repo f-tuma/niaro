@@ -1,8 +1,9 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   ChevronRight,
+  LogIn,
   Pencil,
   Plus,
   PlugZap,
@@ -29,6 +30,7 @@ import {
 } from "@admin/components/ui/empty";
 import {
   Item,
+  ItemActions,
   ItemContent,
   ItemDescription,
   ItemMedia,
@@ -50,7 +52,7 @@ import {
   type PersonalServiceSummaryValue,
 } from "../../../../packages/protocol/service-catalog";
 import { api, ApiError } from "../lib/api";
-import type { AppWorkspace } from "./context";
+import { useAppSession, type AppWorkspace } from "./context";
 import { useMenuCopy, type MenuCopy } from "./menu-copy";
 import { ServiceMark } from "./connections-page";
 
@@ -79,7 +81,10 @@ function failureKey(error: unknown): keyof MenuCopy {
 /** The person's own services, with the commands their owner may run. */
 export function useOwnServices(workspace: AppWorkspace) {
   const client = useQueryClient();
+  const session = useAppSession();
   const key = ownServicesKey(workspace);
+  // Services whose sign-in tab is open; the list is read again until it lands.
+  const [signingIn, setSigningIn] = useState<string | null>(null);
   const target = {
     organizationId: workspace.organizationId,
     workspaceId: workspace.workspaceId,
@@ -91,7 +96,32 @@ export function useOwnServices(workspace: AppWorkspace) {
         await api("identity/catalog/personal/list", target, signal),
       ),
     retry: false,
+    refetchInterval: (current) =>
+      signingIn &&
+      current.state.data?.services.find((s) => s.id === signingIn)?.signIn !==
+        "connected"
+        ? 2000
+        : false,
   });
+  // Once the sign-in landed, the service's tools are read with it.
+  const landed = query.data?.services.find(
+    (s) => s.id === signingIn && s.signIn === "connected",
+  );
+  useEffect(() => {
+    if (!landed) return;
+    // After this render: the list that showed the sign-in is settled first.
+    const next = setTimeout(() => {
+      setSigningIn(null);
+      if (landed.reads + landed.writes === 0)
+        void command(landed.id, {
+          type: "rediscover",
+          id: landed.id,
+          revision: landed.revision,
+        });
+    }, 0);
+    return () => clearTimeout(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [landed?.id]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<keyof MenuCopy | null>(null);
   async function command(
@@ -123,8 +153,43 @@ export function useOwnServices(workspace: AppWorkspace) {
       setBusy(null);
     }
   }
+  /** Opens the service's own sign-in in a new tab (inside the click, so the
+   * browser allows it); the address follows once the server started it. */
+  async function signIn(service: PersonalServiceSummaryValue) {
+    if (busy) return;
+    const tab = window.open("about:blank", "_blank");
+    if (!tab) {
+      setError("connectionPopupBlocked");
+      return;
+    }
+    tab.opener = null;
+    setBusy(service.id);
+    setError(null);
+    try {
+      const started = await session.serviceConnection(
+        "start",
+        service.id,
+        AbortSignal.timeout(10_000),
+      );
+      if (!("authorizationUrl" in started)) throw new Error("unexpected");
+      tab.location.href = started.authorizationUrl;
+      setSigningIn(service.id);
+      setTimeout(
+        () =>
+          setSigningIn((current) => (current === service.id ? null : current)),
+        10 * 60_000,
+      );
+    } catch {
+      tab.close();
+      setError("ownServiceFailed");
+    } finally {
+      setBusy(null);
+    }
+  }
   return {
     query,
+    signingIn,
+    signIn: (service: PersonalServiceSummaryValue) => void signIn(service),
     services: query.data?.services ?? [],
     policy: query.data?.policy ?? "review",
     limit: query.data?.limit ?? 0,
@@ -159,12 +224,6 @@ export function ownServiceState(
   service: PersonalServiceSummaryValue,
   copy: MenuCopy,
 ): { tone: Tone; label: string; hint?: string } {
-  if (service.status === "pending")
-    return {
-      tone: "warning",
-      label: copy.ownServicePending,
-      hint: copy.ownServicePendingHint,
-    };
   if (service.status === "rejected")
     return {
       tone: "danger",
@@ -172,6 +231,18 @@ export function ownServiceState(
       hint: service.reason
         ? copy.ownServiceRejectedHint.replace("{reason}", service.reason)
         : copy.ownServiceRejectedNoReason,
+    };
+  if (service.signIn === "needed")
+    return {
+      tone: "warning",
+      label: copy.ownServiceSignInNeeded,
+      hint: copy.ownServiceSignInHint,
+    };
+  if (service.status === "pending")
+    return {
+      tone: "warning",
+      label: copy.ownServicePending,
+      hint: copy.ownServicePendingHint,
     };
   return { tone: "success", label: copy.ownServiceActive };
 }
@@ -225,6 +296,7 @@ export function OwnServices({ workspace }: { workspace: AppWorkspace }) {
               service={service}
               workspace={workspace}
               copy={copy}
+              own={own}
             />
           ))}
         </Card>
@@ -264,12 +336,16 @@ function OwnServiceRow({
   service,
   workspace,
   copy,
+  own,
 }: {
   service: PersonalServiceSummaryValue;
   workspace: AppWorkspace;
   copy: MenuCopy;
+  own: ReturnType<typeof useOwnServices>;
 }) {
   const state = ownServiceState(service, copy);
+  const needsSignIn =
+    service.signIn === "needed" && service.status !== "rejected";
   return (
     <Item variant="row" size="row" data-testid="own-service">
       <Link
@@ -292,18 +368,49 @@ function OwnServiceRow({
           <ItemDescription>
             <span className="flex flex-wrap items-center gap-x-2">
               <StatusDot tone={state.tone} size="sm">
-                {state.label}
+                {own.signingIn === service.id
+                  ? copy.ownServiceSigningIn
+                  : state.label}
               </StatusDot>
               <span>{ownServiceTools(service, copy)}</span>
             </span>
           </ItemDescription>
         </ItemContent>
-        <ChevronRight
-          aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground"
-        />
+        {!needsSignIn && (
+          <ChevronRight
+            aria-hidden="true"
+            className="size-4 shrink-0 text-muted-foreground"
+          />
+        )}
       </Link>
+      {needsSignIn && (
+        <ItemActions>
+          <OwnSignInButton service={service} own={own} copy={copy} />
+        </ItemActions>
+      )}
     </Item>
+  );
+}
+
+/** Sign in to an own service with the person's account. */
+export function OwnSignInButton({
+  service,
+  own,
+  copy,
+}: {
+  service: PersonalServiceSummaryValue;
+  own: ReturnType<typeof useOwnServices>;
+  copy: MenuCopy;
+}) {
+  return (
+    <Button size="sm" disabled={!!own.busy} onClick={() => own.signIn(service)}>
+      {own.busy === service.id || own.signingIn === service.id ? (
+        <Spinner data-icon="inline-start" />
+      ) : (
+        <LogIn data-icon="inline-start" aria-hidden="true" />
+      )}
+      {copy.ownServiceSignIn}
+    </Button>
   );
 }
 

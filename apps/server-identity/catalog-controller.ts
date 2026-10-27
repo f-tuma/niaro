@@ -342,6 +342,88 @@ export class CatalogController {
       }
     }
   }
+  /**
+   * A person's own MCP service that signs in with their account: the service
+   * is stored without tools, its OAuth metadata is found and a client
+   * registered (as for an administrator's MCP service), and the owner signs
+   * in from the app; reading the tools follows the sign-in. A server that
+   * advertises no OAuth, or none a client can register with, is refused and
+   * nothing is kept.
+   */
+  private async addPersonalOAuth(
+    input: { organizationId: string; workspaceId: string; url: string },
+    name: string,
+    status: "pending" | "active",
+    userId: string,
+    context: CatalogContext,
+    signal: AbortSignal,
+    audit: (
+      action: "catalog.personal_service_added",
+      targetId: string,
+      details: Record<string, unknown>,
+    ) => unknown,
+  ) {
+    const { organizationId, workspaceId } = input;
+    if (!this.store.oauth)
+      throw new IdentityError(422, "catalog_personal_unreachable");
+    const id = await context.serial(() =>
+      context.transaction(async () =>
+        this.store.addPersonalService(
+          workspaceId,
+          userId,
+          { name, url: input.url, protocol: "mcp", auth: { type: "none" } },
+          undefined,
+          status,
+        ),
+      ),
+    );
+    const target = { organizationId, workspaceId, serviceId: id };
+    let ready = false;
+    try {
+      await autoConfigureOAuth(
+        context,
+        this.store,
+        this.transport,
+        target,
+        userId,
+        signal,
+      );
+      ready = await context.serial(async () => {
+        const config = this.store.oauth!.config(
+          this.store.oauthTarget(workspaceId, id),
+        );
+        return (
+          !!config.discovery &&
+          config.hasClientId &&
+          config.settings.requiredFor !== "none"
+        );
+      });
+    } finally {
+      if (!ready)
+        await context.serial(() =>
+          context.transaction(async () => {
+            const service = this.store.service(workspaceId, id);
+            this.store.removePersonalService(
+              workspaceId,
+              id,
+              service.revision,
+              userId,
+            );
+          }),
+        );
+    }
+    if (!ready) throw new IdentityError(422, "catalog_personal_unreachable");
+    return context.serial(() =>
+      context.transaction(async () => {
+        audit("catalog.personal_service_added", id, {
+          revision: this.store.service(workspaceId, id).revision,
+          added: 0,
+          enabled: status === "active",
+        });
+        return this.store.personalSummary(this.store.service(workspaceId, id));
+      }),
+    );
+  }
   /** A person's own service: added, renamed, read again or removed by its owner. */
   private async personalCommand(
     input: PersonalServiceCommandValue,
@@ -389,13 +471,30 @@ export class CatalogController {
       const auth = input.apiKey
         ? ({ type: "bearer" } as const)
         : ({ type: "none" } as const);
-      const tools = await this.readTools(
-        { url: input.url },
-        authHeaders(auth, input.apiKey ?? ""),
-        signal,
-        guard,
-      );
       const name = input.name ?? new URL(input.url).hostname;
+      let tools: Awaited<ReturnType<CatalogController["readTools"]>>;
+      try {
+        tools = await this.readTools(
+          { url: input.url },
+          authHeaders(auth, input.apiKey ?? ""),
+          signal,
+          guard,
+        );
+      } catch (error) {
+        // Without a key, a server that wants the person's own account
+        // (Notion, Linear and other MCP servers with OAuth) is signed in to
+        // instead: its tools are read once the person has connected.
+        if (signal.aborted || input.apiKey) throw error;
+        return this.addPersonalOAuth(
+          input,
+          name,
+          policy === "free" ? "active" : "pending",
+          actor.userId,
+          context,
+          signal,
+          audit,
+        );
+      }
       return context.serial(() =>
         context.transaction(async () => {
           const id = this.store.addPersonalService(
@@ -424,18 +523,37 @@ export class CatalogController {
       );
     }
     if (input.type === "rediscover") {
-      const { service, key } = await context.serial(async () => ({
-        service: this.store.ownedService(workspaceId, input.id, actor.userId),
-        key: this.store.credential(workspaceId, input.id),
-      }));
+      // A service the person signs in to is read with their own token,
+      // renewed first when it lapsed.
+      await this.refreshPersonal(
+        { organizationId, workspaceId, serviceId: input.id },
+        context,
+        signal,
+      );
+      const { service, headers } = await context.serial(async () => {
+        const service = this.store.ownedService(
+          workspaceId,
+          input.id,
+          actor.userId,
+        );
+        const personal = this.store.personalToken(
+          workspaceId,
+          input.id,
+          actor.userId,
+        );
+        return {
+          service,
+          headers: personal
+            ? { Authorization: `Bearer ${personal}` }
+            : authHeaders(
+                service.auth,
+                this.store.credential(workspaceId, input.id),
+              ),
+        };
+      });
       if (service.revision !== input.revision)
         throw new IdentityError(409, "catalog_conflict");
-      const tools = await this.readTools(
-        service,
-        authHeaders(service.auth, key),
-        signal,
-        guard,
-      );
+      const tools = await this.readTools(service, headers, signal, guard);
       return context.serial(() =>
         context.transaction(async () => {
           const imported = this.store.importPersonalActions(
@@ -1075,10 +1193,93 @@ export class CatalogController {
       start?.();
     });
   }
+  /** Refreshes in flight, one per connection: a service that rotates its
+   * refresh token would treat a second refresh with the old one as reuse
+   * and revoke the whole grant. */
+  private refreshing = new Map<string, Promise<void>>();
   /** Renews the person's service token before anything authorizes with it. Only an explicit
    * refusal disconnects; an outage leaves the connection for the next attempt. */
   private async refreshPersonal(
-    input: z.infer<typeof ActionInvokeRequest>,
+    input: { organizationId: string; workspaceId: string; serviceId: string },
+    ctx: CatalogContext,
+    signal: AbortSignal,
+  ) {
+    const oauth = this.store.oauth;
+    if (!oauth) return;
+    const userId = (await ctx.serial(() => ctx.actor(input))).userId;
+    const key = `${input.workspaceId}/${input.serviceId}/${userId}`;
+    const running = this.refreshing.get(key);
+    if (running) {
+      // Joined, not repeated; its failure is the caller's own expired token.
+      await running.catch(() => {});
+      return;
+    }
+    const run = this.refreshOnce(input, ctx, signal);
+    this.refreshing.set(key, run);
+    try {
+      await run;
+    } finally {
+      if (this.refreshing.get(key) === run) this.refreshing.delete(key);
+    }
+  }
+  /**
+   * Keeps personal sign-ins alive without anyone using them: a token that
+   * lapses within `margin` is renewed, each connection at most once per
+   * `interval`. A refresh token a provider only keeps while it is used
+   * (Microsoft, Google) then never runs out between two uses.
+   */
+  private keptAt = new Map<string, number>();
+  async keepConnectionsFresh(
+    run: Pick<CatalogContext, "serial" | "transaction">,
+    signal: AbortSignal,
+    margin = 30 * 60_000,
+    interval = 6 * 60 * 60_000,
+  ) {
+    const oauth = this.store.oauth;
+    if (!oauth) return { renewed: 0, failed: 0 };
+    const due = await run.serial(async () => oauth.renewable(margin));
+    let renewed = 0,
+      failed = 0;
+    for (const item of due) {
+      if (signal.aborted) break;
+      const key = `${item.workspaceId}/${item.serviceId}/${item.userId}`;
+      if (Date.now() - (this.keptAt.get(key) ?? 0) < interval) continue;
+      if (this.refreshing.has(key)) continue;
+      this.keptAt.set(key, Date.now());
+      const ctx: CatalogContext = {
+        serial: run.serial,
+        transaction: run.transaction,
+        // The connection's owner, as the store recorded them; dispatch
+        // checks membership again before any use.
+        actor: async () => ({ userId: item.userId, role: "member" }),
+        epoch: () => 0,
+        change: () => {},
+        audit: () => 0,
+        finish: () => {},
+      };
+      const attempt = this.refreshOnce(
+        {
+          organizationId: "",
+          workspaceId: item.workspaceId,
+          serviceId: item.serviceId,
+        },
+        ctx,
+        signal,
+      );
+      this.refreshing.set(key, attempt);
+      try {
+        await attempt;
+        renewed++;
+      } catch {
+        failed++;
+      } finally {
+        if (this.refreshing.get(key) === attempt) this.refreshing.delete(key);
+      }
+    }
+    return { renewed, failed };
+  }
+  private async refreshOnce(
+    input: { organizationId: string; workspaceId: string; serviceId: string },
     ctx: CatalogContext,
     signal: AbortSignal,
   ) {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
   OAuthMetadata,
@@ -160,10 +161,17 @@ const AuthorizationServer = z.object({
   token_endpoint: z.string(),
   registration_endpoint: z.string().optional(),
   response_types_supported: z.array(z.string()).max(30),
-  grant_types_supported: z.array(z.string()).max(30),
+  // RFC 8414 defaults for what a server may leave out (many MCP servers do).
+  grant_types_supported: z
+    .array(z.string())
+    .max(30)
+    .default(["authorization_code", "implicit"]),
   code_challenge_methods_supported: z.array(z.string()).max(10),
-  scopes_supported: z.array(z.string().max(100)).max(50),
-  token_endpoint_auth_methods_supported: z.array(z.string()).max(10),
+  scopes_supported: z.array(z.string().max(100)).max(50).default([]),
+  token_endpoint_auth_methods_supported: z
+    .array(z.string())
+    .max(10)
+    .default(["client_secret_basic"]),
   authorization_response_iss_parameter_supported: z.boolean().optional(),
 });
 async function authorizationServer(
@@ -271,7 +279,10 @@ export async function registerOAuthClient(
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
         token_endpoint_auth_method: wanted,
-        scope: (request.scopes ?? ["api", "profile"]).join(" "),
+        // No scope parameter when none is requested (most MCP servers).
+        ...((request.scopes ?? ["api", "profile"]).length
+          ? { scope: (request.scopes ?? ["api", "profile"]).join(" ") }
+          : {}),
       },
     },
     options,
@@ -329,11 +340,13 @@ const TokenResponse = z.object({
   refresh_token: secretToken.optional(),
   id_token: z.string().max(16384).optional(),
   token_type: z.string().refine((v) => v.toLowerCase() === "bearer"),
+  /** Omitted by servers whose tokens do not lapse on a schedule. */
   expires_in: z.coerce
     .number()
     .int()
     .positive()
-    .max(31 * 86400),
+    .max(31 * 86400)
+    .optional(),
   scope: z.string().max(4096).optional(),
 });
 function jwtPayload(token: string): unknown {
@@ -346,6 +359,19 @@ function jwtPayload(token: string): unknown {
     throw failure();
   }
 }
+/** A Twenty token: a JWT naming its type or account. Anything else is opaque. */
+function twentyToken(token: string) {
+  try {
+    const payload = jwtPayload(token);
+    return (
+      !!payload &&
+      typeof payload === "object" &&
+      ("type" in payload || "userId" in payload || "workspaceId" in payload)
+    );
+  } catch {
+    return false;
+  }
+}
 const sameIssuer = (a: string, b: string) =>
   a.replace(/\/$/, "") === b.replace(/\/$/, "");
 /** Claims are read from a response received directly from the token endpoint over TLS
@@ -356,6 +382,20 @@ function tokenIdentity(
   profile: OAuthProfile,
   previous?: Identity,
 ): { identity: Identity; exp?: number } {
+  if (profile === "twenty" && !twentyToken(value.access_token)) {
+    // Most MCP servers with OAuth (Notion, Linear, ...) issue tokens that say
+    // nothing about the account. The connection then is the account: it
+    // gets its own subject, and every refresh keeps it.
+    if (previous) {
+      if ("subject" in previous) return { identity: previous };
+      throw failure();
+    }
+    return {
+      identity: OidcOAuthIdentity.parse({
+        subject: `connection:${randomUUID()}`,
+      }),
+    };
+  }
   if (profile === "twenty") {
     // Twenty application-token `sub` identifies the application, never the user.
     const claims = TwentyOAuthIdentity.extend({
@@ -470,15 +510,22 @@ async function tokenRequest(
     value.scope === undefined
       ? [...(requested ?? [])]
       : value.scope.split(/\s+/).filter(Boolean);
-  if (profile === "twenty" && !scopes.includes("api")) throw failure();
+  if (
+    profile === "twenty" &&
+    twentyToken(value.access_token) &&
+    !scopes.includes("api")
+  )
+    throw failure();
   const { identity, exp } = tokenIdentity(
     value,
     { ...request, metadata },
     profile,
     previous,
   );
+  // A token without a stated lifetime is used until the service refuses it
+  // or for 30 days, whichever comes first.
   const expiresAt = Math.min(
-    Date.now() + value.expires_in * 1000,
+    Date.now() + (value.expires_in ?? 30 * 86400) * 1000,
     exp ? exp * 1000 : Infinity,
   );
   if (expiresAt <= Date.now() + 30000)

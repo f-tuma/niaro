@@ -575,6 +575,12 @@ export const PersonalServiceSummary = z.strictObject({
   /** How many of its actions read and how many change something. */
   reads: z.number().int().min(0),
   writes: z.number().int().min(0),
+  /** "none": the service uses the key it was added with; otherwise the owner
+   * signs in with their own account ("needed" until they have). */
+  signIn: z.enum(["none", "needed", "connected"]).default("none"),
+  /** For the sign-in commands: the sign-in settings' and the connection's revision. */
+  signInRevision: Revision.optional(),
+  connectionRevision: Revision.optional(),
 });
 export type PersonalServiceSummaryValue = z.infer<
   typeof PersonalServiceSummary

@@ -581,6 +581,15 @@ export class ServiceCatalogStore {
     };
     return data.personal;
   }
+  /** The workspace a stored service belongs to. */
+  private serviceWorkspace(serviceId: string) {
+    const row = this.db
+      .prepare(
+        "SELECT scope_id FROM agent_catalog WHERE id=? AND kind='service'",
+      )
+      .get(serviceId);
+    return row ? String(row.scope_id) : undefined;
+  }
   personalServicesPolicy(workspaceId: string): PersonalServicesPolicyValue {
     const row = this.db
       .prepare("SELECT policy FROM agent_catalog_personal WHERE workspace_id=?")
@@ -594,8 +603,36 @@ export class ServiceCatalogStore {
       .filter((s) => s.personal?.userId === userId)
       .map((s) => this.personalSummary(s));
   }
+  /** The owner's own access token for a personal service they sign in to. */
+  personalToken(workspaceId: string, serviceId: string, userId: string) {
+    if (!this.oauth) return undefined;
+    const target = this.oauthTarget(workspaceId, serviceId);
+    if (this.oauth.config(target).settings.requiredFor === "none")
+      return undefined;
+    const resolved = this.oauth.resolve(target, userId, "read");
+    return resolved.kind === "personal" ? resolved.accessToken : undefined;
+  }
   personalSummary(service: Service) {
+    const signIn = (() => {
+      if (!this.oauth || !service.personal) return undefined;
+      const workspaceId = this.serviceWorkspace(service.id);
+      if (!workspaceId) return undefined;
+      const status = this.oauth.status(
+        this.oauthTarget(workspaceId, service.id),
+        service.personal.userId,
+      );
+      if (status.config.settings.requiredFor === "none") return undefined;
+      return {
+        signIn:
+          status.connection.status === "connected"
+            ? ("connected" as const)
+            : ("needed" as const),
+        signInRevision: status.config.revision,
+        connectionRevision: status.connection.revision,
+      };
+    })();
     return PersonalServiceSummary.parse({
+      ...(signIn ?? { signIn: "none" }),
       id: service.id,
       revision: service.revision,
       name: service.name,

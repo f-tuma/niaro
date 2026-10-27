@@ -412,9 +412,12 @@ export class ServiceOAuthStore {
       config,
       connection: {
         revision: data.revision,
+        // An access token that lapsed but can be renewed is still a working
+        // connection: it is refreshed before the next call (and in the
+        // background), so the person is not asked to sign in again.
         status: !active
           ? "disconnected"
-          : (data.expiresAt ?? 0) <= Date.now() + 30000
+          : (data.expiresAt ?? 0) <= Date.now() + 30000 && !data.refreshable
             ? "expired"
             : "connected",
         identity: active ? data.identity : null,
@@ -674,7 +677,7 @@ export class ServiceOAuthStore {
       client_id: client.clientId,
       response_type: "code",
       redirect_uri: this.redirectUri,
-      scope: effective.scopes.join(" "),
+      ...(effective.scopes.length ? { scope: effective.scopes.join(" ") } : {}),
       state,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
       code_challenge_method: "S256",
@@ -799,12 +802,16 @@ export class ServiceOAuthStore {
     linkedSubject?: string,
   ) {
     this.assertClaim(claim, actor, currentTarget);
+    const identity = ServiceOAuthIdentity.parse(tokens.identity);
+    // Twenty's user tokens must carry its "api" permission; an opaque
+    // token of another MCP server carries no scope we could read.
     if (
       tokens.expiresAt <= Date.now() + 30000 ||
-      (claim.profile !== "oidc" && !tokens.scopes.includes("api"))
+      (claim.profile !== "oidc" &&
+        "userId" in identity &&
+        !tokens.scopes.includes("api"))
     )
       throw new IdentityError(401, "service_oauth_token_expired");
-    const identity = ServiceOAuthIdentity.parse(tokens.identity);
     if (
       claim.providerRevision !== undefined &&
       (!("subject" in identity) || identity.subject !== linkedSubject)
@@ -934,6 +941,35 @@ export class ServiceOAuthStore {
         pin.externalWorkspaceId
     )
       throw conflict();
+  }
+  /**
+   * Connections whose access token lapses within `margin` and can be renewed,
+   * for the background keeper. Only identifiers; nothing is unsealed.
+   */
+  renewable(margin: number) {
+    return (
+      this.db
+        .prepare(
+          "SELECT workspace_id, service_id, user_id, data FROM agent_service_oauth_connection WHERE secret IS NOT NULL",
+        )
+        .all() as {
+        workspace_id: string;
+        service_id: string;
+        user_id: string;
+        data: string;
+      }[]
+    ).flatMap((row) => {
+      const data = JSON.parse(row.data) as Connection;
+      return data.refreshable && (data.expiresAt ?? 0) <= Date.now() + margin
+        ? [
+            {
+              workspaceId: row.workspace_id,
+              serviceId: row.service_id,
+              userId: row.user_id,
+            },
+          ]
+        : [];
+    });
   }
   /** A connection whose token is expired or about to expire but can be renewed. */
   refreshSnapshot(
