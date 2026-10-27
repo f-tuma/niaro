@@ -203,7 +203,14 @@ own services per person and workspace.
 **Find actions**: everything the service offers right now (a catalogue server
 such as Twenty lists its tools, others their whole tool list or OpenAPI
 operations), with the service's own read or change hint and what is already
-added; the owner ticks what the assistant may use and adds it. Each action
+added; the owner ticks what the assistant may use and adds it. Tools whose
+input Niaro cannot check yet are listed apart with the reason (for example a
+keyword it does not support), so nothing disappears silently. Before
+checking, a tool's input schema is relaxed: annotations (`$schema` of any
+draft, examples, comments, `x-` words) and constraints that only narrow what
+is accepted (`uniqueItems`, `multipleOf`, `not`, `if`/`then`/`else` and the
+like) are dropped, and long nested descriptions are shortened when the whole
+would exceed 32 kB; the service still refuses what it does not take. Each action
 has an edit: its name, what it is for (the assistant decides by it) and
 whether it _only reads_ (runs without asking) or _changes something_ (asks
 first until the owner says otherwise), and **Remove action**. Changing a read

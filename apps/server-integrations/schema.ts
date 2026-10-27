@@ -366,3 +366,77 @@ export function validateArguments(schema: Schema, input: unknown) {
       fields,
     });
 }
+
+/** Words that describe a value without constraining it. */
+const ANNOTATIONS = new Set([
+  "$schema",
+  "$id",
+  "$comment",
+  "examples",
+  "example",
+  "readOnly",
+  "writeOnly",
+  "deprecated",
+  "contentMediaType",
+  "contentEncoding",
+]);
+/** Constraints that only narrow what is accepted: without them the local check
+ * is looser and the service itself still refuses what it does not take. */
+const NARROWING = new Set([
+  "uniqueItems",
+  "minProperties",
+  "maxProperties",
+  "multipleOf",
+  "not",
+  "if",
+  "then",
+  "else",
+  "contains",
+  "minContains",
+  "maxContains",
+  "dependentRequired",
+  "dependentSchemas",
+  "dependencies",
+]);
+const NESTED = new Set(["properties", "$defs", "definitions"]);
+const CHILD = new Set(["items", "additionalProperties", "propertyNames"]);
+const UNION = new Set(["anyOf", "oneOf", "allOf"]);
+/**
+ * A tool's input schema as the bounded validator takes it: annotations
+ * (`$schema` of any draft, examples, comments, vendor `x-` words) and
+ * narrowing-only constraints dropped, long nested descriptions shortened
+ * when the whole would not fit. What still is not supported keeps failing.
+ */
+export function relaxToolSchema(schema: Schema): Schema {
+  const walk = (value: unknown, limit: number): unknown => {
+    if (!record(value)) return value;
+    const result: Schema = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (ANNOTATIONS.has(key) || NARROWING.has(key) || key.startsWith("x-"))
+        continue;
+      if (NESTED.has(key) && record(item))
+        result[key] = Object.fromEntries(
+          Object.entries(item).map(([name, child]) => [
+            name,
+            walk(child, limit),
+          ]),
+        );
+      else if (CHILD.has(key) && record(item)) result[key] = walk(item, limit);
+      else if (UNION.has(key) && Array.isArray(item))
+        result[key] = item.map((child) => walk(child, limit));
+      else if (key === "description" && typeof item === "string")
+        result[key] = item.length > limit ? `${item.slice(0, limit)}…` : item;
+      else result[key] = item;
+    }
+    return result;
+  };
+  let relaxed = walk(schema, Infinity) as Schema;
+  for (const limit of [1000, 300, 100])
+    if (JSON.stringify(relaxed).length > 32768) {
+      const description = relaxed.description;
+      relaxed = walk(schema, limit) as Schema;
+      // The tool's own description sits next to the schema, not inside.
+      if (description !== undefined) relaxed.description = description;
+    }
+  return relaxed;
+}

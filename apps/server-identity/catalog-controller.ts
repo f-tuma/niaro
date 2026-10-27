@@ -4,6 +4,7 @@ import {
   ActionInvokeRequest,
   CatalogCommand,
   CatalogTarget,
+  DiscoveryIssue,
   DiscoveryRequest,
   ModelDiscoveryRequest,
   ServiceIconRequest,
@@ -359,6 +360,7 @@ export class CatalogController {
   ) {
     let discovery: {
       actions: DiscoveredAction[];
+      issues?: z.infer<typeof DiscoveryIssue>[];
       readOnly?: string[];
       choices?: { name: string; description: string; sourceKey: string }[];
     };
@@ -398,7 +400,13 @@ export class CatalogController {
               ? ("read" as const)
               : ("write" as const),
         }));
-    if (!keys) return { choices, actions: [], readOnly: [] };
+    if (!keys)
+      return {
+        choices,
+        unusable: discovery.issues ?? [],
+        actions: [],
+        readOnly: [],
+      };
     const chosen = choices.filter((choice) => keys.includes(choice.key));
     if (chosen.length !== keys.length)
       throw new IdentityError(409, "catalog_conflict");
@@ -634,6 +642,7 @@ export class CatalogController {
         return PersonalActionChoices.parse({
           id: service.id,
           revision: service.revision,
+          unusable: (tools.unusable ?? []).slice(0, 1000),
           choices: tools.choices.slice(0, 1000).map((choice) => ({
             ...choice,
             added: service.actions.some(

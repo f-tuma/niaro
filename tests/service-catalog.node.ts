@@ -2946,7 +2946,8 @@ test("MCP discovery returns bounded typed rejection details without leaking raw 
       type: "object",
       properties: { name: { type: "string", pattern: "(?=SECRET_PATTERN)" } },
     },
-    { type: "object", not: {} },
+    // Narrowing-only words such as `not` are dropped; a shape word is not.
+    { type: "object", patternProperties: {} },
     {
       type: "object",
       properties: { value: { $ref: "https://secret.example.test/schema" } },
@@ -2993,7 +2994,7 @@ test("MCP discovery returns bounded typed rejection details without leaking raw 
     ],
   );
   assert.equal(parsed.issues?.[0]?.path, "#/properties/name");
-  assert.equal(parsed.issues?.[1]?.keyword, "not");
+  assert.equal(parsed.issues?.[1]?.keyword, "patternProperties");
   assert(!JSON.stringify(parsed).includes("SECRET_PATTERN"));
   assert(!JSON.stringify(parsed).includes("secret.example"));
 });

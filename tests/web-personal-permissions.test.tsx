@@ -717,6 +717,14 @@ describe("own services", () => {
           return {
             id: "svc-mail",
             revision: 2,
+            unusable: [
+              {
+                action: "match_keys",
+                reason: "keyword_unsupported",
+                path: "#",
+                keyword: "patternProperties",
+              },
+            ],
             choices: [
               {
                 key: "mcp:list_items",
@@ -865,6 +873,9 @@ describe("own services", () => {
       { ...mockTarget, type: "findActions", id: "svc-mail", revision: 2 },
     ]);
     expect(text(root)).toContain("TEST creates an item");
+    // What the service offers but cannot be used yet says why.
+    expect(text(root)).toContain("Zatím nejdou použít");
+    expect(text(root)).toContain("používá patternProperties");
     const boxes = byHost(root, "Checkbox");
     expect(boxes.map((box) => [box.props.checked, box.props.disabled])).toEqual(
       [

@@ -22,6 +22,10 @@ import {
 import { AuditStore } from "../apps/server-identity/audit";
 import { IdentityError } from "../apps/server-identity/error";
 import { IntegrationError } from "../apps/server-integrations/transport";
+import {
+  relaxToolSchema,
+  schemaValidator,
+} from "../apps/server-integrations/schema";
 import type { IntegrationTransport } from "../apps/server-integrations/transport";
 
 const target = {
@@ -33,7 +37,13 @@ const code = (name: string) => (error: unknown) =>
   error.code === name;
 
 /** A synthetic MCP server behind a bearer key with one read and one write tool. */
-function mcpServer(options: { key?: string; tools?: string[] } = {}) {
+function mcpServer(
+  options: {
+    key?: string;
+    tools?: string[];
+    schemas?: Record<string, Record<string, unknown>>;
+  } = {},
+) {
   const calls: string[] = [];
   const tools = options.tools ?? ["list_items", "create_item"];
   const transport: IntegrationTransport = async (req) => {
@@ -58,7 +68,10 @@ function mcpServer(options: { key?: string; tools?: string[] } = {}) {
               tools: tools.map((name) => ({
                 name,
                 description: `TEST ${name}`,
-                inputSchema: { type: "object", properties: {} },
+                inputSchema: options.schemas?.[name] ?? {
+                  type: "object",
+                  properties: {},
+                },
                 ...(name.startsWith("list_")
                   ? { annotations: { readOnlyHint: true } }
                   : {}),
@@ -518,6 +531,80 @@ test("the owner finds the service's actions, adds the chosen ones, describes the
     }),
     code("catalog_personal_managed"),
   );
+});
+
+test("tool schemas from newer servers are relaxed to what the validator checks; the rest is listed with its reason", async () => {
+  // A 2020-12 schema with annotations, vendor words, narrowing-only
+  // constraints and descriptions too long to fit (as hosted servers write).
+  const long = "TEST ".repeat(2000);
+  const modern = {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {
+      pages: {
+        type: "array",
+        uniqueItems: true,
+        minItems: 1,
+        description: long,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: {
+            title: { type: "string", examples: ["TEST"], description: long },
+            body: { type: "string", "x-format": "markdown", description: long },
+            size: { type: "number", multipleOf: 1, description: long },
+          },
+          required: ["title"],
+        },
+      },
+    },
+    required: ["pages"],
+  };
+  assert.throws(() => schemaValidator(modern));
+  const relaxed = relaxToolSchema(modern);
+  const validate = schemaValidator(relaxed);
+  assert.equal(validate({ pages: [{ title: "TEST" }] }), true);
+  assert.equal(validate({ pages: [{}] }), false);
+  assert.equal(validate({ pages: [{ title: "TEST", other: 1 }] }), false);
+  assert.ok(JSON.stringify(relaxed).length <= 32768);
+  // What the validator cannot honestly loosen stays unusable, with its reason.
+  const server = mcpServer({
+    tools: ["create_pages", "match_keys"],
+    schemas: {
+      create_pages: modern,
+      match_keys: {
+        type: "object",
+        additionalProperties: false,
+        patternProperties: { "^k": { type: "string" } },
+      },
+    },
+  });
+  const h = fixture(server.transport);
+  h.as("TEST-owner", "owner");
+  h.admin({ type: "savePersonalServicesPolicy", policy: "free" });
+  h.as("TEST-alice");
+  const added = await h.add({ apiKey: undefined });
+  assert.deepEqual([added.reads, added.writes], [0, 1]);
+  const found = PersonalActionChoices.parse(
+    await h.call("personal/command", {
+      type: "findActions",
+      id: added.id,
+      revision: added.revision,
+    }),
+  );
+  assert.deepEqual(
+    found.choices.map((c) => [c.name, c.added]),
+    [["create_pages", true]],
+  );
+  assert.deepEqual(found.unusable, [
+    {
+      action: "match_keys",
+      reason: "keyword_unsupported",
+      path: "#",
+      keyword: "patternProperties",
+    },
+  ]);
 });
 
 test("a pending service is not managed until it is approved", async () => {

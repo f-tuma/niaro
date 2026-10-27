@@ -620,6 +620,8 @@ export const PersonalActionChoices = z.strictObject({
   id: IdentityId,
   revision: Revision,
   choices: z.array(PersonalActionChoice).max(1000),
+  /** Tools the service offers that cannot be used yet, and why. */
+  unusable: z.array(DiscoveryIssue).max(1000).default([]),
 });
 export type PersonalActionChoicesValue = z.infer<typeof PersonalActionChoices>;
 export type PersonalServiceCommandValue = z.infer<

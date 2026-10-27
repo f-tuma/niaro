@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import type { z } from "zod";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Search, Trash2 } from "lucide-react";
 import { Badge } from "@admin/components/ui/badge";
@@ -50,6 +51,7 @@ import {
 } from "@admin/components/ui/sheet";
 import { ConfirmAction } from "@admin/components/console/forms";
 import {
+  DiscoveryIssueReason,
   PersonalActionChoices,
   type PersonalServiceSummaryValue,
 } from "../../../../packages/protocol/service-catalog";
@@ -60,6 +62,18 @@ import type { MenuCopy } from "./menu-copy";
 import type { useOwnServices } from "./own-services";
 
 type Own = ReturnType<typeof useOwnServices>;
+
+type DiscoveryIssueReasonValue = z.infer<typeof DiscoveryIssueReason>;
+const REASONS: Record<DiscoveryIssueReasonValue, keyof MenuCopy> = {
+  schema_limit: "reasonSchemaLimit",
+  keyword_unsupported: "reasonKeyword",
+  reference_unsupported: "reasonReference",
+  pattern_unsupported: "reasonPattern",
+  object_required: "reasonObject",
+  schema_invalid: "reasonInvalid",
+  metadata_missing: "reasonMissing",
+  operation_unsupported: "reasonOperation",
+};
 
 /**
  * Everything the owner's service offers, read from it when the sheet opens:
@@ -114,6 +128,7 @@ export function FindActionsSheet({
     `${choice.name} ${choice.description}`.toLocaleLowerCase().includes(term),
   );
   const fresh = query.data?.choices.filter((choice) => !choice.added) ?? [];
+  const unusable = query.data?.unusable ?? [];
   const busy = own.busy === service.id;
   const close = () => {
     setSelected([]);
@@ -149,11 +164,13 @@ export function FindActionsSheet({
               <Skeleton className="h-64 w-full" />
             </div>
           ) : !fresh.length ? (
-            <Empty variant="outline">
-              <EmptyHeader>
-                <EmptyDescription>{copy.actionsNone}</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            !unusable.length && (
+              <Empty variant="outline">
+                <EmptyHeader>
+                  <EmptyDescription>{copy.actionsNone}</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )
           ) : (
             <>
               {query.data.choices.length >= 8 && (
@@ -217,6 +234,40 @@ export function FindActionsSheet({
                 </p>
               )}
             </>
+          )}
+          {unusable.length > 0 && (
+            <section
+              className="flex flex-col gap-2"
+              aria-label={copy.actionsUnusable}
+            >
+              <h3 className="text-sm font-medium">
+                {copy.actionsUnusable}
+                <span className="ml-2 font-normal text-muted-foreground tabular-nums">
+                  {unusable.length}
+                </span>
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {copy.actionsUnusableHint}
+              </p>
+              <Card variant="list">
+                {unusable.map((issue) => (
+                  <Item key={issue.action} variant="row" size="row">
+                    <ItemContent>
+                      <ItemTitle>{issue.action}</ItemTitle>
+                      <ItemDescription>
+                        {copy[REASONS[issue.reason]].replace(
+                          "{keyword}",
+                          issue.keyword ?? "",
+                        )}
+                        {issue.path && issue.path !== "#"
+                          ? ` · ${issue.path}`
+                          : ""}
+                      </ItemDescription>
+                    </ItemContent>
+                  </Item>
+                ))}
+              </Card>
+            </section>
           )}
           {own.error && (
             <Alert variant="destructive">

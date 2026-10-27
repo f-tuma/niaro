@@ -13,7 +13,12 @@ import {
   type IntegrationTransport,
   type DispatchGuard,
 } from "./transport";
-import { SchemaError, schemaValidator, validateArguments } from "./schema";
+import {
+  relaxToolSchema,
+  SchemaError,
+  schemaValidator,
+  validateArguments,
+} from "./schema";
 import { mcpActionFailure, providerFailure } from "./failures";
 export type DiscoveredAction = z.infer<typeof ActionSettings> & {
   sourceKey: string;
@@ -438,7 +443,7 @@ export class McpSession {
           seen.add(name);
           // A later request asks for the rest by name; the others are skipped.
           if (!toolNames || toolNames.includes(name)) {
-            const inputSchema = object(tool.inputSchema);
+            const inputSchema = relaxToolSchema(object(tool.inputSchema));
             schemaValidator(inputSchema);
             actions.push({
               ...ActionSettings.parse({
@@ -578,7 +583,7 @@ export class McpSession {
           continue;
         }
         try {
-          const inputSchema = object(tool.inputSchema);
+          const inputSchema = relaxToolSchema(object(tool.inputSchema));
           schemaValidator(inputSchema);
           actions.push({
             ...ActionSettings.parse({
