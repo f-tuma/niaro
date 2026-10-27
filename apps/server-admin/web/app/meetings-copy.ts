@@ -84,6 +84,7 @@ const en = {
   speakerSelf: "Me",
   speakerOthers: "Others",
   speakerUnknown: "Unknown",
+  speakerVoice: "Speaker",
   speakers: (count: number) =>
     count === 1 ? "1 speaker" : `${count} speakers`,
   twoTracks: "Me + others",
@@ -180,6 +181,7 @@ const cs: MeetingsCopy = {
   speakerSelf: "Já",
   speakerOthers: "Ostatní",
   speakerUnknown: "Neznámý",
+  speakerVoice: "Mluvčí",
   speakers: (count: number) => (count === 1 ? "1 mluvčí" : `${count} mluvčí`),
   twoTracks: "Já + ostatní",
   noConsent: "Bez potvrzení souhlasu",

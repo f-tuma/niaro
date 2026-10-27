@@ -12,6 +12,7 @@ import type {
 export type TranscriptParagraph = { start: number; text: string };
 export type TranscriptBlock = {
   speaker: MeetingSpeaker;
+  voice?: number;
   start: number;
   paragraphs: TranscriptParagraph[];
 };
@@ -30,7 +31,11 @@ export function transcriptBlocks(
   };
   for (const turn of turns) {
     if (!turn.text.trim()) continue;
-    if (run.length && run[0]!.speaker !== turn.speaker) flush();
+    if (
+      run.length &&
+      (run[0]!.speaker !== turn.speaker || run[0]!.voice !== turn.voice)
+    )
+      flush();
     run.push(turn);
   }
   flush();
@@ -74,6 +79,7 @@ function block(turns: readonly MeetingUtterance[]): TranscriptBlock {
     paragraphs.push({ start: timeAt(start), text: current.trim() });
   return {
     speaker: turns[0]!.speaker,
+    ...(turns[0]!.voice ? { voice: turns[0]!.voice } : {}),
     start: turns[0]!.start,
     paragraphs,
   };

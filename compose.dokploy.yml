@@ -17,6 +17,11 @@
 # and create the owner account: the first person who signs up becomes the owner.
 # Microsoft 365 and other hosted MCP servers are added in administration
 # (Hosted); without Docker they run inside this container.
+#
+# Optional speaker diarization (who spoke when; see docs/meetings.md): set
+# COMPOSE_PROFILES=diarization and HF_TOKEN (plus DIARIZER_TOKEN) in
+# Environment, redeploy, then turn it on in administration, Settings,
+# Meetings. Without the profile the diarizer is neither built nor started.
 name: niaro
 
 services:
@@ -51,12 +56,16 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # Optional: the token the diarizer service expects (its DIARIZER_TOKEN).
+      NIARO_DIARIZATION_TOKEN: ${DIARIZER_TOKEN:-}
     volumes:
       - niaro-data:/data
     # Reached only through Traefik on Dokploy's network.
     expose:
       - "8793"
     networks:
+      # The project's own network reaches the optional diarizer.
+      - default
       - dokploy-network
     # Hardened: read-only root filesystem (the server writes only to /data and
     # /tmp), no Linux capabilities, no privilege gain through setuid binaries.
@@ -72,7 +81,38 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
 
+  # Optional: pyannote on the CPU, reached by Niaro at http://diarizer:8000
+  # on the project's own network only.
+  diarizer:
+    profiles: ["diarization"]
+    build:
+      context: https://github.com/f-tuma/niaro.git#${NIARO_GIT_REF:-main}:services/diarizer
+    image: ${DIARIZER_IMAGE:-niaro-diarizer:local}
+    restart: unless-stopped
+    environment:
+      # A Hugging Face token whose account accepted the terms of
+      # pyannote/speaker-diarization-community-1 (read access is enough).
+      HF_TOKEN: ${HF_TOKEN:-}
+      # Shared with Niaro (NIARO_DIARIZATION_TOKEN); optional on a private
+      # network, recommended.
+      DIARIZER_TOKEN: ${DIARIZER_TOKEN:-}
+      # CPU threads; 0 uses them all.
+      DIARIZER_THREADS: ${DIARIZER_THREADS:-0}
+    volumes:
+      - diarizer-models:/models
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # A two-hour meeting needs about 2 GB on top of the model.
+    mem_limit: ${DIARIZER_MEMORY:-4g}
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
 networks:
+  default:
   dokploy-network:
     external: true
 
@@ -80,3 +120,5 @@ volumes:
   niaro-data:
     # A fixed name, so redeploys and Dokploy volume backups find it.
     name: ${NIARO_DATA_VOLUME:-niaro-data}
+  # The diarization model, downloaded on the first start.
+  diarizer-models:

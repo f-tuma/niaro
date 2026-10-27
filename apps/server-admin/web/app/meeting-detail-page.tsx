@@ -65,6 +65,7 @@ import {
 import type { MeetingRecord } from "../../../../packages/protocol/meeting-record";
 import {
   meetingNotes,
+  meetingSpeakerName,
   type MeetingNoteItem,
   type MeetingUtterance,
 } from "../../../../packages/protocol/meeting-notes";
@@ -256,6 +257,7 @@ export function MeetingDetail({
     self: copy.speakerSelf,
     others: copy.speakerOthers,
     unknown: copy.speakerUnknown,
+    voice: copy.speakerVoice,
   };
 
   const act = async (fn: () => Promise<unknown>) => {
@@ -392,7 +394,13 @@ export function MeetingDetail({
     loaded.some((segment) => segment.text) ||
     !!record.transcript;
   const speakerCount = new Set(
-    turns.map((turn) => turn.speaker).filter((s) => s !== "unknown"),
+    turns
+      .filter((turn) => turn.speaker !== "unknown" || turn.voice)
+      .map((turn) =>
+        turn.speaker !== "self" && turn.voice
+          ? `voice-${turn.voice}`
+          : turn.speaker,
+      ),
   ).size;
   const status = [
     meetingMeta(meeting, language),
@@ -657,7 +665,9 @@ export function MeetingDetail({
                 key={index}
                 block={block}
                 names={speakerNames}
-                labelled={blocks.some((b) => b.speaker !== "unknown")}
+                labelled={blocks.some(
+                  (b) => b.speaker !== "unknown" || b.voice,
+                )}
                 focused={focused?.[0] === index ? focused[1] : null}
                 copy={copy}
                 onJump={jump}
@@ -1183,7 +1193,7 @@ function TranscriptBlockView({
           data-speaker={block.speaker}
           className="pl-15 text-sm font-medium data-[speaker=self]:text-primary data-[speaker=unknown]:text-muted-foreground"
         >
-          {names[block.speaker]}
+          {meetingSpeakerName(block, names)}
         </span>
       )}
       {block.paragraphs.map((paragraph, index) => (

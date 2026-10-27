@@ -2,9 +2,10 @@ import type { Tone } from "@admin/components/console/status";
 import type { ClientSession } from "../../../../packages/client-core/session";
 import type { Meeting } from "../../../../packages/protocol/meetings";
 import type { MeetingRecord } from "../../../../packages/protocol/meeting-record";
-import type {
-  MeetingNotes,
-  MeetingSpeaker,
+import {
+  meetingSpeakerName,
+  type MeetingNotes,
+  type MeetingSpeaker,
 } from "../../../../packages/protocol/meeting-notes";
 import {
   meetingDuration,
@@ -78,7 +79,7 @@ export const meetingsRefetchInterval = (
   meetings: readonly Meeting[] | undefined,
 ) => (meetings?.some(meetingChanging) ? 5000 : false);
 
-export type SpeakerNames = Record<MeetingSpeaker, string>;
+export type SpeakerNames = Record<MeetingSpeaker, string> & { voice: string };
 /** A meeting as Markdown: name and date, notes, then the transcript. */
 export function meetingMarkdown(
   record: MeetingRecord,
@@ -141,7 +142,7 @@ export function meetingTranscriptText(
     return notes.utterances
       .map(
         (turn) =>
-          `${meetingTime(turn.start)} ${speakers[turn.speaker]}: ${turn.text}`,
+          `${meetingTime(turn.start)} ${meetingSpeakerName(turn, speakers)}: ${turn.text}`,
       )
       .join("\n");
   const lines = segments

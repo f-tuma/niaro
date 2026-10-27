@@ -125,6 +125,7 @@ export const ServerConfigSchema = z
               audioRetentionDays: 30,
               glossary: [],
               chunkSeconds: 300,
+              diarization: { enabled: false, url: "http://diarizer:8000" },
             }),
             /** The overview's background refresh of hourly and daily AI widgets. */
             hub: z

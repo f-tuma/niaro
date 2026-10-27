@@ -118,6 +118,11 @@ export const MeetingUtteranceSchema = z.strictObject({
   start: z.number().min(0).max(MEETING_MAX_SECONDS),
   end: z.number().min(0).max(MEETING_MAX_SECONDS),
   speaker: z.enum(["me", "others", "unknown"]),
+  /**
+   * With speaker diarization: which of the voices on this track spoke,
+   * numbered in the order they first speak ("Speaker 2", "Others 2").
+   */
+  voice: z.number().int().min(1).max(20).optional(),
   text: z.string().min(1).max(4000),
 });
 export type MeetingUtterance = z.infer<typeof MeetingUtteranceSchema>;
@@ -194,8 +199,20 @@ export function validateMeetingAnalysis(
 /** Speaker labels of a two-track recording, as they appear in its transcript. */
 export function meetingSpeakerLabels(language: "en" | "cs") {
   return language === "cs"
-    ? { self: "Já", others: "Ostatní" }
-    : { self: "Me", others: "Others" };
+    ? { self: "Já", others: "Ostatní", voice: "Mluvčí" }
+    : { self: "Me", others: "Others", voice: "Speaker" };
+}
+/**
+ * A turn's speaker as people read it: "Me", "Others", or with diarization
+ * the numbered voice ("Speaker 2"); the person recording stays "Me".
+ */
+export function meetingTurnLabel(
+  turn: { speaker: "me" | "others" | "unknown"; voice?: number },
+  labels: { self: string; others: string; voice: string; unknown?: string },
+) {
+  if (turn.speaker === "me") return labels.self;
+  if (turn.voice) return `${labels.voice} ${turn.voice}`;
+  return turn.speaker === "others" ? labels.others : (labels.unknown ?? "");
 }
 // The app names a recording nobody named "Meeting · <date>" ("Schůzka · …"
 // in Czech; earlier builds wrote "Plan a meeting · …"). Only such titles may

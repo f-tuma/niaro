@@ -39,6 +39,21 @@ export const MeetingServerSettings = z.strictObject({
   glossary: z.array(z.string().trim().min(1).max(100)).max(200).default([]),
   /** Seconds of audio per timestamped transcription request. */
   chunkSeconds: z.number().int().min(120).max(600).default(300),
+  /**
+   * Speaker diarization: who spoke when, from the recording itself, by the
+   * optional diarizer service (docker compose profile "diarization"). Off
+   * until an administrator turns it on.
+   */
+  diarization: z
+    .strictObject({
+      enabled: z.boolean().default(false),
+      /** The diarizer's address; the compose service is "diarizer". */
+      url: z
+        .url()
+        .refine((value) => /^https?:\/\//.test(value), "Use an HTTP(S) URL")
+        .default("http://diarizer:8000"),
+    })
+    .default({ enabled: false, url: "http://diarizer:8000" }),
 });
 /** The overview's background refresh of hourly and daily AI widgets. */
 export const HubSchedulerServerSettings = z.strictObject({

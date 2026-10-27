@@ -176,9 +176,8 @@ speaker. In the minute-by-minute fallback each channel of a minute is one
 recognition, so a minute has one line per speaker, the one who spoke first in
 that minute first. The whole-meeting extraction is told which label is the
 person recording, so it can tell the person's own commitments from the
-others' requests. "Others" is everyone in the call together; telling the
-other participants apart needs diarization (speaker separation), a separate
-improvement.
+others' requests. "Others" is everyone in the call together, unless the
+optional [speaker diarization](#speaker-diarization) tells their voices apart.
 
 The `speakerChannels` field is new in `niaro-meetings/1`. A mobile app built
 before it cannot read a list that contains a two-track meeting; update app and
@@ -188,6 +187,45 @@ A browser's MediaRecorder writes a WebM without a duration or seek index. The
 server then copies the audio stream (no re-encoding) into a private working
 file and measures and chunks that; the sealed upload and its digest never
 change.
+
+### Speaker diarization
+
+Optional: a separate service, `services/diarizer`, tells the voices of a
+recording apart, so the transcript reads "Speaker 1", "Speaker 2" ("Mluvčí 1"
+in Czech) instead of one "Others". It runs the open
+`pyannote/speaker-diarization-community-1` model (pyannote.audio 4, MIT code,
+CC-BY-4.0 model) on the CPU next to the server; meeting sound never leaves the
+machine.
+
+- **Install.** The service is the compose profile `diarization` in
+  `compose.yml` and `compose.dokploy.yml`. It needs a Hugging Face token
+  (`HF_TOKEN`, read access) of an account that accepted the model's terms on
+  its Hugging Face page; the model (about 30 MB) is downloaded once into the
+  `diarizer-models` volume. `DIARIZER_TOKEN` is a shared secret: the service
+  requires it as a bearer token and compose passes it to Niaro as
+  `NIARO_DIARIZATION_TOKEN`. The image is about 2 GB (CPU PyTorch); give the
+  container 4 GB (`DIARIZER_MEMORY`). Without the profile nothing is built or
+  started, and removing the `diarizer` service from the file is safe.
+- **Turn on.** Administration → Settings → Meetings → **Tell voices apart**,
+  with the service's address (default `http://diarizer:8000`,
+  `meetings.diarization` in the profile). The row shows whether the service
+  answers and its model is loaded. A model that failed to download (terms not
+  yet accepted, no network) is tried again every five minutes.
+- **What it does.** After timestamped transcription the server extracts the
+  diarized track as a 16 kHz mono WAV (a two-track recording: the others'
+  channel only, since the person recording is already "Me"; otherwise the
+  whole mix) and sends it to the service, one meeting at a time. Each turn of
+  that track takes the voice that spoke most of its time, or the nearest one
+  within a second; voices are numbered in the order they first speak, at most 20. Utterances keep `speaker` and gain `voice`; minute segments read "Me:
+  …" / "Speaker 2: …". The minute-by-minute fallback has no turns and stays
+  without voices.
+- **Failures.** Diarization only adds detail: if the service is off,
+  unreachable, still loading or fails, the meeting is finished without
+  voices and the server logs "Meeting diarization failed". Turning it on
+  applies to meetings processed from then on (reprocess a meeting to add
+  voices to it).
+- **Speed.** On a CPU an hour of sound takes a few minutes; `DIARIZER_THREADS`
+  limits the cores (0 = all). Voices are numbers, not names.
 
 ### Recordings from Teams, Meet, Zoom and Slack
 
@@ -471,4 +509,4 @@ These fixtures do not record real participants or call paid providers.
 Physical acceptance remains open: Android/iOS start/stop,
 notification permission, screen lock/background, phone interruption, force-stop
 recovery, unstable upload, storage exhaustion, and an actual sixty-minute meeting.
-Also validate transcription/extraction quality with a consented recording. Speaker attribution remains a separate improvement; the current record is already consolidated across the whole meeting.
+Also validate transcription/extraction quality with a consented recording. Speaker diarization is optional (see Speaker diarization); validate it on a consented recording with several remote participants. Naming the voices is a separate improvement.

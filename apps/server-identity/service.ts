@@ -18,6 +18,7 @@ import {
   type MeetingChunkTranscriber,
   type MeetingSettings,
 } from "./meeting-processing";
+import { diarizerConfig, diarizerHealth } from "./meeting-diarization";
 import { consolidateMeeting, nameMeeting } from "@niaro/server-agent";
 import {
   createNiaroMastraModel,
@@ -728,6 +729,7 @@ export class IdentityService {
           : undefined,
       glossary: meetingOptions.glossary,
       chunkSeconds: meetingOptions.chunkSeconds,
+      diarization: diarizerConfig(meetingOptions.diarization),
     });
     this.scheduleMeetingSweep();
     this.loops = new LoopsStore(db, catalog.store);
@@ -3796,7 +3798,10 @@ export class IdentityService {
   /** Settings read at use take effect at once; origins wait for a restart. */
   private applyServerSettings(next: ServerSettings, previous: ServerSettings) {
     this.plugins.setDefaultTimeZone(next.timeZone);
-    this.meetingProcessor.configure(next.meetings);
+    this.meetingProcessor.configure({
+      ...next.meetings,
+      diarization: diarizerConfig(next.meetings.diarization),
+    });
     if (next.meetings.audioRetentionDays !== this.meetingRetentionDays) {
       this.meetingRetentionDays = next.meetings.audioRetentionDays;
       this.scheduleMeetingSweep();
@@ -5676,6 +5681,7 @@ export class IdentityService {
               "": ["GET", "POST"],
               "/export": ["GET"],
               "/import": ["POST"],
+              "/diarizer": ["GET"],
             } as Record<string, string[] | undefined>
           )[action];
           if (!store || !methods) return respond(404, { error: "not_found" });
@@ -5692,6 +5698,14 @@ export class IdentityService {
             throw new IdentityError(403, "identity_forbidden");
           if (action === "/export")
             return respond(200, serverSettingsFile(store.read().settings));
+          // Whether the saved diarizer answers and has its model loaded.
+          if (action === "/diarizer")
+            return respond(
+              200,
+              await diarizerHealth(
+                diarizerConfig(store.read().settings.meetings.diarization),
+              ),
+            );
           if (req.method === "POST") {
             const change =
               action === "/import"

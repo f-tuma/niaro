@@ -2,6 +2,7 @@ import {
   MEETING_MAX_SECONDS,
   MEETING_MAX_UTTERANCES,
   meetingSpeakerLabels,
+  meetingTurnLabel,
   type MeetingSegment,
   type MeetingUtterance,
 } from "../../packages/protocol/meetings";
@@ -202,8 +203,9 @@ export function transcriptReviewReasons(text: string) {
 }
 /**
  * The minute segments every record and quote refers to, derived from the
- * timed turns: a turn belongs to the minute it starts in. A two-track
- * recording keeps one "Me: …" / "Others: …" line per change of speaker.
+ * timed turns: a turn belongs to the minute it starts in. A two-track or
+ * diarized recording keeps one "Me: …" / "Speaker 2: …" line per change of
+ * speaker.
  */
 export function minuteSegments(
   utterances: MeetingUtterance[],
@@ -216,6 +218,8 @@ export function minuteSegments(
 ): MeetingSegment[] {
   const count = Math.ceil(duration / 60);
   const labels = meetingSpeakerLabels(options.language);
+  const labelled =
+    options.twoTrack || utterances.some((turn) => turn.voice !== undefined);
   const byMinute = Array.from(
     { length: count },
     () => [] as MeetingUtterance[],
@@ -226,19 +230,17 @@ export function minuteSegments(
     ]!.push(turn);
   return byMinute.map((turns, index) => {
     let text: string;
-    if (!options.twoTrack) text = turns.map((t) => t.text.trim()).join(" ");
+    if (!labelled) text = turns.map((t) => t.text.trim()).join(" ");
     else {
-      const lines: { speaker: string; text: string }[] = [];
+      const lines: { label: string; text: string }[] = [];
       for (const turn of turns) {
+        const label = meetingTurnLabel(turn, labels);
         const last = lines[lines.length - 1];
-        if (last?.speaker === turn.speaker) last.text += ` ${turn.text.trim()}`;
-        else lines.push({ speaker: turn.speaker, text: turn.text.trim() });
+        if (last?.label === label) last.text += ` ${turn.text.trim()}`;
+        else lines.push({ label, text: turn.text.trim() });
       }
       text = lines
-        .map(
-          (line) =>
-            `${line.speaker === "me" ? labels.self : labels.others}: ${line.text}`,
-        )
+        .map((line) => (line.label ? `${line.label}: ${line.text}` : line.text))
         .join("\n");
     }
     text = text.trim();

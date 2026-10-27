@@ -161,7 +161,12 @@ test("identity uses a profile-relative private directory and a canonical local l
     hosting: { allowCustom: true, runtime: "auto" },
     hub: { scheduler: { intervalSeconds: 300, maxPerTick: 10, idleDays: 14 } },
     // Meeting sound is kept 30 days after processing.
-    meetings: { audioRetentionDays: 30, glossary: [], chunkSeconds: 300 },
+    meetings: {
+      audioRetentionDays: 30,
+      glossary: [],
+      chunkSeconds: 300,
+      diarization: { enabled: false, url: "http://diarizer:8000" },
+    },
   });
   expect(existsSync(join(directory, "identities"))).toBe(false);
   expect(

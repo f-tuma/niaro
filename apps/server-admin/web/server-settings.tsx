@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
+import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Upload } from "lucide-react";
 import {
@@ -14,6 +15,7 @@ import { Input } from "@admin/components/ui/input";
 import { Textarea } from "@admin/components/ui/textarea";
 import { Skeleton } from "@admin/components/ui/skeleton";
 import { Spinner } from "@admin/components/ui/spinner";
+import { Switch } from "@admin/components/ui/switch";
 import {
   Alert,
   AlertAction,
@@ -39,13 +41,14 @@ import { useServerSettingsCopy } from "./server-settings-copy";
 type Copy = ReturnType<typeof useServerSettingsCopy>;
 type Path =
   | ["name" | "timeZone" | "integrationOrigins" | "allowedOrigins"]
-  | ["meetings", keyof ServerSettings["meetings"]]
+  | ["meetings", Exclude<keyof ServerSettings["meetings"], "diarization">]
+  | ["meetings", "diarization", keyof ServerSettings["meetings"]["diarization"]]
   | ["hubScheduler", keyof ServerSettings["hubScheduler"]];
 type Field = {
   path: Path;
   label: keyof Copy;
   meta?: keyof Copy;
-  kind: "text" | "number" | "lines";
+  kind: "text" | "number" | "lines" | "switch";
 };
 const GROUPS: { title: keyof Copy; fields: Field[] }[] = [
   {
@@ -75,6 +78,17 @@ const GROUPS: { title: keyof Copy; fields: Field[] }[] = [
         label: "glossary",
         meta: "linesMeta",
         kind: "lines",
+      },
+      {
+        path: ["meetings", "diarization", "enabled"],
+        label: "diarization",
+        kind: "switch",
+      },
+      {
+        path: ["meetings", "diarization", "url"],
+        label: "diarizerUrl",
+        meta: "diarizerUrlMeta",
+        kind: "text",
       },
     ],
   },
@@ -116,9 +130,10 @@ const GROUPS: { title: keyof Copy; fields: Field[] }[] = [
 const FIELDS = GROUPS.flatMap((group) => group.fields);
 const keyOf = (field: Field) => field.path.join(".");
 function valueOf(settings: ServerSettings, path: Path): unknown {
-  return path.length === 1
-    ? settings[path[0]]
-    : (settings[path[0]] as Record<string, unknown>)[path[1]];
+  return (path as string[]).reduce<unknown>(
+    (value, part) => (value as Record<string, unknown>)[part],
+    settings,
+  );
 }
 function textOf(field: Field, value: unknown) {
   return field.kind === "lines"
@@ -126,6 +141,7 @@ function textOf(field: Field, value: unknown) {
     : String(value);
 }
 function parse(field: Field, text: string): unknown {
+  if (field.kind === "switch") return text === "true";
   if (field.kind === "number")
     return /^\d+$/.test(text.trim()) ? Number(text) : NaN;
   if (field.kind === "lines")
@@ -141,9 +157,13 @@ function withDraft(saved: ServerSettings, draft: Record<string, string>) {
   for (const field of FIELDS) {
     const text = draft[keyOf(field)];
     if (text === undefined) continue;
-    const [first, second] = field.path;
-    if (second === undefined) next[first] = parse(field, text);
-    else (next[first] as Record<string, unknown>)[second] = parse(field, text);
+    const parts = [...field.path] as string[];
+    const last = parts.pop()!;
+    const parent = parts.reduce(
+      (value, part) => value[part] as Record<string, unknown>,
+      next,
+    );
+    parent[last] = parse(field, text);
   }
   const result = ServerSettingsSchema.safeParse(next);
   return {
@@ -160,6 +180,7 @@ function withDraft(saved: ServerSettings, draft: Record<string, string>) {
   };
 }
 function shown(field: Field, value: unknown, copy: Copy) {
+  if (field.kind === "switch") return value ? copy.on : copy.off;
   if (field.kind !== "lines") return String(value);
   const lines = value as string[];
   return lines.length ? lines.join(", ") : copy.none;
@@ -288,7 +309,7 @@ export function ServerSettingsSections({
     ? serverSettingsChanges(view.settings, serverSettingsOfFile(incoming))
     : [];
   const row = (field: Field) => {
-    const id = `server-${keyOf(field).replace(".", "-")}`;
+    const id = `server-${keyOf(field).replaceAll(".", "-")}`;
     const [first] = field.path;
     const restart =
       first === "integrationOrigins" || first === "allowedOrigins"
@@ -296,16 +317,50 @@ export function ServerSettingsSections({
           ? copy.restartPending
           : copy.afterRestart
         : undefined;
+    const value =
+      draft?.[keyOf(field)] ??
+      textOf(field, valueOf(view.settings, field.path));
+    if (field.kind === "switch")
+      return (
+        <SettingRow
+          key={id}
+          label={copy[field.label]}
+          htmlFor={id}
+          meta={
+            keyOf(field) === "meetings.diarization.enabled" ? (
+              <DiarizerStatus
+                organizationId={organizationId}
+                enabled={view.settings.meetings.diarization.enabled}
+                url={view.settings.meetings.diarization.url}
+                copy={copy}
+              />
+            ) : undefined
+          }
+        >
+          <Switch
+            id={id}
+            disabled={busy}
+            checked={value === "true"}
+            onCheckedChange={(checked) =>
+              setDraft((current) => ({
+                ...current,
+                [keyOf(field)]: String(checked),
+              }))
+            }
+          />
+        </SettingRow>
+      );
     const props = {
       id,
       disabled: busy,
       "aria-invalid": edited?.invalid.has(keyOf(field)) || undefined,
-      value:
-        draft?.[keyOf(field)] ??
-        textOf(field, valueOf(view.settings, field.path)),
+      value,
       onChange: (
         event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-      ) => setDraft({ ...draft, [keyOf(field)]: event.target.value }),
+      ) => {
+        const text = event.target.value;
+        setDraft((current) => ({ ...current, [keyOf(field)]: text }));
+      },
     };
     return (
       <SettingRow
@@ -471,4 +526,56 @@ export function ServerSettingsSections({
       )}
     </>
   );
+}
+
+const DiarizerHealthViewSchema = z.union([
+  z.object({
+    reachable: z.literal(true),
+    ready: z.boolean(),
+    model: z.string(),
+    error: z.string().nullable().optional(),
+  }),
+  z.object({ reachable: z.literal(false), error: z.string() }),
+]);
+type DiarizerHealthView = z.infer<typeof DiarizerHealthViewSchema>;
+/**
+ * The saved diarizer's state: whether it answers and has its model. The
+ * service is optional (compose profile "diarization"), so being off is fine.
+ */
+function DiarizerStatus({
+  organizationId,
+  enabled,
+  url,
+  copy,
+}: {
+  organizationId: string;
+  enabled: boolean;
+  url: string;
+  copy: Copy;
+}) {
+  const query = useQuery({
+    queryKey: ["admin", "server-settings", organizationId, "diarizer", url],
+    enabled,
+    refetchInterval: (query: { state: { data?: DiarizerHealthView } }) =>
+      query.state.data?.reachable && !query.state.data.ready ? 10_000 : false,
+    queryFn: async ({ signal }) =>
+      DiarizerHealthViewSchema.parse(
+        await api(
+          `identity/server-settings/diarizer?organizationId=${encodeURIComponent(organizationId)}`,
+          undefined,
+          signal,
+        ),
+      ),
+  });
+  if (!enabled) return copy.diarizationMeta;
+  const health = query.data;
+  if (!health) return query.isError ? copy.diarizerUnreachable : copy.checking;
+  if (!health.reachable)
+    return health.error === "unauthorized"
+      ? copy.diarizerUnauthorized
+      : copy.diarizerUnreachable;
+  if (health.ready) return copy.diarizerReady;
+  return health.error
+    ? `${copy.diarizerFailed}: ${health.error}`
+    : copy.diarizerLoading;
 }

@@ -21,6 +21,8 @@ export type MeetingUtterance = {
   start: number;
   end: number;
   speaker: MeetingSpeaker;
+  /** The diarizer's numbered voice, when it told the voices apart. */
+  voice?: number;
   text: string;
 };
 export type MeetingNotes = {
@@ -75,6 +77,16 @@ export function meetingSpeaker(value: unknown): MeetingSpeaker {
   return SELF.has(raw) ? "self" : OTHERS.has(raw) ? "others" : "unknown";
 }
 
+/** A turn's speaker as people read it: "Me", "Others", or "Speaker 2". */
+export function meetingSpeakerName(
+  turn: { speaker: MeetingSpeaker; voice?: number },
+  names: Record<MeetingSpeaker, string> & { voice: string },
+) {
+  return turn.speaker !== "self" && turn.voice
+    ? `${names.voice} ${turn.voice}`
+    : names[turn.speaker];
+}
+
 export function meetingNotes(record: MeetingRecord): MeetingNotes {
   const loose = record as unknown as Loose;
   const analysis = object(record.analysis) ?? {};
@@ -105,11 +117,15 @@ export function meetingNotes(record: MeetingRecord): MeetingNotes {
       const words = text(value);
       const start = seconds(turn?.start);
       if (!turn || !words || start === null) return [];
+      const voice = turn.voice;
       return [
         {
           start,
           end: Math.max(start, seconds(turn.end) ?? start),
           speaker: meetingSpeaker(turn.speaker),
+          ...(typeof voice === "number" && Number.isInteger(voice) && voice > 0
+            ? { voice }
+            : {}),
           text: words,
         },
       ];

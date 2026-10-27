@@ -139,6 +139,12 @@ commit in `NIARO_GIT_REF`), so the file works without a checkout.
 5. Microsoft 365 and other hosted MCP servers are added afterwards in
    administration (Hosted); they install on first start and need outbound
    access to the npm registry.
+6. Optional speaker diarization: add `COMPOSE_PROFILES=diarization`,
+   `HF_TOKEN` and `DIARIZER_TOKEN` to **Environment** and redeploy; Dokploy
+   then also builds `services/diarizer` (about 2 GB, CPU only) and starts it on
+   the project's own network, not on `dokploy-network`. Turn it on in
+   administration → Settings → Meetings. See
+   [speaker diarization](meetings.md#speaker-diarization).
 
 Traefik streams responses without buffering and sends `X-Forwarded-For`;
 `NIARO_TRUST_PROXY=auto` trusts it because the public URL is HTTPS and the
@@ -212,7 +218,11 @@ default the example; `compose.dokploy.yml`: optional path in the container), `NI
 bundled proxy's `X-Forwarded-For` only with an HTTPS public URL; `1` always,
 `0` never; see Production behind HTTPS), `NIARO_TRUSTED_PROXIES` (the
 proxy's own addresses, when other containers share its network; unset: any
-loopback or private-network peer), `NIARO_MAX_CONCURRENT_RUNS`.
+loopback or private-network peer), `NIARO_MAX_CONCURRENT_RUNS`, and for the
+optional `diarization` profile `HF_TOKEN`, `DIARIZER_TOKEN` (also passed to
+the server as `NIARO_DIARIZATION_TOKEN`), `DIARIZER_THREADS`,
+`DIARIZER_MEMORY` and `DIARIZER_IMAGE`; see
+[speaker diarization](meetings.md#speaker-diarization).
 
 ### Automatic profile
 
@@ -239,7 +249,8 @@ required then; the server refuses to start without it. The overrides above
 Some profile values are defaults that an owner or administrator changes in
 administration → **Settings** (audited as "Server settings changed"): the
 server's name, the default time zone (`plugins.timeZone`), meetings
-(`administration.identity.meetings`: audio retention, glossary, chunk length),
+(`administration.identity.meetings`: audio retention, glossary, chunk length,
+speaker diarization),
 the overview refresh (`administration.identity.hub.scheduler`), integration
 origins (`administration.identity.integrationOrigins`) and web client origins
 (`allowedOrigins`). Saved values live in the identity database and win over the

@@ -31,6 +31,11 @@ import { resolveDateTime } from "../server-plugins/datetime";
 import type { MeetingChunkTranscript } from "../server-integrations/transcription";
 import { MEETING_STT_REQUEST_BYTES } from "../server-integrations/transcription";
 import { IdentityError } from "./error";
+import {
+  assignVoices,
+  diarize,
+  type DiarizerConfig,
+} from "./meeting-diarization";
 import { MeetingStore } from "./meeting-store";
 import {
   MEETING_CHUNK_OVERLAP_SECONDS,
@@ -95,6 +100,8 @@ export type MeetingProcessorOptions = {
   queue?: SpeechQueue;
   /** Workspace-independent names and terms the transcriber should know. */
   glossary?: string[];
+  /** The optional diarizer that tells the voices of a track apart. */
+  diarization?: DiarizerConfig;
 };
 /** The server's meeting settings (`administration.identity.meetings`). */
 export type MeetingSettings = {
@@ -104,11 +111,14 @@ export type MeetingSettings = {
   glossary: string[];
   /** Length of a timestamped transcription chunk, 120–600 seconds. */
   chunkSeconds: number;
+  /** Who spoke when, from the optional diarizer service. */
+  diarization: { enabled: boolean; url: string };
 };
 export const MEETING_SETTINGS_DEFAULTS: MeetingSettings = {
   audioRetentionDays: 30,
   glossary: [],
   chunkSeconds: 300,
+  diarization: { enabled: false, url: "http://diarizer:8000" },
 };
 const CHUNK_SECONDS = 60;
 const PERMANENT = new Set([
@@ -216,6 +226,9 @@ export class MeetingProcessor {
   private parallel: number;
   readonly queue: SpeechQueue;
   private glossary: string[];
+  private diarization: DiarizerConfig | undefined;
+  /** One meeting at a time: the service diarizes one, and a track is large. */
+  private diarizing: Promise<unknown> = Promise.resolve();
   constructor(
     private store: MeetingStore,
     options: MeetingProcessorOptions = {},
@@ -231,10 +244,14 @@ export class MeetingProcessor {
     this.parallel = Math.max(1, Math.min(3, options.parallel ?? 3));
     this.queue = options.queue ?? new SpeechQueue();
     this.glossary = (options.glossary ?? []).slice(0, 200);
+    this.diarization = options.diarization;
   }
   /** New server settings: chunks started from now on use them. */
   configure(
-    options: Pick<MeetingProcessorOptions, "chunkSeconds" | "glossary">,
+    options: Pick<
+      MeetingProcessorOptions,
+      "chunkSeconds" | "glossary" | "diarization"
+    >,
   ) {
     if (options.chunkSeconds !== undefined)
       this.chunkSeconds = Math.max(
@@ -242,6 +259,7 @@ export class MeetingProcessor {
         Math.min(MEETING_CHUNK_SECONDS.max, options.chunkSeconds),
       );
     if (options.glossary) this.glossary = options.glossary.slice(0, 200);
+    if (options.diarization) this.diarization = options.diarization;
   }
   /** Three attempts in all; only busy, rate-limited, 5xx and timeouts repeat. */
   private async attempt<T>(fn: () => Promise<T>, signal: AbortSignal) {
@@ -519,6 +537,35 @@ export class MeetingProcessor {
             pcm.readInt16LE(frame * width + channel * 2) / 32768;
       return channels;
     };
+    /** The track the diarizer hears: the others' channel, or the whole mix. */
+    const track = async (path: string) => {
+      await runVoiceProcess(
+        "ffmpeg",
+        [
+          "-nostdin",
+          "-v",
+          "error",
+          "-y",
+          "-protocol_whitelist",
+          "file,pipe",
+          "-f",
+          format,
+          "-i",
+          source,
+          "-vn",
+          ...(split ? ["-af", "pan=mono|c0=c1"] : ["-ac", "1"]),
+          "-ar",
+          "16000",
+          "-c:a",
+          "pcm_s16le",
+          "-f",
+          "wav",
+          path,
+        ],
+        signal,
+        10 * 60_000,
+      );
+    };
     const existing = await run(() => this.store.allSegments(scope, id));
     const chunked = await run(() => this.store.hasChunks(scope, id));
     // A meeting already transcribed minute by minute continues that way, so
@@ -532,6 +579,7 @@ export class MeetingProcessor {
         meeting,
         duration,
         decode,
+        track,
         directory,
         signal,
       );
@@ -695,6 +743,7 @@ export class MeetingProcessor {
       length: number,
       name: string,
     ) => Promise<Float32Array[]>,
+    track: (path: string) => Promise<void>,
     directory: string,
     signal: AbortSignal,
   ) {
@@ -823,7 +872,7 @@ export class MeetingProcessor {
       this.parallel,
       signal,
     );
-    const utterances = mergeUtterances(
+    let utterances = mergeUtterances(
       ...speakers.map((speaker) =>
         stitchChunks(
           Array.from(
@@ -841,6 +890,13 @@ export class MeetingProcessor {
           (languages.get(result.language) ?? 0) + result.text.length,
         );
     const language = [...languages].sort((a, b) => b[1] - a[1])[0]?.[0];
+    utterances = await this.voices(
+      utterances,
+      split ? "others" : "unknown",
+      track,
+      directory,
+      signal,
+    );
     const segments = minuteSegments(utterances, duration, {
       language: meeting.language,
       twoTrack: split,
@@ -850,6 +906,42 @@ export class MeetingProcessor {
     await run(() =>
       this.store.putTranscript(scope, id, segments, utterances, language),
     );
+  }
+  /**
+   * With the diarizer on, the turns of one track learn which voice spoke
+   * them. Diarization only adds detail: when the service is missing, busy
+   * or failing, the meeting goes on without voices.
+   */
+  private async voices(
+    utterances: MeetingUtterance[],
+    speaker: MeetingUtterance["speaker"],
+    track: (path: string) => Promise<void>,
+    directory: string,
+    signal: AbortSignal,
+  ) {
+    const config = this.diarization;
+    if (!config?.enabled || !utterances.some((t) => t.speaker === speaker))
+      return utterances;
+    const wav = join(directory, "diarization.wav");
+    const turn = this.diarizing.then(async () => {
+      try {
+        signal.throwIfAborted();
+        await track(wav);
+        return await diarize(config, wav, signal, { maxSpeakers: 20 });
+      } finally {
+        await rm(wav, { force: true });
+      }
+    });
+    this.diarizing = turn.catch(() => {});
+    try {
+      return assignVoices(utterances, await turn, speaker);
+    } catch (error) {
+      if (signal.aborted) throw error;
+      console.warn(
+        `Meeting diarization failed: ${error instanceof Error ? error.message : "unknown"}`,
+      );
+      return utterances;
+    }
   }
   /** FLAC when it fits one request; otherwise MP3 at 64 kb/s. */
   private async encode(
@@ -913,7 +1005,8 @@ export class MeetingProcessor {
     const day = meetingDay(meeting.recordedAt, timeZone);
     const input: MeetingConsolidationInput = {
       segments: segments.map((s) => ({ index: s.index, text: s.text })),
-      ...(meeting.speakerChannels === "self-others"
+      ...(meeting.speakerChannels === "self-others" ||
+      !!utterances?.utterances.some((turn) => turn.voice)
         ? { speakers: meetingSpeakerLabels(meeting.language) }
         : {}),
       meeting: {

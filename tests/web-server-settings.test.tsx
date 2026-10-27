@@ -60,12 +60,32 @@ jest.mock("@admin/components/ui/input", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/textarea", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/skeleton", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/spinner", () => host(), { virtual: true });
+jest.mock("@admin/components/ui/switch", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/alert", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/alert-dialog", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/card", () => host(), { virtual: true });
-jest.mock("@admin/components/console/setting-row", () => host(), {
-  virtual: true,
-});
+jest.mock(
+  "@admin/components/console/setting-row",
+  () => {
+    const React = jest.requireActual<typeof import("react")>("react");
+    return host({
+      // A row's meta (a range, a state) is shown under its label.
+      SettingRow: ({
+        label,
+        meta,
+        children,
+      }: Record<string, React.ReactNode>) =>
+        React.createElement(
+          "div",
+          { "data-host": "SettingRow" },
+          label,
+          meta,
+          children,
+        ),
+    });
+  },
+  { virtual: true },
+);
 jest.mock("@admin/components/console/time", () => host(), { virtual: true });
 jest.mock(
   "@admin/components/console/forms",
@@ -132,7 +152,12 @@ const flush = async () => {
 const settings: ServerSettings = {
   name: "TEST Server",
   timeZone: "Europe/Prague",
-  meetings: { audioRetentionDays: 30, glossary: [], chunkSeconds: 300 },
+  meetings: {
+    audioRetentionDays: 30,
+    glossary: [],
+    chunkSeconds: 300,
+    diarization: { enabled: false, url: "http://diarizer:8000" },
+  },
   hubScheduler: { intervalSeconds: 300, maxPerTick: 10, idleDays: 14 },
   integrationOrigins: [],
   allowedOrigins: [],
@@ -293,4 +318,48 @@ test("import shows what changes, then applies the file", async () => {
   expect(
     root.findAll((node) => node.props["data-host"] === "DetailList"),
   ).toHaveLength(0);
+});
+
+test("diarization: the switch shows the service's state and saves with its address", async () => {
+  const on = {
+    ...settings,
+    meetings: {
+      ...settings.meetings,
+      diarization: { enabled: true, url: "http://diarizer:8000" },
+    },
+  };
+  mockApi.mockImplementation(async (path: string, body?: unknown) =>
+    path.startsWith("identity/server-settings/diarizer")
+      ? { reachable: true, ready: true, model: "TEST/model", error: null }
+      : body
+        ? view(4, settings)
+        : view(3, on),
+  );
+  const root = await render();
+  expect(mockApi).toHaveBeenCalledWith(
+    "identity/server-settings/diarizer?organizationId=org_TEST",
+    undefined,
+    expect.anything(),
+  );
+  expect(text(root)).toContain("Diarizer ready");
+  const toggle = root.find(
+    (node) =>
+      node.props["data-host"] === "Switch" &&
+      node.props.id === "server-meetings-diarization-enabled",
+  );
+  expect(toggle.props.checked).toBe(true);
+  await act(async () => toggle.props.onCheckedChange(false));
+  await act(async () => button(root, "Save changes").props.onClick());
+  await flush();
+  expect(mockApi).toHaveBeenLastCalledWith("identity/server-settings", {
+    organizationId: "org_TEST",
+    revision: 3,
+    settings: {
+      ...on,
+      meetings: {
+        ...on.meetings,
+        diarization: { enabled: false, url: "http://diarizer:8000" },
+      },
+    },
+  });
 });

@@ -7,8 +7,10 @@
  * the exact original text; one that cannot be found is reported as missing
  * so the caller can drop that single source.
  */
-const SPEAKER_LABEL = /(?:^|(?<=\s))(?:Já|Ostatní|Me|Others)\s*:\s*/giu;
-const LEADING_LABEL = /^\s*(?:Já|Ostatní|Me|Others)\s*:\s*/iu;
+const SPEAKER_LABEL =
+  /(?:^|(?<=\s))(?:Já|Ostatní|Me|Others|(?:Mluvčí|Speaker) \d{1,2})\s*:\s*/giu;
+const LEADING_LABEL =
+  /^\s*(?:Já|Ostatní|Me|Others|(?:Mluvčí|Speaker) \d{1,2})\s*:\s*/iu;
 const PUNCTUATION = /[.,!?;:…]/u;
 const QUOTES = /["'`´„“”‚‘’«»‹›]/u;
 const DASHES = /[‐‑‒–—―−]/u;

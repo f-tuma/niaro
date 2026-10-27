@@ -711,7 +711,11 @@ test("a browser's two-track WebM (no duration, L = me, R = others) is transcribe
       f.store.segment(scope, request.id, 0)!.text,
       `Ostatní: ${others}\nJá: ${self}`,
     );
-    assert.deepEqual(consolidated.speakers, { self: "Já", others: "Ostatní" });
+    assert.deepEqual(consolidated.speakers, {
+      self: "Já",
+      others: "Ostatní",
+      voice: "Mluvčí",
+    });
     assert.equal(f.store.humanTasks.list(scope, "open").tasks.length, 1);
 
     // A mono file can't claim two speaker channels.

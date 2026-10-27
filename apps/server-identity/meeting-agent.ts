@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type { Scope } from "../../packages/protocol";
-import { meetingNotes } from "../../packages/protocol/meeting-notes";
+import {
+  meetingNotes,
+  meetingSpeakerName,
+} from "../../packages/protocol/meeting-notes";
 import { meetingSpeakerLabels } from "../../packages/protocol/meetings";
 import { meetingTime } from "../../packages/ui-catalog/meeting-format";
 import { resolveDateTime } from "../server-plugins/datetime";
@@ -173,7 +176,7 @@ export function meetingAgentAccess(
         ? notes.utterances.map((turn) => ({
             at: turn.start,
             text: clip(
-              `${meetingTime(turn.start)} ${turn.speaker === "unknown" ? "" : labels[turn.speaker] + ": "}${turn.text}`,
+              `${meetingTime(turn.start)} ${turn.speaker === "unknown" && !turn.voice ? "" : meetingSpeakerName(turn, { ...labels, unknown: "" }) + ": "}${turn.text}`,
               4000,
             ),
           }))

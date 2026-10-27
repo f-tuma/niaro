@@ -154,8 +154,9 @@ export type MeetingConsolidationInput = {
   /**
    * A two-track recording: transcript lines starting with `self:` are the
    * person recording, lines starting with `others:` the other participants.
+   * With diarization, `voice` numbered ("Speaker 2:") is one participant.
    */
-  speakers?: { self: string; others: string };
+  speakers?: { self: string; others: string; voice?: string };
   /** What is known about the meeting; dates are interpreted against `date`. */
   meeting?: {
     title: string;
