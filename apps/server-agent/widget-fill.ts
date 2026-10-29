@@ -29,7 +29,6 @@ export async function collectWidgetData(
     prompt: string;
     tools: WidgetFillTool[];
     maxSteps: number;
-    maxOutputTokens: number;
   },
   signal: AbortSignal,
 ) {
@@ -58,10 +57,7 @@ export async function collectWidgetData(
   await agent.generate(input.prompt, {
     abortSignal: signal,
     maxSteps: input.maxSteps,
-    modelSettings: {
-      maxRetries: 0,
-      maxOutputTokens: input.maxOutputTokens,
-    },
+    modelSettings: { maxRetries: 0 },
   });
   signal.throwIfAborted();
 }
@@ -77,7 +73,6 @@ export async function assembleWidgetData<S extends z.ZodType>(
     schema: S;
     instructions: string;
     payload: string;
-    maxOutputTokens: number;
   },
   signal: AbortSignal,
 ): Promise<unknown> {
@@ -93,7 +88,7 @@ export async function assembleWidgetData<S extends z.ZodType>(
   const result = await agent.generate(input.payload, {
     abortSignal: signal,
     maxSteps: 1,
-    modelSettings: { maxRetries: 0, maxOutputTokens: input.maxOutputTokens },
+    modelSettings: { maxRetries: 0 },
     structuredOutput: {
       schema: input.schema,
       jsonPromptInjection: true,

@@ -76,7 +76,6 @@ export async function transcribeAudio(
         : {
             model: selected.model.model,
             stream: false,
-            max_tokens: 4096,
             messages: [
               { role: "system", content: transcriptionPrompts[language] },
               {

@@ -284,7 +284,6 @@ async function requestSpeech(
           stream: true,
           modalities: ["text", "audio"],
           audio: { voice: selection.voice, format: "pcm16" },
-          max_tokens: 4096,
           provider: {
             require_parameters: true,
             data_collection: "deny",

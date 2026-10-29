@@ -18,7 +18,7 @@ import type { HubDocNode } from "../../packages/protocol/hub";
  * read through the integration transport, and a web search through the
  * workspace's OpenRouter model. Everything here is bounded and returns
  * plain values; the agent domain counts the calls, takes the budget and
- * marks every result as untrusted. See docs/web.md.
+ * marks every result as untrusted. See openspec/specs/web-access/spec.md.
  */
 
 /** How web content is framed for the model, in every web tool result. */
@@ -461,7 +461,6 @@ export async function searchWeb(
           },
         ],
         temperature: 0,
-        max_tokens: 800,
         // Like the other calls that send content to a provider directly
         // (voice, meetings): no training on it, and ZDR unless turned off.
         provider: {

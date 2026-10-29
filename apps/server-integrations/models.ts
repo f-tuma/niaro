@@ -69,7 +69,6 @@ export async function complete(
       model: model.model,
       messages,
       temperature: 0.1,
-      max_tokens: 1600,
       ...(tools.length
         ? { tools, tool_choice: "auto", parallel_tool_calls: false }
         : {}),

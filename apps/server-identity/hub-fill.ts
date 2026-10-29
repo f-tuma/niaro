@@ -61,11 +61,6 @@ export const HUB_FILL_LIMITS = Object.freeze({
   resultBytes: 12_000,
   /** Everything the assembly step receives. */
   payloadBytes: 48_000,
-  /** Output tokens of one collection step / of the assembly. A reasoning
-   * model thinks within the same allowance: 6,000 tokens ended a GLM
-   * assembly before it wrote anything, or cut a week's calendar off. */
-  collectTokens: 4_000,
-  assembleTokens: 16_000,
 });
 /**
  * Opening one item in full (`runHubOpen`): the same closed agent finds the
@@ -78,7 +73,6 @@ export const HUB_OPEN_LIMITS = Object.freeze({
   reads: 2,
   /** The model only confirms the read: it sees a small projection. */
   resultBytes: 4_000,
-  collectTokens: 2_000,
   /** The message text handed to the page. */
   textChars: HUB_ITEM_TEXT_MAX,
 });
@@ -672,7 +666,6 @@ export async function runHubFill(
           }),
           tools: run.tools,
           maxSteps: HUB_FILL_LIMITS.steps,
-          maxOutputTokens: HUB_FILL_LIMITS.collectTokens,
         },
         signal,
       ),
@@ -726,7 +719,6 @@ export async function runHubFill(
           .filter(Boolean)
           .join("\n"),
         payload,
-        maxOutputTokens: HUB_FILL_LIMITS.assembleTokens,
       },
       signal,
     ),
@@ -900,7 +892,6 @@ export async function runHubOpen(
         }),
         tools: run.tools,
         maxSteps: HUB_OPEN_LIMITS.steps,
-        maxOutputTokens: HUB_OPEN_LIMITS.collectTokens,
       },
       signal,
     ),

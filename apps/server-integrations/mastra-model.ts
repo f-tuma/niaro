@@ -199,7 +199,11 @@ function requestBody(model: CatalogModel, options: LanguageModelV4CallOptions) {
     model: model.model,
     messages: promptMessages(options.prompt),
     temperature: options.temperature ?? 0.1,
-    max_tokens: options.maxOutputTokens ?? 1600,
+    // No allowance unless a caller sets one: the model's own maximum applies,
+    // and usage limits clamp it to the model's "Max reply" when enforced.
+    ...(options.maxOutputTokens !== undefined
+      ? { max_tokens: options.maxOutputTokens }
+      : {}),
     ...(options.topP !== undefined ? { top_p: options.topP } : {}),
     ...(options.presencePenalty !== undefined
       ? { presence_penalty: options.presencePenalty }
@@ -329,8 +333,6 @@ function resultFrom(response: unknown): LanguageModelV4GenerateResult {
 export type ModelCallLimits = {
   timeoutMs: number;
   maxRequestBytes?: number;
-  /** Output allowance when the caller sets none; an inference budget may lower it. */
-  maxOutputTokens?: number;
 };
 /**
  * Bounds for one model call. Interactive turns end before the phone stops
@@ -338,17 +340,13 @@ export type ModelCallLimits = {
  * 1,000,000 characters) and can take several minutes to write.
  */
 export const MODEL_CALL_LIMITS = {
-  // A reasoning model spends part of the allowance thinking before it calls a
-  // tool or writes a table; 1,600 tokens cut such answers off. Usage limits
-  // still clamp each request to the model's "Max reply".
-  chat: { timeoutMs: 110_000, maxOutputTokens: 8_000 },
+  chat: { timeoutMs: 110_000 },
   meeting: {
     timeoutMs: MAX_TRANSPORT_TIMEOUT_MS,
     maxRequestBytes: 4 * 1024 * 1024,
   },
-  // The designer writes whole process definitions as tool arguments; a
-  // reasoning model easily needs more than the chat allowance for one call.
-  design: { timeoutMs: 5 * 60_000, maxOutputTokens: 16_000 },
+  // The designer writes whole process definitions as tool arguments.
+  design: { timeoutMs: 5 * 60_000 },
 } as const satisfies Record<string, ModelCallLimits>;
 
 /** Sees the reply text of a streamed call grow; never its tool calls. */
@@ -407,11 +405,7 @@ export function createNiaroMastraModel(
   ): Promise<LanguageModelV4GenerateResult> => {
     options.abortSignal?.throwIfAborted();
     // SDK options cannot change the configured endpoint or authentication headers.
-    const { maxOutputTokens, ...transportLimits } = limits;
-    const body = requestBody(model, {
-      ...options,
-      maxOutputTokens: options.maxOutputTokens ?? maxOutputTokens,
-    });
+    const body = requestBody(model, options);
     // A streamed call shows its reply while it is written. It still resolves
     // only with the whole completion, validated as without streaming.
     const stream = observe && new CompletionStream();
@@ -423,7 +417,7 @@ export function createNiaroMastraModel(
         ? { ...body, stream: true, stream_options: { include_usage: true } }
         : body,
       signal: options.abortSignal,
-      ...transportLimits,
+      ...limits,
       beforeDispatch,
       ...(stream && {
         onEvent: (data: string) => {
