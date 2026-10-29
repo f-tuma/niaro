@@ -381,6 +381,36 @@ export class FixtureStorage {
   events(scope: Scope, after: number) {
     return this.transaction(false, () => this.engine(scope).events(after));
   }
+  /**
+   * One events poll from a single read. A phone polls every second, and
+   * loading the whole workflow costs far more than the poll itself, so a poll
+   * already at the cursor reads only the cursor, the floor and the chat count.
+   */
+  poll(scope: Scope, after: number) {
+    this.validateScope(scope);
+    return this.transaction(false, () => {
+      const head = this.db
+        .prepare(
+          "SELECT json_extract(state,'$.snapshot.cursor') AS cursor, json_extract(state,'$.eventFloor') AS floor, json_array_length(state,'$.snapshot.conversations') AS conversations FROM workflows WHERE scope_key=?",
+        )
+        .get(keyFor(scope));
+      if (
+        head &&
+        typeof head.cursor === "number" &&
+        typeof head.floor === "number" &&
+        typeof head.conversations === "number" &&
+        after === head.cursor &&
+        after >= head.floor
+      )
+        return {
+          conversations: head.conversations,
+          saved: { scope, events: [], cursor: after },
+          workItems: [],
+        };
+      const engine = this.engine(scope);
+      return { ...engine.pollState(), saved: engine.events(after) };
+    });
+  }
   /** Archives the live chat (long-term history) and clears short-term memory. */
   startSession(
     scope: Scope,

@@ -1,4 +1,5 @@
 import { Agent } from "@mastra/core/agent";
+import { quiet } from "./quiet-agent";
 import { createTool } from "@mastra/core/tools";
 import type { z } from "zod";
 import type { LanguageModelV4 } from "./model-types";
@@ -32,26 +33,28 @@ export async function collectWidgetData(
   },
   signal: AbortSignal,
 ) {
-  const agent = new Agent({
-    id: "niaro-widget-collect-v1",
-    name: "Widget data collection",
-    model,
-    instructions: input.instructions,
-    tools: Object.fromEntries(
-      input.tools.map((tool) => [
-        tool.name,
-        createTool({
-          id: tool.name,
-          description: tool.description,
-          inputSchema: tool.input,
-          execute: async (args) => {
-            signal.throwIfAborted();
-            return tool.run(args as Record<string, unknown>);
-          },
-        }),
-      ]),
-    ),
-  });
+  const agent = quiet(
+    new Agent({
+      id: "niaro-widget-collect-v1",
+      name: "Widget data collection",
+      model,
+      instructions: input.instructions,
+      tools: Object.fromEntries(
+        input.tools.map((tool) => [
+          tool.name,
+          createTool({
+            id: tool.name,
+            description: tool.description,
+            inputSchema: tool.input,
+            execute: async (args) => {
+              signal.throwIfAborted();
+              return tool.run(args as Record<string, unknown>);
+            },
+          }),
+        ]),
+      ),
+    }),
+  );
   await agent.generate(input.prompt, {
     abortSignal: signal,
     maxSteps: input.maxSteps,
@@ -78,13 +81,15 @@ export async function assembleWidgetData<S extends z.ZodType>(
   },
   signal: AbortSignal,
 ): Promise<unknown> {
-  const agent = new Agent({
-    id: "niaro-widget-assemble-v1",
-    name: "Widget data",
-    model,
-    tools: {},
-    instructions: input.instructions,
-  });
+  const agent = quiet(
+    new Agent({
+      id: "niaro-widget-assemble-v1",
+      name: "Widget data",
+      model,
+      tools: {},
+      instructions: input.instructions,
+    }),
+  );
   const result = await agent.generate(input.payload, {
     abortSignal: signal,
     maxSteps: 1,

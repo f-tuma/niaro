@@ -1616,21 +1616,18 @@ export function createFixtureServer(
         if (!Number.isSafeInteger(cursor) || cursor < 0)
           return respond(400, { error: "invalid_cursor" });
         const events = await run(() => {
-          if (
-            !conversationProjection &&
-            storage.snapshot(session.scope).conversations.length > 50
-          )
+          const { conversations, saved, workItems } = storage.poll(
+            session.scope,
+            cursor,
+          );
+          if (!conversationProjection && conversations > 50)
             throw new IdentityError(406, "conversation_profile_required");
           if (validateTaskWindow && !validateTaskWindow())
             throw new IdentityError(503, "task_projection_changed");
-          const saved = storage.events(session.scope, cursor);
           return saved
             ? {
                 ...saved,
-                events: processEventsForCurrentWindow(
-                  saved.events,
-                  storage.snapshot(session.scope).workItems,
-                ),
+                events: processEventsForCurrentWindow(saved.events, workItems),
               }
             : null;
         });

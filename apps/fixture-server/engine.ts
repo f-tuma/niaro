@@ -472,15 +472,29 @@ export class FixtureEngine {
         ? conversation
         : { ...conversation, messages: [] },
     );
-    snapshot.workItems = snapshot.workItems.map((work) => ({
+    snapshot.workItems = snapshot.workItems.map((work) =>
+      this.clientWork(work),
+    );
+    return snapshot;
+  }
+  /** What an events poll checks against, without copying every chat. */
+  pollState() {
+    return {
+      conversations: this.data.snapshot.conversations.length,
+      workItems: this.data.snapshot.workItems.map((work) =>
+        this.clientWork(structuredClone(work)),
+      ),
+    };
+  }
+  private clientWork(work: WorkItem): WorkItem {
+    return {
       ...work,
       card: work.native
         ? work.native.process
           ? work.card
           : undefined
         : (work.card ?? workCard(work, this.cardLanguage)),
-    }));
-    return snapshot;
+    };
   }
   private currentMemory(
     timeZone: string,
