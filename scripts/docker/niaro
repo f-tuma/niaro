@@ -29,6 +29,10 @@ command="${1:-start}"
 case "$command" in
   start | check | admin-key | admin-rotate-key)
     run_ts apps/reference-server/cli.ts "$command" "$config" "$@" ;;
+  storage-check)
+    run_ts scripts/storage-check.ts "$@" ;;
+  storage-bootstrap)
+    run_ts scripts/storage-bootstrap.ts "$@" ;;
   backup)
     exec node --disable-warning=ExperimentalWarning scripts/backup.mjs "$data" "${1:--}" ;;
   restore)
@@ -36,6 +40,6 @@ case "$command" in
   healthcheck)
     exec node scripts/docker/healthcheck.mjs "$config" ;;
   *)
-    echo "Unknown command: $command (start, check, admin-key, admin-rotate-key, backup, restore, healthcheck)" >&2
+    echo "Unknown command: $command (start, check, admin-key, admin-rotate-key, backup, restore, healthcheck, storage-check, storage-bootstrap)" >&2
     exit 64 ;;
 esac

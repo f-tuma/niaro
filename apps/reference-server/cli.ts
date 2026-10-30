@@ -1,3 +1,5 @@
+import { loadStorageConfiguration } from "../server-storage/config";
+import { safeStatus } from "../server-storage/types";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { issueAdminKey } from "../server-admin/auth";
@@ -74,10 +76,13 @@ async function main() {
     } else {
       const adapters = loadServerAdapters(config);
       if (mode === "check") {
+        const storage = loadStorageConfiguration();
+        if (storage.state === "invalid") process.exitCode = 1;
         console.log(
           JSON.stringify(
             {
-              valid: true,
+              valid: storage.state !== "invalid",
+              objectStorage: safeStatus(storage),
               name: config.name,
               adapters: Object.fromEntries(
                 Object.entries(config.adapters).map(([key, value]) => [
@@ -109,6 +114,15 @@ async function main() {
         let server;
         try {
           server = createReferenceServer(config, adapters, identity);
+          console.log(
+            JSON.stringify({
+              objectStorage:
+                server.objectStorage.state === "unavailable"
+                  ? { state: "unavailable", code: server.objectStorage.code }
+                  : { state: server.objectStorage.state },
+              note: "Storage connectivity is checked only with storage-check.",
+            }),
+          );
         } catch (error) {
           await identity?.close();
           throw error;

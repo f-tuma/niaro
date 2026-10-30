@@ -1,3 +1,6 @@
+import { StorageRegistry } from "../server-storage/registry";
+import { initializeObjectStorage, type StorageRuntime } from "../server-storage/runtime";
+import type { StorageConfiguration } from "../server-storage/types";
 import {
   chmodSync,
   existsSync,
@@ -81,6 +84,8 @@ export function acquireServerLock(directory: string) {
 export const RECENT_RECEIPTS = 500;
 export class FixtureStorage {
   private db: DatabaseSync;
+  private objectRegistry!: StorageRegistry;
+  objectStorage: StorageRuntime = { state: "disabled" };
   private history!: ConversationHistory;
   private search!: ChatSearchIndex;
   constructor(
@@ -148,6 +153,8 @@ export class FixtureStorage {
             "DELETE FROM receipts WHERE json_extract(payload,'$.command.type')='card.respond'",
           )
           .run();
+        this.objectRegistry = new StorageRegistry(this.db);
+        this.objectRegistry.recoverInterruptedMutations();
         this.history = new ConversationHistory(this.db, this.now);
         this.history.migrate();
         // Follows the history through triggers; backfills once, bounded.
@@ -168,7 +175,13 @@ export class FixtureStorage {
       throw error;
     }
   }
+  initializeObjectStorage(configuration: StorageConfiguration) {
+    if (this.objectStorage.state === "configured") this.objectStorage.store.close();
+    this.objectStorage = initializeObjectStorage(this.objectRegistry, configuration);
+    return this.objectStorage;
+  }
   close() {
+    if (this.objectStorage.state === "configured") this.objectStorage.store.close();
     this.db.close();
   }
   /** Readiness probe: the workflow database answers a trivial read. */

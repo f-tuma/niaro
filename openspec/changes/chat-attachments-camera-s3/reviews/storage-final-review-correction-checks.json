@@ -1,0 +1,27 @@
+{
+  "FR1": {
+    "exit": 0,
+    "seconds": 0.263,
+    "stdout": "{\"result\":{\"ok\":false,\"code\":\"timeout\",\"cleanup\":\"failed\",\"cleanupCode\":\"uncertain\"},\"objectsAfterCleanup\":0,\"pendingPuts\":1}\n{\"objectsAfterLateConditionalPut\":1,\"bodies\":[\"synthetic-conflict\"]}\n",
+    "stderr": ""
+  },
+  "FR2": {
+    "exit": 0,
+    "seconds": 0.251,
+    "stdout": "{\"ok\":false,\"code\":\"integrity\",\"cleanup\":\"confirmed\"}\n",
+    "stderr": ""
+  },
+  "FR3": {
+    "exit": 0,
+    "seconds": 0.124,
+    "stdout": "{\"state\":\"invalid\",\"code\":\"invalid_config\",\"field\":\"NIARO_S3_SECRET_ACCESS_KEY\"}\n",
+    "stderr": ""
+  },
+  "FR4": {
+    "exit": 0,
+    "seconds": 0.239,
+    "stdout": "{\"ok\":true,\"putDeleteRefusedBeforeDispatch\":true,\"reservationRollbackPreserved\":true,\"committedFlowWorks\":true}\n",
+    "stderr": "(node:530940) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+  },
+  "allPassed": true
+}

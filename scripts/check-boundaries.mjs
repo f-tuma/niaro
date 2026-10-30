@@ -51,7 +51,7 @@ for (const directory of [
   for (const file of files(directory)) {
     const source = readFileSync(file, "utf8");
     if (
-      /from ['"][^'"]*(?:fixture-server|reference-server|server-sdk|server-tools|server-plugins|server-hosting|server-agent)[^'"]*['"]/.test(
+      /from ['"][^'"]*(?:fixture-server|reference-server|server-sdk|server-tools|server-plugins|server-hosting|server-agent|server-storage)[^'"]*['"]/.test(
         source,
       ) ||
       serverPackageImport.test(source)

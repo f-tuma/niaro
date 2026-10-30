@@ -1,0 +1,37 @@
+{
+  "/tmp/niaro-attachments-baseline-identity.log": {
+    "sha256": "0fd3b7074ac6295417c2357256f74a535ba5a486200b65e54bf5f650b049ec66",
+    "names": [
+      "an archived chat keeps its native memory, takes no turns and continues after restore in a fresh thread with its visible history",
+      "paired ClientSession continues an authentic restored agent-1 read/question into one guarded native root (direct)",
+      "paired ClientSession continues an authentic restored agent-1 read/question into one guarded native root (interleaved)",
+      "paired ClientSession continues an authentic restored progressive-1 read/question into one guarded native root (direct)",
+      "paired ClientSession continues an authentic restored progressive-1 read/question into one guarded native root (interleaved)",
+      "an answer prepared before fatal native retirement cannot publish success on restart",
+      "proven native retirement releases a permanently revoked captured actor through interrupt",
+      "proven native retirement releases a permanently revoked captured actor through fresh-access",
+      "paired HTTP and ClientSession preserve decision-unpriced budget failure in en",
+      "paired HTTP and ClientSession preserve decision-unpriced budget failure in cs",
+      "paired HTTP and ClientSession preserve exhausted budget failure in en",
+      "paired HTTP and ClientSession preserve exhausted budget failure in cs"
+    ]
+  },
+  "/tmp/niaro-s3-identity.log": {
+    "sha256": "0114263cc706d3a03d5498c81fa96da9f398a3e13516b9978eeec88d94065eb9",
+    "names": [
+      "an archived chat keeps its native memory, takes no turns and continues after restore in a fresh thread with its visible history",
+      "paired ClientSession continues an authentic restored agent-1 read/question into one guarded native root (direct)",
+      "paired ClientSession continues an authentic restored agent-1 read/question into one guarded native root (interleaved)",
+      "paired ClientSession continues an authentic restored progressive-1 read/question into one guarded native root (direct)",
+      "paired ClientSession continues an authentic restored progressive-1 read/question into one guarded native root (interleaved)",
+      "an answer prepared before fatal native retirement cannot publish success on restart",
+      "proven native retirement releases a permanently revoked captured actor through interrupt",
+      "proven native retirement releases a permanently revoked captured actor through fresh-access",
+      "paired HTTP and ClientSession preserve decision-unpriced budget failure in en",
+      "paired HTTP and ClientSession preserve decision-unpriced budget failure in cs",
+      "paired HTTP and ClientSession preserve exhausted budget failure in en",
+      "paired HTTP and ClientSession preserve exhausted budget failure in cs"
+    ]
+  },
+  "sameNames": true
+}

@@ -1,3 +1,4 @@
+import type { StorageConfiguration } from "../server-storage/types";
 import { pipeline } from "node:stream";
 import { openAnswerStream } from "./answer-stream";
 import {
@@ -245,6 +246,7 @@ function connectorHandlers(
   };
 }
 export type FixtureServerOptions = {
+  objectStorage?: StorageConfiguration;
   identity?: Pick<
     IdentityService,
     | "attachWorkflow"
@@ -339,6 +341,7 @@ export function createFixtureServer(
           ? options.identity?.calendarTarget(scope)
           : calendar?.targetFor(scope),
     );
+    storage.initializeObjectStorage(options.objectStorage ?? { state: "disabled" });
     worker = new CalendarWorker(
       storage,
       calendar,
@@ -1807,7 +1810,7 @@ export function createFixtureServer(
   };
   server.on("close", dispose);
   server.on("error", dispose);
-  return server;
+  return Object.assign(server, { objectStorage: storage.objectStorage });
 }
 
 /** The `error` code of a small JSON failure response, when it is one. */

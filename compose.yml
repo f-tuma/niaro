@@ -1,12 +1,14 @@
+# Optional object-storage adds private RustFS with its own persistent volume.
+# Bootstrap explicitly; see docs/guides/object-storage.md.
 # Niaro: one server container, one data volume, optional Caddy for HTTPS.
-# See docs/deployment.md.
+# See docs/guides/deployment.md.
 #
 #   Local trial (HTTP on this machine only):
 #     docker compose up -d --build
 #     open http://localhost:8793/
 #   Production behind HTTPS:
 #     NIARO_PUBLIC_URL=https://assistant.example.com docker compose --profile https up -d --build
-#   Optional speaker diarization (who spoke when; see docs/meetings.md):
+#   Optional speaker diarization (who spoke when; see docs/guides/deployment.md):
 #     HF_TOKEN=... docker compose --profile diarization up -d --build
 #   then turn it on in administration, Settings, Meetings. Leaving the
 #   profile out (or removing the diarizer service) switches it off.
@@ -15,6 +17,21 @@
 # (NIARO_PUBLIC_URL, NIARO_CONFIG, NIARO_DATA_VOLUME, SMTP_*).
 name: niaro
 
+x-object-storage-environment: &object-storage-environment
+  NIARO_S3_ENDPOINT: ${NIARO_S3_ENDPOINT:-}
+  NIARO_S3_REGION: ${NIARO_S3_REGION:-}
+  NIARO_S3_BUCKET: ${NIARO_S3_BUCKET:-}
+  NIARO_S3_PREFIX: ${NIARO_S3_PREFIX:-}
+  NIARO_S3_CREDENTIAL_MODE: ${NIARO_S3_CREDENTIAL_MODE:-}
+  NIARO_S3_ACCESS_KEY_ID: ${NIARO_S3_ACCESS_KEY_ID:-}
+  NIARO_S3_SECRET_ACCESS_KEY: ${NIARO_S3_SECRET_ACCESS_KEY:-}
+  NIARO_S3_SESSION_TOKEN: ${NIARO_S3_SESSION_TOKEN:-}
+  NIARO_S3_ACCESS_KEY_ID_FILE: ${NIARO_S3_ACCESS_KEY_ID_FILE:-}
+  NIARO_S3_SECRET_ACCESS_KEY_FILE: ${NIARO_S3_SECRET_ACCESS_KEY_FILE:-}
+  NIARO_S3_SESSION_TOKEN_FILE: ${NIARO_S3_SESSION_TOKEN_FILE:-}
+  NIARO_S3_FORCE_PATH_STYLE: ${NIARO_S3_FORCE_PATH_STYLE:-}
+  NIARO_S3_ALLOW_HTTP: ${NIARO_S3_ALLOW_HTTP:-}
+
 services:
   niaro:
     build: .
@@ -22,6 +39,7 @@ services:
     init: true
     restart: unless-stopped
     environment:
+      <<: *object-storage-environment
       # The one public origin people open. HTTPS in production; the default is
       # only for a trial on this machine.
       NIARO_PUBLIC_URL: ${NIARO_PUBLIC_URL:-http://localhost:8793}
@@ -61,6 +79,53 @@ services:
     logging:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
+
+  # Optional attachment storage; bootstrap explicitly before starting Niaro.
+  rustfs:
+    profiles: ["object-storage"]
+    image: rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${NIARO_RUSTFS_ROOT_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${NIARO_RUSTFS_ROOT_SECRET_KEY:-}
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_OBS_LOG_DIRECTORY: /tmp/logs
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        case "$$RUSTFS_ACCESS_KEY" in ''|rustfsadmin|minioadmin|admin) echo 'Invalid RustFS bootstrap credentials' >&2; exit 64;; esac
+        case "$$RUSTFS_SECRET_KEY" in ''|rustfsadmin|minioadmin|password) echo 'Invalid RustFS bootstrap credentials' >&2; exit 64;; esac
+        [ "$${#RUSTFS_ACCESS_KEY}" -ge 8 ] && [ "$${#RUSTFS_SECRET_KEY}" -ge 16 ] || exit 64
+        exec /entrypoint.sh rustfs
+    volumes:
+      - rustfs-data:/data
+    networks: [default]
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ports: ["127.0.0.1:${NIARO_RUSTFS_PORT:-19010}:9000"]
+
+  rustfs-bootstrap:
+    profiles: ["object-storage"]
+    image: ${NIARO_IMAGE:-niaro:local}
+    build:
+      context: .
+    command: ["storage-bootstrap"]
+    restart: "no"
+    depends_on:
+      rustfs: { condition: service_started }
+    environment:
+      <<: *object-storage-environment
+      NIARO_RUSTFS_ROOT_ACCESS_KEY: ${NIARO_RUSTFS_ROOT_ACCESS_KEY:-}
+      NIARO_RUSTFS_ROOT_SECRET_KEY: ${NIARO_RUSTFS_ROOT_SECRET_KEY:-}
+      NIARO_RUSTFS_ROOT_ACCESS_KEY_FILE: ${NIARO_RUSTFS_ROOT_ACCESS_KEY_FILE:-}
+      NIARO_RUSTFS_ROOT_SECRET_KEY_FILE: ${NIARO_RUSTFS_ROOT_SECRET_KEY_FILE:-}
+    networks: [default]
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
 
   # Optional: pyannote on the CPU, reached by Niaro at http://diarizer:8000.
   diarizer:
@@ -110,6 +175,7 @@ services:
       - caddy-config:/config
 
 volumes:
+  rustfs-data:
   niaro-data:
     # Restore into a new volume and point this at it to switch over.
     name: ${NIARO_DATA_VOLUME:-niaro-data}

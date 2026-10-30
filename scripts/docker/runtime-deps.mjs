@@ -28,7 +28,7 @@ const root = process.cwd();
 const RUNTIME_EXTRA = ["tsx"];
 
 const traced = await build({
-  entryPoints: ["apps/reference-server/cli.ts"],
+  entryPoints: ["apps/reference-server/cli.ts", "scripts/storage-check.ts", "scripts/storage-bootstrap.ts"],
   bundle: true,
   platform: "node",
   format: "esm",
@@ -36,7 +36,7 @@ const traced = await build({
   metafile: true,
   write: false,
   logLevel: "error",
-  outfile: "server.mjs",
+  outdir: "runtime-trace",
 });
 const name = (specifier) =>
   specifier.startsWith("@")

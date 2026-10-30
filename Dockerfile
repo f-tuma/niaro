@@ -1,11 +1,12 @@
 # syntax=docker/dockerfile:1
 # One image for the whole server: app API, web app, administration, Mastra
-# runtime and storage. Data lives in one volume at /data. Without a server
+# runtime and local metadata. Local data lives in one volume at /data; optional
+# attachment objects live in the separately configured private S3 service. Without a server
 # profile the server builds its own from the environment (NIARO_PUBLIC_URL and
 # friends); a profile mounted read-only at /config/server.json (or at
 # $NIARO_CONFIG) is used instead when present. Built-in plugins ship in
 # /app/plugins; the operator's own and edited ones live in /data/identity/plugins
-# (docs/plugins.md). See docs/deployment.md.
+# (docs/guides/plugins.md). See docs/guides/deployment.md.
 ARG NODE_IMAGE=node:22.23.3-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
 
 # --- build: full install from the lockfile, web bundle, runtime selection ----
@@ -26,7 +27,7 @@ RUN npm run admin:build \
  && cp -r apps packages plugins dist-admin package.json /runtime/ \
  && rm -rf /runtime/apps/mobile /runtime/apps/server-admin/web \
            /runtime/apps/server-admin/vite.config.ts \
- && cp scripts/backup.mjs scripts/restore.mjs scripts/backup-common.mjs /runtime/scripts/ \
+ && cp scripts/backup.mjs scripts/restore.mjs scripts/backup-common.mjs scripts/storage-check.ts scripts/storage-bootstrap.ts /runtime/scripts/ \
  && cp scripts/docker/healthcheck.mjs /runtime/scripts/docker/ \
  && cp scripts/docker/tsconfig.runtime.json /runtime/tsconfig.json
 

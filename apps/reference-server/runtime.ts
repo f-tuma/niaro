@@ -1,3 +1,5 @@
+import { loadStorageConfiguration } from "../server-storage/config";
+import type { StorageConfiguration } from "../server-storage/types";
 import type { IdentityService } from "../server-identity/service";
 import type { AIProfiles } from "../server-identity/workspace-ai";
 import {
@@ -155,7 +157,10 @@ export function createReferenceServer(
   adapters = loadServerAdapters(config),
   identity?: IdentityService,
   /** Tests pass isolated console assets; production serves dist-admin. */
-  options: { adminAssetsDirectory?: string } = {},
+  options: {
+    adminAssetsDirectory?: string;
+    objectStorage?: StorageConfiguration;
+  } = {},
 ) {
   if (!!config.administration?.identity !== !!identity)
     throw new ServerConfigError(
@@ -218,6 +223,7 @@ export function createReferenceServer(
       : allowed;
   return createFixtureServer(config.dataDirectory, origins, {
     ...adapters,
+    objectStorage: options.objectStorage ?? loadStorageConfiguration(),
     management,
     identity,
     sessionTtlMs: config.sessionSeconds * 1000,

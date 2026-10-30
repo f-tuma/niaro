@@ -1,6 +1,8 @@
+# Optional object-storage adds private RustFS with its own persistent volume.
+# Bootstrap explicitly; see docs/guides/object-storage.md.
 # Niaro on Dokploy: one server container and one data volume. Dokploy's
 # Traefik terminates HTTPS, so there is no Caddy and no published port.
-# See docs/deployment.md, "Dokploy".
+# See docs/guides/deployment.md, "Dokploy".
 #
 # The image is built from the GitHub repository (no registry image yet), so
 # this file also works pasted as a raw compose in Dokploy. NIARO_GIT_REF picks
@@ -18,11 +20,26 @@
 # Microsoft 365 and other hosted MCP servers are added in administration
 # (Hosted); without Docker they run inside this container.
 #
-# Optional speaker diarization (who spoke when; see docs/meetings.md): set
+# Optional speaker diarization (who spoke when; see docs/guides/deployment.md): set
 # COMPOSE_PROFILES=diarization and HF_TOKEN (plus DIARIZER_TOKEN) in
 # Environment, redeploy, then turn it on in administration, Settings,
 # Meetings. Without the profile the diarizer is neither built nor started.
 name: niaro
+
+x-object-storage-environment: &object-storage-environment
+  NIARO_S3_ENDPOINT: ${NIARO_S3_ENDPOINT:-}
+  NIARO_S3_REGION: ${NIARO_S3_REGION:-}
+  NIARO_S3_BUCKET: ${NIARO_S3_BUCKET:-}
+  NIARO_S3_PREFIX: ${NIARO_S3_PREFIX:-}
+  NIARO_S3_CREDENTIAL_MODE: ${NIARO_S3_CREDENTIAL_MODE:-}
+  NIARO_S3_ACCESS_KEY_ID: ${NIARO_S3_ACCESS_KEY_ID:-}
+  NIARO_S3_SECRET_ACCESS_KEY: ${NIARO_S3_SECRET_ACCESS_KEY:-}
+  NIARO_S3_SESSION_TOKEN: ${NIARO_S3_SESSION_TOKEN:-}
+  NIARO_S3_ACCESS_KEY_ID_FILE: ${NIARO_S3_ACCESS_KEY_ID_FILE:-}
+  NIARO_S3_SECRET_ACCESS_KEY_FILE: ${NIARO_S3_SECRET_ACCESS_KEY_FILE:-}
+  NIARO_S3_SESSION_TOKEN_FILE: ${NIARO_S3_SESSION_TOKEN_FILE:-}
+  NIARO_S3_FORCE_PATH_STYLE: ${NIARO_S3_FORCE_PATH_STYLE:-}
+  NIARO_S3_ALLOW_HTTP: ${NIARO_S3_ALLOW_HTTP:-}
 
 services:
   niaro:
@@ -32,6 +49,7 @@ services:
     init: true
     restart: unless-stopped
     environment:
+      <<: *object-storage-environment
       # The one public origin people open; the same host as the Dokploy domain.
       NIARO_PUBLIC_URL: ${NIARO_PUBLIC_URL:?Set NIARO_PUBLIC_URL to the https:// domain}
       # Optional: the server's name and default time zone (also changeable in
@@ -45,7 +63,7 @@ services:
       # because the public URL is HTTPS.
       NIARO_TRUST_PROXY: ${NIARO_TRUST_PROXY:-auto}
       # Optional: only these addresses (IPs or CIDR) may set X-Forwarded-For,
-      # e.g. Traefik's address on dokploy-network; see docs/deployment.md.
+      # e.g. Traefik's address on dokploy-network; see docs/guides/deployment.md.
       NIARO_TRUSTED_PROXIES: ${NIARO_TRUSTED_PROXIES:-}
       # Agent runs at once across everyone (one per person, plus a hub refresh).
       NIARO_MAX_CONCURRENT_RUNS: ${NIARO_MAX_CONCURRENT_RUNS:-8}
@@ -80,6 +98,52 @@ services:
     logging:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
+
+  # Optional attachment storage; bootstrap explicitly before starting Niaro.
+  rustfs:
+    profiles: ["object-storage"]
+    image: rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${NIARO_RUSTFS_ROOT_ACCESS_KEY:-}
+      RUSTFS_SECRET_KEY: ${NIARO_RUSTFS_ROOT_SECRET_KEY:-}
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_OBS_LOG_DIRECTORY: /tmp/logs
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        case "$$RUSTFS_ACCESS_KEY" in ''|rustfsadmin|minioadmin|admin) echo 'Invalid RustFS bootstrap credentials' >&2; exit 64;; esac
+        case "$$RUSTFS_SECRET_KEY" in ''|rustfsadmin|minioadmin|password) echo 'Invalid RustFS bootstrap credentials' >&2; exit 64;; esac
+        [ "$${#RUSTFS_ACCESS_KEY}" -ge 8 ] && [ "$${#RUSTFS_SECRET_KEY}" -ge 16 ] || exit 64
+        exec /entrypoint.sh rustfs
+    volumes:
+      - rustfs-data:/data
+    networks: [default]
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  rustfs-bootstrap:
+    profiles: ["object-storage"]
+    image: ${NIARO_IMAGE:-niaro:local}
+    build:
+      context: https://github.com/f-tuma/niaro.git#${NIARO_GIT_REF:-main}
+    command: ["storage-bootstrap"]
+    restart: "no"
+    depends_on:
+      rustfs: { condition: service_started }
+    environment:
+      <<: *object-storage-environment
+      NIARO_RUSTFS_ROOT_ACCESS_KEY: ${NIARO_RUSTFS_ROOT_ACCESS_KEY:-}
+      NIARO_RUSTFS_ROOT_SECRET_KEY: ${NIARO_RUSTFS_ROOT_SECRET_KEY:-}
+      NIARO_RUSTFS_ROOT_ACCESS_KEY_FILE: ${NIARO_RUSTFS_ROOT_ACCESS_KEY_FILE:-}
+      NIARO_RUSTFS_ROOT_SECRET_KEY_FILE: ${NIARO_RUSTFS_ROOT_SECRET_KEY_FILE:-}
+    networks: [default]
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
 
   # Optional: pyannote on the CPU, reached by Niaro at http://diarizer:8000
   # on the project's own network only.
@@ -117,6 +181,7 @@ networks:
     external: true
 
 volumes:
+  rustfs-data:
   niaro-data:
     # A fixed name, so redeploys and Dokploy volume backups find it.
     name: ${NIARO_DATA_VOLUME:-niaro-data}
