@@ -64,6 +64,8 @@ import {
   LegacyQuestionSchema,
 } from "./legacy-question";
 import type { Scope } from "../../packages/protocol";
+import { OutputVoiceStore } from "./output-voice";
+import type { SpeechVoiceRoute } from "../server-integrations/speech-voices";
 type Row = {
   id: string;
   scope_id: string;
@@ -118,6 +120,7 @@ export class ServiceCatalogStore {
   readonly personalPolicy: PersonalActionPolicyStore;
   readonly nativeStorageUrl: string;
   readonly inferenceBudget: InferenceBudgetStore;
+  readonly outputVoice: OutputVoiceStore;
   constructor(
     private db: DatabaseSync,
     secret: string,
@@ -206,6 +209,7 @@ export class ServiceCatalogStore {
         "ALTER TABLE agent_catalog_personal ADD COLUMN management TEXT NOT NULL DEFAULT 'owner'",
       );
     this.inferenceBudget = new InferenceBudgetStore(db);
+    this.outputVoice = new OutputVoiceStore(db);
     // A write interrupted after dispatch must never be retried automatically.
     for (const row of db
       .prepare("SELECT id,data FROM agent_service_invocation")
@@ -482,6 +486,43 @@ export class ServiceCatalogStore {
           zeroDataRetention: route.zeroDataRetention,
         }
       : undefined;
+  }
+  /** Passive settings/compatibility metadata: never decrypt a credential or contact a provider. */
+  speechVoiceRoute(
+    orgId: string,
+    workspaceId: string,
+  ): SpeechVoiceRoute | null {
+    try {
+      if (this.workspaceOrganization(workspaceId) !== orgId) return null;
+      const speech = this.routing(workspaceId).speech;
+      if (!speech.modelId) return null;
+      const model = this.readModel(
+        orgId,
+        this.row(orgId, "model", speech.modelId),
+      );
+      const row = this.row(orgId, "provider", model.providerId);
+      const provider = ProviderSettings.parse(JSON.parse(row.data));
+      if (
+        !model.enabled ||
+        !provider.enabled ||
+        !row.secret ||
+        provider.url.replace(/\/$/, "") !== "https://openrouter.ai/api/v1" ||
+        (speech.method === "reader"
+          ? model.kind !== "chat" || !model.audioOutput
+          : model.kind !== "speech")
+      )
+        return null;
+      return {
+        provider: { id: row.id, revision: row.revision, url: provider.url },
+        model: { id: model.id, revision: model.revision, model: model.model },
+        method: speech.method,
+        format: speech.method === "reader" ? "pcm16" : "mp3",
+        voice: speech.voice,
+        zeroDataRetention: speech.zeroDataRetention,
+      };
+    } catch {
+      return null;
+    }
   }
   /**
    * The model of the web plugin's searches: the organization's chat model
@@ -1151,6 +1192,46 @@ export class ServiceCatalogStore {
       .get(workspaceId, serviceId, reference, reference);
   }
   command(input: z.infer<typeof CatalogCommand>) {
+    if (
+      ![
+        "saveRouting",
+        "saveProvider",
+        "removeProvider",
+        "saveModel",
+        "removeModel",
+        "importModels",
+      ].includes(input.type)
+    )
+      return this.applyCommand(input);
+    // Record both sides even if nobody reads settings between A -> B -> A.
+    // A savepoint also keeps direct synchronous callers atomic inside/outside a controller transaction.
+    this.db.exec("SAVEPOINT output_voice_catalog_command");
+    try {
+      const org = input.organizationId;
+      const workspaces = this.db
+        .prepare("SELECT id FROM agent_workspace WHERE organization_id=?")
+        .all(org);
+      const observe = () => {
+        for (const { id } of workspaces)
+          this.outputVoice.observeRoute(
+            org,
+            String(id),
+            this.speechVoiceRoute(org, String(id)),
+          );
+      };
+      observe();
+      const result = this.applyCommand(input);
+      observe();
+      this.db.exec("RELEASE output_voice_catalog_command");
+      return result;
+    } catch (error) {
+      this.db.exec(
+        "ROLLBACK TO output_voice_catalog_command; RELEASE output_voice_catalog_command",
+      );
+      throw error;
+    }
+  }
+  private applyCommand(input: z.infer<typeof CatalogCommand>) {
     const { organizationId: org, workspaceId: ws } = input;
     switch (input.type) {
       case "saveService": {
