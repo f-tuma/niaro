@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
-import { MessagesSquare, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
 import { Input } from "@admin/components/ui/input";
 import { Skeleton } from "@admin/components/ui/skeleton";
@@ -269,7 +269,7 @@ function SignIn({
     null,
   );
   return (
-    <AuthLayout title={copy.signInTitle} icon={<MessagesSquare />}>
+    <AuthLayout title={copy.signInTitle}>
       <form
         onSubmit={(event) => {
           event.preventDefault();

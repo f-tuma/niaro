@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { Terminal } from "lucide-react";
 import { Card, CardContent } from "@admin/components/ui/card";
+
+import niaroLogo from "../../assets/brand/logo.svg";
 
 /**
  * Centered single-task layout for pages outside the console shell:
@@ -28,12 +29,22 @@ export function AuthLayout({
           <CardContent>
             <div className="flex flex-col gap-6 py-2 sm:p-4">
               <header className="flex flex-col items-center gap-4 text-center">
-                <span
-                  aria-hidden="true"
-                  className="flex size-10 items-center justify-center rounded-lg bg-foreground text-background [&_svg]:size-5"
-                >
-                  {icon ?? <Terminal />}
-                </span>
+                {icon ? (
+                  <span
+                    aria-hidden="true"
+                    className="flex size-10 items-center justify-center rounded-lg bg-foreground text-background [&_svg]:size-5"
+                  >
+                    {icon}
+                  </span>
+                ) : (
+                  <img
+                    src={niaroLogo}
+                    alt="Niaro"
+                    width={164}
+                    height={50}
+                    className="h-10 w-auto"
+                  />
+                )}
                 <div className="flex flex-col gap-1">
                   <h1 className="text-lg font-semibold tracking-tight text-balance">
                     {title}

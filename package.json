@@ -9,6 +9,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "assets:pull": "node scripts/pull-brand-assets.mjs",
+    "assets:refresh": "node scripts/pull-brand-assets.mjs --refresh",
     "server": "tsx apps/reference-server/cli.ts start",
     "test:mcp": "npm run admin:build && node --import tsx --test tests/mcp-access.node.ts tests/mcp-transport.node.ts tests/mcp-native-cancel.node.ts tests/mcp-cancellation-delivery.node.ts tests/mcp-http.node.ts tests/mcp-connector-http.node.ts tests/mcp-oauth.node.ts tests/mcp-oauth-http.node.ts tests/mcp-oauth-sso.node.ts tests/admin-mcp-login.node.ts",
     "smoke": "node scripts/smoke/run.mjs",
