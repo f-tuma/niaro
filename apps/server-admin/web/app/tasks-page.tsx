@@ -366,7 +366,7 @@ function TaskLibrary({ session }: { session: ClientSession }) {
         onClose={() => setSelected(null)}
         onDecide={decide}
         onResolve={(task) => {
-          handOffHumanTask(task);
+          handOffHumanTask(task, session.identityKey);
           setSelected(null);
           void navigate({ to: "/chat" });
         }}

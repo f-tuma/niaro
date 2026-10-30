@@ -5,6 +5,8 @@ import {
   recentRuns,
 } from "../apps/server-admin/web/app/process-launch";
 import {
+  handOffComposerPicker,
+  takeComposerHandoff,
   handOffHumanTask,
   takeHumanTask,
 } from "../apps/server-admin/web/app/task-handoff";
@@ -21,7 +23,9 @@ const ids = () => {
   let id = 0;
   return () => `TEST-web-${++id}`;
 };
-const offer = (patch: Partial<ProcessOfferResult> = {}): ProcessOfferResult => ({
+const offer = (
+  patch: Partial<ProcessOfferResult> = {},
+): ProcessOfferResult => ({
   type: "process.offer",
   version: 1,
   processId: "TEST-process-B",
@@ -145,10 +149,13 @@ test("personal processes are grouped apart from the workspace's", () => {
 });
 
 test("a task handed to chat is taken exactly once", () => {
-  expect(takeHumanTask()).toBeNull();
-  handOffHumanTask({ id: "TEST-task", title: "TEST resolve me" });
-  expect(takeHumanTask()).toEqual({ id: "TEST-task", title: "TEST resolve me" });
-  expect(takeHumanTask()).toBeNull();
+  expect(takeHumanTask("TEST-actor")).toBeNull();
+  handOffHumanTask({ id: "TEST-task", title: "TEST resolve me" }, "TEST-actor");
+  expect(takeHumanTask("TEST-actor")).toEqual({
+    id: "TEST-task",
+    title: "TEST resolve me",
+  });
+  expect(takeHumanTask("TEST-actor")).toBeNull();
 });
 
 test("menu copy has the same keys in both languages", () => {
@@ -226,4 +233,19 @@ test("my processes show drafts, tested, active and blocked states with a start o
     reason: "connection_required",
   });
   expect(rows.filter((r) => r.start)).toHaveLength(1);
+});
+
+test("picker handoff is identity-owned, consumed once and never replays to a foreign account", () => {
+  handOffComposerPicker("TEST-A");
+  expect(takeComposerHandoff("TEST-B")).toBeNull();
+  expect(takeComposerHandoff("TEST-A")).toBeNull();
+  handOffComposerPicker("TEST-A");
+  expect(takeComposerHandoff("TEST-A")).toEqual({
+    identityKey: "TEST-A",
+    picker: true,
+  });
+  expect(takeComposerHandoff("TEST-A")).toBeNull();
+  handOffHumanTask({ id: "TEST-task", title: "context" }, "TEST-A");
+  expect(takeHumanTask("TEST-B")).toBeNull();
+  expect(takeHumanTask("TEST-A")).toBeNull();
 });

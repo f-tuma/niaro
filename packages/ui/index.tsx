@@ -72,6 +72,7 @@ import AudioLines from "lucide-react-native/icons/audio-lines";
 import Smartphone from "lucide-react-native/icons/smartphone";
 import Circle from "lucide-react-native/icons/circle";
 import Archive from "lucide-react-native/icons/archive";
+import AtSign from "lucide-react-native/icons/at-sign";
 import Paperclip from "lucide-react-native/icons/paperclip";
 import BookOpen from "lucide-react-native/icons/book-open";
 import Briefcase from "lucide-react-native/icons/briefcase";
@@ -499,6 +500,7 @@ const icons = {
   volume: Volume2,
   settings: Settings,
   paperclip: Paperclip,
+  at: AtSign,
   library: BookOpen,
   briefcase: Briefcase,
   mail: Mail,

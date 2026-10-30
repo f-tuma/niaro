@@ -1,3 +1,5 @@
+import { takeComposerHandoff } from "../apps/server-admin/web/app/task-handoff";
+import { attachmentCopy } from "../packages/ui-catalog/attachment-presentation";
 import React from "react";
 import TestRenderer, { act, type ReactTestInstance } from "react-test-renderer";
 import { webcrypto } from "node:crypto";
@@ -22,6 +24,7 @@ import {
   UNSAVED_DRAFT,
   draftKey,
   readDraft,
+  saveDraft,
 } from "../apps/server-admin/web/app/chat-store";
 
 if (!globalThis.crypto?.randomUUID)
@@ -978,4 +981,69 @@ test("the gallery's preview shows whole rows only: a few rows, the inbox without
   expect(hostOf(tablePreview, "Table")[0]!.props.scroll).toBe(false);
   expect(tablePreview.findAll((node) => node.type === "a")).toHaveLength(0);
   expect(byTestId(tablePreview, "table-copy")).toHaveLength(0);
+});
+
+test("Hub paperclip preserves saved context and appends its text before one owned picker handoff", async () => {
+  const f = fakeSession(dashboard([])),
+    key = draftKey(f.session.identityKey, UNSAVED_DRAFT);
+  takeComposerHandoff(f.session.identityKey);
+  const context = {
+    runtime: "mastra" as const,
+    id: "TEST-q",
+    revision: 1,
+    workItemId: "TEST-work",
+    conversationId: "TEST-chat",
+    question: "TEST?",
+    status: "open" as const,
+    options: [],
+  };
+  const saved = {
+    text: "kept",
+    revision: 8,
+    context,
+    task: { id: "TEST-task", title: "Task" },
+    mentions: [{ kind: "skill" as const, id: "TEST-skill", name: "Skill" }],
+  };
+  saveDraft(key, saved);
+  const root = await render(<HubDashboardView session={f.session} />);
+  await act(async () =>
+    hostOf(root, "InputGroupInput")[0]!.props.onChange({
+      target: { value: "new question" },
+    }),
+  );
+  await act(async () =>
+    button(root, attachmentCopy("cs").attach).props.onClick(),
+  );
+  expect(readDraft(key)).toEqual({ ...saved, text: "kept\n\nnew question" });
+  expect(mockNavigate).toHaveBeenCalledWith({ to: "/chat" });
+  expect(f.commands).toHaveLength(0);
+  expect(takeComposerHandoff(f.session.identityKey)).toEqual({
+    identityKey: f.session.identityKey,
+    picker: true,
+  });
+  expect(takeComposerHandoff(f.session.identityKey)).toBeNull();
+  saveDraft(key, { text: "", revision: 0 });
+});
+test("Hub overflow keeps both drafts and performs no navigation or picker handoff", async () => {
+  const f = fakeSession(dashboard([])),
+    key = draftKey(f.session.identityKey, UNSAVED_DRAFT);
+  takeComposerHandoff(f.session.identityKey);
+  const saved = { text: "x".repeat(3990), revision: 7 };
+  saveDraft(key, saved);
+  const root = await render(<HubDashboardView session={f.session} />);
+  await act(async () =>
+    hostOf(root, "InputGroupInput")[0]!.props.onChange({
+      target: { value: "new question" },
+    }),
+  );
+  await act(async () =>
+    button(root, attachmentCopy("cs").attach).props.onClick(),
+  );
+  expect(readDraft(key)).toBe(saved);
+  expect(hostOf(root, "InputGroupInput")[0]!.props.value).toBe("new question");
+  expect(mockNavigate).not.toHaveBeenCalled();
+  expect(takeComposerHandoff(f.session.identityKey)).toBeNull();
+  expect(text(root)).toContain(hubCopy.cs.askTooLong);
+  expect(f.commands).toHaveLength(0);
+  saveDraft(key, { text: "", revision: 0 });
 });

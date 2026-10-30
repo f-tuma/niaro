@@ -126,7 +126,8 @@ import {
   saveDraft,
 } from "../chat-store";
 import { handOffProcessOffer } from "../offer-handoff";
-import { takeHumanTask } from "../task-handoff";
+import { takeComposerHandoff } from "../task-handoff";
+import { TaskReferencePicker } from "../task-reference-picker";
 import { useSessionState } from "../menu-page";
 import {
   MAX_MESSAGE_LENGTH,
@@ -268,11 +269,12 @@ export function ChatNextConversation({
     const saved = readDraft(
       draftKey(session.identityKey, routeId ?? UNSAVED_DRAFT),
     );
-    const handed = routeId ? null : takeHumanTask();
+    const handed = routeId ? null : takeComposerHandoff(session.identityKey);
     return {
       text: saved?.text ?? "",
       context: saved?.context,
-      task: handed ?? saved?.task,
+      task: handed?.task ?? saved?.task,
+      picker: handed?.picker ?? false,
       mentions: saved?.mentions ?? [],
     };
   });
@@ -309,6 +311,38 @@ export function ChatNextConversation({
   const [attachedTask, setAttachedTask] = useState<
     HumanTaskReference | undefined
   >(initial.task ?? undefined);
+  const [taskPicker, setTaskPicker] = useState<{
+    session: ClientSession;
+    opener: HTMLButtonElement | null;
+    caret: { start: number; end: number } | null;
+    identityKey: string;
+    conversationId: string;
+    revision: number;
+    context: ReplyContext | undefined;
+  } | null>(null);
+  const [closingTaskPicker, setClosingTaskPicker] =
+    useState<typeof taskPicker>(null);
+  const taskPickerReturn = useRef<{
+    owner: NonNullable<typeof taskPicker>;
+    picked: boolean;
+  } | null>(null);
+  const taskPickerRef = useRef(taskPicker);
+  const taskPickerSession = useRef(session);
+  useLayoutEffect(() => {
+    taskPickerSession.current = session;
+  }, [session]);
+  const updateTaskPicker = (next: typeof taskPicker, picked = false) => {
+    const current = taskPickerRef.current;
+    if (next) {
+      taskPickerReturn.current = null;
+      setClosingTaskPicker(null);
+    } else if (current) {
+      taskPickerReturn.current = { owner: current, picked };
+      setClosingTaskPicker(current);
+    }
+    taskPickerRef.current = next;
+    setTaskPicker(next);
+  };
   const attachedTaskRef = useRef(attachedTask);
   useLayoutEffect(() => {
     attachedTaskRef.current = attachedTask;
@@ -1375,35 +1409,122 @@ export function ChatNextConversation({
                   </Button>
                 </div>
               ) : (
-                <Composer
-                  composerRef={composerRef}
-                  initialText={initial.text}
-                  onDraft={noteDraft}
-                  directory={directory}
-                  picked={picked}
-                  setPicked={setPicked}
-                  attachedTask={attachedTask}
-                  onDetachTask={() => setAttachedTask(undefined)}
-                  context={context}
-                  validContext={validContext}
-                  waitingForAnswer={waitingForProcessAnswer}
-                  onClearContext={() => setContext(undefined)}
-                  disabled={inputDisabled}
-                  attachments={attachments}
-                  onFileOnly={() => submitMessage("")}
-                  sendBlocked={
-                    !online ||
-                    busy ||
-                    historyLoading ||
-                    (attachments.state.entries.length > 0 && !attachments.ready)
-                  }
-                  stoppable={stoppable}
-                  stopLabel={
-                    state.error === "requestInterruptFailed"
-                      ? copy.stopRetry
-                      : copy.stop
-                  }
-                />
+                <>
+                  <Composer
+                    composerRef={composerRef}
+                    initialText={initial.text}
+                    onDraft={noteDraft}
+                    directory={directory}
+                    picked={picked}
+                    setPicked={setPicked}
+                    attachedTask={attachedTask}
+                    onDetachTask={() => setAttachedTask(undefined)}
+                    onAttachTask={() => {
+                      const composer = composerRef.current;
+                      updateTaskPicker({
+                        session,
+                        opener:
+                          composer?.form?.querySelector<HTMLButtonElement>(
+                            'button[aria-haspopup="menu"]',
+                          ) ?? null,
+                        caret: composer
+                          ? {
+                              start: composer.selectionStart,
+                              end: composer.selectionEnd,
+                            }
+                          : null,
+                        identityKey: session.identityKey,
+                        conversationId: id,
+                        revision: draftRevision.current,
+                        context: contextRef.current,
+                      });
+                    }}
+                    initialAttachmentMenuOpen={initial.picker}
+                    context={context}
+                    validContext={validContext}
+                    waitingForAnswer={waitingForProcessAnswer}
+                    onClearContext={() => setContext(undefined)}
+                    disabled={inputDisabled}
+                    attachments={attachments}
+                    onFileOnly={() => submitMessage("")}
+                    sendBlocked={
+                      !online ||
+                      busy ||
+                      historyLoading ||
+                      (attachments.state.entries.length > 0 &&
+                        !attachments.ready)
+                    }
+                    stoppable={stoppable}
+                    stopLabel={
+                      state.error === "requestInterruptFailed"
+                        ? copy.stopRetry
+                        : copy.stop
+                    }
+                  />
+                  <TaskReferencePicker
+                    session={session}
+                    language={language}
+                    open={!!taskPicker}
+                    owner={taskPicker ?? closingTaskPicker}
+                    onOpenChange={(open) => {
+                      if (!open) updateTaskPicker(null);
+                    }}
+                    onPick={(task) => {
+                      const accepted =
+                        alive.current &&
+                        taskPicker &&
+                        taskPickerRef.current === taskPicker &&
+                        taskPickerSession.current === session &&
+                        taskPicker.identityKey === session.identityKey &&
+                        taskPicker.conversationId === id &&
+                        taskPicker.revision === draftRevision.current &&
+                        taskPicker.context === contextRef.current &&
+                        !contextRef.current &&
+                        !inputDisabled;
+                      if (accepted) setAttachedTask(task);
+                      if (taskPickerRef.current === taskPicker)
+                        updateTaskPicker(null, !!accepted);
+                    }}
+                    onCloseAutoFocus={(_, owner) => {
+                      const returning = taskPickerReturn.current;
+                      if (!returning || returning.owner !== owner) return;
+                      taskPickerReturn.current = null;
+                      if (alive.current)
+                        setClosingTaskPicker((current) =>
+                          current === owner ? null : current,
+                        );
+                      const closed = returning.owner;
+                      if (
+                        !alive.current ||
+                        taskPickerRef.current ||
+                        taskPickerSession.current !== closed.session ||
+                        closed.identityKey !== closed.session.identityKey ||
+                        closed.conversationId !== id ||
+                        closed.revision !== draftRevision.current ||
+                        closed.context !== contextRef.current ||
+                        inputDisabled
+                      )
+                        return;
+                      const composer = composerRef.current;
+                      const target = returning.picked
+                        ? composer
+                        : closed.opener?.isConnected
+                          ? closed.opener
+                          : composer;
+                      if (
+                        !target?.isConnected ||
+                        target.closest('[inert], [aria-hidden="true"]')
+                      )
+                        return;
+                      target.focus({ preventScroll: true });
+                      if (composer && target === composer && closed.caret)
+                        composer.setSelectionRange(
+                          closed.caret.start,
+                          closed.caret.end,
+                        );
+                    }}
+                  />
+                </>
               )}
             </div>
           </div>
@@ -1674,6 +1795,8 @@ function Composer({
   stopLabel,
   attachments,
   onFileOnly,
+  onAttachTask,
+  initialAttachmentMenuOpen,
 }: {
   composerRef: RefObject<HTMLTextAreaElement | null>;
   initialText: string;
@@ -1693,6 +1816,8 @@ function Composer({
   stopLabel: string;
   attachments: WebAttachments;
   onFileOnly: () => void;
+  onAttachTask: () => void;
+  initialAttachmentMenuOpen: boolean;
 }) {
   const aui = useAui();
   const chat = useNextChat();
@@ -1973,6 +2098,8 @@ function Composer({
         <InputGroupAddon align="block-end">
           <WebAttachmentMenu
             value={attachments}
+            onTask={onAttachTask}
+            initialOpen={initialAttachmentMenuOpen}
             disabled={disabled || chat.readOnly || !!context}
           />
           {directory.length > 0 && (

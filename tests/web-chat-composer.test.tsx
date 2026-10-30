@@ -1,3 +1,7 @@
+import { cs } from "../packages/i18n";
+import type { HumanTask } from "../packages/protocol/human-tasks";
+import { WebAttachmentMenu } from "../apps/server-admin/web/app/chat-next/attachment-controls";
+import { TaskReferencePicker } from "../apps/server-admin/web/app/task-reference-picker";
 import React from "react";
 import TestRenderer, { act, type ReactTestInstance } from "react-test-renderer";
 import { webcrypto } from "node:crypto";
@@ -82,6 +86,8 @@ const host = () =>
     .requireActual<typeof import("./helpers/web-hosts")>("./helpers/web-hosts")
     .hostModule();
 jest.mock("@admin/components/ui/button", () => host(), { virtual: true });
+jest.mock("@admin/components/ui/command", () => host(), { virtual: true });
+jest.mock("@admin/components/ui/dialog", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/alert", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/skeleton", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/input-group", () => host(), { virtual: true });
@@ -209,6 +215,12 @@ function fakeSession(
     getRetrySource: () => undefined,
     discardProcessAnswerAttempt: jest.fn(async () => true),
     readMentions: jest.fn(mentions),
+    readHumanTasks: jest.fn(async () => ({
+      profile: "niaro-human-tasks/2",
+      scope,
+      tasks: [],
+      next: null,
+    })),
     getDirectoryVersion: () => 0,
     renameConversation: jest.fn(async () => {}),
     deleteConversation: jest.fn(async () => {}),
@@ -241,7 +253,10 @@ function fakeSession(
   return { session: session as unknown as ClientSession, sent, publish };
 }
 
-async function render(element: React.ReactElement) {
+async function render(
+  element: React.ReactElement,
+  createNodeMock?: TestRenderer.TestRendererOptions["createNodeMock"],
+) {
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = TestRenderer.create(
@@ -257,18 +272,33 @@ async function render(element: React.ReactElement) {
       >
         {element}
       </QueryClientProvider>,
+      createNodeMock ? { createNodeMock } : undefined,
     );
   });
   await settle();
+  mounted.push(renderer);
   return renderer.root;
 }
-const renderChat = (session: ClientSession, routeId?: string) =>
+// The elapsed-time ticker keeps an interval while a progress line is shown;
+// unmounting after each test stops it so the worker exits cleanly.
+const mounted: TestRenderer.ReactTestRenderer[] = [];
+afterEach(async () => {
+  for (const renderer of mounted.splice(0)) {
+    await act(async () => renderer.unmount());
+  }
+});
+const renderChat = (
+  session: ClientSession,
+  routeId?: string,
+  createNodeMock?: TestRenderer.TestRendererOptions["createNodeMock"],
+) =>
   render(
     <ChatNextConversation
       session={session}
       routeId={routeId}
       onSaved={jest.fn()}
     />,
+    createNodeMock,
   );
 const text = (node: ReactTestInstance | string): string =>
   typeof node === "string" ? node : node.children.map(text).join("");
@@ -1450,3 +1480,329 @@ describe("open work in a chat", () => {
     }
   });
 });
+
+test("paperclip offers a functional task reference without file capability and never autosends", async () => {
+  const { session, sent } = fakeSession(storeWith([chat([])]));
+  const root = await renderChat(session, "conv-1");
+  await typeInto(root, "rozepsáno");
+  const menu = root.findByType(WebAttachmentMenu);
+  expect(menu.props.value.available).toBe(false);
+  expect(typeof menu.props.onTask).toBe("function");
+  await act(async () => menu.props.onTask());
+  expect(root.findByType(TaskReferencePicker).props.open).toBe(true);
+  expect(sent).toHaveLength(0);
+  await act(async () =>
+    root
+      .findByType(TaskReferencePicker)
+      .props.onPick({ id: "TEST-reference", title: "TEST follow up" }),
+  );
+  expect(sent).toHaveLength(0);
+  expect(root.findByType("textarea").props.value).toBe("rozepsáno");
+  await press(root, "Enter");
+  expect(sent[0]).toMatchObject({
+    type: "message.send",
+    text: "rozepsáno",
+    humanTask: { id: "TEST-reference", title: "TEST follow up" },
+  });
+  expect(sent[0]).not.toHaveProperty("attachments");
+});
+test("task pick from an older draft revision cannot attach to a newer draft with equal text", async () => {
+  const { session, sent } = fakeSession(storeWith([chat([])]));
+  const root = await renderChat(session, "conv-1");
+  await typeInto(root, "rozepsáno");
+  await act(async () => root.findByType(WebAttachmentMenu).props.onTask());
+  const pick = root.findByType(TaskReferencePicker).props.onPick;
+  await typeInto(root, "rozepsáno");
+  await act(async () => pick({ id: "TEST-stale", title: "old" }));
+  await press(root, "Enter");
+  expect(sent[0]).not.toHaveProperty("humanTask");
+  expect(sent[0]).toMatchObject({ text: "rozepsáno" });
+});
+
+const referenceTask = (overrides: Partial<HumanTask> = {}): HumanTask => ({
+  id: "TEST-reference",
+  scope,
+  revision: 2,
+  status: "open",
+  title: "TEST fresh caption",
+  detail: "",
+  assignee: null,
+  due: null,
+  resolution: null,
+  createdAt: "2026-10-30T00:00:00.000Z",
+  updatedAt: "2026-10-30T01:00:00.000Z",
+  origin: {
+    kind: "agent",
+    runId: "TEST-run",
+    toolCallId: "TEST-tool",
+    conversationId: "conv-1",
+  },
+  ...overrides,
+});
+const taskRow = (root: ReactTestInstance) =>
+  root.find(
+    (node) =>
+      typeof node.type === "string" &&
+      node.props["data-host"] === "CommandItem" &&
+      String(node.props.value).startsWith("TEST-reference "),
+  );
+async function openTaskRows(session: ClientSession) {
+  Object.assign(session, {
+    readHumanTasks: jest.fn(async () => ({
+      profile: "niaro-human-tasks/2",
+      scope,
+      tasks: [referenceTask({ title: "TEST old caption" })],
+      next: null,
+    })),
+  });
+  const root = await renderChat(session, "conv-1");
+  await typeInto(root, "owned draft");
+  await act(async () => root.findByType(WebAttachmentMenu).props.onTask());
+  await settle();
+  return root;
+}
+
+test("actual task row revalidates current open task and uses its fresh caption without autosend", async () => {
+  const { session, sent } = fakeSession(storeWith([chat([])]));
+  const read = jest.fn(async () => referenceTask());
+  Object.assign(session, { readHumanTask: read });
+  const root = await openTaskRows(session);
+  await act(async () => taskRow(root).props.onSelect());
+  await settle();
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(read).toHaveBeenCalledWith("TEST-reference");
+  expect(sent).toHaveLength(0);
+  expect(root.findByType(TaskReferencePicker).props.open).toBe(false);
+  await press(root, "Enter");
+  expect(sent[0]).toMatchObject({
+    text: "owned draft",
+    humanTask: {
+      id: "TEST-reference",
+      title: "TEST fresh caption",
+    },
+  });
+});
+
+test.each(["done", "removed", "not found", "unavailable"])(
+  "actual task selection refuses a now %s task and preserves the draft",
+  async (result) => {
+    const { session, sent } = fakeSession(storeWith([chat([])]));
+    Object.assign(session, {
+      readHumanTask: jest.fn(async () => {
+        if (result === "not found") throw Error("human_task_not_found");
+        if (result === "unavailable") throw Error("human_task_load_failed");
+        return referenceTask({ status: result as "done" | "removed" });
+      }),
+    });
+    const root = await openTaskRows(session);
+    await act(async () => taskRow(root).props.onSelect());
+    await settle();
+    expect(root.findByType(TaskReferencePicker).props.open).toBe(true);
+    expect(root.findByType("textarea").props.value).toBe("owned draft");
+    expect(text(root)).toContain(
+      result === "unavailable"
+        ? cs.human_task_load_failed
+        : cs.human_task_not_found,
+    );
+    expect(sent).toHaveLength(0);
+    await act(async () =>
+      root.findByType(TaskReferencePicker).props.onOpenChange(false),
+    );
+    await press(root, "Enter");
+    expect(sent[0]).not.toHaveProperty("humanTask");
+  },
+);
+
+test.each(["edit", "close", "reopen"])(
+  "pending single-task selection ignores a later %s and permits only one owned read",
+  async (change) => {
+    const { session, sent } = fakeSession(storeWith([chat([])]));
+    let resolve!: (task: HumanTask) => void;
+    const read = jest.fn(
+      () =>
+        new Promise<HumanTask>((done) => {
+          resolve = done;
+        }),
+    );
+    Object.assign(session, { readHumanTask: read });
+    const root = await openTaskRows(session);
+    const pick = taskRow(root).props.onSelect;
+    await act(async () => {
+      pick();
+      pick();
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(taskRow(root).props.disabled).toBe(true);
+    if (change === "edit") await typeInto(root, "owned draft");
+    else
+      await act(async () =>
+        root.findByType(TaskReferencePicker).props.onOpenChange(false),
+      );
+    if (change === "reopen")
+      await act(async () => root.findByType(WebAttachmentMenu).props.onTask());
+    await act(async () => resolve(referenceTask()));
+    await settle();
+    expect(root.findByType("textarea").props.value).toBe("owned draft");
+    expect(sent).toHaveLength(0);
+    await press(root, "Enter");
+    expect(sent[0]).not.toHaveProperty("humanTask");
+  },
+);
+
+test.each(["account", "replacement session"])(
+  "pending real task-row validation cannot attach after %s replacement",
+  async (change) => {
+    const a = fakeSession(storeWith([chat([])]));
+    const b = fakeSession(storeWith([chat([])]));
+    if (change === "account")
+      Object.assign(b.session, { identityKey: "identity-2" });
+    let resolve!: (task: HumanTask) => void;
+    const read = jest.fn(
+      () =>
+        new Promise<HumanTask>((done) => {
+          resolve = done;
+        }),
+    );
+    Object.assign(a.session, {
+      readHumanTask: read,
+      readHumanTasks: jest.fn(async () => ({
+        profile: "niaro-human-tasks/2",
+        scope,
+        tasks: [referenceTask()],
+        next: null,
+      })),
+    });
+    let replace!: (session: ClientSession) => void;
+    function ScopeHarness() {
+      const [session, update] = React.useState(a.session);
+      replace = update;
+      return (
+        <ChatNextConversation
+          key={session.identityKey}
+          session={session}
+          routeId="conv-1"
+          onSaved={jest.fn()}
+        />
+      );
+    }
+    const root = await render(<ScopeHarness />);
+    await typeInto(root, "A draft");
+    await act(async () => root.findByType(WebAttachmentMenu).props.onTask());
+    await settle();
+    await act(async () => taskRow(root).props.onSelect());
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => replace(b.session));
+    await typeInto(root, "B draft");
+    await act(async () => resolve(referenceTask()));
+    await settle();
+    expect(root.findByType("textarea").props.value).toBe("B draft");
+    await act(async () =>
+      root.findByType(TaskReferencePicker).props.onOpenChange(false),
+    );
+    expect(a.sent).toHaveLength(0);
+    expect(b.sent).toHaveLength(0);
+    await press(root, "Enter");
+    expect(b.sent[0]).toMatchObject({ text: "B draft" });
+    expect(b.sent[0]).not.toHaveProperty("humanTask");
+  },
+);
+
+function taskDialogClose(root: ReactTestInstance) {
+  return root
+    .findByType(TaskReferencePicker)
+    .find(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props["data-host"] === "DialogContent",
+    ).props.onCloseAutoFocus;
+}
+const focusNodes = () => {
+  const attach = { focus: jest.fn(), isConnected: true, closest: () => null };
+  const input = {
+    focus: jest.fn(),
+    isConnected: true,
+    closest: () => null,
+    selectionStart: 4,
+    selectionEnd: 4,
+    setSelectionRange: jest.fn(),
+    form: { querySelector: () => attach },
+  };
+  return {
+    attach,
+    input,
+    createNodeMock: (node: { type: unknown }) =>
+      node.type === "textarea" ? input : null,
+  };
+};
+
+test.each(["cancel", "pick"])(
+  "real task dialog %s restores its owned stable target only at close-auto-focus lifecycle",
+  async (action) => {
+    const { session, sent } = fakeSession(storeWith([chat([])]));
+    const focus = focusNodes();
+    Object.assign(session, {
+      readHumanTask: jest.fn(async () => referenceTask()),
+      readHumanTasks: jest.fn(async () => ({
+        profile: "niaro-human-tasks/2",
+        scope,
+        tasks: [referenceTask()],
+        next: null,
+      })),
+    });
+    const root = await renderChat(session, "conv-1", focus.createNodeMock);
+    await typeInto(root, "owned draft");
+    await act(async () => root.findByType(WebAttachmentMenu).props.onTask());
+    await settle();
+    focus.input.focus.mockClear();
+    focus.attach.focus.mockClear();
+    if (action === "pick")
+      await act(async () => taskRow(root).props.onSelect());
+    else
+      await act(async () =>
+        root.findByType(TaskReferencePicker).props.onOpenChange(false),
+      );
+    await settle();
+    expect(focus.input.focus).not.toHaveBeenCalled();
+    expect(focus.attach.focus).not.toHaveBeenCalled();
+    const event = { preventDefault: jest.fn() };
+    await act(async () => taskDialogClose(root)(event));
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(
+      action === "pick" ? focus.input.focus : focus.attach.focus,
+    ).toHaveBeenCalledTimes(1);
+    if (action === "pick")
+      expect(focus.input.setSelectionRange).toHaveBeenCalledWith(4, 4);
+    expect(root.findByType("textarea").props.value).toBe("owned draft");
+    expect(sent).toHaveLength(0);
+  },
+);
+
+test.each(["newer equal-text draft", "new picker", "unmount"])(
+  "retired task-dialog close focus cannot claim %s",
+  async (change) => {
+    const { session } = fakeSession(storeWith([chat([])]));
+    const focus = focusNodes();
+    const root = await renderChat(session, "conv-1", focus.createNodeMock);
+    await typeInto(root, "owned draft");
+    await act(async () => root.findByType(WebAttachmentMenu).props.onTask());
+    await act(async () =>
+      root.findByType(TaskReferencePicker).props.onOpenChange(false),
+    );
+    const close = taskDialogClose(root);
+    if (change === "newer equal-text draft")
+      await typeInto(root, "owned draft");
+    if (change === "new picker")
+      await act(async () => root.findByType(WebAttachmentMenu).props.onTask());
+    if (change === "unmount") {
+      const view = mounted.pop()!;
+      await act(async () => view.unmount());
+    }
+    focus.input.focus.mockClear();
+    focus.attach.focus.mockClear();
+    const event = { preventDefault: jest.fn() };
+    await act(async () => close(event));
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(focus.input.focus).not.toHaveBeenCalled();
+    expect(focus.attach.focus).not.toHaveBeenCalled();
+  },
+);

@@ -1,3 +1,4 @@
+import type { HomePetBounds } from "./home-pet-visibility";
 import React, {
   useState,
   useRef,
@@ -18,6 +19,7 @@ import {
   useWindowDimensions,
   View,
   type GestureResponderEvent,
+  type LayoutChangeEvent,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { tokens as t } from "../../packages/design-tokens";
@@ -597,6 +599,9 @@ export function Home({
   onProcesses,
   onConnect,
   compact = false,
+  petVisible = true,
+  petOccupied = false,
+  onPetBounds,
   petState = busy ? "working" : meetingRecording ? "listening" : "idle",
 }: {
   language: Language;
@@ -620,18 +625,56 @@ export function Home({
   onProcesses?: () => void;
   onConnect: () => void;
   compact?: boolean;
+  petVisible?: boolean;
+  petOccupied?: boolean;
+  onPetBounds?: (bounds: HomePetBounds | null) => void;
   petState?: PetState;
 }) {
   const tr = translate(language);
+  const homeY = useRef(0),
+    stageY = useRef(0),
+    petBox = useRef<{ y: number; height: number } | null>(null);
+  const publishBounds = useCallback(() => {
+    if (petBox.current)
+      onPetBounds?.({
+        top: homeY.current + stageY.current + petBox.current.y,
+        height: petBox.current.height,
+      });
+  }, [onPetBounds]);
+  useEffect(() => {
+    if (compact || voiceBusy) onPetBounds?.(null);
+    else publishBounds();
+    return () => onPetBounds?.(null);
+  }, [compact, voiceBusy, onPetBounds, publishBounds]);
+  const onHomeLayout = (event: LayoutChangeEvent) => {
+    homeY.current = event.nativeEvent.layout.y;
+    publishBounds();
+  };
+  const onStageLayout = (event: LayoutChangeEvent) => {
+    stageY.current = event.nativeEvent.layout.y;
+    publishBounds();
+  };
+  const onPetLayout = (event: LayoutChangeEvent) => {
+    petBox.current = event.nativeEvent.layout;
+    publishBounds();
+  };
   if (!paired)
     return (
-      <View testID="home-screen" style={chrome.home}>
-        <View style={chrome.stage}>
-          <PetView
-            state="idle"
-            size={200}
-            label={companionCopy(language).pet}
-          />
+      <View testID="home-screen" onLayout={onHomeLayout} style={chrome.home}>
+        <View
+          testID="home-pet-stage"
+          onLayout={onStageLayout}
+          style={chrome.stage}
+        >
+          <View testID="home-pet-bounds" onLayout={onPetLayout}>
+            <PetView
+              visible={petVisible}
+              occupied={petOccupied}
+              state="idle"
+              size={200}
+              label={companionCopy(language).pet}
+            />
+          </View>
           <View style={chrome.headline}>
             <Text
               role="screenTitle"
@@ -730,19 +773,28 @@ export function Home({
   return (
     <View
       testID="home-screen"
+      onLayout={onHomeLayout}
       style={[chrome.home, (voiceBusy || compact) && { minHeight: 0, flex: 0 }]}
     >
       {!voiceBusy && !compact ? (
-        <View style={chrome.stage}>
-          <PetView
-            testID="home-pet"
-            label={companionCopy(language).petTouch}
-            interactive
-            disabled={busy || meetingRecording}
-            state={petState}
-            size={220}
-            level={level}
-          />
+        <View
+          testID="home-pet-stage"
+          onLayout={onStageLayout}
+          style={chrome.stage}
+        >
+          <View testID="home-pet-bounds" onLayout={onPetLayout}>
+            <PetView
+              visible={petVisible}
+              occupied={petOccupied}
+              testID="home-pet"
+              label={companionCopy(language).petTouch}
+              interactive
+              disabled={busy || meetingRecording}
+              state={petState}
+              size={220}
+              level={level}
+            />
+          </View>
           <View style={chrome.headline}>
             <Text
               role="screenTitle"
@@ -912,6 +964,12 @@ export function Composer({
   inputRef,
   voice = "ready",
   onAttach,
+  onMention,
+  selection,
+  onSelectionChange,
+  onBlur,
+  onFocus,
+  references,
   hasAttachments = false,
   sendBlocked = false,
 }: {
@@ -923,9 +981,15 @@ export function Composer({
   disabled: boolean;
   sending?: boolean;
   inputRef?: React.Ref<TextInput>;
-  /** Hidden where another control starts voice or the server has none. */
-  voice?: "ready" | "disabled" | "hidden";
+  /** An unavailable server keeps voice settings discoverable without recording. */
+  voice?: "ready" | "disabled" | "hidden" | "settings";
   onAttach?: () => void;
+  onMention?: () => void;
+  selection?: { start: number; end: number };
+  onSelectionChange?: (selection: { start: number; end: number }) => void;
+  onBlur?: () => void;
+  onFocus?: () => void;
+  references?: React.ReactNode;
   /** Presentation only; the parent still decides disabled/send eligibility. */
   hasAttachments?: boolean;
   /** Transfer readiness gates Send while draft text remains editable. */
@@ -935,87 +999,172 @@ export function Composer({
   const [inputHeight, setInputHeight] = useState(44);
   const [focused, setFocused] = useState(false);
   const typed = !!value.trim() || hasAttachments;
-  const { fontScale } = useWindowDimensions();
+  const { fontScale, width: windowWidth } = useWindowDimensions();
+  const [rowWidth, setRowWidth] = useState<number | null>(null);
+  const actionCount =
+    Number(!!onAttach) +
+    Number(!!onMention) +
+    Number(voice !== "hidden") +
+    Number(typed);
+  const availableWidth =
+    rowWidth ?? Math.max(0, windowWidth - 2 * t.spacing.screenGutter - 14);
+  const stacked =
+    availableWidth - actionCount * 48 <
+    Math.max(120, t.typography.body.fontSize * fontScale * 6);
   const minimumInputHeight = Math.max(
     44,
     t.typography.body.lineHeight * fontScale + 20,
   );
   const font = useCompanionTypography(chrome.input);
+  const leftActions =
+    onAttach || onMention ? (
+      <View
+        key="left"
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+          flexGrow: stacked ? 1 : 0,
+        }}
+      >
+        {onAttach ? (
+          <ComposerAction
+            filled={false}
+            icon="paperclip"
+            label={companionCopy(language).context}
+            onPress={onAttach}
+          />
+        ) : null}
+        {onMention ? (
+          <ComposerAction
+            filled={false}
+            icon="at"
+            label={tr("composerReferences")}
+            onPress={onMention}
+          />
+        ) : null}
+      </View>
+    ) : null;
+  const input = (
+    <TextInput
+      key="input"
+      ref={inputRef}
+      accessibilityLabel={tr("composer")}
+      placeholder={
+        fontScale > 1.3
+          ? companionCopy(language).composerLargeText
+          : companionCopy(language).composer
+      }
+      placeholderTextColor={t.color.text.secondary}
+      value={value}
+      onChangeText={onChange}
+      selection={selection}
+      onSelectionChange={(event) =>
+        onSelectionChange?.(event.nativeEvent.selection)
+      }
+      multiline
+      maxLength={4000}
+      onFocus={() => {
+        setFocused(true);
+        onFocus?.();
+      }}
+      onBlur={() => {
+        setFocused(false);
+        onBlur?.();
+      }}
+      onContentSizeChange={(e) =>
+        setInputHeight(
+          Math.min(
+            Math.max(132, minimumInputHeight),
+            Math.max(minimumInputHeight, e.nativeEvent.contentSize.height),
+          ),
+        )
+      }
+      numberOfLines={1}
+      style={[
+        chrome.input,
+        font,
+        {
+          flex: stacked ? 0 : 1,
+          flexBasis: stacked ? "100%" : "auto",
+          minWidth: 0,
+          minHeight: minimumInputHeight,
+          maxHeight: Math.max(132, minimumInputHeight),
+          height: value
+            ? Math.max(inputHeight, minimumInputHeight)
+            : minimumInputHeight,
+        },
+        Platform.OS === "web" && { outlineStyle: "solid", outlineWidth: 0 },
+      ]}
+    />
+  );
+  const rightActions =
+    voice !== "hidden" || typed ? (
+      <View
+        key="right"
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "flex-end",
+          gap: 4,
+          marginLeft: stacked && !leftActions ? "auto" : 0,
+        }}
+      >
+        {/* Voice stays one tap away; with text it steps back for Send. */}
+        {voice !== "hidden" ? (
+          <ComposerAction
+            filled={!typed && voice === "ready"}
+            icon="mic"
+            label={tr(
+              voice === "settings" ? "voiceSettingsAction" : "voice_reply",
+            )}
+            disabled={voice === "disabled"}
+            onPress={onVoice}
+          />
+        ) : null}
+        {typed ? (
+          <ComposerAction
+            filled
+            icon="arrow"
+            label={tr("send")}
+            loading={sending}
+            disabled={disabled || sendBlocked}
+            onPress={() => {
+              if (!disabled && !sendBlocked && !sending) onSend();
+            }}
+          />
+        ) : null}
+      </View>
+    ) : null;
+
   return (
     <View
       testID="message-composer"
       style={[
         chrome.composer,
+        { flexDirection: "column", alignItems: "stretch" },
         focused && { borderColor: t.color.text.disabled },
       ]}
     >
-      {onAttach ? (
-        <ComposerAction
-          filled={false}
-          icon="paperclip"
-          label={companionCopy(language).context}
-          onPress={onAttach}
-        />
-      ) : null}
-      <TextInput
-        ref={inputRef}
-        accessibilityLabel={tr("composer")}
-        placeholder={
-          fontScale > 1.3
-            ? companionCopy(language).composerLargeText
-            : companionCopy(language).composer
-        }
-        placeholderTextColor={t.color.text.secondary}
-        value={value}
-        onChangeText={onChange}
-        multiline
-        maxLength={4000}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onContentSizeChange={(e) =>
-          setInputHeight(
-            Math.min(
-              Math.max(132, minimumInputHeight),
-              Math.max(minimumInputHeight, e.nativeEvent.contentSize.height),
-            ),
-          )
-        }
-        numberOfLines={1}
-        style={[
-          chrome.input,
-          font,
-          {
-            minHeight: minimumInputHeight,
-            maxHeight: Math.max(132, minimumInputHeight),
-            height: value
-              ? Math.max(inputHeight, minimumInputHeight)
-              : minimumInputHeight,
-          },
-          Platform.OS === "web" && { outlineStyle: "solid", outlineWidth: 0 },
-        ]}
-      />
-      {/* Voice stays one tap away; with text it steps back for Send. */}
-      {voice !== "hidden" ? (
-        <ComposerAction
-          filled={!typed}
-          icon="mic"
-          label={tr("voice_reply")}
-          disabled={voice === "disabled"}
-          onPress={onVoice}
-        />
-      ) : null}
-      {typed ? (
-        <ComposerAction
-          filled
-          icon="arrow"
-          label={tr("send")}
-          loading={sending}
-          disabled={disabled || sendBlocked}
-          onPress={() => {
-            if (!disabled && !sendBlocked && !sending) onSend();
-          }}
-        />
-      ) : null}
+      {references}
+      <View
+        testID="composer-input-row"
+        onLayout={(event) => {
+          const width = event.nativeEvent.layout.width;
+          if (Number.isFinite(width) && width > 0)
+            setRowWidth((current) => (current === width ? current : width));
+        }}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 4,
+          flexWrap: stacked ? "wrap" : "nowrap",
+        }}
+      >
+        {stacked
+          ? [input, leftActions, rightActions]
+          : [leftActions, input, rightActions]}
+      </View>
     </View>
   );
 }
@@ -1032,10 +1181,13 @@ export function DetailSheet({
   actions,
   fullHeight = false,
   scrollRef,
+  onShown,
 }: PropsWithChildren<{
   title: string;
   language: Language;
   onClose: () => void;
+  /** Once, after native Modal show and completed entrance; never after dismissal. */
+  onShown?: () => void;
   /** Pinned under the content, e.g. the sheet's one primary Button. */
   actions?: React.ReactNode;
   fullHeight?: boolean;
@@ -1045,10 +1197,38 @@ export function DetailSheet({
   const [progress] = useState(() => new Animated.Value(reduced ? 1 : 0));
   const [dragOffset] = useState(() => new Animated.Value(0));
   const closing = useRef(false);
+  const ready = useRef({
+    alive: true,
+    modal: false,
+    entered: false,
+    notified: false,
+  });
+  const onShownRef = useRef(onShown);
+  const notifyShown = useCallback(() => {
+    const current = ready.current;
+    if (
+      current.alive &&
+      current.modal &&
+      current.entered &&
+      !current.notified &&
+      !closing.current
+    ) {
+      current.notified = true;
+      onShownRef.current?.();
+    }
+  }, []);
+  useEffect(() => {
+    const owner = ready.current;
+    owner.alive = true;
+    return () => {
+      owner.alive = false;
+    };
+  }, []);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
-  }, [onClose]);
+    onShownRef.current = onShown;
+  }, [onClose, onShown]);
   const [dismissed, setDismissed] = useState(false);
   const notified = useRef(false);
   const finishDismiss = useCallback(() => {
@@ -1068,6 +1248,8 @@ export function DetailSheet({
     if (reduced) {
       progress.stopAnimation();
       progress.setValue(1);
+      ready.current.entered = true;
+      notifyShown();
       return;
     }
     const animation = Animated.timing(progress, {
@@ -1077,9 +1259,14 @@ export function DetailSheet({
       useNativeDriver: nativeMotion,
       isInteraction: false,
     });
-    animation.start();
+    animation.start(({ finished }) => {
+      if (finished) {
+        ready.current.entered = true;
+        notifyShown();
+      }
+    });
     return () => animation.stop();
-  }, [progress, reduced, finishDismiss]);
+  }, [progress, reduced, finishDismiss, notifyShown]);
   useEffect(
     () => () => {
       progress.stopAnimation();
@@ -1180,6 +1367,10 @@ export function DetailSheet({
       animationType="none"
       visible
       onRequestClose={dismiss}
+      onShow={() => {
+        ready.current.modal = true;
+        notifyShown();
+      }}
       statusBarTranslucent
     >
       <KeyboardAvoidingView

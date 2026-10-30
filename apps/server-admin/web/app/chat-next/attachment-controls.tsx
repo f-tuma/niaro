@@ -213,24 +213,33 @@ export type WebAttachments = ReturnType<typeof useWebAttachments>;
 export function WebAttachmentMenu({
   value,
   disabled,
+  onTask,
+  initialOpen = false,
 }: {
   value: WebAttachments;
   disabled: boolean;
+  onTask?: () => void;
+  initialOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  if (!value.available) return null;
+  const [open, setOpen] = useState(initialOpen && !disabled);
+  if (!value.available && !onTask) return null;
   return (
     <ChatAttachmentMenu
       language={value.language}
       open={open}
       onOpenChange={setOpen}
       disabled={disabled || value.state.busy || value.selection.busy}
-      choices={Object.fromEntries(
-        (["camera", "photos", "file"] as const).map((kind) => [
-          kind,
-          { onPress: () => value.choose(kind) },
-        ]),
-      )}
+      choices={{
+        ...(onTask ? { task: { onPress: onTask } } : {}),
+        ...(value.available
+          ? Object.fromEntries(
+              (["camera", "photos", "file"] as const).map((kind) => [
+                kind,
+                { onPress: () => value.choose(kind) },
+              ]),
+            )
+          : {}),
+      }}
     />
   );
 }

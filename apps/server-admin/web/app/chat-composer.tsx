@@ -17,17 +17,29 @@ import {
 import { Badge } from "@admin/components/ui/badge";
 import type { ClientSession } from "../../../../packages/client-core/session";
 import type {
-  MentionDirectory,
   MentionKind,
   MessageMention,
 } from "../../../../packages/protocol/mentions";
 import { useChatCopy } from "./chat-copy";
 
-export type MentionItem = MentionDirectory["items"][number];
-/** The protocol's limits for one message. */
-export const MAX_MESSAGE_LENGTH = 4000;
-const MAX_MENTIONS = 10;
-const PICKER_SIZE = 8;
+import {
+  MAX_MENTIONS,
+  mentionKey,
+  isTagged,
+  mentionsInText,
+  type MentionItem,
+} from "../../../../packages/client-core/mentions";
+export {
+  MAX_MESSAGE_LENGTH,
+  mentionQuery,
+  filterMentions,
+  isTagged,
+  messageMentions,
+  mentionsInText,
+  insertMention,
+  removeMention,
+  type MentionItem,
+} from "../../../../packages/client-core/mentions";
 
 export const mentionIcon: Record<MentionKind, LucideIcon> = {
   service: Plug,
@@ -35,8 +47,6 @@ export const mentionIcon: Record<MentionKind, LucideIcon> = {
   skill: Sparkles,
   meeting: AudioLines,
 };
-const mentionKey = (item: Pick<MentionItem, "kind" | "id">) =>
-  `${item.kind}:${item.id}`;
 
 /**
  * What the person can tag with "@". A server without the directory (404),
@@ -54,67 +64,6 @@ export function useMentionDirectory(session: ClientSession) {
   return directory.data?.items ?? [];
 }
 
-const fold = (value: string) =>
-  value.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase();
-
-/** The "@query" right before the caret, if the person is typing a tag. */
-export function mentionQuery(text: string, caret: number) {
-  const before = text.slice(0, caret);
-  const match = /(?:^|\s)@([^\s@]{0,40})$/u.exec(before);
-  if (!match) return null;
-  return { start: caret - match[1]!.length - 1, query: match[1]! };
-}
-
-/** Best matches first: name prefix, then a word prefix, then anywhere. */
-export function filterMentions(items: readonly MentionItem[], query: string) {
-  const wanted = fold(query);
-  const rank = (item: MentionItem) => {
-    const name = fold(item.name);
-    if (!wanted || name.startsWith(wanted)) return 0;
-    if (name.split(/\s+/).some((word) => word.startsWith(wanted))) return 1;
-    if (name.includes(wanted)) return 2;
-    return -1;
-  };
-  return items
-    .map((item) => ({ item, rank: rank(item) }))
-    .filter((entry) => entry.rank >= 0)
-    .sort((a, b) => a.rank - b.rank)
-    .slice(0, PICKER_SIZE)
-    .map((entry) => entry.item);
-}
-
-/** The text still carries this tag as "@Name". */
-export const isTagged = (text: string, item: MentionItem) => {
-  const at = text.indexOf(`@${item.name}`);
-  if (at < 0) return false;
-  const after = text.charAt(at + item.name.length + 1);
-  return !after || !/[\p{L}\p{N}]/u.test(after);
-};
-/** Picked tags whose "@Name" is still in the text, as sent on the message. */
-export function messageMentions(
-  text: string,
-  picked: readonly MentionItem[],
-): MessageMention[] {
-  const seen = new Set<string>();
-  return picked
-    .filter((item) => isTagged(text, item))
-    .filter(
-      (item) => !seen.has(mentionKey(item)) && !!seen.add(mentionKey(item)),
-    )
-    .slice(0, MAX_MENTIONS)
-    .map(({ kind, id }) => ({ kind, id }));
-}
-/** Tags a saved text refers to, read back against the directory. */
-export function mentionsInText(
-  text: string,
-  directory: readonly MentionItem[],
-): MentionItem[] {
-  // The longest name wins where one name starts another ("CRM", "CRM Plus").
-  return [...directory]
-    .sort((a, b) => b.name.length - a.name.length)
-    .filter((item) => isTagged(text, item))
-    .slice(0, MAX_MENTIONS);
-}
 /**
  * The tags each text sent from this page carried. The server keeps only a
  * message's text, and a meeting isn't in the directory, so its tag could not
@@ -151,29 +100,6 @@ export function sentMentions(
     )
     .slice(0, MAX_MENTIONS);
 }
-/** Puts "@Name " in place of the typed "@query"; returns the new caret too. */
-export function insertMention(
-  text: string,
-  at: { start: number; query: string },
-  item: MentionItem,
-) {
-  const end = at.start + 1 + at.query.length;
-  const inserted = `@${item.name} `;
-  const rest = text.slice(end).replace(/^ /, "");
-  return {
-    text: text.slice(0, at.start) + inserted + rest,
-    caret: at.start + inserted.length,
-  };
-}
-/** Removes a tag and its "@Name" from the text. */
-export function removeMention(text: string, item: MentionItem) {
-  return text
-    .split(`@${item.name}`)
-    .join("")
-    .replace(/ {2,}/g, " ")
-    .trimStart();
-}
-
 export const mentionOptionId = (listId: string, index: number) =>
   `${listId}-${index}`;
 

@@ -10,12 +10,12 @@ import {
   MessageSquare,
   MoreHorizontal,
   Pencil,
+  Paperclip,
   PlugZap,
   Plus,
   RefreshCw,
   Settings2,
   Sparkles,
-  SquarePen,
   Trash2,
   X,
 } from "lucide-react";
@@ -97,7 +97,15 @@ import {
 } from "../../../../packages/protocol/widgets";
 import { plural } from "../lib/plural";
 import { useApp, useAppSession } from "./context";
-import { UNSAVED_DRAFT, draftKey, readDraft, saveDraft } from "./chat-store";
+import {
+  UNSAVED_DRAFT,
+  draftKey,
+  readDraft,
+  saveDraft,
+  appendDraftQuestion,
+} from "./chat-store";
+import { handOffComposerPicker } from "./task-handoff";
+import { attachmentCopy } from "../../../../packages/ui-catalog/attachment-presentation";
 import {
   hubWidgetProblem,
   useHubCopy,
@@ -241,19 +249,15 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
   };
   /** The header's box: its text joins what the person had already written
    * in the new chat instead of replacing it. */
-  const askFromBox = (text: string) => {
-    const question = text.trim();
-    if (question) {
-      const key = draftKey(session.identityKey, UNSAVED_DRAFT);
-      const saved = readDraft(key);
-      const before = saved?.text.trimEnd();
-      saveDraft(key, {
-        ...saved,
-        text: before ? `${before}\n\n${question}` : question,
-        revision: saved?.revision ?? 0,
-      });
-    }
+  const askFromBox = (text: string, openContext = false) => {
+    const key = draftKey(session.identityKey, UNSAVED_DRAFT),
+      saved = readDraft(key),
+      next = appendDraftQuestion(saved, text);
+    if (!next) return false;
+    if (text.trim()) saveDraft(key, next);
+    if (openContext) handOffComposerPicker(session.identityKey);
     void navigate({ to: "/chat" });
+    return true;
   };
   /** A new chat that starts with the widget as context; the person finishes it. */
   const askAbout = (name: string, detail = "") => {
@@ -602,28 +606,40 @@ function AskBox({
   onAsk,
 }: {
   copy: HubCopy;
-  onAsk: (text: string) => void;
+  onAsk: (text: string, openContext?: boolean) => boolean;
 }) {
   const [text, setText] = useState("");
+  const [tooLong, setTooLong] = useState(false);
+  const { language } = useApp();
   return (
     <form
       role="search"
       className="min-w-0 flex-1 sm:w-72 sm:flex-none"
       onSubmit={(event) => {
         event.preventDefault();
-        onAsk(text);
+        setTooLong(!onAsk(text));
       }}
     >
       <InputGroup>
         <InputGroupAddon>
-          <SquarePen aria-hidden="true" />
+          <InputGroupButton
+            type="button"
+            size="icon-xs"
+            aria-label={attachmentCopy(language).attach}
+            onClick={() => setTooLong(!onAsk(text, true))}
+          >
+            <Paperclip aria-hidden="true" />
+          </InputGroupButton>
         </InputGroupAddon>
         <InputGroupInput
           value={text}
           aria-label={copy.ask}
           placeholder={copy.ask}
           maxLength={4000}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            setTooLong(false);
+          }}
         />
         <InputGroupAddon align="inline-end">
           <InputGroupButton
@@ -635,6 +651,7 @@ function AskBox({
           </InputGroupButton>
         </InputGroupAddon>
       </InputGroup>
+      {tooLong ? <p role="alert">{copy.askTooLong}</p> : null}
     </form>
   );
 }

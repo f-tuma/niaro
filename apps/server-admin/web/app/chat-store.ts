@@ -1,3 +1,4 @@
+import { MAX_MESSAGE_LENGTH } from "../../../../packages/client-core/mentions";
 import type { HumanTaskReference } from "../../../../packages/protocol";
 import type { ReplyContext } from "../../../../packages/client-core/reply-context";
 import type { MentionDirectory } from "../../../../packages/protocol/mentions";
@@ -39,3 +40,20 @@ export const chatHistoryKey = (identityKey: string) =>
 /** The account page's archive; invalidating the chat list renews it too. */
 export const archivedChatsKey = (identityKey: string) =>
   [...chatHistoryKey(identityKey), "archived"] as const;
+
+/** Atomic Hub handoff: preserves context/task/mentions and both drafts on overflow. */
+export function appendDraftQuestion(
+  saved: ChatDraft | undefined,
+  text: string,
+): ChatDraft | null {
+  const question = text.trim(),
+    before = saved?.text.trimEnd();
+  const next = question
+    ? before
+      ? `${before}\n\n${question}`
+      : question
+    : (saved?.text ?? "");
+  return next.length > MAX_MESSAGE_LENGTH
+    ? null
+    : { ...saved, text: next, revision: saved?.revision ?? 0 };
+}

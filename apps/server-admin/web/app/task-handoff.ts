@@ -1,16 +1,25 @@
 import type { HumanTaskReference } from "../../../../packages/protocol";
-
-/**
- * An open task the person chose to resolve with the assistant, handed from
- * Tasks to a new chat once. The chat attaches it to its first message as
- * `message.send.humanTask`. Kept in memory only: a reload starts a plain chat.
- */
-let pending: HumanTaskReference | null = null;
-export function handOffHumanTask(task: HumanTaskReference) {
-  pending = { id: task.id, title: task.title };
+/** In-memory, identity-owned handoff. Taking or rejecting consumes it exactly once. */
+type ComposerHandoff = {
+  identityKey: string;
+  task?: HumanTaskReference;
+  picker?: true;
+};
+let pending: ComposerHandoff | null = null;
+export function handOffHumanTask(
+  task: HumanTaskReference,
+  identityKey: string,
+) {
+  pending = { identityKey, task: { id: task.id, title: task.title } };
 }
-export function takeHumanTask() {
-  const task = pending;
+export function handOffComposerPicker(identityKey: string) {
+  pending = { identityKey, picker: true };
+}
+export function takeComposerHandoff(identityKey: string) {
+  const value = pending;
   pending = null;
-  return task;
+  return value?.identityKey === identityKey ? value : null;
+}
+export function takeHumanTask(identityKey: string) {
+  return takeComposerHandoff(identityKey)?.task ?? null;
 }

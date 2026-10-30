@@ -1,4 +1,14 @@
 import {
+  useMobileComposerMentions,
+  MobileMentionSuggestions,
+  MobileMentionSheet,
+  MobileMentionTray,
+} from "./MobileMentions";
+import type { MessageMention } from "../../packages/protocol/mentions";
+import { VoiceServiceCard } from "../../packages/ui-catalog/VoiceServiceCard";
+import type { VoiceCapabilities } from "../../packages/protocol/voice";
+import { useHomePetVisibility } from "./home-pet-visibility";
+import {
   useMobileAttachments,
   MobileAttachmentDraft,
   MobileAttachmentPreview,
@@ -316,6 +326,7 @@ export function Workspace({
   );
   const tr = translate(language);
   const scroll = useRef<ScrollView>(null);
+  const homePetVisibility = useHomePetVisibility();
   const composerInput = useRef<TextInput>(null);
   const focusWork = useRef<string | undefined>(undefined);
   const [draft, setDraftState] = useState("");
@@ -370,6 +381,37 @@ export function Workspace({
   );
   const [conversationId, setConversationId] = useState("conversation-1");
   const conversationRef = useRef(conversationId);
+  const [composerActive, setComposerActive] = useState(
+    AppState.currentState !== "background" &&
+      AppState.currentState !== "inactive",
+  );
+  const composerOwner = useMemo(
+    () => ({ session, conversationId, section, composerActive }),
+    [session, conversationId, section, composerActive],
+  );
+  const composerOwnerRef = useRef(composerOwner);
+  const [composerFocus, setComposerFocus] = useState<
+    typeof composerOwner | null
+  >(null);
+  useLayoutEffect(() => {
+    composerOwnerRef.current = composerOwner;
+  }, [composerOwner]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      setComposerActive(state === "active");
+      if (state !== "active") setComposerFocus(null);
+    });
+    return () => subscription.remove();
+  }, []);
+  const petOccupied =
+    composerActive &&
+    section === "chat" &&
+    (draft.length > 0 || composerFocus === composerOwner);
+  const setOwnedComposerFocus = (focused: boolean) => {
+    if (composerOwnerRef.current !== composerOwner || !composerActive) return;
+    setComposerFocus(focused ? composerOwner : null);
+  };
+
   const [continuedConversations, setContinuedConversations] = useState<
     Record<string, true>
   >({});
@@ -522,25 +564,59 @@ export function Workspace({
   const store = state.store;
   const online = state.status === "online";
   // Known before the first tap, so no screen offers voice the server lacks.
+  const [voiceSettingsOwner, setVoiceSettingsOwner] =
+    useState<ClientSession | null>(null);
+  const voiceSettingsOpen = !!session && voiceSettingsOwner === session;
   const [voiceSupport, setVoiceSupport] = useState<{
     session: ClientSession;
     value: VoiceAvailability;
+    capabilities: VoiceCapabilities | null;
   }>();
   useEffect(() => {
     if (!session || !online || typeof session.voiceCapabilities !== "function")
       return;
-    const controller = new AbortController();
-    session.voiceCapabilities(controller.signal).then(
-      (value) => {
-        if (!controller.signal.aborted)
-          setVoiceSupport({
-            session,
-            value: value.enabled ? "available" : "unavailable",
-          });
-      },
-      () => {},
-    );
-    return () => controller.abort();
+    let controller: AbortController | undefined,
+      generation = 0;
+    const identity = session.identityKey;
+    const refresh = () => {
+      controller?.abort();
+      controller = new AbortController();
+      const signal = controller.signal,
+        request = ++generation;
+      void session.voiceCapabilities(signal).then(
+        (value) => {
+          if (
+            !signal.aborted &&
+            request === generation &&
+            sessionOwner.current === session &&
+            identity === session.identityKey
+          )
+            setVoiceSupport({
+              session,
+              value: value.enabled ? "available" : "unavailable",
+              capabilities: value,
+            });
+        },
+        () => {
+          if (
+            !signal.aborted &&
+            request === generation &&
+            sessionOwner.current === session
+          )
+            setVoiceSupport({ session, value: "unknown", capabilities: null });
+        },
+      );
+    };
+    refresh();
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") refresh();
+      else controller?.abort();
+    });
+    return () => {
+      controller?.abort();
+      subscription.remove();
+      setVoiceSettingsOwner(null);
+    };
   }, [session, online]);
   const voiceAvailability: VoiceAvailability =
     voiceSupport?.session === session ? voiceSupport.value : "unknown";
@@ -601,6 +677,31 @@ export function Workspace({
     () => new Set(),
   );
   const busy = !!state.pending || !!state.answerRecoveryBlocked;
+  const mentions = useMobileComposerMentions({
+    session,
+    online,
+    conversationId,
+    context,
+    enabled:
+      !!session &&
+      online &&
+      !busy &&
+      !context &&
+      !historySelection?.readOnly &&
+      !historyLoading,
+    read: () => ({
+      identityKey: sessionOwner.current?.identityKey ?? "",
+      conversationId: conversationRef.current,
+      revision: draftRevision.current,
+      text: draftRef.current,
+    }),
+    onChange: (text) => {
+      speech.player.stop();
+      setDraft(text);
+    },
+    onFocus: () => composerInput.current?.focus(),
+  });
+
   // Projection can arrive after delivery or an explicit retry has already settled.
   useEffect(() => {
     const submitted = nativeSubmission.current;
@@ -896,12 +997,13 @@ export function Workspace({
     value = draft,
     replyContext: VoiceReplyContext | null | undefined = context,
     draftOwnerRevision = draftRevision.current,
-    options: { withoutProcess?: true } = {},
+    options: { withoutProcess?: true; mentions?: MessageMention[] } = {},
   ) => {
     const attachmentEntries = session?.attachments?.getSnapshot().entries ?? [];
     const attachmentReady = !!session?.attachments?.ready;
     if (
       !session ||
+      sessionOwner.current !== session ||
       (!value.trim() && !attachmentReady) ||
       (attachmentEntries.length > 0 && (!attachmentReady || !!replyContext)) ||
       busy ||
@@ -909,11 +1011,18 @@ export function Workspace({
       historySelection?.readOnly
     )
       return;
+    const selectedMentions = replyContext
+      ? []
+      : (options.mentions ?? mentions.payload(value));
     // The first message first saves a chat that so far existed only here.
     if (!replyContext && conversationRef.current === unsavedChatRef.current) {
       void saveChat(conversationRef.current)
         .then((current) => {
-          if (current) submitMessage(value, null, draftOwnerRevision, options);
+          if (current)
+            submitMessage(value, null, draftOwnerRevision, {
+              ...options,
+              mentions: selectedMentions,
+            });
         })
         .catch(() => setReplyError("requestRejected"));
       return;
@@ -952,6 +1061,9 @@ export function Workspace({
               ),
               ...(replyContext ? {} : { conversationId }),
               ...(task ? { humanTask: task } : {}),
+              ...(selectedMentions.length
+                ? { mentions: selectedMentions }
+                : {}),
               ...(!replyContext && options.withoutProcess
                 ? { withoutProcess: true as const }
                 : {}),
@@ -1669,6 +1781,11 @@ export function Workspace({
       changeSection("more");
       return;
     }
+    if (voiceAvailability !== "available") {
+      Keyboard.dismiss();
+      setVoiceSettingsOwner(session);
+      return;
+    }
     // Talking is the first message: transcription already names this chat.
     if (conversationRef.current === unsavedChatRef.current) {
       const requestedConversation = conversationRef.current;
@@ -1960,6 +2077,15 @@ export function Workspace({
               emblem={
                 hasConversation && !voice ? (
                   <PetView
+                    occupied={petOccupied}
+                    visible={
+                      !historyOpen &&
+                      !processOpen &&
+                      !processDesignerOpen &&
+                      !contextMenu &&
+                      !voiceSettingsOpen &&
+                      !mentions.sheet
+                    }
                     size={44}
                     state={
                       speech.state.phase === "playing"
@@ -2040,6 +2166,9 @@ export function Workspace({
           <ScrollView
             testID="screen-scroll"
             ref={scroll}
+            onLayout={(event) =>
+              homePetVisibility.onViewport(event.nativeEvent.layout.height)
+            }
             style={styles.flex}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === "web" ? "none" : "on-drag"}
@@ -2054,6 +2183,10 @@ export function Workspace({
             onScroll={(event) => {
               const { layoutMeasurement, contentOffset, contentSize } =
                 event.nativeEvent;
+              homePetVisibility.onScroll(
+                contentOffset.y,
+                layoutMeasurement.height,
+              );
               const atEnd =
                 contentSize.height -
                   layoutMeasurement.height -
@@ -2389,6 +2522,17 @@ export function Workspace({
                         : "idle"
                   }
                   compact={keyboardOpen}
+                  petOccupied={petOccupied}
+                  petVisible={
+                    homePetVisibility.visible &&
+                    !historyOpen &&
+                    !processOpen &&
+                    !processDesignerOpen &&
+                    !contextMenu &&
+                    !voiceSettingsOpen &&
+                    !mentions.sheet
+                  }
+                  onPetBounds={homePetVisibility.onBounds}
                   level={voiceLevel}
                   meetingRecording={meetingRecording}
                   onTalk={openVoice}
@@ -2602,15 +2746,31 @@ export function Workspace({
               />
             ) : (
               <View>
+                <MobileMentionSuggestions
+                  items={mentions.items}
+                  language={language}
+                  onPick={mentions.pick}
+                />
                 <MobileAttachmentDraft value={attachments} />
                 <Composer
                   inputRef={composerInput}
                   language={language}
                   value={draft}
-                  onChange={(text) => {
-                    speech.player.stop();
-                    setDraft(text);
+                  onChange={mentions.type}
+                  onMention={mentions.available ? mentions.open : undefined}
+                  onSelectionChange={mentions.select}
+                  selection={mentions.selection}
+                  onFocus={() => setOwnedComposerFocus(true)}
+                  onBlur={() => {
+                    setOwnedComposerFocus(false);
+                    mentions.blur();
                   }}
+                  references={
+                    <MobileMentionTray
+                      selected={mentions.selected}
+                      language={language}
+                    />
+                  }
                   hasAttachments={attachments.state.entries.length > 0}
                   sendBlocked={
                     attachments.state.entries.length > 0 && !attachments.ready
@@ -2632,11 +2792,11 @@ export function Workspace({
                     "sending",
                   )}
                   voice={
-                    voiceAvailability === "unavailable"
-                      ? "hidden"
-                      : meetingRecording || attachments.state.entries.length > 0
-                        ? "disabled"
-                        : "ready"
+                    meetingRecording || attachments.state.entries.length > 0
+                      ? "disabled"
+                      : voiceAvailability === "available"
+                        ? "ready"
+                        : "settings"
                   }
                 />
               </View>
@@ -2655,6 +2815,30 @@ export function Workspace({
           />
         )}
       </View>
+      {mentions.sheet ? (
+        <MobileMentionSheet
+          items={mentions.directory}
+          language={language}
+          onPick={mentions.pick}
+          onClose={mentions.close}
+        />
+      ) : null}
+      {voiceSettingsOpen && session ? (
+        <DetailSheet
+          title={tr("voiceSettings")}
+          language={language}
+          onClose={() => setVoiceSettingsOwner(null)}
+        >
+          <VoiceServiceCard
+            language={language}
+            capabilities={
+              voiceSupport?.session === session
+                ? voiceSupport.capabilities
+                : undefined
+            }
+          />
+        </DetailSheet>
+      ) : null}
       {contextMenu ? (
         <DetailSheet
           title={companionCopy(language).context}

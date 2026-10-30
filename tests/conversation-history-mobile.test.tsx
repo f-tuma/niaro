@@ -1,10 +1,26 @@
+import { PetView } from "../packages/ui/PetView";
+import {
+  MobileMentionSheet,
+  MobileMentionTray,
+} from "../apps/mobile/MobileMentions";
+import { createVoiceCapture } from "../apps/mobile/voice-capture";
+import { en, cs } from "../packages/i18n";
+import { voiceCapabilities } from "../packages/protocol/voice";
 import React, { useState } from "react";
-import { Modal } from "react-native";
+import * as ReactNative from "react-native";
+import {
+  Modal,
+  Keyboard,
+  AppState,
+  StyleSheet,
+  TextInput,
+  Platform,
+} from "react-native";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Workspace } from "../apps/mobile/App";
 import { ChatHistory } from "../apps/mobile/ChatHistory";
-import { type Section } from "../apps/mobile/ScreenChrome";
+import { Composer, type Section } from "../apps/mobile/ScreenChrome";
 import { resetChatSession } from "../apps/mobile/chat-session";
 import {
   commandTarget,
@@ -898,4 +914,589 @@ test("Settings lists archived chats: restore, delete after a confirmation, open 
   expect(screen.queryByTestId("read-only-composer")).toBeNull();
   expect(screen.getByLabelText("Type a message…")).toBeTruthy();
   expect(f.session.send).not.toHaveBeenCalled();
+});
+
+test("actual Home passes viewport visibility to the pet using layout and scroll crossings", async () => {
+  const f = fixture();
+  render(<f.Harness />);
+  await act(async () => {
+    await flush();
+  });
+  const layout = (id: string, y: number, height: number) =>
+    fireEvent(screen.getByTestId(id), "layout", {
+      nativeEvent: { layout: { x: 0, y, width: 300, height } },
+    });
+  act(() => {
+    layout("screen-scroll", 0, 200);
+    layout("home-screen", 10, 500);
+    layout("home-pet-stage", 20, 300);
+    layout("home-pet-bounds", 30, 220);
+  });
+  expect(screen.getByTestId("home-pet").props.accessibilityState.disabled).toBe(
+    false,
+  );
+  const scrollTo = (y: number) =>
+    fireEvent.scroll(screen.getByTestId("screen-scroll"), {
+      nativeEvent: {
+        contentOffset: { x: 0, y },
+        layoutMeasurement: { width: 300, height: 200 },
+        contentSize: { width: 300, height: 1000 },
+      },
+    });
+  act(() => scrollTo(400));
+  expect(screen.getByTestId("home-pet").props.accessibilityState.disabled).toBe(
+    true,
+  );
+  act(() => scrollTo(10));
+  expect(screen.getByTestId("home-pet").props.accessibilityState.disabled).toBe(
+    false,
+  );
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Menu" }));
+    await flush();
+  });
+  expect(
+    screen.getByTestId("home-pet", { includeHiddenElements: true }).props
+      .accessibilityState.disabled,
+  ).toBe(true);
+});
+test("native keyboard visibility unmounts the actual Home pet and returns it on dismissal", async () => {
+  const listeners = new Map<string, Set<() => void>>();
+  const spy = jest
+    .spyOn(Keyboard, "addListener")
+    .mockImplementation((event, listener) => {
+      if (!listeners.has(event)) listeners.set(event, new Set());
+      listeners.get(event)!.add(listener as () => void);
+      return { remove: jest.fn() } as unknown as ReturnType<
+        typeof Keyboard.addListener
+      >;
+    });
+  const f = fixture();
+  render(<f.Harness />);
+  await act(async () => {
+    await flush();
+  });
+  expect(screen.getByTestId("home-pet")).toBeTruthy();
+  act(() => listeners.get("keyboardDidShow")?.forEach((fn) => fn()));
+  expect(screen.queryByTestId("home-pet")).toBeNull();
+  act(() => listeners.get("keyboardDidHide")?.forEach((fn) => fn()));
+  expect(screen.getByTestId("home-pet")).toBeTruthy();
+  spy.mockRestore();
+});
+
+test.each([
+  {
+    kind: "skill",
+    id: "TEST-skill",
+    name: "Krátký e-mail",
+    query: "krat",
+    label: "Skill",
+  },
+  {
+    kind: "process",
+    id: "TEST-process",
+    name: "TEST process",
+    query: "pro",
+    label: "Process",
+  },
+] as const)(
+  "actual mobile @ picks $kind without sending and carries its existing semantic reference on Send",
+  async (item) => {
+    const f = fixture();
+    Object.assign(f.session, {
+      readMentions: jest.fn(async () => ({
+        profile: "agent-mentions/1",
+        items: [item],
+      })),
+    });
+    render(<f.Harness />);
+    await act(flush);
+    const input = screen.getByLabelText("Type a message…");
+    fireEvent.changeText(input, `Use @${item.query}`);
+    fireEvent.press(
+      screen.getByRole("button", { name: `${item.name}, ${item.label}` }),
+    );
+    expect(screen.getByLabelText("Type a message…")).toBe(input);
+    expect(input.props.value).toBe(`Use @${item.name} `);
+    expect(f.session.send).not.toHaveBeenCalled();
+    fireEvent.press(screen.getByRole("button", { name: "Send" }));
+    expect(f.session.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "message.send",
+        text: `Use @${item.name}`,
+        mentions: [{ kind: item.kind, id: item.id }],
+      }),
+      false,
+      undefined,
+      expect.anything(),
+    );
+  },
+);
+test("known unavailable right microphone opens service availability without capture or chat creation", async () => {
+  const f = fixture();
+  Object.assign(f.session, {
+    voiceCapabilities: jest.fn(async () => voiceCapabilities(false)),
+  });
+  render(<f.Harness />);
+  await act(flush);
+  const microphone = screen.getByRole("button", {
+    name: en.voiceSettingsAction,
+  });
+  expect(StyleSheet.flatten(microphone.props.style).backgroundColor).toBe(
+    "transparent",
+  );
+  expect(microphone.props.accessibilityState.disabled).toBe(false);
+  fireEvent.press(microphone);
+  expect(screen.getByText(en.voice_unavailable_short)).toBeTruthy();
+  expect(f.session.send).not.toHaveBeenCalled();
+  expect(jest.mocked(createVoiceCapture)).not.toHaveBeenCalled();
+});
+
+test("cancelled inline @ stays dismissed for the same occurrence until a new edit", async () => {
+  const f = fixture();
+  Object.assign(f.session, {
+    readMentions: jest.fn(async () => ({
+      profile: "agent-mentions/1",
+      items: [{ kind: "process", id: "TEST-proc", name: "TEST process" }],
+    })),
+  });
+  render(<f.Harness />);
+  await act(flush);
+  const input = screen.getByLabelText(en.composer);
+  fireEvent.changeText(input, "@pro");
+  expect(
+    screen.getByRole("button", { name: "TEST process, Process" }),
+  ).toBeTruthy();
+  fireEvent(input, "blur");
+  fireEvent(input, "selectionChange", {
+    nativeEvent: { selection: { start: 4, end: 4 } },
+  });
+  expect(
+    screen.queryByRole("button", { name: "TEST process, Process" }),
+  ).toBeNull();
+  fireEvent.changeText(input, "@pro");
+  expect(
+    screen.getByRole("button", { name: "TEST process, Process" }),
+  ).toBeTruthy();
+  expect(f.session.send).not.toHaveBeenCalled();
+});
+test("foreground capability refresh changes right-mic availability without capture or saved-server change", async () => {
+  const originalAppStateListener = jest
+    .mocked(AppState.addEventListener)
+    .getMockImplementation();
+  const changes = new Set<(state: string) => void>();
+  const spy = jest
+    .spyOn(AppState, "addEventListener")
+    .mockImplementation((_, listener) => {
+      changes.add(listener as (state: string) => void);
+      return {
+        remove: () => changes.delete(listener as (state: string) => void),
+      };
+    });
+  const f = fixture();
+  let enabled = false;
+  const read = jest.fn(async () => voiceCapabilities(enabled));
+  Object.assign(f.session, { voiceCapabilities: read });
+  render(<f.Harness />);
+  await act(flush);
+  expect(
+    screen.getByRole("button", { name: en.voiceSettingsAction }),
+  ).toBeTruthy();
+  enabled = true;
+  await act(async () => {
+    changes.forEach((fn) => fn("active"));
+    await flush();
+  });
+  expect(screen.getByRole("button", { name: en.voice_reply })).toBeTruthy();
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(f.session.send).not.toHaveBeenCalled();
+  expect(createVoiceCapture).not.toHaveBeenCalled();
+  spy.mockRestore();
+  jest
+    .mocked(AppState.addEventListener)
+    .mockImplementation(originalAppStateListener!);
+});
+
+test("explicit mobile reference sheet inserts at the captured caret without sending", async () => {
+  const f = fixture();
+  Object.assign(f.session, {
+    readMentions: jest.fn(async () => ({
+      profile: "agent-mentions/1",
+      items: [{ kind: "process", id: "TEST-proc", name: "TEST process" }],
+    })),
+  });
+  render(<f.Harness />);
+  await act(flush);
+  const input = screen.getByLabelText(en.composer);
+  fireEvent.changeText(input, "before after");
+  fireEvent(input, "selectionChange", {
+    nativeEvent: { selection: { start: 7, end: 7 } },
+  });
+  fireEvent.press(screen.getByRole("button", { name: en.composerReferences }));
+  expect(screen.getByLabelText("Find a reference")).toBeTruthy();
+  fireEvent.press(
+    screen.getByRole("button", { name: "TEST process, Process" }),
+  );
+  expect(input.props.value).toBe("before @TEST process after");
+  expect(f.session.send).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("Find a reference")).toBeNull();
+});
+test("stale explicit mobile picker rejects a newer equal-text draft revision", async () => {
+  const f = fixture();
+  Object.assign(f.session, {
+    readMentions: jest.fn(async () => ({
+      profile: "agent-mentions/1",
+      items: [{ kind: "skill", id: "TEST-skill", name: "TEST skill" }],
+    })),
+  });
+  render(<f.Harness />);
+  await act(flush);
+  const input = screen.getByLabelText(en.composer);
+  fireEvent.changeText(input, "kept");
+  fireEvent.press(screen.getByRole("button", { name: en.composerReferences }));
+  const pick = screen.UNSAFE_getByType(MobileMentionSheet).props.onPick;
+  fireEvent.changeText(input, "kept");
+  act(() => pick({ kind: "skill", id: "TEST-skill", name: "TEST skill" }));
+  expect(input.props.value).toBe("kept");
+  expect(f.session.send).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("Find a reference")).toBeNull();
+});
+
+test("selected mobile references remove their text and outgoing metadata without sending", async () => {
+  const f = fixture();
+  const items = [
+    { kind: "skill", id: "TEST-skill", name: "TEST skill" },
+    { kind: "process", id: "TEST-process", name: "TEST process" },
+  ];
+  Object.assign(f.session, {
+    readMentions: jest.fn(async () => ({ profile: "agent-mentions/1", items })),
+  });
+  render(<f.Harness />);
+  await act(flush);
+  const input = screen.getByLabelText(en.composer);
+  fireEvent.changeText(input, "Use @sk");
+  fireEvent.press(screen.getByRole("button", { name: "TEST skill, Skill" }));
+  fireEvent.changeText(input, input.props.value + "and @pro");
+  fireEvent.press(
+    screen.getByRole("button", { name: "TEST process, Process" }),
+  );
+  const remove = screen.getByRole("button", {
+    name: "Remove reference TEST skill",
+  });
+  expect(
+    screen.getByTestId("message-composer").findAllByProps({
+      accessibilityLabel: "Remove reference TEST skill",
+    }).length,
+  ).toBeGreaterThan(0);
+  fireEvent.press(remove);
+  expect(input.props.value).toBe("Use and @TEST process ");
+  expect(
+    screen.queryByRole("button", { name: "Remove reference TEST skill" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Remove reference TEST process" }),
+  ).toBeTruthy();
+  expect(f.session.send).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByRole("button", { name: en.send }));
+  expect(f.session.send).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: "message.send",
+      text: "Use and @TEST process",
+      mentions: [{ kind: "process", id: "TEST-process" }],
+    }),
+    false,
+    undefined,
+    expect.anything(),
+  );
+});
+
+test("actual Home and header pet occupancy follows owned draft and focus without a software keyboard", async () => {
+  const original = jest
+    .mocked(AppState.addEventListener)
+    .getMockImplementation();
+  const changes = new Set<(state: string) => void>();
+  jest.spyOn(AppState, "addEventListener").mockImplementation((_, listener) => {
+    const change = listener as (state: string) => void;
+    changes.add(change);
+    return { remove: () => changes.delete(change) };
+  });
+  try {
+    const f = fixture();
+    const { unmount } = render(<f.Harness />);
+    await act(flush);
+    const pet = () =>
+      screen
+        .UNSAFE_getAllByType(PetView.type)
+        .find(
+          (view) => view.props.testID === "home-pet" || view.props.size === 44,
+        )!;
+    const input = () => screen.getByLabelText(en.composer);
+    expect(pet().props.occupied ?? false).toBe(false);
+    const retiredFocus = input().props.onFocus;
+    fireEvent(input(), "focus");
+    expect(pet().props.occupied).toBe(true);
+    act(() => changes.forEach((change) => change("background")));
+    expect(pet().props.occupied).toBe(false);
+    act(() => changes.forEach((change) => change("active")));
+    expect(pet().props.occupied).toBe(false);
+    act(() => retiredFocus());
+    expect(pet().props.occupied).toBe(false);
+    fireEvent(input(), "focus");
+    expect(pet().props.occupied).toBe(true);
+    fireEvent.changeText(input(), "retained draft");
+    fireEvent(input(), "blur");
+    expect(pet().props.occupied).toBe(true);
+    act(() => changes.forEach((change) => change("background")));
+    expect(pet().props.occupied).toBe(false);
+    act(() => changes.forEach((change) => change("active")));
+    expect(pet().props.occupied).toBe(true);
+    fireEvent.changeText(input(), "");
+    expect(pet().props.occupied).toBe(false);
+    await select("TEST-A");
+    expect(pet().props.size).toBe(44);
+    expect(pet().props.occupied).toBe(false);
+    act(() => retiredFocus());
+    expect(pet().props.occupied).toBe(false);
+    fireEvent(input(), "focus");
+    expect(pet().props.occupied).toBe(true);
+    fireEvent(input(), "blur");
+    expect(pet().props.occupied).toBe(false);
+    expect(f.session.send).not.toHaveBeenCalled();
+    unmount();
+  } finally {
+    jest.mocked(AppState.addEventListener).mockImplementation(original!);
+  }
+});
+
+test("retired mobile reference removal cannot change an equal-text newer draft or another chat", async () => {
+  const f = fixture();
+  Object.assign(f.session, {
+    readMentions: jest.fn(async () => ({
+      profile: "agent-mentions/1",
+      items: [{ kind: "skill", id: "TEST-skill", name: "TEST skill" }],
+    })),
+  });
+  render(<f.Harness />);
+  await act(flush);
+  const input = () => screen.getByLabelText(en.composer);
+  fireEvent.changeText(input(), "Use @sk");
+  fireEvent.press(screen.getByRole("button", { name: "TEST skill, Skill" }));
+  const remove =
+    screen.UNSAFE_getByType(MobileMentionTray).props.selected[0].remove;
+  const text = input().props.value;
+  fireEvent.changeText(input(), text);
+  act(() => remove());
+  expect(input().props.value).toBe(text);
+  expect(
+    screen.getByRole("button", { name: "Remove reference TEST skill" }),
+  ).toBeTruthy();
+  await select("TEST-B");
+  fireEvent.changeText(input(), "new chat draft");
+  act(() => remove());
+  expect(input().props.value).toBe("new chat draft");
+  expect(
+    screen.queryByRole("button", { name: "Remove reference TEST skill" }),
+  ).toBeNull();
+  expect(f.session.send).not.toHaveBeenCalled();
+});
+
+test("actual Composer keeps a full-width input above all44dp actions at320/font2 and measured split widths without remounting", () => {
+  const dimensions = jest.spyOn(ReactNative.Dimensions, "get").mockReturnValue({
+    width: 320,
+    height: 600,
+    scale: 1,
+    fontScale: 2,
+  });
+  try {
+    const send = jest.fn(),
+      change = jest.fn();
+    const { unmount } = render(
+      <Composer
+        language="cs"
+        value="Rozepsaná zpráva"
+        onChange={change}
+        onSend={send}
+        onVoice={jest.fn()}
+        onAttach={jest.fn()}
+        onMention={jest.fn()}
+        disabled={false}
+      />,
+    );
+    const input = screen.getByLabelText(cs.composer);
+    expect(StyleSheet.flatten(input.props.style)).toMatchObject({
+      flexBasis: "100%",
+      flex: 0,
+    });
+    const row = screen.getByTestId("composer-input-row");
+    expect(StyleSheet.flatten(row.props.style).flexWrap).toBe("wrap");
+    expect(screen.getAllByRole("button")).toHaveLength(4);
+    for (const action of screen.getAllByRole("button"))
+      expect(StyleSheet.flatten(action.props.style)).toMatchObject({
+        width: 44,
+        height: 44,
+      });
+    fireEvent(row, "layout", {
+      nativeEvent: { layout: { width: 800, height: 90 } },
+    });
+    expect(screen.getByLabelText(cs.composer)).toBe(input);
+    expect(StyleSheet.flatten(input.props.style).flex).toBe(1);
+    fireEvent(row, "layout", {
+      nativeEvent: { layout: { width: 274, height: 140 } },
+    });
+    expect(screen.getByLabelText(cs.composer)).toBe(input);
+    expect(StyleSheet.flatten(input.props.style).flexBasis).toBe("100%");
+    expect(input.props.value).toBe("Rozepsaná zpráva");
+    expect(send).not.toHaveBeenCalled();
+    expect(change).not.toHaveBeenCalled();
+    unmount();
+  } finally {
+    dimensions.mockRestore();
+  }
+});
+
+function androidWindowFocusPort() {
+  const original = jest
+    .mocked(AppState.addEventListener)
+    .getMockImplementation();
+  const callbacks = new Map<string, Set<(...args: unknown[]) => void>>();
+  jest
+    .spyOn(AppState, "addEventListener")
+    .mockImplementation((event, listener) => {
+      const callback = listener as (...args: unknown[]) => void;
+      if (!callbacks.has(event)) callbacks.set(event, new Set());
+      callbacks.get(event)!.add(callback);
+      return { remove: () => callbacks.get(event)?.delete(callback) };
+    });
+  const keyboard = jest
+    .spyOn(Keyboard, "addListener")
+    .mockImplementation((event, listener) => {
+      const callback = listener as (...args: unknown[]) => void;
+      if (!callbacks.has(event)) callbacks.set(event, new Set());
+      callbacks.get(event)!.add(callback);
+      return {
+        remove: () => callbacks.get(event)?.delete(callback),
+      } as unknown as ReturnType<typeof Keyboard.addListener>;
+    });
+  const platform = jest.replaceProperty(Platform, "OS", "android");
+  const frames = new Map<number, FrameRequestCallback>();
+  let frame = 0;
+  const raf = jest
+    .spyOn(global, "requestAnimationFrame")
+    .mockImplementation((callback) => {
+      frames.set(++frame, callback);
+      return frame;
+    });
+  const cancel = jest
+    .spyOn(global, "cancelAnimationFrame")
+    .mockImplementation((id) => {
+      if (id != null) frames.delete(id);
+    });
+  return {
+    emit: (event: string, ...args: unknown[]) =>
+      act(() => callbacks.get(event)?.forEach((callback) => callback(...args))),
+    step: () =>
+      act(() => {
+        const ready = [...frames.values()];
+        frames.clear();
+        ready.forEach((callback) => callback(1000));
+      }),
+    reset: () => frames.clear(),
+    restore: () => {
+      raf.mockRestore();
+      cancel.mockRestore();
+      platform.restore();
+      keyboard.mockRestore();
+      jest.mocked(AppState.addEventListener).mockImplementation(original!);
+    },
+  };
+}
+async function explicitAndroidReference() {
+  const f = fixture();
+  Object.assign(f.session, {
+    readMentions: jest.fn(async () => ({
+      profile: "agent-mentions/1",
+      items: [{ kind: "skill", id: "TEST-skill", name: "TEST skill" }],
+    })),
+  });
+  const view = render(<f.Harness />);
+  await act(flush);
+  const input = screen.getByLabelText(en.composer);
+  fireEvent.changeText(input, "before after");
+  fireEvent(input, "selectionChange", {
+    nativeEvent: { selection: { start: 7, end: 7 } },
+  });
+  fireEvent.press(screen.getByRole("button", { name: en.composerReferences }));
+  const focus = jest.mocked(
+    screen
+      .UNSAFE_getAllByType(TextInput)
+      .find((node) => node.props.accessibilityLabel === en.composer)!.instance
+      .focus,
+  );
+  focus.mockClear();
+  return { ...view, ...f, input, focus };
+}
+
+test.each(["pick", "cancel"])(
+  "actual Android explicit reference %s returns native composer focus only after its Activity window regains focus",
+  async (action) => {
+    const window = androidWindowFocusPort();
+    const current = await explicitAndroidReference();
+    window.reset();
+    try {
+      if (action === "pick")
+        fireEvent.press(
+          screen.getByRole("button", { name: "TEST skill, Skill" }),
+        );
+      else fireEvent(screen.UNSAFE_getByType(Modal), "requestClose");
+      expect(screen.queryByLabelText("Find a reference")).toBeNull();
+      window.step();
+      expect(current.focus).not.toHaveBeenCalled();
+      window.emit("keyboardDidHide");
+      window.emit("focus");
+      window.emit("keyboardDidHide");
+      window.step();
+      expect(current.focus).toHaveBeenCalledTimes(1);
+      window.emit("focus");
+      window.step();
+      expect(current.focus).toHaveBeenCalledTimes(1);
+      expect(current.input.props.value).toBe(
+        action === "pick" ? "before @TEST skill after" : "before after",
+      );
+      expect(current.session.send).not.toHaveBeenCalled();
+    } finally {
+      current.unmount();
+      window.restore();
+    }
+  },
+);
+
+test.each([
+  "newer equal-text draft",
+  "background",
+  "new chat",
+  "background after window focus",
+  "unmount",
+])("pending Android reference return cannot focus after %s", async (change) => {
+  const window = androidWindowFocusPort();
+  const current = await explicitAndroidReference();
+  window.reset();
+  try {
+    fireEvent.press(screen.getByRole("button", { name: "TEST skill, Skill" }));
+    if (change === "newer equal-text draft")
+      fireEvent.changeText(current.input, current.input.props.value);
+    if (change === "background") window.emit("change", "background");
+    if (change === "new chat") await select("TEST-A");
+    if (change === "background after window focus") {
+      window.emit("focus");
+      window.emit("change", "background");
+    }
+    if (change === "unmount") current.unmount();
+    window.emit("focus");
+    window.step();
+    expect(current.focus).not.toHaveBeenCalled();
+    expect(current.session.send).not.toHaveBeenCalled();
+  } finally {
+    if (change !== "unmount") current.unmount();
+    window.restore();
+  }
 });
