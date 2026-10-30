@@ -38,13 +38,23 @@ import {
   sha256,
   skipped,
   tar,
+  attachmentUsage,
+  attachmentLayout,
+  attachmentOwnerLocks,
+  attachmentInventory,
+  attachmentRowsPresent,
 } from "./backup-common.mjs";
 
-const [source, output] = process.argv.slice(2);
-if (!source || !output)
+let parsed;
+try {
+  parsed = attachmentUsage(process.argv.slice(2));
+} catch {
   fail(
-    "Usage: node scripts/backup.mjs <data-dir> <output-dir | file.tar.gz | ->",
+    "Usage: node scripts/backup.mjs D OUTPUT [--attachments metadata-only|coordinated] [--object-snapshot-id ID]",
+    64,
   );
+}
+const { source, output, mode, snapshotId } = parsed;
 const root = resolve(source);
 if (!existsSync(root) || !statSync(root).isDirectory())
   fail(`Data directory not found: ${root}`);
@@ -126,6 +136,14 @@ async function snapshot(into) {
     }
   };
   await walk(root);
+  for (const file of manifest.databases)
+    if (
+      attachmentRowsPresent(join(into, file)) &&
+      (!layout || file !== join(layout.workflowDirectory, "workflow.sqlite"))
+    )
+      throw Error("attachment owner layout unsupported");
+  const attachments = attachmentInventory(into, layout, mode, snapshotId);
+  if (attachments) manifest.attachments = attachments;
   writeFileSync(
     join(into, MANIFEST),
     `${JSON.stringify(manifest, null, 2)}\n`,
@@ -147,7 +165,11 @@ function stagingDirectory() {
   }
 }
 const staging = archive ? stagingDirectory() : resolve(output);
+let layout,
+  releaseLocks = () => {};
 try {
+  layout = attachmentLayout(root);
+  if (mode === "coordinated") releaseLocks = attachmentOwnerLocks(root, layout);
   if (!archive) mkdirSync(staging, { mode: 0o700 });
   const manifest = await snapshot(staging);
   if (archive) {
@@ -161,6 +183,7 @@ try {
     await tar(args, output === "-" ? { output: "inherit" } : {});
     if (output !== "-") chmodSync(resolve(output), 0o600);
   }
+  log(`attachments: ${manifest.attachments ? mode : "text-only"}`);
   log(
     `Backup complete: ${manifest.databases.length} databases (integrity ok), ${manifest.files.length - manifest.databases.length} other files${output === "-" ? "" : ` -> ${output}`}`,
   );
@@ -168,5 +191,6 @@ try {
   if (!archive) rmSync(staging, { recursive: true, force: true });
   fail(`Backup failed: ${error instanceof Error ? error.message : error}`);
 } finally {
+  releaseLocks();
   if (archive) rmSync(staging, { recursive: true, force: true });
 }

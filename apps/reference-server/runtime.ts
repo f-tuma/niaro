@@ -1,3 +1,7 @@
+import {
+  loadAttachmentConfiguration,
+  type AttachmentConfiguration,
+} from "../server-attachments/schema";
 import { loadStorageConfiguration } from "../server-storage/config";
 import type { StorageConfiguration } from "../server-storage/types";
 import type { IdentityService } from "../server-identity/service";
@@ -160,6 +164,7 @@ export function createReferenceServer(
   options: {
     adminAssetsDirectory?: string;
     objectStorage?: StorageConfiguration;
+    attachments?: AttachmentConfiguration;
   } = {},
 ) {
   if (!!config.administration?.identity !== !!identity)
@@ -224,6 +229,7 @@ export function createReferenceServer(
   return createFixtureServer(config.dataDirectory, origins, {
     ...adapters,
     objectStorage: options.objectStorage ?? loadStorageConfiguration(),
+    attachments: options.attachments ?? loadAttachmentConfiguration(),
     management,
     identity,
     sessionTtlMs: config.sessionSeconds * 1000,

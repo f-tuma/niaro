@@ -1875,6 +1875,69 @@ export function createNativeAgentRuntime(storageUrl: string) {
         page: 0,
       });
     },
+    /** Exact owner-fenced source erasure; closes checkpoints without executing or resuming them. */
+    async eraseAttachmentRun(binding: {
+      runId: string;
+      threadId: string;
+      resourceId: string;
+    }) {
+      await ready();
+      if (owner.active.has(binding.runId)) throw Error("niaro_native_run_busy");
+      let release!: () => void;
+      const fence = new Promise<void>((ok) => {
+        release = ok;
+      });
+      owner.active.set(binding.runId, fence);
+      try {
+        await owner.memory.settled();
+        const thread = await owner.memory.getThreadById({
+          threadId: binding.threadId,
+        });
+        if (thread && thread.resourceId !== binding.resourceId)
+          throw Error("niaro_native_resource_mismatch");
+        const workflows = await owner.storage.getStore("workflows");
+        if (!workflows) throw Error("niaro_native_storage_required");
+        const names = [
+          DurableStepIds.AGENTIC_LOOP,
+          DurableStepIds.AGENTIC_EXECUTION,
+        ];
+        for (const workflowName of names) {
+          const row = await workflows.getWorkflowRunById({
+            workflowName,
+            runId: binding.runId,
+          });
+          if (
+            row &&
+            (row.resourceId !== binding.resourceId ||
+              row.runId !== binding.runId ||
+              row.workflowName !== workflowName)
+          )
+            throw Error("niaro_native_resource_mismatch");
+        }
+        // No absence-as-no-dispatch claim: this is a positive erase-only retirement fence.
+        for (const workflowName of names)
+          await workflows.deleteWorkflowRunById({
+            workflowName,
+            runId: binding.runId,
+          });
+        if (thread) await owner.memory.deleteThread(binding.threadId);
+        await owner.memory.settled();
+        await persistNativeAgentRetirement(owner.storage, {
+          version: 1,
+          agentId: agentId(binding.runId),
+          ...binding,
+          checkpointSeen: true,
+          retired: true,
+        });
+        settlement.set(binding.runId, true);
+        owner.cleanup.get(binding.runId)?.dispose();
+        owner.cleanup.delete(binding.runId);
+      } finally {
+        if (owner.active.get(binding.runId) === fence)
+          owner.active.delete(binding.runId);
+        release();
+      }
+    },
     /**
      * Deletes a deleted chat's threads: their messages and thread-scoped
      * memory. Threads of another resource are left alone. Callers hold the
@@ -1919,3 +1982,4 @@ export {
   consolidateMeeting,
   nameMeeting,
 } from "./meeting-analysis";
+export { extractProfile, ProfileExtractionSchema } from "./profile-extraction";

@@ -6,7 +6,11 @@ import {
   validateMeetingSynthesis,
   type MeetingSynthesis,
 } from "../../packages/protocol/meeting-record";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import type {
+  ProfileSourceRef,
+  ProfileMeetingSource,
+} from "./profile-material";
 import {
   createReadStream,
   closeSync,
@@ -137,6 +141,12 @@ export class MeetingStore {
     CREATE TABLE IF NOT EXISTS niaro_meeting_record(id TEXT PRIMARY KEY REFERENCES niaro_meeting(id) ON DELETE CASCADE, value TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS niaro_meeting_chunk(id TEXT NOT NULL REFERENCES niaro_meeting(id) ON DELETE CASCADE, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(id,key)) STRICT;
     CREATE TABLE IF NOT EXISTS niaro_meeting_utterances(id TEXT PRIMARY KEY REFERENCES niaro_meeting(id) ON DELETE CASCADE, value TEXT NOT NULL) STRICT;`);
+    db.exec(`CREATE TABLE IF NOT EXISTS profile_meeting_source (
+      sequence INTEGER PRIMARY KEY AUTOINCREMENT, source_id TEXT NOT NULL UNIQUE,
+      owner TEXT NOT NULL, meeting_id TEXT NOT NULL UNIQUE, digest TEXT NOT NULL,
+      at TEXT NOT NULL, available INTEGER NOT NULL DEFAULT 1, source_version INTEGER NOT NULL DEFAULT 1
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS profile_meeting_owner ON profile_meeting_source(owner,sequence);`);
     // A paid dispatch may have completed remotely. Never replay it on boot.
     for (const row of db.prepare("SELECT value FROM niaro_meeting").all()) {
       const meeting = MeetingSchema.parse(JSON.parse(String(row.value)));
@@ -811,6 +821,17 @@ export class MeetingStore {
         }),
       );
       this.update(scope, id, { status: "ready", failure: null });
+      this.db
+        .prepare(
+          "INSERT INTO profile_meeting_source(source_id,owner,meeting_id,digest,at) VALUES(?,?,?,?,?)",
+        )
+        .run(
+          randomUUID(),
+          owner(scope),
+          id,
+          recordDigest,
+          new Date().toISOString(),
+        );
       this.db.exec("RELEASE meeting_publish");
       return this.record(scope, id);
     } catch (error) {
@@ -825,6 +846,11 @@ export class MeetingStore {
     // Unlink first: a filesystem failure must not lose the deletion handle.
     if (existsSync(this.path(m))) unlinkSync(this.path(m));
     this.humanTasks.deleteMeeting(scope, id);
+    this.db
+      .prepare(
+        "UPDATE profile_meeting_source SET available=0,source_version=source_version+1 WHERE owner=? AND meeting_id=?",
+      )
+      .run(owner(scope), id);
     this.db.prepare("DELETE FROM niaro_meeting_record WHERE id=?").run(id);
     this.db.prepare("DELETE FROM niaro_meeting_synthesis WHERE id=?").run(id);
     this.db.prepare("DELETE FROM niaro_meeting_segment WHERE id=?").run(id);
@@ -833,5 +859,96 @@ export class MeetingStore {
     this.db.prepare("DELETE FROM niaro_meeting_block WHERE id=?").run(id);
     this.db.prepare("DELETE FROM niaro_meeting WHERE id=?").run(id);
     return { profile: MEETING_PROFILE, scope, deleted: id };
+  }
+  profileOwners(after = "", limit = 100) {
+    return this.db
+      .prepare(
+        "SELECT owner,MAX(sequence) AS sequence FROM profile_meeting_source WHERE owner>? GROUP BY owner ORDER BY owner LIMIT ?",
+      )
+      .all(after, Math.max(1, Math.min(100, limit)))
+      .map((row) => {
+        const [connectionId, serverId, workspaceId, userId] = JSON.parse(
+          String(row.owner),
+        ) as string[];
+        return {
+          key: String(row.owner),
+          scope: {
+            connectionId: connectionId!,
+            serverId: serverId!,
+            workspaceId: workspaceId!,
+            userId: userId!,
+          },
+          sequence: Number(row.sequence),
+        };
+      });
+  }
+  profileRefs(scope: Scope, after: number, limit = 32): ProfileSourceRef[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM profile_meeting_source WHERE owner=? AND sequence>? ORDER BY sequence LIMIT ?",
+      )
+      .all(owner(scope), after, Math.max(1, Math.min(32, limit)))
+      .map((row) => ({
+        type: "meeting",
+        sequence: Number(row.sequence),
+        sourceId: String(row.source_id),
+        sourceVersion: Number(row.source_version),
+        digest: String(row.digest),
+        at: String(row.at),
+        meetingId: String(row.meeting_id),
+      }));
+  }
+  profileSource(scope: Scope, sourceId: string) {
+    const row = this.db
+      .prepare(
+        `SELECT s.* FROM profile_meeting_source s JOIN niaro_meeting m ON m.id=s.meeting_id AND m.owner=s.owner
+      WHERE s.owner=? AND s.source_id=? AND s.available=1`,
+      )
+      .get(owner(scope), sourceId);
+    return row
+      ? {
+          digest: String(row.digest),
+          sourceVersion: Number(row.source_version),
+          href: `/meetings/${encodeURIComponent(String(row.meeting_id))}` as const,
+        }
+      : null;
+  }
+  profileMeeting(
+    scope: Scope,
+    ref: ProfileSourceRef,
+  ): ProfileMeetingSource | null {
+    if (ref.type !== "meeting" || !ref.meetingId) return null;
+    const source = this.profileSource(scope, ref.sourceId);
+    if (
+      !source ||
+      source.digest !== ref.digest ||
+      source.sourceVersion !== ref.sourceVersion
+    )
+      return null;
+    const record = this.record(scope, ref.meetingId);
+    if (
+      record.meeting.speakerChannels !== "self-others" ||
+      record.recordDigest !== ref.digest
+    )
+      return null;
+    const turns = (record.utterances ?? []).filter(
+      (turn) => turn.speaker === "me",
+    );
+    const ownTasks = (record.analysis?.tasks ?? [])
+      .filter(
+        (task) =>
+          task.owner === "me" &&
+          task.sources.length > 0 &&
+          task.sources.every((source) =>
+            turns.some((turn) =>
+              turn.text
+                .normalize("NFKC")
+                .toLowerCase()
+                .includes(source.quote.normalize("NFKC").toLowerCase()),
+            ),
+          ),
+      )
+      .map((task) => task.text);
+    return { ref, scope, ownText: turns.map((turn) => turn.text), ownTasks };
   }
 }

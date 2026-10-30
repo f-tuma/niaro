@@ -9,6 +9,7 @@ import { z } from "zod";
 import {
   MemoryContentSchema,
   MemorySourceSchema,
+  ObservationStatementSchema,
 } from "../../packages/protocol/memory";
 
 export type MemoryPayloadBinding = {
@@ -22,11 +23,20 @@ export type MemoryPayloadBinding = {
   createdAt: string;
   expiresAt: string;
 };
-export const MemoryPayloadSchema = z.strictObject({
-  content: MemoryContentSchema,
-  source: MemorySourceSchema,
-  trust: z.enum(["user_assertion", "verified_result", "model_inference"]),
-});
+export const MemoryPayloadSchema = z
+  .strictObject({
+    content: MemoryContentSchema,
+    source: MemorySourceSchema,
+    trust: z.enum(["user_assertion", "verified_result", "model_inference"]),
+  })
+  .superRefine((payload, ctx) => {
+    if (
+      payload.source.type === "observed" &&
+      (payload.trust !== "model_inference" ||
+        !ObservationStatementSchema.safeParse(payload.content).success)
+    )
+      ctx.addIssue({ code: "custom", message: "memory_observation_invalid" });
+  });
 export type MemoryPayload = z.infer<typeof MemoryPayloadSchema>;
 const MAX_BYTES = 32768;
 export class MemoryPayloadCrypto {
@@ -53,6 +63,8 @@ export class MemoryPayloadCrypto {
     );
   }
   seal(payload: MemoryPayload, binding: MemoryPayloadBinding) {
+    if (payload.source.type === "observed" && binding.scope !== "private")
+      throw Error("memory_observation_scope");
     const body = Buffer.from(
       JSON.stringify(MemoryPayloadSchema.parse(payload)),
     );
@@ -94,7 +106,12 @@ export class MemoryPayloadCrypto {
       decipher.final(),
     ]);
     if (body.length > MAX_BYTES) throw Error("memory_payload_limit");
-    return MemoryPayloadSchema.parse(JSON.parse(body.toString("utf8")));
+    const payload = MemoryPayloadSchema.parse(
+      JSON.parse(body.toString("utf8")),
+    );
+    if (payload.source.type === "observed" && binding.scope !== "private")
+      throw Error("memory_observation_scope");
+    return payload;
   }
 }
 export const memoryCipherDigest = (ciphertext: string) =>

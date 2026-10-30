@@ -1,3 +1,4 @@
+import { ATTACHMENT_PROFILE } from "./attachments";
 import type { Conversation, DomainEvent, Snapshot } from "./index";
 import { GENERATIVE_UI_PROFILE } from "./generative-ui";
 
@@ -36,6 +37,7 @@ const resultToken = (result: MessageResult) =>
 /** What a client asked for on a snapshot, events, commands or history read. */
 export type MessageDelivery = {
   times: boolean;
+  attachments?: boolean;
   /** Generated UI on assistant answers (GENERATIVE_UI_PROFILE). */
   ui: boolean;
   /** Declared result tokens besides the baseline; unknown ones are ignored. */
@@ -49,6 +51,10 @@ export function messageDelivery(params: URLSearchParams): MessageDelivery {
     .filter((token) => TOKEN.test(token));
   return {
     times: params.get("messages") === MESSAGE_TIME_PROFILE,
+    ...(params.getAll("attachments").length === 1 &&
+    params.get("attachments") === ATTACHMENT_PROFILE
+      ? { attachments: true }
+      : {}),
     ui: params.get("ui") === GENERATIVE_UI_PROFILE,
     results: new Set(declared),
   };
@@ -56,9 +62,17 @@ export function messageDelivery(params: URLSearchParams): MessageDelivery {
 /** Adds this client's declarations to a delivery path. */
 export function messageDeliveryPath(
   path: string,
-  support: { times?: boolean; ui?: boolean; results?: readonly string[] },
+  support: {
+    times?: boolean;
+    ui?: boolean;
+    attachments?: boolean;
+    results?: readonly string[];
+  },
 ) {
   const params = [
+    ...(support.attachments
+      ? [`attachments=${encodeURIComponent(ATTACHMENT_PROFILE)}`]
+      : []),
     ...(support.times
       ? [`messages=${encodeURIComponent(MESSAGE_TIME_PROFILE)}`]
       : []),
@@ -80,6 +94,11 @@ export function messageForClient<T extends Message>(
   message: T,
   delivery: MessageDelivery,
 ): T {
+  if (
+    !delivery.attachments &&
+    (message.attachments?.length || message.processing)
+  )
+    throw new AttachmentProfileRequired();
   let value = message;
   if (!delivery.times && value.createdAt !== undefined) {
     const { createdAt: _createdAt, ...plain } = value;
@@ -105,6 +124,7 @@ function conversationForClient(
 ): Conversation {
   return {
     ...conversation,
+    ...(!delivery.attachments ? { attachmentGeneration: undefined } : {}),
     messages: conversation.messages.map((message) =>
       messageForClient(message, delivery),
     ),
@@ -130,4 +150,11 @@ export function eventsForMessageDelivery(
       ? { ...event, entity: conversationForClient(event.entity, delivery) }
       : event,
   );
+}
+
+/** Upgrade refusal must happen before command effects or stream headers. */
+export class AttachmentProfileRequired extends Error {
+  constructor() {
+    super("attachment_profile_required");
+  }
 }

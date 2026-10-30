@@ -1,4 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { ScopeSchema } from "../../packages/protocol";
+import {
+  AttachmentIdSchema as NativeAttachmentId,
+  AttachmentUuidSchema as NativeAttachmentUuid,
+  AttachmentShaSchema as NativeAttachmentSha,
+} from "../../packages/protocol/attachments";
 import type {
   AnswerStreamApproval,
   AnswerStreamStep,
@@ -455,6 +461,8 @@ const HumanTaskCloseReceipt = z.strictObject({
 /** Business authority only. The native framework owns model messages and tool checkpoints. */
 export const DomainCommandSchema = z.strictObject({
   kind: z.literal("mastra-1"),
+  attachmentGeneration: NativeAttachmentUuid.optional(),
+  attachmentRestoreId: NativeAttachmentUuid.optional(),
   hash: z.string(),
   commandId: z.string(),
   text: z.string(),
@@ -723,8 +731,112 @@ export const nativeHumanTaskId = (
     runId,
     toolCallId,
   ]);
+export const NativeAttachmentInputSchema = z.strictObject({
+  scope: ScopeSchema,
+  conversationId: NativeAttachmentId,
+  generation: NativeAttachmentUuid,
+  conversationSession: NativeAttachmentSha,
+  commandId: NativeAttachmentId,
+  outerCommandId: NativeAttachmentId,
+  logicalMessageId: NativeAttachmentId,
+  requestHash: NativeAttachmentSha,
+  messageHash: NativeAttachmentSha,
+  evidenceDigest: NativeAttachmentSha,
+  handoffId: NativeAttachmentUuid,
+});
+export type NativeAttachmentInput = z.infer<typeof NativeAttachmentInputSchema>;
+const NativeAttachmentLink = z.strictObject({
+  rootKey: NativeAttachmentSha,
+  rootCommandId: NativeAttachmentId,
+  threadId: NativeAttachmentSha,
+  runId: NativeAttachmentId,
+  aliasCommandId: NativeAttachmentId,
+  linkedAt: z.iso.datetime(),
+});
+export const NativeAttachmentBindingSchema = z.strictObject({
+  kind: z.literal("attachment-native/1"),
+  binding: NativeAttachmentInputSchema,
+  fingerprint: NativeAttachmentSha,
+  revision: z.number().int().positive(),
+  createdAt: z.iso.datetime(),
+  phase: z.discriminatedUnion("state", [
+    z.strictObject({
+      state: z.literal("pending"),
+      ownerEpoch: NativeAttachmentUuid,
+      taskId: NativeAttachmentUuid,
+    }),
+    z.strictObject({
+      state: z.literal("preparing"),
+      ownerEpoch: NativeAttachmentUuid,
+      taskId: NativeAttachmentUuid,
+      startedAt: z.iso.datetime(),
+    }),
+    z.strictObject({
+      state: z.literal("linked"),
+      ...NativeAttachmentLink.shape,
+      outcome: z
+        .strictObject({
+          workRevision: z.number().int().positive(),
+          result: Answer.extend({
+            workItemId: NativeAttachmentId.optional(),
+            resolved: ServiceResultSchema.optional(),
+          }),
+        })
+        .nullable(),
+    }),
+    z.strictObject({
+      state: z.literal("retired"),
+      retiredAt: z.iso.datetime(),
+      reason: z.enum(["cancelled", "deleted", "interrupted"]),
+      preparationStarted: z.boolean(),
+      proofId: NativeAttachmentUuid.nullable(),
+      consumedBy: z
+        .strictObject({
+          commandId: NativeAttachmentId,
+          handoffId: NativeAttachmentUuid,
+        })
+        .nullable(),
+      prior: NativeAttachmentLink.nullable(),
+    }),
+  ]),
+});
+export type NativeAttachmentBinding = z.infer<
+  typeof NativeAttachmentBindingSchema
+>;
+export function nativeAttachmentFingerprint(raw: NativeAttachmentInput) {
+  const b = NativeAttachmentInputSchema.parse(raw);
+  return digest([
+    "attachment-native/1",
+    b.scope,
+    b.conversationId,
+    b.generation,
+    b.conversationSession,
+    b.commandId,
+    b.outerCommandId,
+    b.logicalMessageId,
+    b.requestHash,
+    b.messageHash,
+    b.evidenceDigest,
+    b.handoffId,
+  ]);
+}
+export type NativeAttachmentTask = {
+  ownerEpoch: string;
+  taskId: string;
+  live: () => boolean;
+};
+export type NativeAttachmentOutcome =
+  | { status: "not_dispatched"; proofId: string }
+  | { status: "recorded"; nativeRunId: string; result: ServiceAnswer }
+  | { status: "unsettled" }
+  | { status: "unknown" };
 export type DomainMessageContext = {
+  attachment?: NativeAttachmentInput;
+  attachmentTask?: NativeAttachmentTask;
+  attachmentRetryProof?: { commandId: string; proofId: string };
   conversationId?: string;
+  attachmentGeneration?: string;
+  attachmentRestoreId?: string;
   /** Private server-owned workflow reset generation; never accepted from public input. */
   conversationSession?: string;
   /** Public attempt lineage, validated against the scoped native journal. */
@@ -886,6 +998,11 @@ function definition(value: unknown): DomainDefinition {
     })
     .parse(value).function;
 }
+export const nativeAttachmentMessageHash = (
+  text: string,
+  language: Language,
+  context?: DomainMessageContext,
+) => messageHash(text, language, context);
 const objectTool = (
   name: string,
   description: string,
@@ -1251,6 +1368,372 @@ export function createMastraDomain(
   const separateTasks = new Set<string>();
   const scopeHash = digest([scope, organizationId]);
 
+  function attachmentBinding(commandId: string) {
+    const raw = store.nativeAttachmentBinding(
+      commandKey(commandId),
+      scope.workspaceId,
+      scope.userId,
+    );
+    if (raw === undefined) return;
+    const b = NativeAttachmentBindingSchema.parse(raw);
+    if (
+      b.fingerprint !== nativeAttachmentFingerprint(b.binding) ||
+      digest(b.binding.scope) !== digest(ScopeSchema.parse(scope)) ||
+      b.binding.commandId !== commandId
+    )
+      throw new IdentityError(409, "idempotency_conflict");
+    return b;
+  }
+  function attachmentPreparing(
+    messageContext: DomainMessageContext | undefined,
+    commandId: string,
+    text: string,
+    language: Language,
+  ) {
+    if (!messageContext?.attachment) return;
+    const b = attachmentBinding(commandId),
+      input = NativeAttachmentInputSchema.parse(messageContext.attachment),
+      task = messageContext.attachmentTask;
+    if (
+      !b ||
+      b.fingerprint !== nativeAttachmentFingerprint(input) ||
+      input.messageHash !== messageHash(text, language, messageContext) ||
+      input.commandId !== commandId ||
+      input.requestHash !== messageContext.requestHash ||
+      input.outerCommandId !== messageContext.outerCommandId ||
+      input.conversationId !== messageContext.conversationId ||
+      input.conversationSession !== messageContext.conversationSession
+    )
+      throw new IdentityError(409, "idempotency_conflict");
+    if (
+      b.phase.state !== "preparing" ||
+      !task?.live() ||
+      b.phase.ownerEpoch !== task.ownerEpoch ||
+      b.phase.taskId !== task.taskId
+    )
+      throw new IdentityError(409, "attachment_retry_required");
+    return b;
+  }
+  function linkAttachment(
+    messageContext: DomainMessageContext | undefined,
+    state: DomainCommand,
+    commandId: string,
+    text: string,
+    language: Language,
+  ) {
+    const b = attachmentPreparing(messageContext, commandId, text, language);
+    if (!b) return;
+    const rootCommandId = state.aliases[0]!.commandId,
+      rootKey = commandKey(rootCommandId);
+    if (
+      state.runId !== rootKey ||
+      !state.aliases.some((a) => a.commandId === commandId)
+    )
+      throw new IdentityError(409, "catalog_conflict");
+    const next = NativeAttachmentBindingSchema.parse({
+      ...b,
+      revision: b.revision + 1,
+      phase: {
+        state: "linked",
+        rootKey,
+        rootCommandId,
+        threadId: state.threadId,
+        runId: state.runId,
+        aliasCommandId: commandId,
+        linkedAt: new Date().toISOString(),
+        outcome: null,
+      },
+    });
+    store.saveNativeAttachmentBinding(
+      commandKey(commandId),
+      scope.workspaceId,
+      scope.userId,
+      next,
+      b.revision,
+    );
+  }
+  function attachmentThreadAllowed(state: DomainCommand, generation?: string) {
+    if (
+      state.attachmentGeneration &&
+      !context.attachmentGenerationAllowed?.(
+        state.attachmentGeneration,
+        state.attachmentRestoreId,
+      )
+    )
+      return false;
+    if (
+      !state.attachmentGeneration &&
+      state.conversationId &&
+      context.attachmentLegacyContextAllowed &&
+      !context.attachmentLegacyContextAllowed(
+        state.conversationId,
+        state.conversationSession,
+        state.attachmentRestoreId,
+      )
+    )
+      return false;
+    if (generation && state.attachmentGeneration !== generation) return false;
+    return state.aliases.every((alias) => {
+      const b = attachmentBinding(alias.commandId);
+      return b
+        ? b.phase.state !== "retired" &&
+            (!generation || b.binding.generation === generation)
+        : !generation || state.attachmentGeneration === generation;
+    });
+  }
+  async function admitAttachment(
+    input: NativeAttachmentInput,
+    task: NativeAttachmentTask,
+    proof?: { commandId: string; proofId: string },
+  ) {
+    return context.serial(async () => {
+      await actorLocked(context);
+      const binding = NativeAttachmentInputSchema.parse(input),
+        fingerprint = nativeAttachmentFingerprint(binding);
+      if (
+        !context.attachmentGenerationAllowed?.(binding.generation) ||
+        digest(binding.scope) !== digest(ScopeSchema.parse(scope)) ||
+        !task.live()
+      )
+        throw new IdentityError(409, "catalog_conflict");
+      return context.transaction(async () => {
+        const existing = attachmentBinding(binding.commandId);
+        if (existing) {
+          if (existing.fingerprint !== fingerprint)
+            throw new IdentityError(409, "idempotency_conflict");
+          return false;
+        }
+        if (
+          store.turn(
+            commandKey(binding.commandId),
+            scope.workspaceId,
+            scope.userId,
+          )
+        )
+          throw new IdentityError(409, "idempotency_conflict");
+        if (proof) {
+          const parent = attachmentBinding(proof.commandId);
+          if (
+            !parent ||
+            parent.phase.state !== "retired" ||
+            parent.phase.preparationStarted ||
+            parent.phase.reason === "deleted" ||
+            parent.phase.proofId !== proof.proofId ||
+            parent.phase.consumedBy ||
+            parent.binding.generation !== binding.generation ||
+            parent.binding.conversationSession !==
+              binding.conversationSession ||
+            parent.binding.conversationId !== binding.conversationId ||
+            parent.binding.evidenceDigest !== binding.evidenceDigest ||
+            parent.binding.messageHash !== binding.messageHash ||
+            parent.binding.logicalMessageId !== binding.logicalMessageId
+          )
+            throw new IdentityError(409, "attachment_retry_required");
+          const consumed = NativeAttachmentBindingSchema.parse({
+            ...parent,
+            revision: parent.revision + 1,
+            phase: {
+              ...parent.phase,
+              consumedBy: {
+                commandId: binding.commandId,
+                handoffId: binding.handoffId,
+              },
+            },
+          });
+          store.saveNativeAttachmentBinding(
+            commandKey(proof.commandId),
+            scope.workspaceId,
+            scope.userId,
+            consumed,
+            parent.revision,
+          );
+        }
+        const b = NativeAttachmentBindingSchema.parse({
+          kind: "attachment-native/1",
+          binding,
+          fingerprint,
+          revision: 1,
+          createdAt: new Date().toISOString(),
+          phase: {
+            state: "pending",
+            ownerEpoch: task.ownerEpoch,
+            taskId: task.taskId,
+          },
+        });
+        store.saveNativeAttachmentBinding(
+          commandKey(binding.commandId),
+          scope.workspaceId,
+          scope.userId,
+          b,
+        );
+        return true;
+      });
+    });
+  }
+  async function prepareAttachment(
+    input: NativeAttachmentInput,
+    task: NativeAttachmentTask,
+  ) {
+    return context.serial(async () =>
+      context.transaction(async () => {
+        await actorLocked(context);
+        const b = attachmentBinding(input.commandId);
+        if (
+          !b ||
+          b.fingerprint !== nativeAttachmentFingerprint(input) ||
+          b.phase.state !== "pending" ||
+          b.phase.ownerEpoch !== task.ownerEpoch ||
+          b.phase.taskId !== task.taskId ||
+          !task.live()
+        )
+          throw new IdentityError(409, "attachment_retry_required");
+        const next = NativeAttachmentBindingSchema.parse({
+          ...b,
+          revision: b.revision + 1,
+          phase: {
+            ...b.phase,
+            state: "preparing",
+            startedAt: new Date().toISOString(),
+          },
+        });
+        store.saveNativeAttachmentBinding(
+          commandKey(input.commandId),
+          scope.workspaceId,
+          scope.userId,
+          next,
+          b.revision,
+        );
+      }),
+    );
+  }
+  async function readAttachmentOutcome(
+    input: NativeAttachmentInput,
+    isLive?: (epoch: string, taskId: string) => boolean,
+  ): Promise<NativeAttachmentOutcome> {
+    return context.serial(async () => {
+      await actorLocked(context);
+      const b = attachmentBinding(input.commandId);
+      if (!b) return { status: "unknown" };
+      if (b.fingerprint !== nativeAttachmentFingerprint(input))
+        throw new IdentityError(409, "idempotency_conflict");
+      if (!context.attachmentGenerationAllowed?.(b.binding.generation))
+        return { status: "unknown" };
+      if (b.phase.state === "retired")
+        return b.phase.proofId
+          ? { status: "not_dispatched", proofId: b.phase.proofId }
+          : { status: "unknown" };
+      if (b.phase.state === "linked")
+        return b.phase.outcome
+          ? {
+              status: "recorded",
+              nativeRunId: b.phase.runId,
+              result: b.phase.outcome.result,
+            }
+          : { status: "unsettled" };
+      return {
+        status: isLive?.(b.phase.ownerEpoch, b.phase.taskId)
+          ? "unsettled"
+          : "unknown",
+      };
+    });
+  }
+  async function recordAttachmentOutcome(
+    input: NativeAttachmentInput,
+    state: DomainCommand,
+    result: ServiceAnswer,
+  ): Promise<ServiceAnswer> {
+    return context.serial(async () => {
+      await actorLocked(context);
+      context.validateRequest?.();
+      return context.transaction(async () => {
+        const b = attachmentBinding(input.commandId);
+        if (
+          !b ||
+          b.fingerprint !== nativeAttachmentFingerprint(input) ||
+          b.phase.state !== "linked"
+        )
+          throw new IdentityError(409, "attachment_retry_required");
+        if (b.phase.outcome) return b.phase.outcome.result;
+        const latest = DomainCommandSchema.parse(
+          store.turn(b.phase.rootKey, scope.workspaceId, scope.userId),
+        );
+        if (
+          latest.commandId !== input.commandId ||
+          latest.workRevision !== state.workRevision ||
+          latest.runId !== b.phase.runId ||
+          !attachmentThreadAllowed(latest, input.generation)
+        )
+          throw new IdentityError(409, "catalog_conflict");
+        const next = NativeAttachmentBindingSchema.parse({
+          ...b,
+          revision: b.revision + 1,
+          phase: {
+            ...b.phase,
+            outcome: { workRevision: latest.workRevision, result },
+          },
+        });
+        for (const id of new Set([
+          latest.runId,
+          ...latest.aliases.map((a) => commandKey(a.commandId)),
+        ]))
+          store.saveTurn(id, scope.workspaceId, scope.userId, latest);
+        store.saveNativeAttachmentBinding(
+          commandKey(input.commandId),
+          scope.workspaceId,
+          scope.userId,
+          next,
+          b.revision,
+        );
+        if (next.phase.state !== "linked" || !next.phase.outcome)
+          throw new IdentityError(409, "catalog_conflict");
+        return next.phase.outcome.result;
+      });
+    });
+  }
+  async function sealAttachment(
+    input: NativeAttachmentInput,
+    reason: "cancelled" | "deleted" | "interrupted",
+    task?: NativeAttachmentTask,
+  ) {
+    return context.serial(async () =>
+      context.transaction(async () => {
+        const b = attachmentBinding(input.commandId);
+        if (!b) return;
+        if (b.fingerprint !== nativeAttachmentFingerprint(input))
+          throw new IdentityError(409, "idempotency_conflict");
+        if (b.phase.state === "retired") return b;
+        if (
+          (b.phase.state === "pending" || b.phase.state === "preparing") &&
+          task?.live()
+        )
+          throw new IdentityError(409, "catalog_conflict");
+        if (b.phase.state === "linked")
+          throw new IdentityError(409, "attachment_retry_required");
+        const prepared = b.phase.state === "preparing";
+        const next = NativeAttachmentBindingSchema.parse({
+          ...b,
+          revision: b.revision + 1,
+          phase: {
+            state: "retired",
+            reason,
+            retiredAt: new Date().toISOString(),
+            preparationStarted: prepared,
+            proofId: prepared ? null : randomUUID(),
+            consumedBy: null,
+            prior: null,
+          },
+        });
+        store.saveNativeAttachmentBinding(
+          commandKey(input.commandId),
+          scope.workspaceId,
+          scope.userId,
+          next,
+          b.revision,
+        );
+        return next;
+      }),
+    );
+  }
   async function actorLocked(ctx: CatalogContext) {
     const actor = await ctx.actor(target);
     if (actor.userId !== scope.userId)
@@ -1380,6 +1863,8 @@ export function createMastraDomain(
     actor: Awaited<ReturnType<typeof actorLocked>>,
     ctx: CatalogContext = context,
   ) {
+    if (!attachmentThreadAllowed(state))
+      throw new IdentityError(403, "identity_forbidden");
     if (!state.threadAuthority)
       throw new IdentityError(409, "catalog_conflict");
     if (context.epoch(organizationId) !== state.epoch)
@@ -1529,19 +2014,68 @@ export function createMastraDomain(
       value.taskTracked ||= !!value.pending;
       value.workRevision++;
       const checked = DomainCommandSchema.parse(value);
-      for (const id of new Set([
-        key,
-        ...value.aliases.map((alias) => commandKey(alias.commandId)),
-      ]))
-        store.saveTurn(id, scope.workspaceId, scope.userId, checked);
-      for (const operationId of value.operations)
-        store.linkTurnOperation(
+      const persist = () => {
+        const aliases = checked.aliases.map((alias) => ({
+          alias,
+          binding: attachmentBinding(alias.commandId),
+        }));
+        if (aliases.some((a) => a.binding?.phase.state === "retired"))
+          throw new IdentityError(403, "identity_forbidden");
+        for (const id of new Set([
           key,
-          operationId,
+          ...value.aliases.map((alias) => commandKey(alias.commandId)),
+        ]))
+          store.saveTurn(id, scope.workspaceId, scope.userId, checked);
+        for (const operationId of value.operations)
+          store.linkTurnOperation(
+            key,
+            operationId,
+            scope.workspaceId,
+            scope.userId,
+          );
+        store.rememberTurn(
+          key,
           scope.workspaceId,
           scope.userId,
+          scope.serverId,
         );
-      store.rememberTurn(key, scope.workspaceId, scope.userId, scope.serverId);
+        const exact = aliases.find(
+          (a) => a.alias.commandId === checked.commandId,
+        )?.binding;
+        if (
+          checked.answer &&
+          exact?.phase.state === "linked" &&
+          !exact.phase.outcome
+        ) {
+          const next = NativeAttachmentBindingSchema.parse({
+            ...exact,
+            revision: exact.revision + 1,
+            phase: {
+              ...exact.phase,
+              outcome: {
+                workRevision: checked.workRevision,
+                result: { ...checked.answer, workItemId: checked.runId },
+              },
+            },
+          });
+          if (
+            next.phase.state !== "linked" ||
+            next.phase.rootKey !== checked.runId ||
+            next.phase.threadId !== checked.threadId
+          )
+            throw new IdentityError(409, "catalog_conflict");
+          store.saveNativeAttachmentBinding(
+            commandKey(exact.binding.commandId),
+            scope.workspaceId,
+            scope.userId,
+            next,
+            exact.revision,
+          );
+        }
+      };
+      if (checked.aliases.some((alias) => !!attachmentBinding(alias.commandId)))
+        store.atomicNativeAttachment(persist);
+      else persist();
     }
     const humanTaskContent = (task: HumanTask): HumanTaskContent => ({
       title: task.title,
@@ -5198,6 +5732,9 @@ export function createMastraDomain(
     const state = await context.serial(async () => {
       const actor = await actorLocked(context);
       messageContext?.validateRequest?.();
+      if (messageContext?.attachmentRetryProof && !messageContext.attachment)
+        throw new IdentityError(409, "attachment_retry_required");
+      attachmentPreparing(messageContext, commandId, text, language);
       const cached = store.turn(key, scope.workspaceId, scope.userId);
       if (cached) {
         const saved = DomainCommandSchema.parse(cached);
@@ -5217,15 +5754,16 @@ export function createMastraDomain(
           throw new IdentityError(409, "catalog_conflict");
         return saved;
       }
-      const retryParent = messageContext?.retryOf
-        ? retryParentLocked(
-            messageContext.retryOf,
-            messageContext.logicalMessageId ?? "",
-            text,
-            language,
-            messageContext,
-          )
-        : undefined;
+      const retryParent =
+        messageContext?.retryOf && !messageContext.attachmentRetryProof
+          ? retryParentLocked(
+              messageContext.retryOf,
+              messageContext.logicalMessageId ?? "",
+              text,
+              language,
+              messageContext,
+            )
+          : undefined;
       const clock = turnClock(timeZone, plugins.timeZone),
         epoch = context.epoch(organizationId);
       const legacy = await legacyContextLocked(messageContext, actor, epoch);
@@ -5265,7 +5803,12 @@ export function createMastraDomain(
         sameSession &&
         prior.success &&
         !separateTasks.has(key) &&
-        prior.data.threadAuthority
+        prior.data.threadAuthority &&
+        attachmentThreadAllowed(
+          prior.data,
+          messageContext?.attachment?.generation ??
+            messageContext?.attachmentGeneration,
+        )
       ) {
         try {
           await validateThreadLocked(prior.data, actor);
@@ -5309,6 +5852,10 @@ export function createMastraDomain(
       }
       const state = DomainCommandSchema.parse({
         kind: "mastra-1",
+        attachmentGeneration:
+          messageContext?.attachment?.generation ??
+          messageContext?.attachmentGeneration,
+        attachmentRestoreId: messageContext?.attachmentRestoreId,
         hash: messageHash(text, language, messageContext),
         commandId,
         text,
@@ -5374,8 +5921,27 @@ export function createMastraDomain(
         plugins: [],
         trace: newLoopTrace(),
       });
-      store.saveTurn(key, scope.workspaceId, scope.userId, state);
-      store.rememberTurn(key, scope.workspaceId, scope.userId, scope.serverId);
+      if (messageContext?.attachment)
+        await context.transaction(async () => {
+          attachmentPreparing(messageContext, commandId, text, language);
+          store.saveTurn(key, scope.workspaceId, scope.userId, state);
+          store.rememberTurn(
+            key,
+            scope.workspaceId,
+            scope.userId,
+            scope.serverId,
+          );
+          linkAttachment(messageContext, state, commandId, text, language);
+        });
+      else {
+        store.saveTurn(key, scope.workspaceId, scope.userId, state);
+        store.rememberTurn(
+          key,
+          scope.workspaceId,
+          scope.userId,
+          scope.serverId,
+        );
+      }
       if (
         reuseThread &&
         prior.success &&
@@ -5700,6 +6266,13 @@ export function createMastraDomain(
       return { ...state.answer!, workItemId: state.runId };
     },
     /** Explicit native resume: a new message is a new task unless this proves continuity. */
+    admitAttachment,
+    prepareAttachment,
+    readAttachmentOutcome,
+    recordAttachmentOutcome,
+    sealAttachment,
+    attachmentBinding,
+    attachmentThreadAllowed,
     async continuation(
       commandId: string,
       text: string,
@@ -5718,6 +6291,7 @@ export function createMastraDomain(
       const candidate = await context.serial(async () => {
         await actorLocked(context);
         messageContext?.validateRequest?.();
+        attachmentPreparing(messageContext, commandId, text, language);
         const cached = DomainCommandSchema.safeParse(
           store.turn(commandKey(commandId), scope.workspaceId, scope.userId),
         );
@@ -5777,6 +6351,14 @@ export function createMastraDomain(
         )
           return null;
         const state = latest.data;
+        if (
+          !attachmentThreadAllowed(
+            state,
+            messageContext?.attachment?.generation ??
+              messageContext?.attachmentGeneration,
+          )
+        )
+          return null;
         if (
           !messageContext?.task &&
           store.selectedTurn(
@@ -5857,6 +6439,8 @@ export function createMastraDomain(
         )
           throw new IdentityError(409, "catalog_conflict");
         await validateThreadLocked(live, actor);
+        const observedHash = digest(live),
+          observedRevision = live.workRevision;
         const state = candidate.state;
         for (const property of Object.keys(state))
           delete (state as Record<string, unknown>)[property];
@@ -5895,17 +6479,38 @@ export function createMastraDomain(
         state.currentStart = state.operations.length;
         state.workRevision++;
         const saved = DomainCommandSchema.parse(state);
-        for (const id of new Set([
-          state.runId,
-          ...state.aliases.map((alias) => commandKey(alias.commandId)),
-        ]))
-          store.saveTurn(id, scope.workspaceId, scope.userId, saved);
-        store.rememberTurn(
-          state.runId,
-          scope.workspaceId,
-          scope.userId,
-          scope.serverId,
-        );
+        const promote = () => {
+          if (messageContext?.attachment) {
+            const current = DomainCommandSchema.parse(
+              store.turn(
+                candidate.state.runId,
+                scope.workspaceId,
+                scope.userId,
+              ),
+            );
+            if (
+              current.workRevision !== observedRevision ||
+              digest(current) !== observedHash
+            )
+              throw new IdentityError(409, "catalog_conflict");
+            attachmentPreparing(messageContext, commandId, text, language);
+          }
+          for (const id of new Set([
+            state.runId,
+            ...state.aliases.map((alias) => commandKey(alias.commandId)),
+          ]))
+            store.saveTurn(id, scope.workspaceId, scope.userId, saved);
+          store.rememberTurn(
+            state.runId,
+            scope.workspaceId,
+            scope.userId,
+            scope.serverId,
+          );
+          linkAttachment(messageContext, state, commandId, text, language);
+        };
+        if (messageContext?.attachment)
+          await context.transaction(async () => promote());
+        else promote();
       });
       return {
         session: prior,

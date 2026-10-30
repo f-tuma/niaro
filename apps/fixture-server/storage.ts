@@ -1,5 +1,18 @@
+import {
+  validateRestoreMarker,
+  validRestoreActivation,
+} from "../server-attachments/restore-contract.cjs";
+import { AttachmentStore } from "../server-attachments/store";
+import {
+  loadAttachmentConfiguration,
+  type AttachmentConfiguration,
+  AttachmentError,
+} from "../server-attachments/schema";
 import { StorageRegistry } from "../server-storage/registry";
-import { initializeObjectStorage, type StorageRuntime } from "../server-storage/runtime";
+import {
+  initializeObjectStorage,
+  type StorageRuntime,
+} from "../server-storage/runtime";
 import type { StorageConfiguration } from "../server-storage/types";
 import {
   chmodSync,
@@ -9,7 +22,11 @@ import {
   readdirSync,
 } from "node:fs";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import type {
+  ProfileSourceRef,
+  ProfileChatSource,
+} from "../server-identity/profile-material";
 import { DatabaseSync } from "node:sqlite";
 import { IdentityError } from "../server-identity/error";
 import {
@@ -85,16 +102,22 @@ export const RECENT_RECEIPTS = 500;
 export class FixtureStorage {
   private db: DatabaseSync;
   private objectRegistry!: StorageRegistry;
+  attachments!: AttachmentStore;
   objectStorage: StorageRuntime = { state: "disabled" };
   private history!: ConversationHistory;
   private search!: ChatSearchIndex;
+  private profileNotify?: (scope: Scope) => void;
   constructor(
-    directory: string,
+    private readonly directory: string,
     private serverId: string,
     private now = () => Date.now(),
     private checkpoint?: StorageCheckpoint,
     private calendarFor: (scope: Scope) => CalendarTarget | undefined = () =>
       undefined,
+    attachmentConfiguration: AttachmentConfiguration = loadAttachmentConfiguration(
+      {},
+    ),
+    openMode: "normal" | "attachment-restore" = "normal",
   ) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const file = join(directory, "workflow.sqlite");
@@ -105,6 +128,31 @@ export class FixtureStorage {
       this.db.exec(
         "PRAGMA busy_timeout=1000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON",
       );
+      if (openMode === "attachment-restore") {
+        const owner = this.db
+          .prepare("SELECT value FROM metadata WHERE key='server_id'")
+          .get();
+        if (owner?.value !== serverId)
+          throw Error("Persisted server identity mismatch");
+        this.objectRegistry = new StorageRegistry(this.db);
+        this.history = new ConversationHistory(this.db, this.now);
+        this.search = new ChatSearchIndex(this.db, this.now);
+        this.attachments = new AttachmentStore(
+          this.db,
+          (run) => this.transaction(true, run, "command"),
+          attachmentConfiguration,
+          () => this.objectStorage,
+          (scope, id) => ({
+            exists: this.history.exists(scope, id),
+            archived: this.history.archived(scope, id),
+            deleted: this.history.deleted(scope, id),
+            resettable: resettableConversation(id),
+          }),
+          this.now,
+          () => this.attachmentRestoreBlocked(directory),
+        );
+        return;
+      }
       this.transaction(true, () => {
         const version = this.db.prepare("PRAGMA user_version").get()!
           .user_version;
@@ -143,6 +191,14 @@ export class FixtureStorage {
           ) STRICT;
           CREATE INDEX IF NOT EXISTS conversation_session_lookup
             ON conversation_session_command(scope_key,conversation_id);
+          CREATE TABLE IF NOT EXISTS profile_chat_source (
+            sequence INTEGER PRIMARY KEY AUTOINCREMENT, source_id TEXT NOT NULL UNIQUE,
+            scope_key TEXT NOT NULL, logical_id TEXT NOT NULL, conversation_id TEXT NOT NULL,turn_conversation_id TEXT NOT NULL,
+            message_id TEXT NOT NULL, digest TEXT NOT NULL, at TEXT NOT NULL,
+            locator_revision INTEGER NOT NULL DEFAULT 1, available INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(scope_key,logical_id)
+          ) STRICT;
+          CREATE INDEX IF NOT EXISTS profile_chat_owner ON profile_chat_source(scope_key,sequence);
           PRAGMA user_version=1;
         `);
         // The card.respond command (forms of model-composed cards) was
@@ -160,6 +216,25 @@ export class FixtureStorage {
         // Follows the history through triggers; backfills once, bounded.
         this.search = new ChatSearchIndex(this.db, this.now);
         this.search.migrate();
+        this.attachments = new AttachmentStore(
+          this.db,
+          (run) => this.transaction(true, run, "command"),
+          attachmentConfiguration,
+          () => this.objectStorage,
+          (scope, id) => ({
+            exists:
+              this.history.exists(scope, id) ||
+              !!this.engine(scope)
+                .snapshot()
+                .conversations.find((c) => c.id === id),
+            archived: this.history.archived(scope, id),
+            deleted: this.history.deleted(scope, id),
+            resettable: resettableConversation(id),
+          }),
+          this.now,
+          () => this.attachmentRestoreBlocked(directory),
+        );
+        this.attachments.recover();
         const owner = this.db
           .prepare("SELECT value FROM metadata WHERE key='server_id'")
           .get();
@@ -175,14 +250,209 @@ export class FixtureStorage {
       throw error;
     }
   }
+  private attachmentRestoreBlocked(directory: string) {
+    const markers = [
+      join(directory, ".attachment-restore.json"),
+      join(directory, "..", ".attachment-restore.json"),
+    ];
+    const marker = markers.find((p) => existsSync(p));
+    if (!marker)
+      return (
+        !!this.db
+          .prepare(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='attachment_restore_state'",
+          )
+          .get() &&
+        !!this.db
+          .prepare("SELECT 1 FROM attachment_restore_state LIMIT 1")
+          .get()
+      );
+    try {
+      const m = validateRestoreMarker(JSON.parse(readFileSync(marker, "utf8")));
+      const row = this.db
+        .prepare("SELECT * FROM attachment_restore_state WHERE slot=1")
+        .get();
+      return !validRestoreActivation(m, row);
+    } catch {
+      return true;
+    }
+  }
+  attachmentRestoreId(): string | undefined {
+    if (!this.attachmentRestoreBlocked(this.directory)) return;
+    for (const path of [
+      join(this.directory, ".attachment-restore.json"),
+      join(this.directory, "..", ".attachment-restore.json"),
+    ]) {
+      if (!existsSync(path)) continue;
+      try {
+        const m = JSON.parse(readFileSync(path, "utf8"));
+        if (
+          typeof m.restoreId === "string" &&
+          /^[0-9a-f-]{36}$/.test(m.restoreId)
+        )
+          return m.restoreId;
+      } catch {
+        /* fail closed below */
+      }
+    }
+    return "invalid";
+  }
+  attachmentGenerationConversation(scope: Scope, generation: string) {
+    this.validateScope(scope);
+    const row = this.db
+      .prepare(
+        "SELECT conversation_id FROM attachment_generations WHERE scope_key=? AND generation_id=? AND state IN ('live','archived')",
+      )
+      .get(keyFor(scope), generation);
+    return row ? String(row.conversation_id) : undefined;
+  }
+  attachmentGenerationAllowed(
+    scope: Scope,
+    generation: string,
+    restoreId?: string,
+  ) {
+    const currentRestore = this.attachmentRestoreId();
+    if (currentRestore && restoreId !== currentRestore) return false;
+    return !!this.db
+      .prepare(
+        "SELECT 1 FROM attachment_generations WHERE scope_key=? AND generation_id=? AND state IN ('live','archived')",
+      )
+      .get(keyFor(scope), generation);
+  }
+  attachmentLegacyContextAllowed(
+    scope: Scope,
+    conversationId: string,
+    session?: string,
+    restoreId?: string,
+  ) {
+    const restoring = this.attachmentRestoreId();
+    if (restoring) return restoreId === restoring;
+    if (!this.attachments.hasLineage(scope, conversationId)) return true;
+    if (
+      this.history.deleted(scope, conversationId) ||
+      this.history.archived(scope, conversationId)
+    )
+      return false;
+    return this.conversationSession(scope, conversationId) === session;
+  }
+  attachmentGeneration(scope: Scope, conversationId: string) {
+    return this.transaction(
+      true,
+      () =>
+        this.attachments.generation(
+          scope,
+          conversationId,
+          this.attachments.config.enabled,
+        )?.generation_id,
+    );
+  }
+  recordAttachmentOwners(identityDirectory: string | null) {
+    this.transaction(true, () =>
+      this.db
+        .prepare(
+          "INSERT INTO metadata(key,value) VALUES('attachment_identity_directory',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        )
+        .run(JSON.stringify(identityDirectory)),
+    );
+  }
   initializeObjectStorage(configuration: StorageConfiguration) {
-    if (this.objectStorage.state === "configured") this.objectStorage.store.close();
-    this.objectStorage = initializeObjectStorage(this.objectRegistry, configuration);
+    if (this.objectStorage.state === "configured")
+      this.objectStorage.store.close();
+    this.objectStorage = initializeObjectStorage(
+      this.objectRegistry,
+      configuration,
+    );
     return this.objectStorage;
   }
   close() {
-    if (this.objectStorage.state === "configured") this.objectStorage.store.close();
+    if (this.objectStorage.state === "configured")
+      this.objectStorage.store.close();
     this.db.close();
+  }
+  /** Narrow owner port: indexes contain references only and are never backfilled. */
+  attachProfileNotification(notify: (scope: Scope) => void) {
+    this.profileNotify = notify;
+  }
+  profileOwners(after = "", limit = 100) {
+    return this.db
+      .prepare(
+        "SELECT scope_key,MAX(sequence) AS sequence FROM profile_chat_source WHERE scope_key>? GROUP BY scope_key ORDER BY scope_key LIMIT ?",
+      )
+      .all(after, Math.max(1, Math.min(100, limit)))
+      .map((row) => {
+        const [connectionId, serverId, userId, workspaceId] = JSON.parse(
+          String(row.scope_key),
+        );
+        return {
+          key: String(row.scope_key),
+          scope: ScopeSchema.parse({
+            connectionId,
+            serverId,
+            userId,
+            workspaceId,
+          }),
+          sequence: Number(row.sequence),
+        };
+      });
+  }
+  profileRefs(scope: Scope, after: number, limit = 32): ProfileSourceRef[] {
+    if (!isAccountScope(scope)) return [];
+    return this.db
+      .prepare(
+        "SELECT * FROM profile_chat_source WHERE scope_key=? AND sequence>? ORDER BY sequence LIMIT ?",
+      )
+      .all(keyFor(scope), after, Math.max(1, Math.min(32, limit)))
+      .map((row) => ({
+        type: "chat",
+        sequence: Number(row.sequence),
+        sourceId: String(row.source_id),
+        sourceVersion: Number(row.locator_revision),
+        digest: String(row.digest),
+        at: String(row.at),
+        messageId: String(row.message_id),
+      }));
+  }
+  profileChat(scope: Scope, ref: ProfileSourceRef): ProfileChatSource | null {
+    if (!isAccountScope(scope) || ref.type !== "chat") return null;
+    const row = this.db
+      .prepare(
+        `SELECT s.*,m.payload FROM profile_chat_source s
+      LEFT JOIN public_conversation_message m ON m.scope_key=s.scope_key AND m.conversation_id=s.conversation_id AND m.id=s.message_id
+      WHERE s.scope_key=? AND s.source_id=? AND s.available=1 AND s.locator_revision=? AND s.digest=?`,
+      )
+      .get(keyFor(scope), ref.sourceId, ref.sourceVersion, ref.digest);
+    if (!row?.payload) return null;
+    const message = JSON.parse(String(row.payload));
+    if (
+      message.role !== "user" ||
+      message.id !== ref.messageId ||
+      createHash("sha256").update(message.text).digest("hex") !== ref.digest
+    )
+      return null;
+    return {
+      ref,
+      scope,
+      text: message.text,
+      commandId: String(row.logical_id),
+      conversationId: String(row.turn_conversation_id),
+    };
+  }
+  profileSource(scope: Scope, sourceId: string) {
+    if (!isAccountScope(scope)) return null;
+    const row = this.db
+      .prepare(
+        `SELECT s.*,m.id AS live FROM profile_chat_source s LEFT JOIN public_conversation_message m
+      ON m.scope_key=s.scope_key AND m.conversation_id=s.conversation_id AND m.id=s.message_id
+      WHERE s.scope_key=? AND s.source_id=? AND s.available=1`,
+      )
+      .get(keyFor(scope), sourceId);
+    return row?.live
+      ? {
+          digest: String(row.digest),
+          sourceVersion: Number(row.locator_revision),
+          href: `/chat/${encodeURIComponent(String(row.conversation_id))}` as const,
+        }
+      : null;
   }
   /** Readiness probe: the workflow database answers a trivial read. */
   ready() {
@@ -308,7 +578,40 @@ export class FixtureStorage {
         receipt.command.idempotencyKey,
         JSON.stringify(receipt),
       );
+    if (change === "command")
+      for (const receipt of receipts.slice(previous?.receipts.length ?? 0))
+        if (receipt.status === "accepted")
+          this.indexProfileMessage(scope, receipt.command);
     this.checkpoint?.("receipts", change);
+  }
+  private indexProfileMessage(scope: Scope, command: Command) {
+    if (isAccountScope(scope) && command.type === "message.send") {
+      const logicalId = command.logicalMessageId ?? command.commandId;
+      const row = this.db
+        .prepare(
+          `SELECT id,payload FROM public_conversation_message WHERE scope_key=? AND conversation_id=?
+              AND json_extract(payload,'$.role')='user' AND json_extract(payload,'$.logicalMessageId')=? ORDER BY ordinal DESC LIMIT 1`,
+        )
+        .get(keyFor(scope), command.conversationId, logicalId);
+      if (row) {
+        const message = JSON.parse(String(row.payload));
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO profile_chat_source(source_id,scope_key,logical_id,conversation_id,turn_conversation_id,message_id,digest,at)
+                VALUES(?,?,?,?,?,?,?,?)`,
+          )
+          .run(
+            randomUUID(),
+            keyFor(scope),
+            logicalId,
+            command.conversationId,
+            command.conversationId,
+            String(row.id),
+            createHash("sha256").update(message.text).digest("hex"),
+            message.createdAt ?? new Date(this.now()).toISOString(),
+          );
+      }
+    }
   }
   private engine(scope: Scope, change?: Change, conversationId?: string) {
     const previous = this.load(scope);
@@ -373,10 +676,31 @@ export class FixtureStorage {
     );
   }
   snapshot(scope: Scope, conversationId?: string) {
+    if (this.attachments.config.enabled) {
+      const missing = this.transaction(false, () =>
+        this.engine(scope, undefined, conversationId)
+          .snapshot()
+          .conversations.some((c) => !this.attachments.generation(scope, c.id)),
+      );
+      if (missing)
+        return this.transaction(true, () => {
+          const snapshot = this.engine(
+            scope,
+            undefined,
+            conversationId,
+          ).snapshot();
+          for (const c of snapshot.conversations)
+            this.attachments.generation(scope, c.id, true);
+          return this.attachments.decorate(snapshot);
+        });
+    }
     return this.transaction(false, () =>
-      this.engine(scope, undefined, conversationId).snapshot(),
+      this.attachments.decorate(
+        this.engine(scope, undefined, conversationId).snapshot(),
+      ),
     );
   }
+
   modelState(
     scope: Scope,
     timeZone: string,
@@ -391,6 +715,7 @@ export class FixtureStorage {
       ),
     );
   }
+
   events(scope: Scope, after: number) {
     return this.transaction(false, () => this.engine(scope).events(after));
   }
@@ -482,8 +807,39 @@ export class FixtureStorage {
         conversationId,
         `archived-${insert.lastInsertRowid}`,
       );
+      this.db
+        .prepare(
+          "UPDATE profile_chat_source SET conversation_id=?,locator_revision=locator_revision+1 WHERE scope_key=? AND conversation_id=? AND available=1",
+        )
+        .run(
+          `archived-${insert.lastInsertRowid}`,
+          keyFor(scope),
+          conversationId,
+        );
       this.history.clear(scope, conversationId);
-    }
+      this.attachments.rollover(
+        scope,
+        conversationId,
+        `archived-${insert.lastInsertRowid}`,
+        command?.type === "message.send"
+          ? command.attachments?.generation
+          : undefined,
+        command?.type === "message.send"
+          ? command.attachments?.draftId
+          : undefined,
+      );
+    } else
+      this.attachments.rollover(
+        scope,
+        conversationId,
+        null,
+        command?.type === "message.send"
+          ? command.attachments?.generation
+          : undefined,
+        command?.type === "message.send"
+          ? command.attachments?.draftId
+          : undefined,
+      );
     if (boundary && command) {
       this.db
         .prepare("INSERT INTO conversation_session_command VALUES(?,?,?,?,?,?)")
@@ -663,20 +1019,108 @@ export class FixtureStorage {
     if (!replies || replies.length !== 1) return undefined;
     return { command, question: replies[0]!.text };
   }
+  acceptAttachmentMessage(
+    scope: Scope,
+    command: Extract<Command, { type: "message.send" }>,
+  ) {
+    return this.transaction(
+      true,
+      () => {
+        let engine = this.engine(scope, "command", command.conversationId);
+        const replay = engine.replay(command);
+        if (replay) return replay;
+        if (command.session === "new") {
+          this.attachments.assertSuccessor(scope, command);
+          this.archiveSession(scope, command.conversationId, command);
+          engine = this.engine(scope, "command", command.conversationId);
+        }
+        if (!command.attachments)
+          throw new AttachmentError("attachment_invalid");
+        if (
+          this.history.deleted(scope, command.conversationId) ||
+          this.history.archived(scope, command.conversationId)
+        )
+          throw new AttachmentError("attachment_stale", 409);
+        if (
+          !engine
+            .snapshot()
+            .conversations.some((c) => c.id === command.conversationId)
+        )
+          throw new AttachmentError("attachment_stale", 409);
+        const accepted = this.attachments.accept(
+          scope,
+          command,
+          engine.attachmentMessageId(command),
+        );
+        const result = engine.acceptAttachmentMessage(command, accepted);
+        return {
+          ...result,
+          snapshot: this.attachments.decorate(result.snapshot),
+        };
+      },
+      "command",
+    );
+  }
+  publishAttachmentResult(
+    scope: Scope,
+    attemptId: string,
+    token: string,
+    interpretation: Interpretation,
+  ) {
+    return this.transaction(
+      true,
+      () => {
+        const a = this.attachments.publication(scope, attemptId, token),
+          engine = this.engine(scope, "command", a.command.conversationId);
+        if (a.published) return this.attachments.decorate(engine.snapshot());
+        const snapshot = engine.publishAttachmentResult(
+          a.command,
+          a.messageId,
+          {
+            ingestionId: a.ingestionId,
+            attempt: a.ordinal,
+            version: a.version + 1,
+            state: "published",
+            failure: null,
+          },
+          { ...interpretation, expectedConversationRevision: a.chatRevision },
+        );
+        const reply = snapshot.conversations
+          .find((c) => c.id === a.command.conversationId)!
+          .messages.at(-1)!;
+        this.attachments.finishPublication(scope, attemptId, token, reply.id);
+        return this.attachments.decorate(snapshot);
+      },
+      "command",
+    );
+  }
   execute(
     scope: Scope,
     command: unknown,
     interpretation?: Interpretation,
     options?: ExecuteOptions,
   ) {
+    const attachment = CommandSchema.safeParse(command);
+    if (
+      attachment.success &&
+      attachment.data.type === "message.send" &&
+      attachment.data.attachments
+    )
+      return this.acceptAttachmentMessage(scope, attachment.data);
     // Acquire the writer lock BEFORE loading receipts/state; no cached stale engine.
-    return this.transaction(
+    const result = this.transaction(
       true,
       () => {
         // Covers servers without a model service; with one, the chat is already
         // empty here and this is a no-op. Replayed commands never archive again.
         const parsed = CommandSchema.safeParse(command);
         const replay = parsed.success && this.engine(scope).replay(parsed.data);
+        if (parsed.success && !replay && parsed.data.type === "message.send")
+          this.attachments.assertNoUnpublished(
+            scope,
+            parsed.data.conversationId,
+            parsed.data.commandId,
+          );
         if (parsed.success && !replay)
           this.sessionReservation(scope, parsed.data);
         if (
@@ -690,13 +1134,29 @@ export class FixtureStorage {
           scope,
           "command",
           parsed.success ? parsed.data.conversationId : undefined,
-        ).execute(command, interpretation, options);
-        if (parsed.success && !replay && result.status === "accepted")
+        ).execute(command, interpretation, {
+          ...options,
+          attachmentErase:
+            parsed.success &&
+            parsed.data.type === "conversation.delete" &&
+            this.attachments.hasLineage(scope, parsed.data.conversationId),
+        });
+        if (parsed.success && !replay && result.status === "accepted") {
           this.applyDirectoryCommand(scope, parsed.data);
+          if (parsed.data.type === "conversation.create")
+            this.attachments.adopt(scope, parsed.data.conversationId);
+        }
         return result;
       },
       "command",
     );
+    try {
+      if (result.status === "accepted" && isAccountScope(scope))
+        this.profileNotify?.(scope);
+    } catch {
+      /* Discovery repairs missed notifications. */
+    }
+    return result;
   }
   /** A new native conversation generation: the chat's next turn never
    * resumes an earlier assistant thread. */
@@ -725,7 +1185,10 @@ export class FixtureStorage {
       // The main chat keeps its fixed id: its messages move into a new
       // archived chat, as a new session does, and it continues empty.
       if (resettableConversation(id)) this.archiveSession(scope, id);
-      else this.history.archive(scope, id);
+      else {
+        this.history.archive(scope, id);
+        this.attachments.archive(scope, id);
+      }
       this.newGeneration(scope, command, "archived");
       return;
     }
@@ -737,13 +1200,31 @@ export class FixtureStorage {
       );
       // The restored chat continues with its visible history, in a fresh
       // assistant thread: the archived one is never resumed.
+      this.attachments.archive(scope, id, true);
       this.newGeneration(scope, command, "restored");
       return;
     }
     if (command.type !== "conversation.delete") return;
     const id = command.conversationId;
+    const generation = this.attachments.generation(scope, id)?.generation_id;
+    this.attachments.tombstoneConversation(
+      scope,
+      id,
+      resettableConversation(id),
+    );
+    this.eraseDirectoryPayload(scope, id, generation);
+    // A server-owned chat that continues starts a new native generation, so
+    // its next turn cannot resume the deleted assistant thread.
+    this.newGeneration(scope, command, "deleted");
+  }
+  private eraseDirectoryPayload(scope: Scope, id: string, generation?: string) {
     const key = keyFor(scope);
     const legacy = this.history.delete(scope, id, resettableConversation(id));
+    this.db
+      .prepare(
+        "UPDATE profile_chat_source SET available=0,locator_revision=locator_revision+1 WHERE scope_key=? AND conversation_id=? AND available=1",
+      )
+      .run(key, id);
     if (legacy !== undefined)
       this.db
         .prepare(
@@ -753,14 +1234,189 @@ export class FixtureStorage {
     // Receipts stay for idempotency, without what the person wrote there.
     this.db
       .prepare(
-        `UPDATE receipts SET payload=json_remove(json_set(payload,'$.command.text',?),'$.command.humanTask','$.command.mentions')
+        `UPDATE receipts SET payload=json_remove(json_set(payload,'$.command.text',?),'$.command.humanTask','$.command.mentions','$.command.attachments')
         WHERE scope_key=? AND json_extract(payload,'$.command.conversationId')=?
-        AND json_extract(payload,'$.command.type')='message.send'`,
+        AND json_extract(payload,'$.command.type')='message.send' AND (? IS NULL OR json_type(payload,'$.command.attachments') IS NULL OR json_extract(payload,'$.command.attachments.generation')=?)`,
       )
-      .run(DELETED_TEXT, key, id);
-    // A server-owned chat that continues starts a new native generation, so
-    // its next turn cannot resume the deleted assistant thread.
-    this.newGeneration(scope, command, "deleted");
+      .run(DELETED_TEXT, key, id, generation ?? null, generation ?? null);
+  }
+  attachmentRestoreState() {
+    return this.db
+      .prepare("SELECT * FROM attachment_restore_state WHERE slot=1")
+      .get();
+  }
+  attachmentRestoreGeneration(scope: Scope, generation: string) {
+    this.validateScope(scope);
+    return this.db
+      .prepare(
+        "SELECT conversation_id,state FROM attachment_generations WHERE scope_key=? AND generation_id=?",
+      )
+      .get(keyFor(scope), generation);
+  }
+  attachmentRestoreTombstones(afterScope = "", afterGeneration = "") {
+    return this.db
+      .prepare(
+        "SELECT scope_key,generation_id FROM attachment_generations WHERE state='tombstoned' AND (scope_key>? OR (scope_key=? AND generation_id>?)) ORDER BY scope_key,generation_id LIMIT 100",
+      )
+      .all(afterScope, afterScope, afterGeneration)
+      .map((r) => {
+        const [connectionId, serverId, userId, workspaceId] = JSON.parse(
+          String(r.scope_key),
+        );
+        return {
+          scope: ScopeSchema.parse({
+            connectionId,
+            serverId,
+            userId,
+            workspaceId,
+          }),
+          scopeKey: String(r.scope_key),
+          generation: String(r.generation_id),
+        };
+      });
+  }
+  attachmentRestoreNativeSettled(scope: Scope, generation: string) {
+    return this.transaction(true, () => {
+      if (!this.attachments.isTombstoned(scope, generation))
+        throw new AttachmentError("attachment_stale", 409);
+      this.db
+        .prepare(
+          "UPDATE attachment_purge_jobs SET state='done',token=NULL,error=NULL WHERE kind='native_context' AND target_id=? AND scope_key=?",
+        )
+        .run(generation, keyFor(scope));
+    });
+  }
+  recordAttachmentRestoreEvidence(
+    restoreId: string,
+    manifestHash: string,
+    cutoff: string,
+    revision: number,
+    evidence: unknown,
+    digest: string,
+  ) {
+    return this.transaction(true, () => {
+      const changed = this.db
+        .prepare(
+          "UPDATE attachment_restore_state SET reconciliation_digest=?,reconciliation_evidence=?,last_verification=NULL,verification_digest=NULL WHERE slot=1 AND restore_id=? AND manifest_sha256=? AND recovery_cutoff=? AND reconciliation_revision=? AND state='unverified'",
+        )
+        .run(
+          digest,
+          JSON.stringify(evidence),
+          restoreId,
+          manifestHash,
+          cutoff,
+          revision,
+        );
+      if (!changed.changes)
+        throw new AttachmentError("attachment_conflict", 409);
+    });
+  }
+  recordAttachmentVerification(
+    restoreId: string,
+    revision: number,
+    result: unknown,
+  ) {
+    return this.transaction(true, () =>
+      this.db
+        .prepare(
+          "UPDATE attachment_restore_state SET last_verification=?,verification_digest=? WHERE slot=1 AND restore_id=? AND reconciliation_revision=? AND state='unverified'",
+        )
+        .run(
+          JSON.stringify(result),
+          createHash("sha256").update(JSON.stringify(result)).digest("hex"),
+          restoreId,
+          revision,
+        ),
+    );
+  }
+  activateAttachmentRestore(
+    marker: {
+      version: number;
+      restoreId: string;
+      manifestSha256: string | null;
+      recoveryCutoff: string;
+    },
+    revision: number,
+    result: unknown,
+    activatedAt: string,
+  ) {
+    return this.transaction(true, () => {
+      const row = this.attachmentRestoreState();
+      const candidate = {
+        ...row,
+        state: "serving",
+        last_verification: JSON.stringify(result),
+        verification_digest: createHash("sha256")
+          .update(JSON.stringify(result))
+          .digest("hex"),
+        activated_at: activatedAt,
+      };
+      if (
+        !row ||
+        row.state !== "unverified" ||
+        row.reconciliation_revision !== revision ||
+        !validRestoreActivation(marker, candidate)
+      )
+        throw new AttachmentError("attachment_conflict", 409);
+      const update = this.db
+        .prepare(
+          "UPDATE attachment_restore_state SET state='serving',last_verification=?,verification_digest=?,activated_at=? WHERE slot=1 AND restore_id=? AND manifest_sha256=? AND recovery_cutoff=? AND reconciliation_revision=? AND state='unverified' AND reconciliation_digest IS NOT NULL",
+        )
+        .run(
+          JSON.stringify(result),
+          candidate.verification_digest,
+          activatedAt,
+          marker.restoreId,
+          marker.manifestSha256,
+          marker.recoveryCutoff,
+          revision,
+        );
+      if (!update.changes)
+        throw new AttachmentError("attachment_conflict", 409);
+    });
+  }
+  reconcileAttachmentDeletion(scope: Scope, generation: string) {
+    return this.transaction(
+      true,
+      () => {
+        this.validateScope(scope);
+        const g = this.db
+          .prepare(
+            "SELECT conversation_id,state FROM attachment_generations WHERE scope_key=? AND generation_id=?",
+          )
+          .get(keyFor(scope), generation);
+        if (!g) throw new AttachmentError("attachment_unavailable", 404);
+        const id = String(g.conversation_id),
+          current = this.attachments.generation(scope, id);
+        if (current?.generation_id === generation) {
+          this.engine(scope, "command", id).eraseAttachmentConversation(id);
+          this.eraseDirectoryPayload(scope, id, generation);
+          this.attachments.tombstoneConversation(
+            scope,
+            id,
+            resettableConversation(id),
+          );
+          const commandId = `attachment-erase-${generation}`;
+          this.db
+            .prepare(
+              "INSERT OR IGNORE INTO conversation_session_command VALUES(?,?,?,?,?,?)",
+            )
+            .run(
+              keyFor(scope),
+              id,
+              commandId,
+              commandId,
+              createHash("sha256")
+                .update(JSON.stringify([scope, generation]))
+                .digest("hex"),
+              createHash("sha256")
+                .update(JSON.stringify([scope, generation, "erased"]))
+                .digest("hex"),
+            );
+        } else this.attachments.tombstone(scope, generation);
+      },
+      "command",
+    );
   }
   tick() {
     const due = this.db

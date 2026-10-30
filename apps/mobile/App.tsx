@@ -1,3 +1,10 @@
+import {
+  useMobileAttachments,
+  MobileAttachmentDraft,
+  MobileAttachmentPreview,
+  MobileMessageAttachments,
+} from "./AttachmentControls";
+import { AttachmentPicker } from "../../packages/ui-catalog/AttachmentPicker";
 import { useCompanionFonts } from "./CompanionFonts";
 import { CompanionFontContext } from "../../packages/ui/typography";
 import { CompanionLibrary } from "./CompanionLibrary";
@@ -127,6 +134,7 @@ import {
 } from "../../packages/client-core/chat-view";
 import {
   chatBackgrounded,
+  chatSessionIsFresh,
   chatResumed,
   useChatGeneration,
   withChatSession,
@@ -539,6 +547,31 @@ export function Workspace({
   // Where this device's chat session begins: set once the first snapshot is
   // known, and again after long inactivity (see chat-session.ts).
   const chatGeneration = useChatGeneration();
+  const attachmentGeneration =
+    store?.conversations[conversationId]?.attachmentGeneration ??
+    historySelection?.attachmentGeneration ??
+    null;
+  const attachmentScope = session?.attachments?.getSnapshot();
+  const attachments = useMobileAttachments(
+    session,
+    {
+      conversationId,
+      expectedGeneration: attachmentGeneration,
+      mode:
+        attachmentScope?.entries.length &&
+        attachmentScope.target?.conversationId === conversationId &&
+        attachmentScope.target.expectedGeneration === attachmentGeneration
+          ? attachmentScope.target.mode
+          : !continueConversation &&
+              !context &&
+              chatSessionIsFresh() &&
+              attachmentGeneration
+            ? "new"
+            : "current",
+    },
+    chatGeneration,
+    language,
+  );
   const noticeOwner = session
     ? captureProcessNoticeOwner(session, {
         conversationId,
@@ -865,9 +898,12 @@ export function Workspace({
     draftOwnerRevision = draftRevision.current,
     options: { withoutProcess?: true } = {},
   ) => {
+    const attachmentEntries = session?.attachments?.getSnapshot().entries ?? [];
+    const attachmentReady = !!session?.attachments?.ready;
     if (
       !session ||
-      !value.trim() ||
+      (!value.trim() && !attachmentReady) ||
+      (attachmentEntries.length > 0 && (!attachmentReady || !!replyContext)) ||
       busy ||
       !online ||
       historySelection?.readOnly
@@ -910,6 +946,9 @@ export function Workspace({
                 language,
                 id,
                 replyContext ?? undefined,
+                attachmentEntries.length
+                  ? session.attachments.takeForSend()
+                  : undefined,
               ),
               ...(replyContext ? {} : { conversationId }),
               ...(task ? { humanTask: task } : {}),
@@ -919,6 +958,12 @@ export function Workspace({
             },
             continueConversation,
           );
+      if (
+        command.type === "message.send" &&
+        command.attachments &&
+        session.attachments.getSnapshot().target?.mode === "new"
+      )
+        command = { ...command, session: "new" as const };
     } catch {
       setReplyError("process_question_changed");
       return;
@@ -1316,6 +1361,65 @@ export function Workspace({
       ) : null}
     </>
   );
+  const reuseAttachmentMessage = (
+    message: (typeof messages)[number],
+    send: boolean,
+  ) => {
+    if (
+      !session ||
+      busy ||
+      !online ||
+      historySelection?.readOnly ||
+      context ||
+      attachments.state.entries.length ||
+      !message.attachments?.length
+    )
+      return;
+    setDraft(message.text);
+    const ownerDraftRevision = draftRevision.current;
+    const ownerGeneration = contextGeneration.current;
+    void session.attachments
+      .reuse({
+        conversationId,
+        messageId: message.id,
+        files: message.attachments,
+      })
+      .then(() => {
+        if (
+          conversationRef.current !== conversationId ||
+          sessionOwner.current !== session ||
+          contextGeneration.current !== ownerGeneration ||
+          draftRevision.current !== ownerDraftRevision
+        )
+          return;
+        if (send) submitMessage(message.text, null);
+        else {
+          requestAnimationFrame(() => {
+            if (
+              conversationRef.current === conversationId &&
+              sessionOwner.current === session &&
+              contextGeneration.current === ownerGeneration &&
+              draftRevision.current === ownerDraftRevision
+            )
+              composerInput.current?.focus();
+          });
+        }
+      })
+      .catch(() => {
+        if (
+          conversationRef.current === conversationId &&
+          sessionOwner.current === session &&
+          contextGeneration.current === ownerGeneration &&
+          draftRevision.current === ownerDraftRevision
+        ) {
+          // Failed pins already show their error and recovery action in the tray.
+          const represented = session.attachments
+            .getSnapshot()
+            .entries.some((entry) => entry.state === "failed" && !!entry.error);
+          if (!represented) setReplyError("requestRejected");
+        }
+      });
+  };
   const transcript = messages.map((m) => {
     if (
       heldReply &&
@@ -1333,7 +1437,13 @@ export function Workspace({
     }
     if (m.role === "user")
       return (
-        <View key={m.id} style={styles.message}>
+        <View
+          key={m.id}
+          style={[
+            styles.message,
+            m.attachments?.length ? { width: "85%" } : null,
+          ]}
+        >
           {m.humanTask ? (
             <Row
               accessible
@@ -1351,7 +1461,25 @@ export function Workspace({
               </Text>
             </Row>
           ) : null}
-          <Text selectable>{m.text}</Text>
+          {m.text ? <Text selectable>{m.text}</Text> : null}
+          {session && m.attachments?.length ? (
+            <MobileMessageAttachments
+              session={session}
+              language={language}
+              files={m.attachments}
+              processing={m.processing}
+              onEdit={
+                !historySelection?.readOnly && !busy && online
+                  ? () => reuseAttachmentMessage(m, false)
+                  : undefined
+              }
+              onAgain={
+                !historySelection?.readOnly && !busy && online
+                  ? () => reuseAttachmentMessage(m, true)
+                  : undefined
+              }
+            />
+          ) : null}
         </View>
       );
     if (m.result?.type === "service.connection") {
@@ -2473,36 +2601,45 @@ export function Workspace({
                 error={restoreError}
               />
             ) : (
-              <Composer
-                inputRef={composerInput}
-                language={language}
-                value={draft}
-                onChange={(text) => {
-                  speech.player.stop();
-                  setDraft(text);
-                }}
-                onSend={() => submitMessage()}
-                onVoice={openVoice}
-                onAttach={() => {
-                  Keyboard.dismiss();
-                  setContextMenu(true);
-                }}
-                disabled={
-                  !online ||
-                  busy ||
-                  !!historySelection?.readOnly ||
-                  historyLoading ||
-                  (!!context && !validContext)
-                }
-                sending={Object.values(state.commandStates).includes("sending")}
-                voice={
-                  voiceAvailability === "unavailable"
-                    ? "hidden"
-                    : meetingRecording
-                      ? "disabled"
-                      : "ready"
-                }
-              />
+              <View>
+                <MobileAttachmentDraft value={attachments} />
+                <Composer
+                  inputRef={composerInput}
+                  language={language}
+                  value={draft}
+                  onChange={(text) => {
+                    speech.player.stop();
+                    setDraft(text);
+                  }}
+                  hasAttachments={attachments.state.entries.length > 0}
+                  sendBlocked={
+                    attachments.state.entries.length > 0 && !attachments.ready
+                  }
+                  onSend={() => submitMessage()}
+                  onVoice={openVoice}
+                  onAttach={() => {
+                    Keyboard.dismiss();
+                    setContextMenu(true);
+                  }}
+                  disabled={
+                    !online ||
+                    busy ||
+                    !!historySelection?.readOnly ||
+                    historyLoading ||
+                    (!!context && !validContext)
+                  }
+                  sending={Object.values(state.commandStates).includes(
+                    "sending",
+                  )}
+                  voice={
+                    voiceAvailability === "unavailable"
+                      ? "hidden"
+                      : meetingRecording || attachments.state.entries.length > 0
+                        ? "disabled"
+                        : "ready"
+                  }
+                />
+              </View>
             )}
           </View>
         ) : null}
@@ -2524,13 +2661,35 @@ export function Workspace({
           language={language}
           onClose={() => setContextMenu(false)}
         >
-          <ListRow
-            icon="tasks"
-            label={companionCopy(language).task}
-            onPress={() => changeSection("tasks")}
+          <AttachmentPicker
+            language={language}
+            choices={{
+              task: {
+                onPress: () => {
+                  setContextMenu(false);
+                  changeSection("tasks");
+                },
+              },
+              ...(attachments.available && !context && !busy && online
+                ? Object.fromEntries(
+                    (["camera", "photos", "file"] as const).map((kind) => [
+                      kind,
+                      {
+                        onPress: () => {
+                          setContextMenu(false);
+                          attachments.choose(kind);
+                        },
+                        disabled:
+                          attachments.state.busy || attachments.selection.busy,
+                      },
+                    ]),
+                  )
+                : {}),
+            }}
           />
         </DetailSheet>
       ) : null}
+      <MobileAttachmentPreview value={attachments} />
       <ChatHistory
         session={session}
         language={language}
@@ -2754,6 +2913,8 @@ export default function App() {
         randomUUID,
         {
           processOutputs: true,
+          attachments: true,
+          attachmentId: randomUUID,
           messageResults: MOBILE_MESSAGE_RESULTS,
           generativeUi: true,
         },

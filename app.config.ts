@@ -1,6 +1,9 @@
 import type { ExpoConfig } from "expo/config";
 const development = process.env.AGENT_CLIENT_DEVELOPMENT === "1";
 const audioSpike = process.env.AUDIO_SPIKE === "1";
+const microphonePermission = audioSpike
+  ? "Allow the isolated audio test to record after you press Start."
+  : "Allow Agent Client to record a voice request or meeting only after you press Record.";
 const config: ExpoConfig = {
   name: audioSpike ? "Agent Client Audio Spike" : "Niaro",
   slug: audioSpike ? "agent-client-audio" : "agent-client",
@@ -46,6 +49,16 @@ const config: ExpoConfig = {
     "@react-native-community/datetimepicker",
     "expo-dev-client",
     [
+      "expo-image-picker",
+      {
+        photosPermission:
+          "Allow Agent Client to import a photo only after you choose Photos.",
+        cameraPermission:
+          "Allow Agent Client to take a photo only after you choose Camera.",
+        microphonePermission,
+      },
+    ],
+    [
       "expo-secure-store",
       { configureAndroidBackup: true, faceIDPermission: false },
     ],
@@ -56,9 +69,7 @@ const config: ExpoConfig = {
     [
       "expo-audio",
       {
-        microphonePermission: audioSpike
-          ? "Allow the isolated audio test to record after you press Start."
-          : "Allow Agent Client to record a voice request or meeting only after you press Record.",
+        microphonePermission,
         enableBackgroundRecording: !audioSpike,
         enableBackgroundPlayback: false,
       },

@@ -156,6 +156,16 @@ export type CatalogContext = {
         question: string;
       }
     | undefined;
+  attachmentGenerationConversation?: (generation: string) => string | undefined;
+  attachmentGenerationAllowed?: (
+    generation: string,
+    restoreId?: string,
+  ) => boolean;
+  attachmentLegacyContextAllowed?: (
+    conversationId: string,
+    session?: string,
+    restoreId?: string,
+  ) => boolean;
   epoch: (org: string) => number;
   change: (org: string) => void;
   audit: (record: AuditRecord) => number;

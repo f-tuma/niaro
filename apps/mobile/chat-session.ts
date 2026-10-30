@@ -28,6 +28,11 @@ export function chatResumed(now = Date.now()) {
   return true;
 }
 
+/** Whether an attachment draft must reserve the successor before its first send. */
+export function chatSessionIsFresh() {
+  return fresh;
+}
+
 /** Marks the first new request of a session so the server archives the rest. */
 export function withChatSession(
   command: Command,

@@ -1,3 +1,19 @@
+import { AttachmentCleanup } from "../server-attachments/cleanup";
+import {
+  AttachmentAdmission,
+  cleanupAttachmentSpools,
+} from "../server-attachments/admission";
+import { attachmentHttp, noDuplicateKeys } from "../server-attachments/http";
+import {
+  AttachmentError,
+  type AttachmentConfiguration,
+} from "../server-attachments/schema";
+import { AttachmentProfileRequired ,
+  messageDelivery,
+  messageForClient,
+  snapshotForMessageDelivery,
+  eventsForMessageDelivery,
+} from "../../packages/protocol/message-delivery";
 import type { StorageConfiguration } from "../server-storage/types";
 import { pipeline } from "node:stream";
 import { openAnswerStream } from "./answer-stream";
@@ -62,12 +78,6 @@ import {
   snapshotWithoutCards,
   eventsWithoutCards,
 } from "../../packages/protocol/card-delivery";
-import {
-  messageDelivery,
-  messageForClient,
-  snapshotForMessageDelivery,
-  eventsForMessageDelivery,
-} from "../../packages/protocol/message-delivery";
 import {
   QUESTION_OPTIONS_PROFILE,
   snapshotWithoutQuestionOptions,
@@ -164,7 +174,9 @@ async function body(req: IncomingMessage, limit = 65536) {
     if (size > limit) throw new RangeError("payload_too_large");
     chunks.push(Buffer.from(chunk));
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  const raw = Buffer.concat(chunks).toString("utf8");
+  noDuplicateKeys(raw);
+  return JSON.parse(raw) as unknown;
 }
 /** Connector errors become short, public reasons the MCP client can act on. */
 const connectorFailures: Record<string, string> = {
@@ -247,10 +259,15 @@ function connectorHandlers(
 }
 export type FixtureServerOptions = {
   objectStorage?: StorageConfiguration;
+  attachments?: AttachmentConfiguration;
   identity?: Pick<
     IdentityService,
     | "attachWorkflow"
+    | "attachAttachmentWorkflow"
+    | "attachmentIdentityDirectory"
     | "mobileAccess"
+    | "mobileAttachmentAccess"
+    | "purgeAttachmentContext"
     | "mobileMeetingAccess"
     | "mobileProcessOutput"
     | "mobileProcessOutputCapabilities"
@@ -283,6 +300,7 @@ export type FixtureServerOptions = {
         | "hubRelease"
         | "hubFill"
         | "attachHubRunner"
+        | "attachProfileSources"
         | "hubOpen"
         | "mobileSkills"
         | "mobileMentions"
@@ -340,8 +358,42 @@ export function createFixtureServer(
         isAccountScope(scope)
           ? options.identity?.calendarTarget(scope)
           : calendar?.targetFor(scope),
+      options.attachments,
     );
-    storage.initializeObjectStorage(options.objectStorage ?? { state: "disabled" });
+    storage.initializeObjectStorage(
+      options.objectStorage ?? { state: "disabled" },
+    );
+    storage.recordAttachmentOwners(
+      options.identity?.attachmentIdentityDirectory() ?? null,
+    );
+    options.identity?.attachAttachmentWorkflow({
+      generationConversation: (scope, generation) =>
+        storage.attachmentGenerationConversation(scope, generation),
+      generationAllowed: (scope, generation, restoreId) => {
+        try {
+          return storage.attachmentGenerationAllowed(
+            scope,
+            generation,
+            restoreId,
+          );
+        } catch {
+          return false;
+        }
+      },
+      legacyAllowed: (scope, conversationId, session, restoreId) => {
+        try {
+          return storage.attachmentLegacyContextAllowed(
+            scope,
+            conversationId,
+            session,
+            restoreId,
+          );
+        } catch {
+          return false;
+        }
+      },
+    });
+    options.identity?.attachProfileSources?.(storage);
     worker = new CalendarWorker(
       storage,
       calendar,
@@ -358,6 +410,26 @@ export function createFixtureServer(
   const accountModels = options.identity
     ? new ModelService(storage, options.model, options.now)
     : undefined;
+  cleanupAttachmentSpools(directory);
+  const attachmentAdmission = new AttachmentAdmission();
+  const attachmentCleanup = new AttachmentCleanup(
+    storage.attachments,
+    options.identity
+      ? (scope, generation) =>
+          options.identity!.purgeAttachmentContext(
+            scope,
+            generation,
+            () => storage.attachments.isTombstoned(scope, generation),
+            () => storage.attachments.nativePurgeCommands(scope, generation),
+            () =>
+              storage.attachments.nativePurgeConversations(scope, generation),
+          )
+      : undefined,
+    () => {
+      const c = attachmentAdmission.counts();
+      return !!(c.uploads || c.downloads);
+    },
+  );
   const speechActive = new Set<string>();
   const browserAttempts = new Map<string, { count: number; until: number }>();
   const modelControllers = new Set<AbortController>();
@@ -529,6 +601,10 @@ export function createFixtureServer(
     const origin = req.headers.origin;
     /** The status and body a thrown error answers with. */
     const failure = (error: unknown): { status: number; body: unknown } => {
+      if (error instanceof AttachmentProfileRequired)
+        return { status: 406, body: { error: "attachment_profile_required" } };
+      if (error instanceof AttachmentError)
+        return { status: error.status, body: error.body };
       if (error instanceof ModelError)
         return { status: 503, body: { error: error.code } };
       if (error instanceof SpeechError)
@@ -732,7 +808,7 @@ export function createFixtureServer(
       }
     }
     const match =
-      /^\/v1\/([A-Za-z0-9-]+)\/(server|snapshot|events|meetings(?:\/[A-Fa-f0-9-]{36}(?:\/(?:blocks|seal|process|record|audio))?)?|human-tasks(?:\/[A-Za-z0-9%:._-]{1,480})?|conversations(?:\/messages)?|commands(?:\/interrupt)?|activity|auth\/pair|auth\/session|auth\/refresh|services\/(?:start|status|cancel)|process-design(?:\/(?:capabilities|start|update|acknowledge|accept|turns(?:\/list)?|sessions\/list|drafts\/list))?|processes(?:\/(?:input|runs|output(?:\/capabilities)?|commands(?:\/interrupt)?))?|hub(?:\/open)?|skills|mentions|search|process-proposals|voice|voice\/transcriptions|voice\/speech)$/.exec(
+      /^\/v1\/([A-Za-z0-9-]+)\/(server|snapshot|events|meetings(?:\/[A-Fa-f0-9-]{36}(?:\/(?:blocks|seal|process|record|audio))?)?|human-tasks(?:\/[A-Za-z0-9%:._-]{1,480})?|conversations(?:\/messages)?|commands(?:\/interrupt)?|activity|auth\/pair|auth\/session|auth\/refresh|services\/(?:start|status|cancel)|process-design(?:\/(?:capabilities|start|update|acknowledge|accept|turns(?:\/list)?|sessions\/list|drafts\/list))?|processes(?:\/(?:input|runs|output(?:\/capabilities)?|commands(?:\/interrupt)?))?|hub(?:\/open)?|skills|mentions|search|process-proposals|voice|voice\/transcriptions|voice\/speech|attachments(?:\/(?:capabilities|[a-f0-9-]{36}\/original))?|attachment-drafts(?:\/[a-f0-9-]{36}(?:\/(?:uploads|references|remove|items\/[a-f0-9-]{36}\/remove))?)?|attachment-uploads\/[a-f0-9-]{36}(?:\/bytes)?|attachment-ingestions\/[a-f0-9-]{36}(?:\/retry-local)?)$/.exec(
         url.pathname,
       );
     if (!match) return respond(404, { error: "not_found" });
@@ -1176,8 +1252,23 @@ export function createFixtureServer(
         )(req, route, url, access);
         return respond(result.status, result.value);
       }
+      const commandBody =
+        route === "commands" && req.method === "POST"
+          ? await body(req)
+          : undefined;
+      const attachmentRoute =
+        /^attachment(?:s|-(?:drafts|uploads|ingestions))(?:\/|$)/.test(route);
+      const attachmentCommand =
+        !!commandBody &&
+        typeof commandBody === "object" &&
+        "attachments" in commandBody;
       const bridge = accountWorkspace
-        ? await options.identity!.mobileAccess(
+        ? await (
+            attachmentRoute || attachmentCommand
+              ? options.identity!.mobileAttachmentAccess
+              : options.identity!.mobileAccess
+          ).call(
+            options.identity,
             req.headers.authorization,
             workspace,
             auth.serverId,
@@ -1194,6 +1285,18 @@ export function createFixtureServer(
               return fn();
             });
       const runtimeModels = bridge ? accountModels : models;
+      if (attachmentRoute)
+        return attachmentHttp(
+          req,
+          res,
+          url,
+          route,
+          { scope: session.scope, run },
+          storage.attachments,
+          attachmentAdmission,
+          directory,
+          respond,
+        );
       if (route === "search") {
         if (req.method !== "GET")
           return respond(405, { error: "method_not_allowed" });
@@ -1235,6 +1338,7 @@ export function createFixtureServer(
                 // Delivery declarations (messageDeliveryPath): times, generated UI.
                 "messages",
                 "ui",
+                "attachments",
               ];
         if (
           new Set(keys).size !== keys.length ||
@@ -1688,7 +1792,23 @@ export function createFixtureServer(
         );
       }
       if (route === "commands" && req.method === "POST") {
-        const command = await body(req);
+        const command = commandBody;
+        if (!messages.attachments) {
+          if (attachmentCommand) throw new AttachmentProfileRequired();
+          await run(() =>
+            clientSnapshot(
+              storage.snapshot(
+                session.scope,
+                command &&
+                  typeof command === "object" &&
+                  "conversationId" in command &&
+                  typeof command.conversationId === "string"
+                  ? command.conversationId
+                  : undefined,
+              ),
+            ),
+          );
+        }
         if (
           !conversationProjection &&
           command &&
@@ -1787,6 +1907,15 @@ export function createFixtureServer(
         "Fixture worker transaction failed; retrying from durable state.",
       );
     }
+    void attachmentCleanup
+      .tick()
+      .catch(() =>
+        operatorLog(
+          "attachment_cleanup_failed",
+          { code: "local_failure" },
+          "error",
+        ),
+      );
     void worker
       .tick()
       .catch(() =>
@@ -1804,6 +1933,7 @@ export function createFixtureServer(
     mcpTasks?.stop();
     void hubRunner?.close();
     worker.stop();
+    attachmentCleanup.stop();
     for (const controller of modelControllers) controller.abort();
     storage.close();
     release();

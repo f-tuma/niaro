@@ -1,3 +1,4 @@
+import type { AttachmentSend } from "../protocol/attachments";
 import {
   CommandSchema,
   type Command,
@@ -46,6 +47,7 @@ export function messageCommand(
   language: Language,
   newId: string,
   input?: ReplyInput,
+  attachments?: AttachmentSend,
 ): Extract<Command, { type: "message.send" }> {
   return CommandSchema.parse({
     type: "message.send",
@@ -54,6 +56,7 @@ export function messageCommand(
     conversationId: input?.conversationId ?? "conversation-1",
     text,
     language,
+    ...(attachments ? { attachments } : {}),
     ...deviceTimeZone(),
     ...(input
       ? {
@@ -85,7 +88,8 @@ export function retryMessageCommand(
     session: _session,
     ...intent
   } = original;
-  const commandId = typeof identity === "string" ? identity : identity.commandId;
+  const commandId =
+    typeof identity === "string" ? identity : identity.commandId;
   const idempotencyKey =
     typeof identity === "string" ? identity : identity.idempotencyKey;
   return CommandSchema.parse({

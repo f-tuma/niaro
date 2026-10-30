@@ -1,3 +1,4 @@
+import { purgeNativeAttachmentGeneration , closeNativeCatalogRuntime } from "./mastra-runtime";
 import { budgetedInferenceTransport } from "./inference-budget";
 import { clientAddress } from "./client-address";
 import { MeetingStore } from "./meeting-store";
@@ -54,7 +55,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createKyselyAdapter } from "@better-auth/kysely-adapter";
@@ -107,17 +108,23 @@ import { MobileSessionStore, type MobileRuntime } from "./mobile";
 import {
   MobilePairingTarget,
   MobileWorkspaceStatus,
+  isAccountScope,
 } from "../../packages/protocol/mobile-access";
 import { createCatalogRuntime } from "./catalog-runtime";
-import { closeNativeCatalogRuntime } from "./mastra-runtime";
 import {
   MemoryStore,
   assertNativeMemoryFormat,
   type MemoryActor,
 } from "./memory";
 import { createMemoryRuntime } from "./memory-runtime";
+import { ProfileCursorStore } from "./profile-cursor";
+import { ProfileInference } from "./profile-inference";
+import { ProfileLearner } from "./profile-learner";
+import type { ProfileSourceRef } from "./profile-material";
+import type { FixtureStorage } from "../fixture-server/storage";
 import {
   MemoryCommandSchema,
+  MemoryReadQuerySchema,
   MemorySettingsSchema,
   MemoryViewSchema,
   type MemorySource,
@@ -631,6 +638,16 @@ export class IdentityService {
   private serviceFlows: ServiceMobileFlows;
   private plugins: WorkspacePluginStore;
   private memory: MemoryStore;
+  private profileCursor: ProfileCursorStore;
+  private profileLearner?: ProfileLearner;
+  private profileSources?: Pick<
+    FixtureStorage,
+    | "profileOwners"
+    | "profileRefs"
+    | "profileChat"
+    | "profileSource"
+    | "attachProfileNotification"
+  >;
   private processes: ServiceProcessStore;
   private processStarts?: ProcessStartStore;
   private processResolves?: ProcessResolveStore;
@@ -730,6 +747,7 @@ export class IdentityService {
       glossary: meetingOptions.glossary,
       chunkSeconds: meetingOptions.chunkSeconds,
       diarization: diarizerConfig(meetingOptions.diarization),
+      onPublished: (scope) => this.profileDirty(scope),
     });
     this.scheduleMeetingSweep();
     this.loops = new LoopsStore(db, catalog.store);
@@ -776,11 +794,16 @@ export class IdentityService {
       hubSettings?.scheduler ?? HUB_SCHEDULE_DEFAULTS,
     );
     this.hubScheduler.start();
+    this.profileCursor = new ProfileCursorStore(
+      db,
+      memorySecret ?? "NIARO TEST in-memory profile key",
+    );
     this.memory = new MemoryStore(db, {
       secret: memorySecret,
       run: (fn) => this.serial(async () => fn()),
       nativeStorageUrl: catalog.store.nativeStorageUrl,
-      onMutation: (actor, action, source) =>
+      onMutation: (actor, action, source) => {
+        this.profileCursor.privacyMutation(actor);
         this.audit.append({
           organizationId: actor.organizationId,
           workspaceId: actor.workspaceId,
@@ -793,7 +816,8 @@ export class IdentityService {
           targetId: null,
           outcome: "succeeded",
           details: {},
-        }),
+        });
+      },
     });
     this.processes = new ServiceProcessStore(
       db,
@@ -847,7 +871,189 @@ export class IdentityService {
     setTimeout(keep, 60_000).unref();
   }
   async initializeMemory() {
+    await this.memory.recoverObservationStages();
     await this.memory.purgeExpiredAll();
+  }
+  private profileScope(actor: MemoryActor): Scope {
+    if (!this.workflowServerId)
+      throw new IdentityError(503, "identity_unavailable");
+    return {
+      connectionId: `account-${actor.workspaceId}`,
+      serverId: this.workflowServerId,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+    };
+  }
+  private profileOwner(scope: Scope): MemoryActor | null {
+    if (!isAccountScope(scope) || scope.serverId !== this.workflowServerId)
+      return null;
+    const row = this.db
+      .prepare("SELECT organization_id FROM agent_workspace WHERE id=?")
+      .get(scope.workspaceId);
+    return row
+      ? {
+          organizationId: String(row.organization_id),
+          workspaceId: scope.workspaceId,
+          userId: scope.userId,
+          canManageShared: false,
+        }
+      : null;
+  }
+  private profileDirty(scope: Scope) {
+    void this.serial(async () => {
+      if (this.closing) return;
+      const actor = this.profileOwner(scope);
+      if (actor) this.profileCursor.markDirty(actor);
+    }).catch(() => undefined);
+  }
+  attachProfileSources(
+    sources: NonNullable<IdentityService["profileSources"]>,
+  ) {
+    if (this.profileSources) throw Error("profile_sources_already_attached");
+    this.profileSources = sources;
+    sources.attachProfileNotification((scope) => this.profileDirty(scope));
+    const inference = new ProfileInference(
+      this.catalog.store.inferenceBudget,
+      this.profileCursor,
+      this.catalog.transport,
+    );
+    const currentAccess = (actor: MemoryActor) => {
+      if (this.closing) throw new IdentityError(503, "identity_unavailable");
+      const member = this.hubMember(actor),
+        plugins = this.plugins.read(actor.workspaceId),
+        scope = this.profileScope(actor);
+      if (
+        !this.mobile.signedIn(actor.userId, actor.workspaceId) ||
+        !plugins.settings.enabled.includes("memory") ||
+        this.memory.readPreferences(actor).optOut
+      )
+        throw new IdentityError(403, "identity_forbidden");
+      const selected = this.catalog.store.resolveModel(
+        actor.organizationId,
+        actor.workspaceId,
+      );
+      if (!selected) throw new IdentityError(409, "catalog_model_required");
+      return {
+        member,
+        plugins,
+        scope,
+        selected,
+        policy: this.connections.policyVersion(actor.organizationId),
+        budgetRevision: this.catalog.store.inferenceBudget.policy(
+          actor.organizationId,
+          actor.workspaceId,
+        ).revision,
+      };
+    };
+    this.profileLearner = new ProfileLearner(
+      this.memory,
+      this.profileCursor,
+      inference,
+      {
+        serial: (fn) => this.serial(async () => fn()),
+        discover: (type, after, limit) => {
+          const page =
+            type === "chat"
+              ? sources.profileOwners(after, limit)
+              : this.meetings.profileOwners(after, limit);
+          const owners = page.flatMap((owner) => {
+            const actor = this.profileOwner(owner.scope);
+            return actor
+              ? [{ key: owner.key, actor, sequence: owner.sequence }]
+              : [];
+          });
+          return Object.assign(owners, {
+            next: page.length === limit ? page.at(-1)!.key : "",
+          });
+        },
+        access: (actor) => {
+          const captured = currentAccess(actor),
+            settings = MemorySettingsSchema.parse(
+              captured.plugins.settings.memory ?? {},
+            );
+          const check = () => {
+            const current = currentAccess(actor);
+            if (
+              current.member.role !== captured.member.role ||
+              current.plugins.revision !== captured.plugins.revision ||
+              current.policy !== captured.policy ||
+              current.budgetRevision !== captured.budgetRevision ||
+              current.scope.serverId !== captured.scope.serverId ||
+              current.selected.model.id !== captured.selected.model.id ||
+              current.selected.model.revision !==
+                captured.selected.model.revision ||
+              current.selected.provider.id !== captured.selected.provider.id ||
+              current.selected.provider.revision !==
+                captured.selected.provider.revision ||
+              current.selected.key !== captured.selected.key
+            )
+              throw new IdentityError(409, "memory_context_changed");
+          };
+          return {
+            scope: captured.scope,
+            settings,
+            inference: {
+              selected: captured.selected,
+              settingsRevision: captured.plugins.revision,
+              policyVersion: captured.policy,
+              budgetRevision: captured.budgetRevision,
+              retentionDays: settings.retentionDays,
+              check,
+              serial: (fn) => this.serial(fn),
+              useProvider: () => {
+                check();
+                this.catalog.store.useProvider(
+                  actor.organizationId,
+                  captured.selected.provider.id,
+                  captured.selected.provider.revision,
+                );
+              },
+            },
+          };
+        },
+        refs: (scope, type, after) =>
+          type === "chat"
+            ? sources.profileRefs(scope, after)
+            : this.meetings.profileRefs(scope, after),
+        chat: (scope, ref) => sources.profileChat(scope, ref),
+        meeting: (scope, ref) => this.meetings.profileMeeting(scope, ref),
+        valid: (scope, ref) => this.profileSourceValid(scope, ref),
+        usedActions: (actor, commandId, conversationId) =>
+          this.catalog.store.profileUsedActions(
+            actor.organizationId,
+            actor.workspaceId,
+            actor.userId,
+            commandId,
+            conversationId,
+          ),
+        log: (code) => operatorLog("profile_learning", { code }),
+      },
+    );
+    this.profileLearner.start();
+  }
+  private profileSourceValid(scope: Scope, ref: ProfileSourceRef) {
+    const source =
+      ref.type === "chat"
+        ? this.profileSources?.profileSource(scope, ref.sourceId)
+        : this.meetings.profileSource(scope, ref.sourceId);
+    return (
+      !!source &&
+      source.digest === ref.digest &&
+      source.sourceVersion === ref.sourceVersion
+    );
+  }
+  private observationSourceView(
+    source: import("../../packages/protocol/memory").ObservationSource,
+    actor: MemoryActor,
+  ) {
+    const scope = this.profileScope(actor),
+      live =
+        source.type === "chat"
+          ? this.profileSources?.profileSource(scope, source.sourceId)
+          : this.meetings.profileSource(scope, source.sourceId);
+    return live && live.digest === source.digest
+      ? { removed: false, href: live.href }
+      : { removed: true, href: null };
   }
   attachHosting(hosted: HostedServers) {
     this.hosted = hosted;
@@ -2520,6 +2726,121 @@ export class IdentityService {
       };
     });
   }
+  attachmentIdentityDirectory() {
+    const row = this.db
+      .prepare("PRAGMA database_list")
+      .all()
+      .find((r) => r.name === "main");
+    if (typeof row?.file !== "string" || !row.file)
+      throw new IdentityError(409, "catalog_conflict");
+    return dirname(row.file);
+  }
+  private attachmentWorkflow?: {
+    generationConversation: (
+      scope: Scope,
+      generation: string,
+    ) => string | undefined;
+    generationAllowed: (
+      scope: Scope,
+      generation: string,
+      restoreId?: string,
+    ) => boolean;
+    legacyAllowed: (
+      scope: Scope,
+      conversationId: string,
+      session?: string,
+      restoreId?: string,
+    ) => boolean;
+  };
+  attachAttachmentWorkflow(owner: {
+    generationConversation: (
+      scope: Scope,
+      generation: string,
+    ) => string | undefined;
+    generationAllowed: (
+      scope: Scope,
+      generation: string,
+      restoreId?: string,
+    ) => boolean;
+    legacyAllowed: (
+      scope: Scope,
+      conversationId: string,
+      session?: string,
+      restoreId?: string,
+    ) => boolean;
+  }) {
+    this.attachmentWorkflow = owner;
+  }
+  async purgeAttachmentContext(
+    scope: Scope,
+    generation: string,
+    prove: () => boolean,
+    expectedCommands: () => readonly string[],
+    nativeConversations: () => readonly string[],
+  ) {
+    const organizationId = await this.serial(async () => {
+      if (this.closing || !prove())
+        throw new IdentityError(409, "catalog_conflict");
+      const workspace = this.db
+        .prepare("SELECT organization_id FROM agent_workspace WHERE id=?")
+        .get(scope.workspaceId);
+      if (!workspace) throw new IdentityError(409, "catalog_conflict");
+      return String(workspace.organization_id);
+    });
+    await purgeNativeAttachmentGeneration(
+      this.catalog,
+      scope,
+      organizationId,
+      generation,
+      prove,
+      (fn) => this.serial(async () => fn()),
+      expectedCommands,
+      nativeConversations,
+    );
+  }
+  /** Original retention/status access has no model/service/credential resolution. */
+  mobileAttachmentAccess(
+    header: string | undefined,
+    workspaceId: string,
+    serverId: string,
+  ): Promise<MobileRuntime> {
+    return this.serial(async () => {
+      if (this.closing || this.workflowServerId !== serverId)
+        throw new IdentityError(503, "identity_unavailable");
+      const initial = this.mobile.authenticate(header, workspaceId, serverId);
+      const run = <T>(fn: () => T): Promise<T> =>
+        this.serial(async () => {
+          if (this.closing)
+            throw new IdentityError(503, "identity_unavailable");
+          const current = this.mobile.authenticateDigest(
+            initial.credentialId,
+            workspaceId,
+            serverId,
+          );
+          if (
+            JSON.stringify(current.session.scope) !==
+            JSON.stringify(initial.session.scope)
+          )
+            throw new IdentityError(403, "identity_forbidden");
+          return fn();
+        });
+      return {
+        session: initial.session,
+        run,
+        runModel: async () => {
+          throw new IdentityError(503, "model_unavailable");
+        },
+        modelEnabled: false,
+        voiceEnabled: false,
+        tools: {
+          has: () => false,
+          invoke: async () => {
+            throw new IdentityError(403, "identity_forbidden");
+          },
+        },
+      };
+    });
+  }
   async mobileMeetingAccess(
     header: string | undefined,
     workspaceId: string,
@@ -3340,6 +3661,28 @@ export class IdentityService {
           this.catalog,
           this.catalog.transport,
           {
+            attachmentGenerationConversation: (generation) =>
+              this.attachmentWorkflow?.generationConversation(
+                initial.session.scope,
+                generation,
+              ),
+            attachmentGenerationAllowed: (generation, restoreId) =>
+              this.attachmentWorkflow?.generationAllowed(
+                initial.session.scope,
+                generation,
+                restoreId,
+              ) ?? false,
+            attachmentLegacyContextAllowed: (
+              conversationId,
+              session,
+              restoreId,
+            ) =>
+              this.attachmentWorkflow?.legacyAllowed(
+                initial.session.scope,
+                conversationId,
+                session,
+                restoreId,
+              ) ?? true,
             humanTasks: {
               get: (id) =>
                 this.meetings.humanTasks.get(initial.session.scope, id),
@@ -3708,6 +4051,7 @@ export class IdentityService {
   }
   async close() {
     this.closing = true;
+    await this.profileLearner?.close();
     await this.hubScheduler.stop();
     await this.mcpTaskRunner?.close();
     clearInterval(this.memoryMaintenance);
@@ -4712,7 +5056,7 @@ export class IdentityService {
           req.method === "POST" ? MemoryCommandSchema.parse(payload) : null;
         const target =
           command ??
-          WorkspaceTarget.parse(Object.fromEntries(url.searchParams));
+          MemoryReadQuerySchema.parse(Object.fromEntries(url.searchParams));
         const prepared = await this.serial(async () => ({
           actor: await this.workspaceActor(req, target),
           revision: this.plugins.read(target.workspaceId).revision,
@@ -4810,6 +5154,29 @@ export class IdentityService {
                 },
                 commit,
               );
+            else if (command.type === "forgetAll")
+              await this.memory.forgetAll(
+                memoryActor,
+                { requestId: command.requestId },
+                commit,
+              );
+            else if (command.type === "personalThings")
+              await this.memory.setPersonalThings(
+                memoryActor,
+                { requestId: command.requestId, value: command.value },
+                commit,
+              );
+            else if (command.type === "classify")
+              await this.memory.classify(
+                memoryActor,
+                {
+                  requestId: command.requestId,
+                  id: command.id,
+                  revision: command.revision,
+                  personal: command.personal,
+                },
+                commit,
+              );
             else
               await commit.run(() =>
                 this.memory.setOptOut(memoryActor, {
@@ -4822,9 +5189,15 @@ export class IdentityService {
         const viewVersion = await commit.run(() =>
           this.memory.version(memoryActor),
         );
-        const items = await this.memory.list(memoryActor, {
+        const { items, total } = await this.memory.listWithTotal(memoryActor, {
           run: commit.run,
+          privateOnly:
+            req.method === "GET" &&
+            "scope" in target &&
+            target.scope === "private",
           settings,
+          observationSourceView: (source, a) =>
+            this.observationSourceView(source, a),
           sourceAccess: (source, a) =>
             this.memorySourceAccess(source, a, actor.role),
         });
@@ -4842,6 +5215,7 @@ export class IdentityService {
               canManageShared: memoryActor.canManageShared,
               ...this.memory.readPreferences(memoryActor),
               items,
+              total,
             }),
           );
         });

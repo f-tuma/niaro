@@ -93,6 +93,7 @@ export function useChatSession(
           false,
           {
             reissue: true,
+            attachments: true,
             processOutputs: true,
             messageResults: WEB_MESSAGE_RESULTS,
             messageTimes: true,

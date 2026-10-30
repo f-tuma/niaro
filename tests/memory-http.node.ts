@@ -650,6 +650,166 @@ test("memory HTTP: authenticated settings, isolated records, corrections and era
         );
       },
     );
+
+    await t.test(
+      "observed private HTTP owner classification and correction use the strict public contract",
+      async () => {
+        const memory = identity["memory"];
+        const actor = {
+          organizationId,
+          workspaceId,
+          userId: state.user!.id,
+          canManageShared: true,
+        };
+        const now = Date.now();
+        const result = await memory.observe(
+          actor,
+          {
+            batchId: randomUUID(),
+            expectedVersion: memory.version(actor),
+            deadline: now + 120000,
+            settings: memorySettings,
+            add: [
+              {
+                statement: "TEST observes green project work",
+                section: "projects",
+                personal: false,
+                sources: [
+                  {
+                    type: "chat",
+                    sourceId: randomUUID(),
+                    messageId: "TEST-own",
+                    at: new Date(now).toISOString(),
+                    digest: "a".repeat(64),
+                  },
+                ],
+              },
+            ],
+            refresh: [],
+            update: [],
+          },
+          { observationSourceAccess: () => true },
+        );
+        const observed = result.items[0]!;
+        const ownerView = await read(owner, { scope: "private" });
+        const item = ownerView.items.find((item) => item.id === observed.id)!;
+        assert.equal(item.origin, "observed");
+        assert(
+          item.source?.type === "observed" &&
+            item.source.sources.every(
+              (source) => source.removed && source.href === null,
+            ),
+        );
+        assert(
+          !(await read(member, { scope: "private" })).items.some(
+            (item) => item.id === observed.id,
+          ),
+        );
+        const foreign = await mutate(
+          {
+            type: "classify",
+            id: observed.id,
+            revision: observed.revision,
+            personal: true,
+          },
+          member,
+        );
+        assert.equal(foreign.status, 404);
+        const classified = await mutate({
+          type: "classify",
+          id: observed.id,
+          revision: observed.revision,
+          personal: true,
+        });
+        assert.equal(classified.status, 200);
+        const current = MemoryViewSchema.parse(classified.data).items.find(
+          (item) => item.id === observed.id,
+        )!;
+        assert.equal(current.revision, observed.revision + 1);
+        const corrected = await mutate({
+          type: "revise",
+          id: current.id,
+          revision: current.revision,
+          content: "TEST owner corrected project",
+        });
+        assert.equal(corrected.status, 200);
+        const explicit = MemoryViewSchema.parse(corrected.data).items.find(
+          (item) => item.content === "TEST owner corrected project",
+        )!;
+        assert.equal(explicit.origin, "explicit");
+        assert.equal(explicit.trust, "user_assertion");
+        assert.deepEqual(explicit.source, { type: "user_note" });
+      },
+    );
+
+    await t.test(
+      "private read/control dependency works with learning off and retains replay isolation",
+      async () => {
+        const privateView = await read(owner, { scope: "private" });
+        assert.equal(typeof privateView.total, "number");
+        assert(privateView.items.every((item) => item.scope === "private"));
+        assert.equal(
+          (await owner(path({ scope: "private", unexpected: "no" }))).status,
+          400,
+        );
+        assert.equal(
+          (await mutate({ type: "forgetAll", scope: "workspace" })).status,
+          400,
+        );
+        const drop = await mutate({ type: "personalThings", value: "drop" });
+        assert.equal(drop.status, 200);
+        assert.equal(MemoryViewSchema.parse(drop.data).personalThings, "drop");
+        const retained = await remember(
+          "TEST retained other-person erase-all control",
+          member,
+        );
+        assert.equal(
+          (
+            await mutate({
+              type: "classify",
+              id: retained.id,
+              revision: retained.revision,
+              personal: true,
+            })
+          ).status,
+          404,
+        );
+        await mutate({ type: "preference", optOut: true });
+        assert.equal(
+          (
+            await savePlugins({
+              enabled: ["datetime"],
+              timeZone: "Europe/Prague",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await mutate({ type: "personalThings", value: "keep" })).status,
+          200,
+        );
+        const requestId = randomUUID();
+        const all = { type: "forgetAll", scope: "private", requestId };
+        assert.equal((await mutate(all)).status, 200);
+        assert.equal((await read(owner, { scope: "private" })).total, 0);
+        assert(
+          (await read(member, { scope: "private" })).items.some(
+            (item) => item.id === retained.id,
+          ),
+        );
+        await mutate({ type: "preference", optOut: false });
+        assert.equal((await savePlugins(null)).status, 200);
+        const later = await remember(
+          "TEST later survives erase-all HTTP replay",
+        );
+        assert.equal((await mutate(all)).status, 200);
+        assert(
+          (await read(owner, { scope: "private" })).items.some(
+            (item) => item.id === later.id,
+          ),
+        );
+      },
+    );
   } finally {
     app.emit("close");
     await identity.close();

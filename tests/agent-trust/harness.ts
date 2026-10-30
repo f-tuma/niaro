@@ -1,3 +1,4 @@
+import { NativeAttachmentBindingSchema , DomainCommandSchema } from "../../apps/server-identity/mastra-domain";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -21,7 +22,6 @@ import {
   closeNativeCatalogRuntime,
   inspectNativeCatalogRuntime,
 } from "../../apps/server-identity/mastra-runtime";
-import { DomainCommandSchema } from "../../apps/server-identity/mastra-domain";
 import { MemoryStore } from "../../apps/server-identity/memory";
 import { createMemoryRuntime } from "../../apps/server-identity/memory-runtime";
 import { MemorySettingsSchema } from "../../packages/protocol/memory";
@@ -666,11 +666,31 @@ export function createTrustHarness(
     get model() {
       return model;
     },
+    attachmentState: (commandId: string) => {
+      const key = createHash("sha256")
+        .update(
+          JSON.stringify([
+            scope.serverId,
+            scope.workspaceId,
+            scope.userId,
+            commandId,
+          ]),
+        )
+        .digest("hex");
+      const raw = catalog.nativeAttachmentBinding(
+        key,
+        scope.workspaceId,
+        scope.userId,
+      );
+      return raw === undefined
+        ? undefined
+        : NativeAttachmentBindingSchema.parse(raw);
+    },
     commandState: (commandId?: string) => {
       if (commandId) {
         const state = db
           .prepare(
-            "SELECT data FROM agent_service_turn WHERE workspace_id=? AND user_id=?",
+            "SELECT data FROM agent_service_turn WHERE workspace_id=? AND user_id=? AND json_extract(data,'$.kind')='mastra-1'",
           )
           .all(scope.workspaceId, scope.userId)
           .map((row) => DomainCommandSchema.parse(JSON.parse(String(row.data))))
@@ -838,7 +858,8 @@ export function createTrustHarness(
           try {
             db.close();
           } finally {
-            rmSync(root, { recursive: true, force: true });
+            if (options.cleanupDirectory !== false)
+              rmSync(root, { recursive: true, force: true });
           }
         }
       }

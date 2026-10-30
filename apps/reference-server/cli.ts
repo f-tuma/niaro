@@ -1,3 +1,7 @@
+import {
+  verifyAttachmentRestore,
+  restoreVerifyArguments,
+} from "../server-attachments/restore";
 import { loadStorageConfiguration } from "../server-storage/config";
 import { safeStatus } from "../server-storage/types";
 import { existsSync, readFileSync, rmSync } from "node:fs";
@@ -20,6 +24,28 @@ const file = profileArgument || process.env.SERVER_PROFILE || undefined;
 const initial = mode === "admin-key" && user === "--initial" && !workspace;
 async function main() {
   try {
+    if (mode === "attachment-restore-verify") {
+      let args: ReturnType<typeof restoreVerifyArguments>;
+      try {
+        args = restoreVerifyArguments(process.argv.slice(3));
+      } catch {
+        console.error(
+          "Usage: attachment-restore-verify PROFILE [--reconcile FILE] [--activate]",
+        );
+        process.exitCode = 64;
+        return;
+      }
+      const config = loadServerConfig(
+        args.profile || process.env.SERVER_PROFILE || undefined,
+      );
+      const outcome = await verifyAttachmentRestore(config, {
+        reconcile: args.reconcile,
+        activate: args.activate,
+      });
+      console.log(JSON.stringify(outcome.result));
+      process.exitCode = outcome.exitCode;
+      return;
+    }
     if (
       extra.length ||
       !["start", "check", "pair", "admin-key", "admin-rotate-key"].includes(

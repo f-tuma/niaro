@@ -1,3 +1,9 @@
+import {
+  AttachmentSendSchema,
+  AttachmentPublicFileSchema,
+  AttachmentProcessingSchema,
+  AttachmentUuidSchema,
+} from "./attachments";
 import { z } from "zod";
 import { MessageMentionSchema } from "./mentions";
 import { PassiveCardDocumentSchema, CardResultSchema } from "./card-document";
@@ -79,7 +85,9 @@ export const MessageSchema = z
   .strictObject({
     id,
     role: z.enum(["user", "assistant"]),
-    text,
+    text: z.string().max(4000),
+    attachments: z.array(AttachmentPublicFileSchema).min(1).max(10).optional(),
+    processing: AttachmentProcessingSchema.optional(),
     /** Stable identity across an explicitly retried logical chat message. */
     logicalMessageId: id.optional(),
     replyToCommandId: id.optional(),
@@ -94,6 +102,15 @@ export const MessageSchema = z
      * for MESSAGE_TIME_PROFILE; messages stored before it carry none. */
     createdAt: z.iso.datetime().optional(),
   })
+  .refine(
+    (message) => !!message.text.trim() || !!message.attachments?.length,
+    "Empty messages require attachments",
+  )
+  .refine(
+    (message) =>
+      (!message.attachments && !message.processing) || message.role === "user",
+    "Only user messages carry attachments",
+  )
   .refine(
     (message) => !message.replyToCommandId || message.role === "assistant",
     "Only assistant replies can reference a command",
@@ -117,6 +134,7 @@ export const MessageSchema = z
 export const ConversationSchema = z.strictObject({
   ...base,
   messages: z.array(MessageSchema).max(500),
+  attachmentGeneration: AttachmentUuidSchema.optional(),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
 /** Public conversation history contains only the existing client projection. */
@@ -131,6 +149,7 @@ export const ConversationSummarySchema = z.strictObject({
   updatedAt: z.iso.datetime(),
   messageCount: z.number().int().nonnegative(),
   readOnly: z.boolean(),
+  attachmentGeneration: AttachmentUuidSchema.optional(),
 });
 export type ConversationSummary = z.infer<typeof ConversationSummarySchema>;
 /**
@@ -654,7 +673,8 @@ export const CommandSchema = z.discriminatedUnion("type", [
       ...command,
       type: z.literal("message.send"),
       conversationId: id,
-      text,
+      text: z.string().max(4000),
+      attachments: AttachmentSendSchema.optional(),
       language: LanguageSchema,
       context: InputContextSchema.optional(),
       /** An open item from Tasks the person wants to resolve in this chat. */
@@ -679,6 +699,10 @@ export const CommandSchema = z.discriminatedUnion("type", [
         .regex(/^(?:UTC|[A-Za-z_]+(?:\/[A-Za-z0-9_+.-]+)+)$/)
         .optional(),
     })
+    .refine(
+      (message) => !!message.text.trim() || !!message.attachments?.items.length,
+      "Empty sends require attachments",
+    )
     .refine(
       (message) => !message.context || !message.humanTask,
       "An answer to a question cannot also bring an open item",

@@ -1,4 +1,11 @@
 import {
+  useWebAttachments,
+  WebAttachmentMenu,
+  WebAttachmentDraft,
+  WebMessageAttachments,
+  type WebAttachments,
+} from "./attachment-controls";
+import {
   useCallback,
   useEffect,
   useEffectEvent,
@@ -272,9 +279,11 @@ export function ChatNextConversation({
   // The text lives in assistant-ui's composer; this mirror serves the page's
   // own needs (the saved draft, putting a refused message back).
   const draftRef = useRef(initial.text);
+  const draftRevision = useRef(0);
   // Whether the composer holds text: a refused message offers "Try again".
   const [hasDraft, setHasDraft] = useState(!!initial.text.trim());
   const noteDraft = useCallback((text: string) => {
+    draftRevision.current++;
     draftRef.current = text;
     setHasDraft(!!text.trim());
   }, []);
@@ -391,6 +400,16 @@ export function ChatNextConversation({
   const online = state.status === "online";
   const busy = !!state.pending || !!state.answerRecoveryBlocked;
   const readOnly = !!historySelection?.readOnly;
+  const attachmentGeneration =
+    state.store?.conversations[id]?.attachmentGeneration ??
+    historySelection?.attachmentGeneration ??
+    null;
+  const attachments = useWebAttachments(
+    session,
+    id,
+    attachmentGeneration,
+    language,
+  );
   const conversation = store?.conversations[id];
   const historyLiveRevision = conversation?.revision;
   useEffect(() => {
@@ -511,11 +530,18 @@ export function ChatNextConversation({
       mentions?: MessageMention[];
       /** From a card or an action, not the composer: nothing is put back. */
       detached?: true;
+      withAttachments?: true;
     } = {},
   ): void => {
     const text = value.trim();
+    const attachmentEntries = session.attachments?.getSnapshot().entries ?? [];
+    const attachmentReady = !!session.attachments?.ready;
     if (
-      !text ||
+      (!text && !attachmentReady) ||
+      (attachmentEntries.length > 0 &&
+        (!attachmentReady ||
+          !!replyContext ||
+          (!!options.detached && !options.withAttachments))) ||
       text.length > MAX_MESSAGE_LENGTH ||
       busy ||
       !online ||
@@ -567,6 +593,9 @@ export function ChatNextConversation({
               language,
               commandId,
               replyContext ?? undefined,
+              attachmentEntries.length
+                ? session.attachments.takeForSend()
+                : undefined,
             ),
             ...(replyContext ? {} : { conversationId: id }),
             ...(task ? { humanTask: task } : {}),
@@ -589,6 +618,9 @@ export function ChatNextConversation({
     const restore = () => {
       if (!options.detached && !draftRef.current.trim()) setComposerText(value);
     };
+    const attachmentCaptionRevision = options.withAttachments
+      ? draftRevision.current
+      : undefined;
     void session
       .send(command, false, undefined, noticeOwner)
       .then(() => {
@@ -618,6 +650,12 @@ export function ChatNextConversation({
           restore();
           return;
         }
+        if (
+          attachmentCaptionRevision !== undefined &&
+          alive.current &&
+          draftRevision.current === attachmentCaptionRevision
+        )
+          setComposerText("");
         if (contextRef.current === (replyContext ?? undefined))
           setContext(undefined);
       })
@@ -746,23 +784,79 @@ export function ChatNextConversation({
       composer?.setSelectionRange(next.length, next.length);
     });
   };
-  const again = (requestText: string) =>
-    submitMessage(requestText, null, {
-      detached: true,
-      mentions: messageMentions(
-        requestText,
-        sentMentions(requestText, directory),
-      ),
-    });
-  const editMessage = (text: string) => {
-    setContext(undefined);
-    setComposerText(text);
-    setPicked(sentMentions(text, directory));
-    requestAnimationFrame(() => {
-      const composer = composerRef.current;
-      composer?.focus();
-      composer?.setSelectionRange(text.length, text.length);
-    });
+  const reuseMessage = async (text: string, sourceMessageId?: string) => {
+    const source = sourceMessageId
+      ? messages.find(
+          (message) =>
+            message.id === sourceMessageId && message.role === "user",
+        )
+      : undefined;
+    if (session.attachments?.getSnapshot().entries.length) {
+      setReplyError("chatSendFailed");
+      throw new Error("attachment_stale");
+    }
+    if (source?.attachments?.length) {
+      if (contextRef.current || readOnly || !online || busy) {
+        setReplyError("chatSendFailed");
+        throw new Error("attachment_stale");
+      }
+      // Own the full source intent before a pin can fail. File Retry never sends.
+      setContext(undefined);
+      setComposerText(text);
+      setPicked(sentMentions(text, directory));
+      const revision = draftRevision.current;
+      const target = session.attachments.getSnapshot().target;
+      const current = () =>
+        alive.current &&
+        draftRevision.current === revision &&
+        !contextRef.current &&
+        session.attachments.getSnapshot().target === target;
+      try {
+        await session.attachments.reuse({
+          conversationId: id,
+          messageId: source.id,
+          files: source.attachments,
+        });
+      } catch (error) {
+        if (current()) setReplyError("chatSendFailed");
+        throw error;
+      }
+      return { withAttachments: true, current };
+    }
+    return { withAttachments: false, current: () => alive.current };
+  };
+  const again = (requestText: string, sourceMessageId?: string) => {
+    void reuseMessage(requestText, sourceMessageId)
+      .then(({ withAttachments, current }) => {
+        if (!current()) return;
+        submitMessage(requestText, null, {
+          detached: true,
+          ...(withAttachments ? { withAttachments: true as const } : {}),
+          mentions: messageMentions(
+            requestText,
+            sentMentions(requestText, directory),
+          ),
+        });
+      })
+      .catch(() => {});
+  };
+  const editMessage = (text: string, sourceMessageId?: string) => {
+    void reuseMessage(text, sourceMessageId)
+      .then(({ withAttachments, current }) => {
+        if (!current()) return;
+        if (!withAttachments) {
+          setContext(undefined);
+          setComposerText(text);
+          setPicked(sentMentions(text, directory));
+        }
+        requestAnimationFrame(() => {
+          if (!current() && withAttachments) return;
+          const composer = composerRef.current;
+          composer?.focus();
+          composer?.setSelectionRange(text.length, text.length);
+        });
+      })
+      .catch(() => {});
   };
   const decide = async (operationId: string, approved: boolean) => {
     if (!conversation) return false;
@@ -847,6 +941,7 @@ export function ChatNextConversation({
           (index === messages.length - 1 || m.result?.type === "process.offer")
             ? request.text
             : undefined,
+        requestMessageId: request?.id,
         editable: m.role === "user" && index === lastUser && !readOnly,
       });
       if (converted) thread.push(converted);
@@ -1294,7 +1389,14 @@ export function ChatNextConversation({
                   waitingForAnswer={waitingForProcessAnswer}
                   onClearContext={() => setContext(undefined)}
                   disabled={inputDisabled}
-                  sendBlocked={!online || busy || historyLoading}
+                  attachments={attachments}
+                  onFileOnly={() => submitMessage("")}
+                  sendBlocked={
+                    !online ||
+                    busy ||
+                    historyLoading ||
+                    (attachments.state.entries.length > 0 && !attachments.ready)
+                  }
                   stoppable={stoppable}
                   stopLabel={
                     state.error === "requestInterruptFailed"
@@ -1360,7 +1462,7 @@ const messageClass =
 function UserMessage() {
   const message = useAuiState((s) => s.message);
   const chat = useNextChat();
-  const { copy } = useChatCopy();
+  const { copy, language } = useChatCopy();
   const meta = nextMeta(message);
   const pending = meta.kind === "pending";
   const text = threadText(message);
@@ -1383,22 +1485,46 @@ function UserMessage() {
             </span>
           )}
           <MessageTags items={meta.tags ?? []} />
-          <div
-            data-pending={pending}
-            className="max-w-full rounded-2xl bg-muted px-4 py-2.5 text-sm break-words whitespace-pre-wrap data-[pending=true]:opacity-60"
-          >
-            <MessagePrimitive.Parts components={userParts} />
-          </div>
+          {meta.attachments?.length ? (
+            <WebMessageAttachments
+              session={chat.session}
+              language={language}
+              files={meta.attachments}
+              processing={meta.processing}
+            />
+          ) : null}
+          {text.trim() ? (
+            <div
+              data-pending={pending}
+              className="max-w-full rounded-2xl bg-muted px-4 py-2.5 text-sm break-words whitespace-pre-wrap data-[pending=true]:opacity-60"
+            >
+              <MessagePrimitive.Parts components={userParts} />
+            </div>
+          ) : null}
         </article>
-        {!pending && (
+        {!pending && !!text.trim() && (
           <MessageActions
             text={text}
             align="end"
             createdAt={meta.createdAt}
             disabled={chat.busy || !chat.online || chat.readOnly}
-            onEdit={meta.editable ? () => chat.edit(text) : undefined}
+            onEdit={
+              meta.editable ? () => chat.edit(text, message.id) : undefined
+            }
           />
         )}
+        {!pending && !text.trim() && meta.editable ? (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="self-end"
+            aria-label={copy.editMessage}
+            disabled={chat.busy || !chat.online || chat.readOnly}
+            onClick={() => chat.edit(text, message.id)}
+          >
+            <SquarePen aria-hidden="true" />
+          </Button>
+        ) : null}
       </MessagePrimitive.Root>
     </>
   );
@@ -1512,8 +1638,8 @@ function AssistantMessage() {
             createdAt={meta.createdAt}
             disabled={chat.busy || !chat.online || chat.readOnly}
             onAgain={
-              meta.requestText && message.isLast
-                ? () => chat.again(meta.requestText!)
+              meta.requestText !== undefined && message.isLast
+                ? () => chat.again(meta.requestText!, meta.requestMessageId)
                 : undefined
             }
           />
@@ -1546,6 +1672,8 @@ function Composer({
   sendBlocked,
   stoppable,
   stopLabel,
+  attachments,
+  onFileOnly,
 }: {
   composerRef: RefObject<HTMLTextAreaElement | null>;
   initialText: string;
@@ -1563,6 +1691,8 @@ function Composer({
   sendBlocked: boolean;
   stoppable: boolean;
   stopLabel: string;
+  attachments: WebAttachments;
+  onFileOnly: () => void;
 }) {
   const aui = useAui();
   const chat = useNextChat();
@@ -1648,18 +1778,29 @@ function Composer({
   const tooLong = length > MAX_MESSAGE_LENGTH;
   const count = new Intl.NumberFormat(language);
   const canSend =
-    !!draft.trim() && !tooLong && !sendBlocked && !disabled && !chat.readOnly;
+    (!!draft.trim() || attachments.ready) &&
+    !tooLong &&
+    !sendBlocked &&
+    !disabled &&
+    !chat.readOnly;
   const submit = () => {
     if (!canSend) return;
     // The text leaves the composer with the send; a refused send puts it
     // back only while nothing new was typed, so the mirror empties first.
     onDraft("");
-    aui.composer.send();
+    if (!draft.trim() && attachments.ready) onFileOnly();
+    else aui.composer.send();
     composerRef.current?.focus();
   };
   return (
     <form
       className="relative"
+      onDragOver={(event) => {
+        if (attachments.available && event.dataTransfer.types.includes("Files"))
+          event.preventDefault();
+      }}
+      onDrop={attachments.drop}
+      onPaste={attachments.paste}
       onSubmit={(event) => {
         event.preventDefault();
         submit();
@@ -1678,6 +1819,7 @@ function Composer({
           }
         />
       )}
+      <WebAttachmentDraft value={attachments} fallbackFocusRef={composerRef} />
       <InputGroup>
         {context ? (
           <InputGroupAddon align="block-start">
@@ -1829,6 +1971,10 @@ function Composer({
           }}
         />
         <InputGroupAddon align="block-end">
+          <WebAttachmentMenu
+            value={attachments}
+            disabled={disabled || chat.readOnly || !!context}
+          />
           {directory.length > 0 && (
             <InputGroupButton
               type="button"

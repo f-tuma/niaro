@@ -20,6 +20,7 @@ type Row = {
   mutation: string;
   mutation_id: string | null;
   write_uncertain: number;
+  put_admitted: number;
 };
 export class StorageRegistry {
   constructor(private readonly db: DatabaseSync) {
@@ -32,10 +33,21 @@ export class StorageRegistry {
         state TEXT NOT NULL CHECK(state IN ('reserved','retained','deleting','deleted')),
         mutation TEXT NOT NULL DEFAULT 'idle' CHECK(mutation IN ('idle','put','delete')), mutation_id TEXT,
         write_uncertain INTEGER NOT NULL DEFAULT 0 CHECK(write_uncertain IN (0,1)),
+        put_admitted INTEGER NOT NULL DEFAULT 1 CHECK(put_admitted IN (0,1)),
         CHECK((mutation='idle' AND mutation_id IS NULL) OR (mutation!='idle' AND mutation_id IS NOT NULL))
       ) STRICT;
       CREATE INDEX IF NOT EXISTS object_storage_retained ON object_storage_objects(location_id,state);
     `);
+    // Old phase-2 rows have no durable never-admitted proof: conservatively retain them.
+    if (
+      !db
+        .prepare("PRAGMA table_info(object_storage_objects)")
+        .all()
+        .some((r) => r.name === "put_admitted")
+    )
+      db.exec(
+        "ALTER TABLE object_storage_objects ADD COLUMN put_admitted INTEGER NOT NULL DEFAULT 1 CHECK(put_admitted IN (0,1))",
+      );
   }
   private transaction<T>(run: () => T): T {
     if (this.db.isTransaction) return run();
@@ -103,7 +115,7 @@ export class StorageRegistry {
       const h = createHandle(c, owner, digest);
       this.db
         .prepare(
-          "INSERT INTO object_storage_objects(id,location_id,object_key,owner,sha256,size,state) VALUES (?,?,?,?,?,?,'reserved')",
+          "INSERT INTO object_storage_objects(id,location_id,object_key,owner,sha256,size,state,put_admitted) VALUES (?,?,?,?,?,?,'reserved',0)",
         )
         .run(h.id, h.locationId, h.key, h.owner, h.sha256, h.size);
       return h;
@@ -131,6 +143,31 @@ export class StorageRegistry {
     if (r.state === "deleted") throw new StorageError("not_found");
     return r;
   }
+  /** Trusted workflow owner proves no PUT was ever admitted, inside its transaction. */
+  discardUnstarted(
+    c: StorageConfig,
+    h: ObjectHandle,
+    neverDispatched: boolean,
+  ) {
+    return this.transaction(() => {
+      const row = this.row(c, h);
+      if (row.state === "deleted") return;
+      this.active(c);
+      if (
+        !neverDispatched ||
+        row.state !== "reserved" ||
+        row.mutation !== "idle" ||
+        row.write_uncertain ||
+        row.put_admitted
+      )
+        throw new StorageError(row.write_uncertain ? "uncertain" : "conflict");
+      this.db
+        .prepare(
+          "UPDATE object_storage_objects SET state='deleted' WHERE id=? AND state='reserved' AND mutation='idle' AND write_uncertain=0 AND put_admitted=0",
+        )
+        .run(h.id);
+    });
+  }
   begin(
     c: StorageConfig,
     h: ObjectHandle,
@@ -152,9 +189,15 @@ export class StorageRegistry {
       const token = randomUUID();
       this.db
         .prepare(
-          "UPDATE object_storage_objects SET mutation=?,mutation_id=?,state=? WHERE id=?",
+          "UPDATE object_storage_objects SET mutation=?,mutation_id=?,state=?,put_admitted=CASE WHEN ?='put' THEN 1 ELSE put_admitted END WHERE id=?",
         )
-        .run(kind, token, kind === "delete" ? "deleting" : row.state, h.id);
+        .run(
+          kind,
+          token,
+          kind === "delete" ? "deleting" : row.state,
+          kind,
+          h.id,
+        );
       return token;
     });
   }

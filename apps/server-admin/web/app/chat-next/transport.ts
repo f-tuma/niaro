@@ -49,6 +49,8 @@ export const TOOL = {
 export type NextMeta = {
   kind: "stored" | "pending" | "live";
   createdAt?: string;
+  attachments?: ChatMessage["attachments"];
+  processing?: ChatMessage["processing"];
   /** The day the message starts, when it differs from the one before. */
   day?: number;
   /** The open item the person's message brought. */
@@ -57,6 +59,7 @@ export type NextMeta = {
   tags?: readonly MentionItem[];
   /** The request this (last) answer is for: "Again" sends it once more. */
   requestText?: string;
+  requestMessageId?: string;
   /** The last request: "Edit" brings it back to the composer. */
   editable?: boolean;
   /** Why the live answer stopped, in the person's language. */
@@ -95,6 +98,7 @@ export function storedMessage(
     /** The work this message anchors, when it is the message that shows it. */
     anchored?: WorkItem;
     requestText?: string;
+    requestMessageId?: string;
     editable?: boolean;
   },
 ): ThreadMessageLike | null {
@@ -113,6 +117,8 @@ export function storedMessage(
       metadata: {
         custom: {
           ...meta,
+          ...(m.attachments ? { attachments: m.attachments } : {}),
+          ...(m.processing ? { processing: m.processing } : {}),
           ...(m.humanTask ? { task: m.humanTask.title } : {}),
           tags: options.tags ?? [],
           ...(options.editable ? { editable: true } : {}),
@@ -182,7 +188,12 @@ export function storedMessage(
       custom: {
         ...meta,
         ...(options.requestText !== undefined && withText
-          ? { requestText: options.requestText }
+          ? {
+              requestText: options.requestText,
+              ...(options.requestMessageId
+                ? { requestMessageId: options.requestMessageId }
+                : {}),
+            }
           : {}),
       },
     },

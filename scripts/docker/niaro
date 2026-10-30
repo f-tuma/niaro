@@ -34,12 +34,18 @@ case "$command" in
   storage-bootstrap)
     run_ts scripts/storage-bootstrap.ts "$@" ;;
   backup)
-    exec node --disable-warning=ExperimentalWarning scripts/backup.mjs "$data" "${1:--}" ;;
+    operand="-"
+    if [ "$#" -gt 0 ] && [ "${1#--}" = "$1" ]; then operand="$1"; shift; fi
+    exec node --disable-warning=ExperimentalWarning scripts/backup.mjs "$data" "$operand" "$@" ;;
   restore)
-    exec node --disable-warning=ExperimentalWarning scripts/restore.mjs "${1:--}" "$data" ;;
+    operand="-"
+    if [ "$#" -gt 0 ] && [ "${1#--}" = "$1" ]; then operand="$1"; shift; fi
+    exec node --disable-warning=ExperimentalWarning scripts/restore.mjs "$operand" "$data" "$@" ;;
+  attachment-restore-verify)
+    run_ts apps/reference-server/cli.ts attachment-restore-verify "$config" "$@" ;;
   healthcheck)
     exec node scripts/docker/healthcheck.mjs "$config" ;;
   *)
-    echo "Unknown command: $command (start, check, admin-key, admin-rotate-key, backup, restore, healthcheck, storage-check, storage-bootstrap)" >&2
+    echo "Unknown command: $command (start, check, admin-key, admin-rotate-key, backup, restore, healthcheck, storage-check, storage-bootstrap, attachment-restore-verify)" >&2
     exit 64 ;;
 esac

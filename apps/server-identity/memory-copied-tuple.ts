@@ -348,6 +348,11 @@ async function operate(
       crypto = new MemoryPayloadCrypto(secret);
     requireTrue(action !== "migrate" || legacy, "memory_copy_expected_legacy");
     requireTrue(action !== "reverse" || !legacy, "memory_copy_expected_native");
+    requireTrue(
+      action !== "reverse" ||
+        !original.some((row) => row.origin === "observed"),
+      "memory_copy_observed_reverse_unsupported",
+    );
     const payloads = new Map<
       string,
       { content: string; source: unknown; trust: unknown }
@@ -438,7 +443,9 @@ async function operate(
         new MemoryStore(db, { secret, native });
         for (const row of original)
           db.prepare(
-            "INSERT INTO agent_memory VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            `INSERT INTO agent_memory (id,organization_id,workspace_id,user_id,scope,kind,status,revision,
+              created_at,updated_at,expires_at,supersedes_id,lineage_id,native_ref,native_resource,native_digest,publication,base_version)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ).run(
             row.id!,
             row.organization_id!,

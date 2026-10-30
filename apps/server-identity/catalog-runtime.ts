@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import type { LoopLimits, DomainMessageContext } from "./mastra-domain";
+import type {
+  LoopLimits,
+  DomainMessageContext,
+  NativeAttachmentInput,
+  NativeAttachmentOutcome,
+} from "./mastra-domain";
 import type { Scope, Language } from "../../packages/protocol";
 import type {
   ActivityTool,
@@ -36,6 +41,10 @@ export type ServiceAnswer = {
 };
 export type CatalogRuntime = {
   enabled: boolean;
+  readAttachmentOutcome?: (
+    input: NativeAttachmentInput,
+  ) => Promise<NativeAttachmentOutcome>;
+  sealAttachmentAdmission?: (input: NativeAttachmentInput) => Promise<void>;
   /** Validate observation under the authenticated identity queue immediately before publication. */
   taskWindow?: (
     legacyQuestionProof?: CatalogContext["legacyQuestionProof"],
@@ -397,6 +406,8 @@ export function createCatalogRuntime(
   }
   return {
     enabled,
+    readAttachmentOutcome: (input) => native.readAttachmentOutcome!(input),
+    sealAttachmentAdmission: (input) => native.sealAttachmentAdmission!(input),
     taskWindow,
     tasks: async () => (await taskWindow()).items,
     readTask: (commandId) => native.readTask!(commandId),

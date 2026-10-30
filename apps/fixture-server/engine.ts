@@ -1,3 +1,4 @@
+import type { AttachmentProcessing } from "../../packages/protocol/attachments";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import {
@@ -205,6 +206,7 @@ export function openWorkKind(work: WorkItem): OpenWork["kind"] {
         : "task";
 }
 export type ExecuteOptions = {
+  attachmentErase?: boolean;
   /** The model service cancelled this exact `work.cancel` target at its
    * expected revision; the projection now shows the settled run. */
   workCancelled?: boolean;
@@ -660,6 +662,10 @@ export class FixtureEngine {
     inputRequestId?: string,
     result?: z.infer<typeof MessageResultSchema>,
     ui?: GeneratedUi,
+    attachment?: {
+      files: NonNullable<Conversation["messages"][number]["attachments"]>;
+      processing: AttachmentProcessing;
+    },
   ) {
     const conversation = this.conversation();
     if (
@@ -677,6 +683,9 @@ export class FixtureEngine {
       id: `message-${commandId}-${conversation.revision}`,
       role,
       text,
+      ...(attachment
+        ? { attachments: attachment.files, processing: attachment.processing }
+        : {}),
       ...(role === "user" && this.activeLogicalMessageId
         ? { logicalMessageId: this.activeLogicalMessageId }
         : {}),
@@ -813,6 +822,121 @@ export class FixtureEngine {
       return JSON.stringify(existing.command) === JSON.stringify(command)
         ? this.result(command, existing.status, existing.code)
         : this.result(command, "rejected", "idempotency_conflict");
+  }
+  attachmentMessageId(command: Extract<Command, { type: "message.send" }>) {
+    this.selectConversation(command.conversationId);
+    const conversation = this.conversation();
+    return (
+      conversation.messages.find(
+        (m) =>
+          m.role === "user" &&
+          m.logicalMessageId ===
+            (command.logicalMessageId ?? command.commandId),
+      )?.id ?? `message-${command.commandId}-${conversation.revision + 1}`
+    );
+  }
+  /** Acceptance reuses the normal message/event/receipt writer, without interpretation. */
+  acceptAttachmentMessage(
+    command: Extract<Command, { type: "message.send" }>,
+    attachment: {
+      files: NonNullable<Conversation["messages"][number]["attachments"]>;
+      processing: AttachmentProcessing;
+    },
+  ) {
+    const replay = this.replay(command);
+    if (replay) return replay;
+    this.selectConversation(command.conversationId);
+    this.activeLogicalMessageId = command.logicalMessageId ?? command.commandId;
+    this.attachedTask = command.humanTask
+      ? { commandId: command.commandId, task: command.humanTask }
+      : undefined;
+    if (command.retryOf) {
+      const message = this.conversation().messages.find(
+        (m) =>
+          m.role === "user" && m.logicalMessageId === command.logicalMessageId,
+      );
+      if (!message) throw new Error("Missing accepted attachment message");
+      message.processing = attachment.processing;
+      this.conversation().revision++;
+      this.emit({ type: "conversation.upserted", entity: this.conversation() });
+    } else
+      this.message(
+        command.text,
+        command.commandId,
+        "user",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        attachment,
+      );
+    this.data.receipts.push({ command, status: "accepted", code: "accepted" });
+    this.commit();
+    return this.result(command, "accepted", "accepted");
+  }
+  private appendNativeAnswer(
+    commandId: string,
+    replyText: string,
+    interpretation?: Interpretation,
+  ) {
+    const nativeWork =
+      !interpretation?.connectionResult &&
+      !interpretation?.serviceResult &&
+      !interpretation?.ui &&
+      !interpretation?.processOffer &&
+      !interpretation?.skillProposal &&
+      !interpretation?.processProposal &&
+      !interpretation?.contactResult
+        ? interpretation?.nativeWork?.find(
+            (work) => work.id === interpretation.workItemId,
+          )
+        : undefined;
+    this.message(
+      replyText,
+      commandId,
+      "assistant",
+      nativeWork?.id,
+      nativeWork?.native?.question?.id,
+      interpretation?.connectionResult ??
+        interpretation?.serviceResult ??
+        interpretation?.processOffer ??
+        interpretation?.skillProposal ??
+        interpretation?.processProposal ??
+        interpretation?.contactResult,
+      interpretation?.ui,
+    );
+  }
+  /** Assistant-only counterpart of acceptance; no second command receipt/user append. */
+  publishAttachmentResult(
+    command: Extract<Command, { type: "message.send" }>,
+    messageId: string,
+    processing: AttachmentProcessing,
+    interpretation: Interpretation,
+  ) {
+    this.selectConversation(command.conversationId);
+    const conversation = this.conversation(),
+      message = conversation.messages.find(
+        (m) => m.id === messageId && m.role === "user",
+      );
+    if (
+      !message ||
+      conversation.revision !== interpretation.expectedConversationRevision
+    )
+      throw new Error("Attachment publication revision conflict");
+    if (interpretation.nativeWork)
+      this.syncNativeWork(
+        interpretation.nativeWork,
+        false,
+        interpretation.nativeWorkAuthoritative,
+      );
+    message.processing = processing;
+    this.appendNativeAnswer(
+      command.commandId,
+      z.string().max(2000).parse(interpretation.nativeReply),
+      interpretation,
+    );
+    this.commit();
+    return this.snapshot();
   }
   execute(
     raw: unknown,
@@ -975,6 +1099,39 @@ export class FixtureEngine {
     // An open question, approval or running task still belongs to this chat.
     if (work.some((w) => isOpenWork(w, this.data.pending)))
       return this.result(command, "rejected", "operation_in_progress");
+    if (this.executeOptions.attachmentErase) this.scrubAttachmentWork(id);
+    this.eraseConversationPayload(id);
+    return this.result(command, "accepted", "accepted");
+  }
+  private scrubAttachmentWork(id: string) {
+    const work = new Set(
+      this.data.snapshot.workItems
+        .filter((w) => w.conversationId === id)
+        .map((w) => w.id),
+    );
+    this.data.snapshot.workItems = this.data.snapshot.workItems.filter(
+      (w) => !work.has(w.id),
+    );
+    this.data.snapshot.inputRequests = this.data.snapshot.inputRequests.filter(
+      (i) => !work.has(i.workItemId),
+    );
+    this.data.snapshot.actionProposals =
+      this.data.snapshot.actionProposals.filter((i) => !work.has(i.workItemId));
+    this.data.snapshot.operations = this.data.snapshot.operations.filter(
+      (i) => !work.has(i.workItemId),
+    );
+    this.data.pending = this.data.pending.filter(
+      (i) => !work.has(i.workItemId),
+    );
+    if (this.data.meetingDrafts) delete this.data.meetingDrafts[id];
+  }
+  private eraseConversationPayload(id: string) {
+    const conversation = this.data.snapshot.conversations.find(
+      (c) => c.id === id,
+    );
+    const work = this.data.snapshot.workItems.filter(
+      (w) => w.conversationId === id,
+    );
     if (id === this.activeConversationId) {
       this.data.conversationMemory = undefined;
       this.data.recentContacts = undefined;
@@ -991,7 +1148,12 @@ export class FixtureEngine {
     }
     this.data.eventFloor = ++this.data.snapshot.cursor;
     this.data.events = [];
-    return this.result(command, "accepted", "accepted");
+  }
+  /** Erase-only restore primitive: no receipt, command replay, inference or business action. */
+  eraseAttachmentConversation(id: string) {
+    this.scrubAttachmentWork(id);
+    this.eraseConversationPayload(id);
+    this.commit();
   }
   /**
    * Archiving and restoring change the directory (storage) in the same
@@ -1398,31 +1560,10 @@ export class FixtureEngine {
         )
           this.data.conversationMemory.updatedAt = this.now();
         this.message(command.text, command.commandId, "user");
-        const nativeWork =
-          !interpretation?.connectionResult &&
-          !interpretation?.serviceResult &&
-          !interpretation?.ui &&
-          !interpretation?.processOffer &&
-          !interpretation?.skillProposal &&
-          !interpretation?.processProposal &&
-          !interpretation?.contactResult
-            ? interpretation?.nativeWork?.find(
-                (work) => work.id === interpretation.workItemId,
-              )
-            : undefined;
-        this.message(
-          (replyText ?? decision.reply)!,
+        this.appendNativeAnswer(
           command.commandId,
-          "assistant",
-          nativeWork?.id,
-          nativeWork?.native?.question?.id,
-          interpretation?.connectionResult ??
-            interpretation?.serviceResult ??
-            interpretation?.processOffer ??
-            interpretation?.skillProposal ??
-            interpretation?.processProposal ??
-            interpretation?.contactResult,
-          interpretation?.ui,
+          replyText ?? decision.reply!,
+          interpretation,
         );
         return this.result(command, "accepted", "accepted");
       }

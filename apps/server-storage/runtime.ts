@@ -15,6 +15,11 @@ export class RegisteredObjectStore {
   reserve(owner: string, digest: { sha256: string; size: number }) {
     return this.local(() => this.registry.reserve(this.config, owner, digest));
   }
+  discardUnstarted(h: ObjectHandle, neverDispatched: boolean) {
+    return this.local(() =>
+      this.registry.discardUnstarted(this.config, h, neverDispatched),
+    );
+  }
   private local<T>(run: () => T): T {
     try {
       return run();

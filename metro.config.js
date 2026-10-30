@@ -14,9 +14,11 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
           ? "spikes/audio/App.tsx"
           : process.env.MEETING_RECORDER_QA === "1"
             ? "spikes/meeting-recorder/App.tsx"
-            : process.env.NATIVE_JOURNEYS_QA === "1"
-              ? "tests/helpers/mobile-emulator-entry.tsx"
-              : "apps/mobile/App.tsx",
+            : process.env.ATTACHMENT_CLIENT_QA === "1"
+              ? "tests/helpers/attachment-native-entry.tsx"
+              : process.env.NATIVE_JOURNEYS_QA === "1"
+                ? "tests/helpers/mobile-emulator-entry.tsx"
+                : "apps/mobile/App.tsx",
       ),
     };
   }

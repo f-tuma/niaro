@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
 import {
@@ -80,6 +81,7 @@ function fixture(
     store,
     input,
     audits: () => audits,
+    now: () => now,
     advance: (ms: number) => {
       now += ms;
     },
@@ -671,6 +673,7 @@ function legacyTuple() {
     .exec(`DROP TABLE agent_memory;CREATE TABLE agent_memory(id TEXT PRIMARY KEY,organization_id TEXT REFERENCES organization(id),workspace_id TEXT REFERENCES agent_workspace(id),user_id TEXT REFERENCES user(id),
     scope TEXT,kind TEXT,status TEXT,revision INTEGER,content TEXT,source TEXT,trust TEXT,created_at TEXT,updated_at TEXT,expires_at TEXT,supersedes_id TEXT,lineage_id TEXT) STRICT;
     ALTER TABLE agent_memory_request DROP COLUMN state;
+    ALTER TABLE agent_memory_preference DROP COLUMN personal_things;
     INSERT INTO agent_memory_version VALUES('org','workspace',17);
     INSERT INTO agent_memory_preference VALUES('org','workspace','user',0);
     INSERT INTO agent_memory_request VALUES('org','workspace','user','remember-old','remember','ORIGINAL-FINGERPRINT','memory-old',NULL);`);
@@ -1023,5 +1026,421 @@ test("copied native metadata gate rejects oversized thread metadata before nativ
   } finally {
     rmSync(f.directory, { recursive: true, force: true });
     rmSync(output, { recursive: true, force: true });
+  }
+});
+
+const observedInput = (
+  f: ReturnType<typeof fixture>,
+  statement = "TEST observed project work",
+) => ({
+  batchId: randomUUID(),
+  expectedVersion: f.store.version(actor),
+  deadline: f.now() + 120000,
+  settings,
+  add: [
+    {
+      statement,
+      section: "projects" as const,
+      personal: false,
+      sources: [
+        {
+          type: "chat" as const,
+          sourceId: randomUUID(),
+          messageId: "TEST-owned-message",
+          at: new Date(f.now()).toISOString(),
+          digest: "a".repeat(64),
+        },
+      ],
+    },
+  ],
+  refresh: [],
+  update: [],
+});
+
+test("observed native stage: cleanup preserves live ciphertext, publication and cursor are atomic", async () => {
+  const entered = latch(),
+    resume = latch();
+  const f = fixture((native) => ({
+    ...native,
+    put: async (document) => {
+      await native.put(document);
+      entered.release();
+      await resume.wait;
+    },
+  }));
+  try {
+    f.db.exec("CREATE TABLE observed_checkpoint(value INTEGER) STRICT");
+    const input = observedInput(f);
+    const pending = f.store.observe(actor, input, {
+      observationSourceAccess: () => true,
+      batchCheckpoint: () => {
+        f.db.prepare("INSERT INTO observed_checkpoint VALUES(1)").run();
+      },
+    });
+    await entered.wait;
+    assert.equal((await f.store.list(actor)).length, 0);
+    const stages = JSON.stringify(
+      f.db.prepare("SELECT * FROM agent_memory_observation_stage").all(),
+    );
+    assert(!stages.includes(input.add[0]!.statement));
+    assert(!stages.includes("TEST-owned-message"));
+    await f.store.cleanup();
+    assert.equal(
+      (await f.native.list()).length,
+      1,
+      "A live observation stage owns its ciphertext before publication",
+    );
+    resume.release();
+    const result = await pending;
+    assert.equal(result.items.length, 1);
+    assert.equal(f.store.version(actor), 1);
+    assert.equal(
+      f.db.prepare("SELECT count(*) AS n FROM observed_checkpoint").get()!.n,
+      1,
+    );
+    assert.equal(
+      f.db
+        .prepare("SELECT count(*) AS n FROM agent_memory_observation_stage")
+        .get()!.n,
+      0,
+    );
+    const row = f.db.prepare("SELECT * FROM agent_memory").get()!;
+    const cipher = await f.native.read(
+      String(row.native_ref),
+      String(row.native_resource),
+    );
+    assert(cipher && !cipher.includes(input.add[0]!.statement));
+    const opened = new MemoryPayloadCrypto(secret).open(cipher, {
+      id: String(row.id),
+      organizationId: actor.organizationId,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      scope: "private",
+      threadId: String(row.native_ref),
+      resourceId: String(row.native_resource),
+      createdAt: String(row.created_at),
+      expiresAt: String(row.expires_at),
+    });
+    assert.equal(opened.source.type, "observed");
+    assert.equal(opened.trust, "model_inference");
+  } finally {
+    resume.release();
+    await f.close();
+  }
+});
+
+for (const failure of [
+  "stale_version",
+  "source_deleted",
+  "revoked",
+  "checkpoint",
+] as const)
+  test(`observed native publication: ${failure} leaves no partial profile or cursor`, async () => {
+    const entered = latch(),
+      resume = latch();
+    let block = false,
+      allowed = true,
+      sourceAlive = true;
+    const f = fixture((native) => ({
+      ...native,
+      put: async (document) => {
+        await native.put(document);
+        if (block) {
+          entered.release();
+          await resume.wait;
+        }
+      },
+    }));
+    try {
+      const explicit = await f.store.remember(actor, f.input);
+      const before = f.store.version(actor),
+        audits = f.audits();
+      f.db.exec("CREATE TABLE observed_checkpoint(value INTEGER) STRICT");
+      block = failure !== "checkpoint";
+      const pending = f.store.observe(actor, observedInput(f), {
+        observationSourceAccess: () => sourceAlive,
+        check: () => {
+          if (!allowed) throw Error("TEST observed revoked");
+        },
+        batchCheckpoint: () => {
+          f.db.prepare("INSERT INTO observed_checkpoint VALUES(1)").run();
+          if (failure === "checkpoint") throw Error("TEST checkpoint rollback");
+        },
+      });
+      if (block) {
+        await entered.wait;
+        if (failure === "stale_version")
+          await f.store.forget(actor, {
+            requestId: "TEST-forget-during-observe",
+            id: explicit.id,
+            revision: explicit.revision,
+          });
+        if (failure === "source_deleted") sourceAlive = false;
+        if (failure === "revoked") allowed = false;
+        resume.release();
+      }
+      await assert.rejects(
+        pending,
+        failure === "revoked"
+          ? /TEST observed revoked/
+          : failure === "checkpoint"
+            ? /TEST checkpoint rollback/
+            : /memory_context_changed/,
+      );
+      assert.equal(
+        (await f.store.list(actor)).filter((item) => item.origin === "observed")
+          .length,
+        0,
+      );
+      assert.equal(
+        f.db.prepare("SELECT count(*) AS n FROM observed_checkpoint").get()!.n,
+        0,
+      );
+      assert.equal(
+        f.db
+          .prepare("SELECT count(*) AS n FROM agent_memory_observation_stage")
+          .get()!.n,
+        0,
+      );
+      assert.equal(
+        f.store.version(actor),
+        before + Number(failure === "stale_version"),
+      );
+      assert.equal(f.audits(), audits + Number(failure === "stale_version"));
+      assert.equal(
+        (await f.native.list()).length,
+        Number(failure !== "stale_version"),
+      );
+    } finally {
+      resume.release();
+      await f.close();
+    }
+  });
+
+test("observed abandoned stage: native cleanup resumes from real reopened files without publishing", async () => {
+  let preventRemove = true,
+    closed = false;
+  const f = fixture((native) => ({
+    ...native,
+    remove: async (thread, resource) => {
+      if (preventRemove) throw Error("TEST interrupted cleanup");
+      return native.remove(thread, resource);
+    },
+  }));
+  let reopened: DatabaseSync | undefined, restarted: MemoryStore | undefined;
+  try {
+    await assert.rejects(
+      f.store.observe(actor, observedInput(f), {
+        observationSourceAccess: () => true,
+        batchCheckpoint: () => {
+          throw Error("TEST fail before commit");
+        },
+      }),
+      /TEST fail before commit/,
+    );
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT count(*) AS n FROM agent_memory_observation_stage WHERE state='erase_pending'",
+        )
+        .get()!.n,
+      1,
+    );
+    assert.equal((await f.native.list()).length, 1);
+    assert.equal((await f.store.list(actor)).length, 0);
+    preventRemove = false;
+    await f.store.close();
+    f.db.close();
+    closed = true;
+    reopened = new DatabaseSync(f.file);
+    restarted = new MemoryStore(reopened, { secret, now: f.now });
+    await restarted.cleanup();
+    assert.equal((await restarted.list(actor)).length, 0);
+    assert.equal(
+      reopened
+        .prepare("SELECT count(*) AS n FROM agent_memory_observation_stage")
+        .get()!.n,
+      0,
+    );
+    assert.equal(restarted.version(actor), 0);
+  } finally {
+    if (closed) {
+      await restarted?.close();
+      reopened?.close();
+      rmSync(f.directory, { recursive: true, force: true });
+    } else await f.close();
+  }
+});
+
+test("native additive upgrade preserves populated explicit records and preferences; old positional downgrade fails closed", async () => {
+  const f = fixture();
+  let upgraded: MemoryStore | undefined,
+    reopened: DatabaseSync | undefined,
+    closed = false;
+  try {
+    const old = await f.store.remember(actor, f.input);
+    f.store.setOptOut(actor, { requestId: "TEST-old-pref-on", optOut: true });
+    f.store.setOptOut(actor, { requestId: "TEST-old-pref-off", optOut: false });
+    f.db.exec(
+      "ALTER TABLE agent_memory DROP COLUMN origin;ALTER TABLE agent_memory DROP COLUMN seen_at;ALTER TABLE agent_memory_preference DROP COLUMN personal_things;",
+    );
+    await f.store.close();
+    f.db.close();
+    closed = true;
+    reopened = new DatabaseSync(f.file);
+    upgraded = new MemoryStore(reopened, { secret, now: f.now });
+    assert.equal((await upgraded.find(actor, old.id))!.content, old.content);
+    assert.equal((await upgraded.find(actor, old.id))!.origin, "explicit");
+    assert.deepEqual(upgraded.readPreferences(actor), {
+      optOut: false,
+      personalThings: "keep",
+    });
+    const fresh = await upgraded.remember(actor, {
+      ...f.input,
+      requestId: "TEST-after-upgrade",
+      content: "TEST new explicit",
+    });
+    assert.equal(fresh.origin, "explicit");
+    const revised = await upgraded.revise(actor, {
+      requestId: "TEST-upgraded-revise",
+      id: old.id,
+      revision: old.revision,
+      content: "TEST corrected explicit",
+      source: { type: "user_note" },
+      explicitIntent: true,
+      settings,
+    });
+    assert.equal(revised.trust, "user_assertion");
+    upgraded.setOptOut(actor, { requestId: "TEST-new-optout", optOut: true });
+    upgraded.setOptOut(actor, { requestId: "TEST-new-optin", optOut: false });
+    await upgraded.setPersonalThings(actor, {
+      requestId: "TEST-new-personal",
+      value: "keep",
+    });
+    const source = {
+      type: "chat" as const,
+      sourceId: randomUUID(),
+      messageId: "TEST-message",
+      at: new Date(f.now()).toISOString(),
+      digest: "a".repeat(64),
+    };
+    const observed = await upgraded.observe(
+      actor,
+      {
+        batchId: randomUUID(),
+        expectedVersion: upgraded.version(actor),
+        deadline: f.now() + 120000,
+        settings,
+        add: [
+          {
+            statement: "TEST works on green delivery",
+            section: "work",
+            personal: false,
+            sources: [source],
+          },
+        ],
+        refresh: [],
+        update: [],
+      },
+      { observationSourceAccess: () => true },
+    );
+    assert.equal(
+      (await upgraded.find(actor, observed.items[0]!.id))!.origin,
+      "observed",
+    );
+    assert.throws(
+      () =>
+        reopened!.prepare(
+          `INSERT INTO agent_memory VALUES(${Array(18).fill("?").join(",")})`,
+        ),
+      /20 columns.*18 values|18 values.*20 columns/,
+    );
+  } finally {
+    if (upgraded) await upgraded.close();
+    if (reopened) reopened.close();
+    if (!closed) await f.close();
+    else rmSync(f.directory, { recursive: true, force: true });
+  }
+});
+
+test("copied tuple observed reverse refuses before changing any copied payload or original tuple", async () => {
+  const f = legacyTuple(),
+    output = f.directory + "-observed-migrate",
+    reverse = f.directory + "-observed-reverse";
+  try {
+    await f.store.close();
+    f.db.close();
+    const roles = {
+      identityDatabase: "identity.sqlite",
+      workflowDatabase: "workflow.sqlite",
+      workflowServerId: "server-id",
+      originalSecret: "secret",
+      configuration: "config.json",
+      administrationKey: "key",
+      nativeDatabases: ["identity.sqlite.mastra.sqlite"],
+      ownerLocks: ["owner.lock"],
+    };
+    await convertCopiedMemoryTuple(
+      {
+        manifest: observeLegacyTuple(f.directory, roles),
+        sourceIsDisposableCopy: true,
+      },
+      output,
+      "migrate",
+    );
+    const db = new DatabaseSync(join(output, "identity.sqlite")),
+      store = new MemoryStore(db, {
+        secret,
+        now: () => Date.parse("2026-10-07T12:00:00Z"),
+      });
+    try {
+      await store.observe(
+        actor,
+        {
+          batchId: randomUUID(),
+          expectedVersion: store.version(actor),
+          deadline: Date.parse("2026-10-07T12:02:00Z"),
+          settings,
+          add: [
+            {
+              statement: "TEST green delivery",
+              section: "work",
+              personal: false,
+              sources: [
+                {
+                  type: "chat",
+                  sourceId: randomUUID(),
+                  messageId: "TEST-message",
+                  at: "2026-10-07T12:00:00Z",
+                  digest: "a".repeat(64),
+                },
+              ],
+            },
+          ],
+          refresh: [],
+          update: [],
+        },
+        { observationSourceAccess: () => true },
+      );
+    } finally {
+      await store.close();
+      db.close();
+    }
+    const before = readFileSync(join(output, "identity.sqlite"));
+    await assert.rejects(
+      convertCopiedMemoryTuple(
+        {
+          manifest: observeLegacyTuple(output, roles),
+          sourceIsDisposableCopy: true,
+        },
+        reverse,
+        "reverse",
+      ),
+      /memory_copy_observed_reverse_unsupported/,
+    );
+    assert.deepEqual(readFileSync(join(output, "identity.sqlite")), before);
+  } finally {
+    for (const path of [f.directory, output, reverse])
+      rmSync(path, { recursive: true, force: true });
   }
 });

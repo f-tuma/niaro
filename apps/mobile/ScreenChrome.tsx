@@ -913,6 +913,7 @@ export function Composer({
   voice = "ready",
   onAttach,
   hasAttachments = false,
+  sendBlocked = false,
 }: {
   language: Language;
   value: string;
@@ -927,6 +928,8 @@ export function Composer({
   onAttach?: () => void;
   /** Presentation only; the parent still decides disabled/send eligibility. */
   hasAttachments?: boolean;
+  /** Transfer readiness gates Send while draft text remains editable. */
+  sendBlocked?: boolean;
 }) {
   const tr = translate(language);
   const [inputHeight, setInputHeight] = useState(44);
@@ -1007,8 +1010,10 @@ export function Composer({
           icon="arrow"
           label={tr("send")}
           loading={sending}
-          disabled={disabled}
-          onPress={onSend}
+          disabled={disabled || sendBlocked}
+          onPress={() => {
+            if (!disabled && !sendBlocked && !sending) onSend();
+          }}
         />
       ) : null}
     </View>

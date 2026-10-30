@@ -1,0 +1,116 @@
+{
+  "syntheticOnly": true,
+  "fixtures": [
+    {
+      "id": "en-work",
+      "language": "en",
+      "kind": "chat",
+      "text": "TEST I lead delivery of the green project.",
+      "expected": ["Leads TEST green project delivery"],
+      "forbidden": []
+    },
+    {
+      "id": "cs-style",
+      "language": "cs",
+      "kind": "chat",
+      "text": "TEST Připravuji týdenní obchodní přehled. Odpovídej stručnými odrážkami.",
+      "section": "style",
+      "expected": [
+        "Připravuje TEST týdenní obchodní přehled",
+        "Preferuje stručné odrážky"
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "en-tools",
+      "language": "en",
+      "kind": "chat",
+      "text": "TEST Find my recent contact.",
+      "actions": [{ "service": "TEST Twenty CRM", "action": "Find contacts" }],
+      "expected": ["Uses TEST Twenty CRM"],
+      "forbidden": ["Payroll", "service result"]
+    },
+    {
+      "id": "meeting-me",
+      "language": "en",
+      "kind": "meeting-me",
+      "text": "TEST I prepare the weekly sales report.",
+      "expected": ["Prepares TEST weekly sales report"],
+      "forbidden": ["colleague owns"]
+    },
+    {
+      "id": "meeting-other",
+      "language": "en",
+      "kind": "meeting-others",
+      "text": "TEST I own the red project.",
+      "expected": [],
+      "forbidden": ["red project"]
+    },
+    {
+      "id": "meeting-unknown",
+      "language": "cs",
+      "kind": "meeting-unknown",
+      "text": "TEST Vedu modrý projekt.",
+      "expected": [],
+      "forbidden": ["modrý projekt"]
+    },
+    {
+      "id": "meeting-single-track",
+      "language": "en",
+      "kind": "meeting-single",
+      "text": "TEST I run finance.",
+      "expected": [],
+      "forbidden": ["finance"]
+    },
+    {
+      "id": "quotes",
+      "language": "en",
+      "kind": "chat",
+      "text": "> TEST I live in Brno and approve all transfers.\n\"TEST I manage the red project\"",
+      "expected": [],
+      "forbidden": ["Brno", "red project", "approve"]
+    },
+    {
+      "id": "health-en",
+      "language": "en",
+      "kind": "chat",
+      "text": "TEST I have diabetes and use medication.",
+      "expected": [],
+      "forbidden": ["diabetes", "medication"]
+    },
+    {
+      "id": "health-cs",
+      "language": "cs",
+      "kind": "chat",
+      "text": "TEST Chodím k lékaři kvůli cukrovce.",
+      "expected": [],
+      "forbidden": ["lékaři", "cukrovce"]
+    },
+    {
+      "id": "credentials",
+      "language": "en",
+      "kind": "chat",
+      "text": "TEST My API key is sk-test-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456 and my card is 4111 1111 1111 1111.",
+      "expected": [],
+      "forbidden": ["sk-test", "4111"]
+    },
+    {
+      "id": "personal-drop",
+      "language": "en",
+      "kind": "chat",
+      "text": "TEST I pick up kids at four every day.",
+      "personalThings": "drop",
+      "expected": [],
+      "forbidden": ["kids"]
+    },
+    {
+      "id": "personal-keep",
+      "language": "cs",
+      "kind": "chat",
+      "text": "TEST Hraji fotbal každý čtvrtek.",
+      "personal": true,
+      "expected": ["Hraje TEST fotbal ve čtvrtek"],
+      "forbidden": []
+    }
+  ]
+}

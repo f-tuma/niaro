@@ -367,9 +367,20 @@ export class InferenceBudgetStore {
     inputTokens?: number | null,
     /** A fee the provider adds on top of tokens (web search results). */
     feeMicros = 0,
+    /** Trusted profile hook only: cancelled before dispatch consumes no model-call slot. */
+    profileCancelledCredit = false,
   ) {
     const current = this.assertReady(runId, target, priorInference, caps);
-    if (caps && current.calls >= caps.maxModelCalls)
+    const cancelled = profileCancelledCredit
+      ? Number(
+          this.db
+            .prepare(
+              "SELECT count(*) AS n FROM agent_inference_attempt WHERE run_id=? AND status='cancelled'",
+            )
+            .get(runId)!.n,
+        )
+      : 0;
+    if (caps && current.calls - cancelled >= caps.maxModelCalls)
       throw new IdentityError(429, "catalog_budget_exhausted");
     const price = current.settings.prices.find(
       (p) =>
@@ -422,6 +433,7 @@ export class InferenceBudgetStore {
     caps?: InferenceRunCaps,
     inputTokens?: number | null,
     feeMicros = 0,
+    profileCancelledCredit = false,
   ) {
     const { price, tokens, cost, enforce } = this.assertCanReserve(
       runId,
@@ -431,6 +443,7 @@ export class InferenceBudgetStore {
       caps,
       inputTokens,
       feeMicros,
+      profileCancelledCredit,
     );
     const id = randomUUID();
     this.db
@@ -500,7 +513,64 @@ export class InferenceBudgetStore {
       )
       .run(id);
   }
+  /** Internal passive lookup, with the same actor tuple as reservation. */
+  attemptStatus(runId: string, target: Target, id: string) {
+    const row = this.db
+      .prepare(
+        `SELECT a.status FROM agent_inference_attempt a JOIN agent_inference_run r ON r.id=a.run_id
+      WHERE a.id=? AND r.id=? AND r.organization_id=? AND r.workspace_id=? AND r.user_id=?`,
+      )
+      .get(id, runId, target.organizationId, target.workspaceId, target.userId);
+    if (!row) throw new IdentityError(404, "identity_not_found");
+    return String(row.status);
+  }
+  /** Positive owner-checked proof only. Missing local responses and unknown/settled calls never qualify. */
+  neverDispatched(
+    runId: string,
+    target: Target,
+    unreservedProfileProof = false,
+  ) {
+    const row = this.db
+      .prepare("SELECT * FROM agent_inference_run WHERE id=?")
+      .get(runId);
+    if (!row)
+      return (
+        unreservedProfileProof &&
+        !this.db
+          .prepare(
+            "SELECT 1 FROM agent_inference_attempt WHERE run_id=? LIMIT 1",
+          )
+          .get(runId)
+      );
+    if (
+      row.organization_id !== target.organizationId ||
+      row.workspace_id !== target.workspaceId ||
+      row.user_id !== target.userId
+    )
+      throw new IdentityError(403, "identity_forbidden");
+    return (
+      Number(row.historical_unknown) === 0 &&
+      !this.db
+        .prepare(
+          "SELECT 1 FROM agent_inference_attempt WHERE run_id=? AND status<>'cancelled' LIMIT 1",
+        )
+        .get(runId)
+    );
+  }
 }
+
+/** Trusted synchronous checkpoint only; the profile owner supplies a real commit boundary. */
+export type InferenceCheckpoint = {
+  profileCancelledCredit?: true;
+  atomic: <T>(run: () => T) => T;
+  reserved: (attemptId: string) => void;
+  dispatched: (attemptId: string) => void;
+  received: (
+    attemptId: string,
+    response: Awaited<ReturnType<IntegrationTransport>>,
+  ) => void;
+  failed: (attemptId: string) => void;
+};
 
 /**
  * The most OpenRouter's web plugin can add to a call: Exa bills $4 per 1000
@@ -545,6 +615,7 @@ export function budgetedInferenceTransport(
   authorizeHeld: () => Promise<unknown>,
   priorInference: () => number,
   caps?: InferenceRunCaps,
+  checkpoint?: InferenceCheckpoint,
 ): IntegrationTransport {
   const budgeted: IntegrationTransport = async (request) => {
     const started = performance.now();
@@ -571,16 +642,22 @@ export function budgetedInferenceTransport(
       );
     const reservation = await serial(async () => {
       await authorizeHeld();
-      return store.reserve(
-        runId,
-        target,
-        selected,
-        kind,
-        priorInference(),
-        caps,
-        inputTokens,
-        webSearchFeeMicros(request.body),
-      );
+      const reserve = () => {
+        const result = store.reserve(
+          runId,
+          target,
+          selected,
+          kind,
+          priorInference(),
+          caps,
+          inputTokens,
+          webSearchFeeMicros(request.body),
+          checkpoint?.profileCancelledCredit === true,
+        );
+        checkpoint?.reserved(result.id);
+        return result;
+      };
+      return checkpoint ? checkpoint.atomic(reserve) : reserve();
     }).catch((error: unknown) => {
       // A budget refusal before dispatch; authorization failures stay quiet.
       if (
@@ -611,7 +688,12 @@ export function budgetedInferenceTransport(
           // The native domain guard holds the identity queue while calling start.
           // Re-entering serial here would deadlock that guard.
           await request.beforeDispatch(() => {
-            store.dispatch(reservation.id);
+            const dispatch = () => {
+              store.dispatch(reservation.id);
+              checkpoint?.dispatched(reservation.id);
+            };
+            if (checkpoint) checkpoint.atomic(dispatch);
+            else dispatch();
             start();
           });
         },
@@ -635,7 +717,12 @@ export function budgetedInferenceTransport(
           costSource: "provider",
         };
       await serial(async () => {
-        store.settle(reservation.id, usage);
+        const settle = () => {
+          store.settle(reservation.id, usage);
+          checkpoint?.received(reservation.id, response);
+        };
+        if (checkpoint) checkpoint.atomic(settle);
+        else settle();
       });
       // Counts and status only; the request, response and key never reach the log.
       operatorLog("model_call", {
@@ -650,7 +737,12 @@ export function budgetedInferenceTransport(
       return response;
     } catch (error) {
       await serial(async () => {
-        store.failed(reservation.id);
+        const fail = () => {
+          store.failed(reservation.id);
+          checkpoint?.failed(reservation.id);
+        };
+        if (checkpoint) checkpoint.atomic(fail);
+        else fail();
       });
       logFailure(error);
       throw error;

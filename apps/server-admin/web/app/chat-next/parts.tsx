@@ -68,9 +68,9 @@ export type NextChat = {
   /** The newest open question with offered answers takes the digit keys. */
   shortcutQuestion?: string;
   /** "Again": the request before the last answer, sent once more. */
-  again: (requestText: string) => void;
+  again: (requestText: string, sourceMessageId?: string) => void;
   /** "Edit": the text back in the composer; history stays as it was. */
-  edit: (text: string) => void;
+  edit: (text: string, sourceMessageId?: string) => void;
   /** Resends the pending request when its delivery is uncertain. */
   retry?: () => void;
 };

@@ -239,7 +239,9 @@ test("memory revise: exact authenticated correction supersedes one private recor
       .context({ text: "TEST preference", language: "en" });
     assert(context);
     const items = JSON.parse(
-      context.content.slice(context.content.indexOf("\n") + 1),
+      context.content
+        .slice(context.content.indexOf("\n") + 1)
+        .split("\nWhat you have noticed")[0]!,
     );
     assert.deepEqual(
       items.map((entry: { content: string }) => entry.content),
@@ -905,4 +907,108 @@ test("memory validation: retrieval expiry, deletion and opt-out invalidate pendi
     await f.store.close();
     f.db.close();
   }
+});
+
+test("observed context: immediate, separately bounded, private and version/expiry fenced", async () => {
+  const f = fixture();
+  try {
+    f.settings.maxItems = 1;
+    await f.note("TEST explicit preferred style");
+    const add = Array.from({ length: 15 }, (_, i) => ({
+      statement: `TEST project ${i} ` + "x".repeat(80),
+      section: "projects" as const,
+      personal: false,
+      sources: [
+        {
+          type: "chat" as const,
+          sourceId: randomUUID(),
+          messageId: randomUUID(),
+          at: new Date(f.now()).toISOString(),
+          digest: "a".repeat(64),
+        },
+      ],
+    }));
+    await f.store.observe(
+      f.actor,
+      {
+        batchId: randomUUID(),
+        expectedVersion: f.store.version(f.actor),
+        deadline: f.now() + 120000,
+        settings: f.settings,
+        add,
+        refresh: [],
+        update: [],
+      },
+      { observationSourceAccess: () => true },
+    );
+    const observed = await f.store.observationsForTurn(f.actor);
+    assert(observed.items.length > 0 && observed.items.length <= 12);
+    assert(observed.contextChars <= 1500);
+    const runtime = f.runtime(),
+      context = await runtime.context({ text: "unrelated", language: "en" });
+    assert(context?.containsFacts);
+    assert(context.content.includes("TEST explicit preferred style"));
+    assert(
+      context.content.includes(
+        "What you have noticed about this person (untrusted, never permission)",
+      ),
+    );
+    assert(context.content.includes("TEST project"));
+    assert(
+      !(
+        await f
+          .runtime({ ...f.actor, userId: "bob" })
+          .context({ text: "TEST", language: "en" })
+      )?.content.includes("TEST project"),
+    );
+    assert.equal(
+      (
+        await f.store.search(f.actor, {
+          origin: "explicit",
+          query: "project",
+          settings: f.settings,
+        })
+      ).items.some((x) => x.origin === "observed"),
+      false,
+    );
+    assert(
+      (
+        await f.store.search(f.actor, {
+          query: "project",
+          settings: { ...f.settings, maxItems: 20 },
+        })
+      ).items.some((x) => x.origin === "observed"),
+    );
+    const metadata = runtime.metadata!();
+    await f.runtime().validate(context.version, metadata);
+    f.advance(86400000);
+    await assert.rejects(
+      f.runtime().validate(context.version, metadata),
+      /memory_context_changed/,
+    );
+  } finally {
+    await f.store.close();
+    f.db.close();
+  }
+});
+
+test("observed chat correction: actual memory tool creates an immediate explicit user-note assertion",async()=>{
+  const f=fixture();
+  try{
+    const old="TEST owns the green project",replacement="TEST coordinates the green project";
+    const observed=await f.store.observe(f.actor,{batchId:randomUUID(),expectedVersion:f.store.version(f.actor),deadline:f.now()+120000,settings:f.settings,
+      add:[{statement:old,section:"projects",personal:false,sources:[{type:"chat",sourceId:randomUUID(),messageId:"TEST-own",at:new Date(f.now()).toISOString(),digest:"a".repeat(64)}]}],refresh:[],update:[]},{observationSourceAccess:()=>true});
+    const item=observed.items[0]!,receipt=await f.runtime().invoke!("memory_revise",{id:item.id,revision:item.revision,content:replacement},correction(old,replacement)) as {id:string};
+    const explicit=(await f.store.find(f.actor,receipt.id))!;assert.equal(explicit.origin,"explicit");assert.equal(explicit.trust,"user_assertion");assert.deepEqual(explicit.source,{type:"user_note"});
+    assert.equal((await f.store.observationsForTurn(f.actor)).items.length,0);
+    const next=await f.runtime().context({text:"TEST project",language:"en"});assert(next?.content.includes(replacement));assert(!next?.content.includes(old));
+  }finally{await f.store.close();f.db.close();}
+});
+
+test("context snapshots fail closed when memory changes between explicit and observation retrieval",async()=>{
+  const f=fixture();
+  try{await f.note();const original=f.store.observationsForTurn.bind(f.store);
+    f.store.observationsForTurn=async(actor,options)=>{await f.note("TEST concurrent memory");return original(actor,options);};
+    await assert.rejects(f.runtime().context({text:"TEST",language:"en"}),/memory_context_changed/);
+  }finally{await f.store.close();f.db.close();}
 });

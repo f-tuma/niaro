@@ -190,6 +190,7 @@ export class ServiceCatalogStore {
     CREATE TABLE IF NOT EXISTS agent_provider_usage (provider_id TEXT NOT NULL, day TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(provider_id,day)) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_invocation (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, data TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_turn (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, data TEXT NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS agent_service_attachment_binding(command_key TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,user_id TEXT NOT NULL,handoff_id TEXT NOT NULL UNIQUE,outer_key TEXT NOT NULL UNIQUE,proof_id TEXT UNIQUE,fingerprint TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_turn_operation (operation_id TEXT PRIMARY KEY, turn_id TEXT NOT NULL REFERENCES agent_service_turn(id), workspace_id TEXT NOT NULL, user_id TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_turn_cursor (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, turn_id TEXT NOT NULL REFERENCES agent_service_turn(id), PRIMARY KEY(workspace_id,user_id)) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_task_selection (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, turn_id TEXT NOT NULL REFERENCES agent_service_turn(id), PRIMARY KEY(workspace_id,user_id)) STRICT;
@@ -1660,6 +1661,50 @@ export class ServiceCatalogStore {
       )
       .run(value.id, value.workspaceId, value.userId, JSON.stringify(value));
   }
+  /** Names only from this author's bound successful turn; inputs/results never leave the receipt store. */
+  profileUsedActions(
+    organizationId: string,
+    workspaceId: string,
+    userId: string,
+    commandId: string,
+    conversationId: string,
+  ) {
+    const rows = this.db
+      .prepare(
+        `SELECT i.data FROM agent_service_invocation i
+      JOIN agent_service_turn_operation op ON op.operation_id=i.id AND op.workspace_id=i.workspace_id AND op.user_id=i.user_id
+      JOIN agent_service_turn t ON t.id=op.turn_id AND t.workspace_id=op.workspace_id AND t.user_id=op.user_id
+      WHERE i.workspace_id=? AND i.user_id=? AND (json_extract(t.data,'$.commandId')=? OR EXISTS (
+        SELECT 1 FROM json_each(t.data,'$.aliases') a WHERE json_extract(a.value,'$.logicalMessageId')=?
+          OR json_extract(a.value,'$.outerCommandId')=? OR json_extract(a.value,'$.commandId')=?))
+      AND json_extract(t.data,'$.conversationId')=? ORDER BY i.id LIMIT 20`,
+      )
+      .all(
+        workspaceId,
+        userId,
+        commandId,
+        commandId,
+        commandId,
+        commandId,
+        conversationId,
+      );
+    return rows.flatMap((row) => {
+      const value = JSON.parse(String(row.data)) as StoredInvocation;
+      return value.organizationId === organizationId &&
+        value.workspaceId === workspaceId &&
+        value.userId === userId &&
+        value.status === "succeeded" &&
+        Number.isFinite(value.completedAt) &&
+        value.completedAt! <= Date.now()
+        ? [
+            {
+              service: value.serviceName.slice(0, 160),
+              action: value.title.slice(0, 160),
+            },
+          ]
+        : [];
+    });
+  }
   /** Receipt replay is passive; reusing source data for NEW work requires current access. */
   contactSource(
     id: string,
@@ -1798,6 +1843,234 @@ export class ServiceCatalogStore {
       )
       .get(id, workspaceId, userId);
     return row ? (JSON.parse(String(row.data)) as unknown) : undefined;
+  }
+  /** Typed erase/read-only view: no normal constructor, action recovery, budget recovery or key loading. */
+  static forAttachmentRestore(
+    db: DatabaseSync,
+  ): Pick<
+    ServiceCatalogStore,
+    | "nativeStorageUrl"
+    | "nativeAttachmentGeneration"
+    | "nativeAttachmentRoots"
+    | "foreignAttachmentThread"
+    | "unprovedAttachmentConversation"
+    | "atomicNativeAttachment"
+    | "turn"
+    | "saveTurn"
+    | "saveNativeAttachmentBinding"
+  > {
+    const view = Object.create(
+      ServiceCatalogStore.prototype,
+    ) as ServiceCatalogStore;
+    view.db = db;
+    const file = db
+      .prepare("PRAGMA database_list")
+      .all()
+      .find((row) => row.name === "main")?.file;
+    if (typeof file !== "string" || !file)
+      throw new IdentityError(409, "catalog_conflict");
+    Object.defineProperty(view, "nativeStorageUrl", {
+      value: pathToFileURL(`${file}.mastra.sqlite`).href,
+    });
+    return view;
+  }
+  atomicNativeAttachment<T>(run: () => T): T {
+    if (this.db.isTransaction) return run();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const value = run();
+      this.db.exec("COMMIT");
+      return value;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  nativeAttachmentBinding(
+    key: string,
+    workspaceId: string,
+    userId: string,
+  ): unknown {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM agent_service_attachment_binding WHERE command_key=? AND workspace_id=? AND user_id=?",
+      )
+      .get(key, workspaceId, userId);
+    if (!row) return;
+    const data = JSON.parse(String(row.data));
+    const outer = createHash("sha256")
+      .update(
+        JSON.stringify([
+          data.binding?.scope?.serverId,
+          workspaceId,
+          userId,
+          data.binding?.outerCommandId,
+        ]),
+      )
+      .digest("hex");
+    if (
+      row.fingerprint !== data.fingerprint ||
+      row.revision !== data.revision ||
+      row.handoff_id !== data.binding?.handoffId ||
+      row.outer_key !== outer ||
+      row.proof_id !==
+        (data.phase?.state === "retired" ? data.phase.proofId : null)
+    )
+      throw new IdentityError(409, "catalog_conflict");
+    return data;
+  }
+  saveNativeAttachmentBinding(
+    key: string,
+    workspaceId: string,
+    userId: string,
+    value: {
+      binding: {
+        scope: { serverId: string };
+        commandId: string;
+        outerCommandId: string;
+        handoffId: string;
+      };
+      fingerprint: string;
+      revision: number;
+      phase: { state: string; proofId?: string | null };
+    },
+    expectedRevision?: number,
+  ) {
+    if (!this.db.isTransaction)
+      throw new IdentityError(409, "catalog_conflict");
+    const outer = createHash("sha256")
+      .update(
+        JSON.stringify([
+          value.binding.scope.serverId,
+          workspaceId,
+          userId,
+          value.binding.outerCommandId,
+        ]),
+      )
+      .digest("hex");
+    const proof =
+      value.phase.state === "retired" ? (value.phase.proofId ?? null) : null;
+    if (expectedRevision === undefined) {
+      if (value.revision !== 1)
+        throw new IdentityError(409, "catalog_conflict");
+      this.db
+        .prepare(
+          "INSERT INTO agent_service_attachment_binding VALUES(?,?,?,?,?,?,?,?,?)",
+        )
+        .run(
+          key,
+          workspaceId,
+          userId,
+          value.binding.handoffId,
+          outer,
+          proof,
+          value.fingerprint,
+          value.revision,
+          JSON.stringify(value),
+        );
+    } else {
+      if (value.revision !== expectedRevision + 1)
+        throw new IdentityError(409, "catalog_conflict");
+      const changed = this.db
+        .prepare(
+          "UPDATE agent_service_attachment_binding SET data=?,revision=?,proof_id=? WHERE command_key=? AND workspace_id=? AND user_id=? AND fingerprint=? AND revision=? AND handoff_id=? AND outer_key=?",
+        )
+        .run(
+          JSON.stringify(value),
+          value.revision,
+          proof,
+          key,
+          workspaceId,
+          userId,
+          value.fingerprint,
+          expectedRevision,
+          value.binding.handoffId,
+          outer,
+        );
+      if (!changed.changes) throw new IdentityError(409, "catalog_conflict");
+    }
+  }
+  unprovedAttachmentConversation(scope: Scope, conversationId: string) {
+    if (
+      !this.db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_service_turn'",
+        )
+        .get()
+    )
+      return false;
+    return !!this.db
+      .prepare(
+        "SELECT 1 FROM agent_service_turn WHERE workspace_id=? AND user_id=? AND json_extract(data,'$.kind')='mastra-1' AND json_extract(data,'$.runId')=id AND json_extract(data,'$.conversationId')=? AND json_type(data,'$.attachmentGeneration') IS NULL LIMIT 1",
+      )
+      .get(scope.workspaceId, scope.userId, conversationId);
+  }
+  nativeAttachmentRoots(scope: Scope, generation: string, after = "") {
+    if (
+      !this.db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_service_turn'",
+        )
+        .get()
+    )
+      return [];
+    return this.db
+      .prepare(
+        "SELECT id,data FROM agent_service_turn WHERE workspace_id=? AND user_id=? AND id>? AND json_extract(data,'$.kind')='mastra-1' AND json_extract(data,'$.runId')=id AND json_extract(data,'$.attachmentGeneration')=? ORDER BY id LIMIT 100",
+      )
+      .all(scope.workspaceId, scope.userId, after, generation)
+      .map((r) => ({
+        key: String(r.id),
+        value: JSON.parse(String(r.data)) as unknown,
+      }));
+  }
+  foreignAttachmentThread(scope: Scope, generation: string, threadId: string) {
+    if (
+      !this.db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_service_attachment_binding'",
+        )
+        .get()
+    )
+      return false;
+    return !!this.db
+      .prepare(
+        "SELECT 1 FROM agent_service_attachment_binding WHERE workspace_id=? AND user_id=? AND json_extract(data,'$.binding.scope.serverId')=? AND json_extract(data,'$.binding.generation')!=? AND (json_extract(data,'$.phase.threadId')=? OR json_extract(data,'$.phase.prior.threadId')=?) LIMIT 1",
+      )
+      .get(
+        scope.workspaceId,
+        scope.userId,
+        scope.serverId,
+        generation,
+        threadId,
+        threadId,
+      );
+  }
+  nativeAttachmentGeneration(scope: Scope, generation: string, after = "") {
+    if (
+      !this.db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_service_attachment_binding'",
+        )
+        .get()
+    )
+      return [];
+    return this.db
+      .prepare(
+        "SELECT command_key,data FROM agent_service_attachment_binding WHERE workspace_id=? AND user_id=? AND command_key>? AND json_extract(data,'$.binding.scope.serverId')=? AND json_extract(data,'$.binding.scope.connectionId')=? AND json_extract(data,'$.binding.generation')=? ORDER BY command_key LIMIT 100",
+      )
+      .all(
+        scope.workspaceId,
+        scope.userId,
+        after,
+        scope.serverId,
+        scope.connectionId,
+        generation,
+      )
+      .map((r) => ({
+        key: String(r.command_key),
+        value: JSON.parse(String(r.data)) as unknown,
+      }));
   }
   nativeTurns(workspaceId: string, userId: string) {
     return this.db

@@ -1,3 +1,5 @@
+import { AttachmentRuntime } from "./attachments";
+import { AttachmentTransport } from "./attachment-transport";
 import { parseMeetingRecord, parseServerValue } from "./forward-compatible";
 import {
   ANSWER_STREAM_MEDIA_TYPE,
@@ -232,6 +234,9 @@ export class ProcessDesignApiError extends ProcessReaderError {
   }
 }
 export type ClientSessionOptions = {
+  /** Render/transfer the negotiated attachment profile; discovery preserves older text servers. */
+  attachments?: boolean;
+  attachmentId?: () => string;
   processQuestions?: boolean;
   processExecution?: boolean;
   /** Complete canonical reviews; also supports existing questions and execution. */
@@ -425,6 +430,7 @@ export class ClientSession {
   private invalid = false;
   private controllers = new Set<AbortController>();
   readonly identityKey: string;
+  readonly attachments: AttachmentRuntime;
   private selectedConversationId = "conversation-1";
   private polling = false;
   private submitting: CommandFlight | null = null;
@@ -480,6 +486,14 @@ export class ClientSession {
       credential.scope.userId,
       credential.scope.workspaceId,
     ]);
+    this.attachments = new AttachmentRuntime(
+      new AttachmentTransport((path, init, timeout) =>
+        this.open(path, init, timeout),
+      ),
+      credential.scope,
+      options.attachmentId ?? (() => globalThis.crypto.randomUUID()),
+      !!this.options.attachments,
+    );
     this.cacheKey = `agent-client.snapshot.v2:${this.identityKey}`;
     this.pendingKey = `agent-client.command.v2:${this.identityKey}`;
     this.answerAttemptsKey = `agent-client.process-answer-attempts.v1:${this.identityKey}`;
@@ -500,6 +514,9 @@ export class ClientSession {
   private messageDelivery(path: string) {
     return messageDeliveryPath(path, {
       times: this.options.messageTimes,
+      attachments:
+        !!this.options.attachments &&
+        !!this.attachments.getSnapshot().capabilities,
       ui: this.options.generativeUi,
       results: this.options.messageResults,
     });
@@ -713,6 +730,7 @@ export class ClientSession {
   selectConversation(id: string) {
     if (!/^[a-zA-Z0-9._:-]{1,160}$/.test(id))
       throw new Error("conversation_changed");
+    if (this.selectedConversationId !== id) this.attachments.clear();
     this.selectedConversationId = id;
   }
   private parseRetrySources(raw: string): RetrySourcesEnvelope {
@@ -1441,9 +1459,16 @@ export class ClientSession {
     if (!/^[a-zA-Z0-9._:-]{1,160}$/.test(id))
       throw new Error("conversation_changed");
     if (!this.authorized) await this.authorize();
+    if (this.options.attachments) await this.attachments.discover();
     const path = messageDeliveryPath(
       `conversations/messages?profile=${CONVERSATION_HISTORY_PROFILE}&conversationId=${encodeURIComponent(id)}${after ? `&after=${encodeURIComponent(after)}` : ""}${revision ? `&revision=${revision}` : ""}`,
-      { times: this.options.messageTimes, ui: this.options.generativeUi },
+      {
+        times: this.options.messageTimes,
+        ui: this.options.generativeUi,
+        attachments:
+          !!this.options.attachments &&
+          !!this.attachments.getSnapshot().capabilities,
+      },
     );
     const { response, value } = await this.json(path, { signal });
     if (response.status === 404 || response.status === 406)
@@ -1632,6 +1657,7 @@ export class ClientSession {
   }
   private invalidate() {
     if (this.stopped || this.invalid) return;
+    this.attachments.dispose();
     this.invalid = true;
     this.authorized = false;
     clearInterval(this.timer);
@@ -1726,6 +1752,13 @@ export class ClientSession {
     await this.ensureCredential();
     if (this.stopped || init?.signal?.aborted)
       throw new Error("session_stopped");
+    if (
+      this.options.attachments &&
+      /^(?:snapshot|events|commands|conversations\/messages)(?:\?|\/|$)/.test(
+        path,
+      )
+    )
+      await this.attachments.discover();
     const requestedCredential = this.credential;
     const controller = new AbortController();
     this.controllers.add(controller);
@@ -2780,6 +2813,7 @@ export class ClientSession {
           ? { store: { ...this.state.store, stale: true } }
           : {}),
       });
+    this.attachments.dispose();
     this.stopped = true;
     clearInterval(this.timer);
     for (const c of this.controllers) c.abort();
@@ -2977,7 +3011,12 @@ export class ClientSession {
       if (!this.authorized) await this.authorize();
       if (this.stopped || this.invalid) return;
       phase = "capabilities";
-      await this.discoverProcessOutputs();
+      if (this.options.attachments)
+        await Promise.all([
+          this.discoverProcessOutputs(),
+          this.attachments.discover(),
+        ]);
+      else await this.discoverProcessOutputs();
       if (this.stopped || this.invalid) return;
       phase = "snapshot";
       const { response, value } = await this.json(
@@ -3185,6 +3224,11 @@ export class ClientSession {
       throw new Error("scope_mismatch");
     if (!this.currentFlight(flight) || flight.outcomeKnown) return;
     let store = this.mergeProjection(result.snapshot);
+    if (flight.command.type === "message.send" && flight.command.attachments)
+      this.attachments.settleSend(
+        flight.command.attachments,
+        result.status === "accepted" ? "accepted" : "rejected",
+      );
     if (flight.command.type === "message.send") {
       // The pending outbox remains durable until the exact native retry source
       // has been saved. Once the server response is authoritative, interruption
@@ -3461,6 +3505,17 @@ export class ClientSession {
     flight.retire();
     return persistence;
   }
+  private releaseUnsubmittedAttachments(command: SessionCommand) {
+    if (command.type !== "message.send" || !command.attachments) return;
+    const draftId = command.attachments.draftId;
+    for (const owned of [this.state.pending, this.submitting?.command])
+      if (
+        owned?.type === "message.send" &&
+        owned.attachments?.draftId === draftId
+      )
+        return;
+    this.attachments.settleSend(command.attachments, "rejected");
+  }
   async send(
     raw: SessionCommand,
     retry = false,
@@ -3470,7 +3525,9 @@ export class ClientSession {
     // Own a parsed immutable process copy: caller edits cannot change a persisted flight.
     const command = isProcessRuntimeCommand(raw)
       ? parseSessionCommand(raw)
-      : raw;
+      : raw.type === "message.send" && raw.attachments
+        ? immutableJson(CommandSchema.parse(raw))
+        : raw;
     if (!isProcessRuntimeCommand(command)) CommandSchema.parse(command);
     if (
       this.submitting ||
@@ -3478,17 +3535,22 @@ export class ClientSession {
       this.invalid ||
       !this.state.store ||
       this.state.status !== "online"
-    )
+    ) {
+      this.releaseUnsubmittedAttachments(command);
       return;
+    }
     if (this.answerStorageBlocked || this.outboxStorageBlocked) {
+      this.releaseUnsubmittedAttachments(command);
       this.storageError();
       return;
     }
     if (
       this.state.pending &&
       (!retry || JSON.stringify(command) !== JSON.stringify(this.state.pending))
-    )
+    ) {
+      this.releaseUnsubmittedAttachments(command);
       return;
+    }
     let answerTarget: ProcessAnswerTarget | undefined;
     if (isProcessExecutionCommand(command)) {
       if (!this.options.processExecution && !this.options.processQuestions)
@@ -3839,6 +3901,15 @@ export class ClientSession {
         }
       }
     } finally {
+      // A positively unattempted command has no server outcome to recover.
+      // Keep uncertain dispatched commands frozen under the existing outbox.
+      if (
+        !flight.deliveryStarted &&
+        this.state.pending?.commandId !== command.commandId &&
+        command.type === "message.send" &&
+        command.attachments
+      )
+        this.attachments.settleSend(command.attachments, "rejected");
       flight.stopActivity();
       flight.markReady();
       if (this.submitting === flight) this.submitting = null;

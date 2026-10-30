@@ -71,6 +71,8 @@ const DIRECTORY_COMMANDS = new Set<Command["type"]>([
   "work.cancel",
 ]);
 function historyText(message: Conversation["messages"][number]) {
+  if (message.attachments?.length || message.processing)
+    return "An attachment message was accepted for retention; its file evidence is unavailable for interpretation.";
   // Source text and record names are display data, not previous assistant
   // instructions or evidence of authorization. Preserve only server-owned facts.
   if (message.result?.type === "service.action")
@@ -115,6 +117,55 @@ export class ModelService {
     crm?: ContactDirectory,
   ) {
     this.tools = createContactTools(crm);
+  }
+  /** Passive recovery/publication only; neither dispatches nor resumes native work. */
+  async publishAttachmentResult(
+    scope: Scope,
+    attemptId: string,
+    token: string,
+    access: MobileRuntime,
+  ) {
+    const a = await access.run(() =>
+      this.storage.attachments.publication(scope, attemptId, token),
+    );
+    if (a.published)
+      return access.run(() =>
+        this.storage.snapshot(scope, a.command.conversationId),
+      );
+    const outcome = await access.integrations?.readAttachmentOutcome?.(a.input);
+    if (outcome?.status !== "recorded")
+      throw new IdentityError(409, "attachment_retry_required");
+    const window = await access.integrations?.taskWindow?.((id) =>
+      this.storage.legacyQuestionProof(scope, id),
+    );
+    if (!window) throw new IdentityError(409, "catalog_conflict");
+    return access.run(() => {
+      if (!window.validate()) throw new IdentityError(409, "catalog_conflict");
+      const result = outcome.result;
+      return this.storage.publishAttachmentResult(scope, attemptId, token, {
+        decision: {
+          kind: "reply",
+          contactId: null,
+          title: null,
+          localStart: null,
+          durationMinutes: null,
+          reply: result.reply.slice(0, 800),
+        },
+        expectedCursor: 0,
+        timeZone: "UTC",
+        nativeWork: window.items,
+        nativeWorkAuthoritative: true,
+        nativeReply: result.reply.slice(0, 2000),
+        workItemId: result.workItemId,
+        serviceResult: result.result,
+        connectionResult: result.connection,
+        ui: result.ui,
+        processOffer: result.processOffer,
+        skillProposal: result.skillProposal,
+        processProposal: result.processProposal,
+        resolvedServiceResult: result.resolved,
+      });
+    });
   }
   describeTools() {
     return this.tools.describe();
@@ -820,8 +871,14 @@ export class ModelService {
         if (open.length) await this.refreshWork(scope, access, run);
       }
     }
+    const attachmentOwned =
+      command.type === "conversation.delete" &&
+      (await run(() =>
+        this.storage.attachments.hasLineage(scope, command.conversationId),
+      ));
     const result = await run(() => this.storage.execute(scope, command));
     if (
+      !attachmentOwned &&
       command.type === "conversation.delete" &&
       result.status === "accepted" &&
       access?.integrations?.forgetConversation
@@ -877,6 +934,15 @@ export class ModelService {
             return fn();
           });
     const originalCommand = CommandSchema.parse(raw);
+    if (
+      originalCommand.type === "message.send" &&
+      originalCommand.attachments
+    ) {
+      // Retention-only acceptance never prepares a caption-only native request.
+      return run(() =>
+        this.storage.acceptAttachmentMessage(scope, originalCommand),
+      );
+    }
     await this.requestTracker.retireOwned();
     await this.requestTracker.retireScope(scope, async (held) => {
       if (held.profile === "process")
@@ -1164,24 +1230,38 @@ export class ModelService {
                     command.idempotencyKey,
                     command.text,
                     command.language,
-                    conversation.messages.slice(-8).map((m) => ({
-                      role: m.role,
-                      text: historyText(m),
-                      ...(m.result || m.workItemId
-                        ? {
-                            operationId:
-                              m.result?.type === "service.action"
-                                ? m.result.operationId
-                                : null,
-                          }
-                        : {}),
-                    })),
+                    ((await run(() => this.storage.attachmentRestoreId()))
+                      ? []
+                      : conversation.messages
+                    )
+                      .slice(-8)
+                      .map((m) => ({
+                        role: m.role,
+                        text: historyText(m),
+                        ...(m.result || m.workItemId
+                          ? {
+                              operationId:
+                                m.result?.type === "service.action"
+                                  ? m.result.operationId
+                                  : null,
+                            }
+                          : {}),
+                      })),
                     signal,
                     activity.tool,
                     activity.workflow,
                     command.timeZone,
                     {
                       conversationId: command.conversationId,
+                      attachmentGeneration: await run(() =>
+                        this.storage.attachmentGeneration(
+                          scope,
+                          command.conversationId,
+                        ),
+                      ),
+                      attachmentRestoreId: await run(() =>
+                        this.storage.attachmentRestoreId(),
+                      ),
                       requestHash,
                       outerCommandId: originalCommand.commandId,
                       conversationSession: await run(() =>

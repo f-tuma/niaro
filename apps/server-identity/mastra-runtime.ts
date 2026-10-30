@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   AnswerStreamApproval,
   AnswerStreamStep,
@@ -17,6 +17,8 @@ import {
   DomainCommandSchema,
   NATIVE_TASK_EXPIRY_MS,
   nativeQuestionId,
+  NativeAttachmentBindingSchema,
+  nativeAttachmentFingerprint,
   type DomainSession,
   type LoopLimits,
   type NativeFailureReason,
@@ -49,7 +51,8 @@ const NATIVE_CHAT_MAX_STEPS = 24;
 type NativeRuntime = Awaited<
   ReturnType<(typeof import("@niaro/server-agent"))["createNativeAgentRuntime"]>
 >;
-const owners = new WeakMap<CatalogController, Promise<NativeRuntime>>();
+type NativeOwnerHandle = { store: { nativeStorageUrl: string } };
+const owners = new WeakMap<NativeOwnerHandle, Promise<NativeRuntime>>();
 /** Only the authenticated command coordinator can create this abort reason. */
 export const REQUEST_INTERRUPTION_REASON = Symbol("request-interruption");
 export class NativeRunUnsettledError extends Error {
@@ -70,7 +73,7 @@ export class NativeRunRetiredPublicationError extends Error {
 }
 const digest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
-export function nativeCatalogOwner(controller: CatalogController) {
+export function nativeCatalogOwner(controller: NativeOwnerHandle) {
   let runtime = owners.get(controller);
   if (!runtime) {
     runtime = import("@niaro/server-agent").then((module) =>
@@ -85,7 +88,7 @@ export function nativeCatalogOwner(controller: CatalogController) {
 }
 
 /** Close the native checkpoint and conversation store before the identity DB. */
-export async function closeNativeCatalogRuntime(controller: CatalogController) {
+export async function closeNativeCatalogRuntime(controller: NativeOwnerHandle) {
   const runtime = owners.get(controller);
   if (!runtime) return;
   owners.delete(controller);
@@ -102,6 +105,182 @@ export async function inspectNativeCatalogRuntime(
   return runtime.inspect({ threadId, resourceId });
 }
 
+const attachmentTaskOwners = new WeakMap<
+  CatalogController,
+  { epoch: string; tasks: Set<string> }
+>();
+/** Erase-only owner path. The workflow owner supplies a current tombstone proof, never thread IDs. */
+export async function purgeNativeAttachmentGeneration(
+  controller: {
+    store: ReturnType<
+      typeof import("./service-catalog").ServiceCatalogStore.forAttachmentRestore
+    >;
+  },
+  scope: Scope,
+  organizationId: string,
+  generation: string,
+  prove: () => boolean,
+  serial: <T>(fn: () => T) => Promise<T>,
+  expectedCommands: () => readonly string[] = () => [],
+  nativeConversations: () => readonly string[] = () => [],
+) {
+  const store = controller.store;
+  const resourceId = digest([
+    scope.serverId,
+    organizationId,
+    scope.workspaceId,
+    scope.userId,
+  ]);
+  const roots = new Map<string, { threadId: string; runId: string }>();
+  const observedCommands = new Set<string>();
+  let after = "";
+  for (;;) {
+    const page = await serial(() => {
+      if (!prove()) throw new IdentityError(409, "catalog_conflict");
+      const page = store.nativeAttachmentGeneration(scope, generation, after);
+      store.atomicNativeAttachment(() => {
+        for (const row of page) {
+          const b = NativeAttachmentBindingSchema.parse(row.value);
+          observedCommands.add(b.binding.commandId);
+          if (b.fingerprint !== nativeAttachmentFingerprint(b.binding))
+            throw new IdentityError(409, "catalog_conflict");
+          const p = b.phase,
+            prior =
+              p.state === "linked"
+                ? {
+                    rootKey: p.rootKey,
+                    rootCommandId: p.rootCommandId,
+                    threadId: p.threadId,
+                    runId: p.runId,
+                    aliasCommandId: p.aliasCommandId,
+                    linkedAt: p.linkedAt,
+                  }
+                : p.state === "retired"
+                  ? p.prior
+                  : null;
+          if (prior) {
+            if (
+              store.foreignAttachmentThread(scope, generation, prior.threadId)
+            )
+              throw new IdentityError(409, "catalog_conflict");
+            roots.set(prior.rootKey, {
+              threadId: prior.threadId,
+              runId: prior.runId,
+            });
+          }
+          if (p.state !== "retired") {
+            const next = NativeAttachmentBindingSchema.parse({
+              ...b,
+              revision: b.revision + 1,
+              phase: {
+                state: "retired",
+                retiredAt: new Date().toISOString(),
+                reason: "deleted",
+                preparationStarted: p.state !== "pending",
+                proofId: null,
+                consumedBy: null,
+                prior,
+              },
+            });
+            store.saveNativeAttachmentBinding(
+              row.key,
+              scope.workspaceId,
+              scope.userId,
+              next,
+              b.revision,
+            );
+          }
+        }
+      });
+      return page;
+    });
+    if (!page.length) break;
+    after = page.at(-1)!.key;
+  }
+  await serial(() => {
+    if (!prove() || expectedCommands().some((id) => !observedCommands.has(id)))
+      throw new NativeRunUnsettledError();
+  });
+  after = "";
+  for (;;) {
+    const page = await serial(() =>
+      store.nativeAttachmentRoots(scope, generation, after),
+    );
+    if (!page.length) break;
+    for (const row of page) {
+      const state = DomainCommandSchema.parse(row.value);
+      if (
+        state.runId !==
+        digest([
+          scope.serverId,
+          scope.workspaceId,
+          scope.userId,
+          state.aliases[0]!.commandId,
+        ])
+      )
+        throw new IdentityError(409, "catalog_conflict");
+      roots.set(state.runId, { runId: state.runId, threadId: state.threadId });
+    }
+    after = page.at(-1)!.key;
+  }
+  const unproved = await serial(() =>
+    nativeConversations().some((id) =>
+      store.unprovedAttachmentConversation(scope, id),
+    ),
+  );
+  if (!roots.size) {
+    if (unproved) throw new IdentityError(409, "attachment_native_unknown");
+    return;
+  }
+  const owner = await nativeCatalogOwner(controller);
+  for (const [root, ids] of roots) {
+    if (!prove()) throw new IdentityError(409, "catalog_conflict");
+    await owner.eraseAttachmentRun({
+      runId: ids.runId,
+      threadId: ids.threadId,
+      resourceId,
+    });
+    await serial(() => {
+      if (
+        !prove() ||
+        store.foreignAttachmentThread(scope, generation, ids.threadId)
+      )
+        throw new IdentityError(409, "catalog_conflict");
+      store.atomicNativeAttachment(() => {
+        const raw = store.turn(root, scope.workspaceId, scope.userId) as
+          | { kind?: string; generation?: string }
+          | undefined;
+        if (raw?.kind === "attachment-retired/1") {
+          if (raw.generation !== generation)
+            throw new IdentityError(409, "catalog_conflict");
+          return;
+        }
+        const state = DomainCommandSchema.parse(raw);
+        if (state.runId !== root || state.threadId !== ids.threadId)
+          throw new IdentityError(409, "catalog_conflict");
+        const marker = {
+          kind: "attachment-retired/1",
+          generation,
+          runId: root,
+          commandIds: state.aliases.map((a) => a.commandId),
+        };
+        for (const key of new Set([
+          root,
+          ...state.aliases.map((a) =>
+            digest([
+              scope.serverId,
+              scope.workspaceId,
+              scope.userId,
+              a.commandId,
+            ]),
+          ),
+        ]))
+          store.saveTurn(key, scope.workspaceId, scope.userId, marker);
+      });
+    });
+  }
+  if (unproved) throw new IdentityError(409, "attachment_native_unknown");
+}
 /** The application boundary contains policy and receipts; Mastra owns the execution loop. */
 export function createNativeCatalogRuntime(
   controller: CatalogController,
@@ -115,6 +294,11 @@ export function createNativeCatalogRuntime(
   loopLimits: LoopLimits = "chat",
 ): CatalogRuntime {
   const store = controller.store;
+  let attachmentOwner = attachmentTaskOwners.get(controller);
+  if (!attachmentOwner) {
+    attachmentOwner = { epoch: randomUUID(), tasks: new Set() };
+    attachmentTaskOwners.set(controller, attachmentOwner);
+  }
   const target = { organizationId, workspaceId: scope.workspaceId };
   const domain = createMastraDomain(
     controller,
@@ -601,6 +785,15 @@ export function createNativeCatalogRuntime(
         .map((value) => DomainCommandSchema.parse(value))
         .filter(
           (state) =>
+            domain.attachmentThreadAllowed(state) &&
+            (!state.attachmentGeneration ||
+              !context.attachmentGenerationConversation ||
+              !!context.attachmentGenerationConversation(
+                state.attachmentGeneration,
+              )),
+        )
+        .filter(
+          (state) =>
             (includePlain ||
               state.taskTracked ||
               state.pending ||
@@ -612,6 +805,11 @@ export function createNativeCatalogRuntime(
     });
     return Promise.all(
       states.map(async (state) => {
+        const visibleConversation = state.attachmentGeneration
+          ? (context.attachmentGenerationConversation?.(
+              state.attachmentGeneration,
+            ) ?? state.conversationId!)
+          : state.conversationId!;
         const availability =
           includePlain || state.pending
             ? await domain.taskAvailability(state)
@@ -670,7 +868,7 @@ export function createNativeCatalogRuntime(
         return {
           id: state.runId,
           revision: state.workRevision,
-          conversationId: state.conversationId!,
+          conversationId: visibleConversation,
           title: state.goal.slice(0, 160),
           context: available
             ? state.pending?.question || state.answer?.reply || state.goal
@@ -693,7 +891,7 @@ export function createNativeCatalogRuntime(
                     id: nativeQuestionId(state.runId, state.pending.toolCallId),
                     revision: 1,
                     workItemId: state.runId,
-                    conversationId: state.conversationId!,
+                    conversationId: visibleConversation,
                     question: state.pending.question || state.goal,
                     status: "open" as const,
                     ...(state.pending.options
@@ -819,6 +1017,25 @@ export function createNativeCatalogRuntime(
   }
   return {
     enabled: true,
+    readAttachmentOutcome: (input) =>
+      domain.readAttachmentOutcome(
+        input,
+        (epoch, id) =>
+          attachmentOwner!.epoch === epoch && attachmentOwner!.tasks.has(id),
+      ),
+    async sealAttachmentAdmission(input) {
+      const b = await context.serial(async () =>
+        domain.attachmentBinding(input.commandId),
+      );
+      if (
+        b &&
+        (b.phase.state === "pending" || b.phase.state === "preparing") &&
+        b.phase.ownerEpoch === attachmentOwner!.epoch &&
+        attachmentOwner!.tasks.has(b.phase.taskId)
+      )
+        throw new IdentityError(409, "catalog_conflict");
+      await domain.sealAttachment(input, "interrupted");
+    },
     async hasTerminal(input) {
       return context.serial(async () => {
         await currentActor();
@@ -838,6 +1055,26 @@ export function createNativeCatalogRuntime(
       });
     },
     async ensureSettled(input) {
+      const attachment = await context.serial(async () => {
+        await currentActor();
+        return domain.attachmentBinding(input.commandId);
+      });
+      if (attachment) {
+        if (
+          attachment.binding.requestHash !== input.requestHash ||
+          attachment.binding.outerCommandId !== input.outerCommandId
+        )
+          throw new IdentityError(409, "idempotency_conflict");
+        if (
+          attachment.phase.state === "pending" ||
+          attachment.phase.state === "preparing"
+        )
+          return false;
+        if (attachment.phase.state === "retired" && !attachment.phase.prior)
+          return (
+            !attachment.phase.preparationStarted && !!attachment.phase.proofId
+          );
+      }
       const candidates = await context.serial(async () => {
         await currentActor();
         const states = store
@@ -868,6 +1105,36 @@ export function createNativeCatalogRuntime(
       return true;
     },
     async proveRetired(input) {
+      const attachment = await context.serial(async () =>
+        domain.attachmentBinding(input.commandId),
+      );
+      if (attachment) {
+        if (
+          attachment.binding.requestHash !== input.requestHash ||
+          attachment.binding.conversationId !== input.conversationId
+        )
+          throw new IdentityError(409, "idempotency_conflict");
+        if (
+          attachment.phase.state === "pending" ||
+          attachment.phase.state === "preparing"
+        )
+          return false;
+        if (attachment.phase.state === "retired") {
+          if (!attachment.phase.prior)
+            return (
+              !attachment.phase.preparationStarted && !!attachment.phase.proofId
+            );
+          const owner = await nativeCatalogOwner(controller),
+            prior = attachment.phase.prior;
+          return (
+            (await owner.proveRetired({
+              runId: prior.runId,
+              threadId: prior.threadId,
+              resourceId,
+            })) && owner.isSettled(prior.runId)
+          );
+        }
+      }
       // A server-owned exact journal binding can retire a reservation even when
       // its captured actor can no longer authorize any public response.
       const state = await context.serial(async () => {
@@ -1037,12 +1304,26 @@ export function createNativeCatalogRuntime(
     async hasTurn(commandId) {
       return context.serial(async () => {
         await currentActor();
-        return DomainCommandSchema.safeParse(
-          store.turn(key(commandId), scope.workspaceId, scope.userId),
-        ).success;
+        return (
+          !!domain.attachmentBinding(commandId) ||
+          DomainCommandSchema.safeParse(
+            store.turn(key(commandId), scope.workspaceId, scope.userId),
+          ).success
+        );
       });
     },
     async recoverResult(input) {
+      const attachment = await context.serial(async () => {
+        await currentActor();
+        return domain.attachmentBinding(input.commandId);
+      });
+      if (attachment) {
+        if (attachment.binding.requestHash !== input.requestHash)
+          throw new IdentityError(409, "idempotency_conflict");
+        return attachment.phase.state === "linked" && attachment.phase.outcome
+          ? attachment.phase.outcome.result
+          : null;
+      }
       const state = await context.serial(async () => {
         await currentActor();
         const parsed = DomainCommandSchema.safeParse(
@@ -1162,6 +1443,15 @@ export function createNativeCatalogRuntime(
     ) {
       const lock = await context.serial(async () => {
         await currentActor();
+        if (messageContext?.attachment) {
+          const b = domain.attachmentBinding(commandId);
+          if (
+            b &&
+            b.fingerprint !==
+              nativeAttachmentFingerprint(messageContext.attachment)
+          )
+            throw new IdentityError(409, "idempotency_conflict");
+        }
         const cached = DomainCommandSchema.safeParse(
           store.turn(key(commandId), scope.workspaceId, scope.userId),
         );
@@ -1185,6 +1475,50 @@ export function createNativeCatalogRuntime(
       });
       return withConversation(messageContext?.conversationId, () =>
         controller.withTurn(lock, async () => {
+          const attachment = messageContext?.attachment;
+          const taskId = randomUUID(),
+            ownerEpoch = attachmentOwner!.epoch;
+          const task = {
+            taskId,
+            ownerEpoch,
+            live: () => attachmentOwner!.tasks.has(taskId),
+          };
+          if (attachment) {
+            if (attachment.commandId !== commandId)
+              throw new IdentityError(409, "idempotency_conflict");
+            attachmentOwner!.tasks.add(taskId);
+            try {
+              if (messageContext?.attachmentRetryProof) {
+                const parent = await context.serial(async () =>
+                  domain.attachmentBinding(
+                    messageContext!.attachmentRetryProof!.commandId,
+                  ),
+                );
+                if (
+                  !messageContext.retryOf ||
+                  parent?.binding.outerCommandId !== messageContext.retryOf ||
+                  messageContext.logicalMessageId !==
+                    attachment.logicalMessageId
+                )
+                  throw new IdentityError(409, "attachment_retry_required");
+              }
+              const admitted = await domain.admitAttachment(
+                attachment,
+                task,
+                messageContext?.attachmentRetryProof,
+              );
+              if (!admitted) {
+                const outcome = await domain.readAttachmentOutcome(attachment);
+                if (outcome.status === "recorded") return outcome.result;
+                throw new IdentityError(409, "attachment_retry_required");
+              }
+              await domain.prepareAttachment(attachment, task);
+              messageContext = { ...messageContext, attachmentTask: task };
+            } catch (error) {
+              attachmentOwner!.tasks.delete(taskId);
+              throw error;
+            }
+          }
           const options = {
             signal,
             reportTool,
@@ -1195,8 +1529,24 @@ export function createNativeCatalogRuntime(
                 step: number,
               ) => reportWorkflow({ stage, step: Math.min(5, step) })),
           };
+          const finish = async (
+            session: DomainSession,
+            promise: Promise<ServiceAnswer>,
+          ): Promise<ServiceAnswer> => {
+            const answer = await promise;
+            return attachment
+              ? domain.recordAttachmentOutcome(
+                  attachment,
+                  session.state,
+                  answer,
+                )
+              : answer;
+          };
           try {
-            if (messageContext?.retryOf) {
+            if (
+              messageContext?.retryOf &&
+              !messageContext.attachmentRetryProof
+            ) {
               if (
                 messageContext.session === "new" ||
                 !messageContext.logicalMessageId
@@ -1227,25 +1577,32 @@ export function createNativeCatalogRuntime(
                 );
             if (continuation) {
               const answer = await recorded(continuation.session);
-              if (answer) return answer;
+              if (answer)
+                return finish(continuation.session, Promise.resolve(answer));
               if (continuation.session.state.terminalCandidate) {
                 const owner = await nativeCatalogOwner(controller);
                 if (!(await retired(owner, continuation.session.state)))
                   throw new NativeRunUnsettledError();
                 await continuation.session.finishFailure();
-                return (await recorded(continuation.session))!;
+                return finish(
+                  continuation.session,
+                  Promise.resolve((await recorded(continuation.session))!),
+                );
               }
-              return execute(
+              return finish(
                 continuation.session,
-                signal,
-                undefined,
-                {
-                  toolCallId: continuation.toolCallId,
-                  data: { answer: text },
-                },
-                messageContext?.reportDraft,
-                messageContext?.reportStep,
-                messageContext?.reportApproval,
+                execute(
+                  continuation.session,
+                  signal,
+                  undefined,
+                  {
+                    toolCallId: continuation.toolCallId,
+                    data: { answer: text },
+                  },
+                  messageContext?.reportDraft,
+                  messageContext?.reportStep,
+                  messageContext?.reportApproval,
+                ),
               );
             }
             const session = await domain.begin(
@@ -1258,24 +1615,44 @@ export function createNativeCatalogRuntime(
               options,
             );
             const prior = await recorded(session);
-            if (prior) return prior;
+            if (prior) return finish(session, Promise.resolve(prior));
             if (session.state.terminalCandidate) {
               const owner = await nativeCatalogOwner(controller);
               if (!(await retired(owner, session.state)))
                 throw new NativeRunUnsettledError();
               await session.finishFailure();
-              return (await recorded(session))!;
+              return finish(
+                session,
+                Promise.resolve((await recorded(session))!),
+              );
             }
-            return execute(
+            return finish(
               session,
-              signal,
-              text,
-              undefined,
-              messageContext?.reportDraft,
-              messageContext?.reportStep,
-              messageContext?.reportApproval,
+              execute(
+                session,
+                signal,
+                text,
+                undefined,
+                messageContext?.reportDraft,
+                messageContext?.reportStep,
+                messageContext?.reportApproval,
+              ),
             );
           } catch (error) {
+            if (attachment) {
+              attachmentOwner!.tasks.delete(taskId);
+              if (signal.reason === REQUEST_INTERRUPTION_REASON) {
+                const b = await context.serial(async () =>
+                  domain.attachmentBinding(commandId),
+                );
+                if (
+                  b &&
+                  (b.phase.state === "pending" || b.phase.state === "preparing")
+                )
+                  await domain.sealAttachment(attachment, "interrupted");
+                throw new RequestInterruptionUnsettledError();
+              }
+            }
             if (signal.reason !== REQUEST_INTERRUPTION_REASON) throw error;
             // Preparation may dispatch continuity inference before a native
             // worker exists. Its rejected transport is settled at this point.
@@ -1298,6 +1675,8 @@ export function createNativeCatalogRuntime(
             if (!owner.isSettled(stopped.state.runId))
               throw new RequestInterruptionUnsettledError();
             return stopped.finishInterrupted();
+          } finally {
+            if (attachment) attachmentOwner!.tasks.delete(taskId);
           }
         }),
       );

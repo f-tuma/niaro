@@ -90,6 +90,7 @@ export type MeetingProcessingAccess = {
   };
 };
 export type MeetingProcessorOptions = {
+  onPublished?: (scope: Scope) => void;
   /** Waits before the second and third attempt of a failed chunk. */
   retryDelaysMs?: number[];
   /** Length of a timestamped chunk, 120–600 seconds. */
@@ -216,6 +217,7 @@ function meetingDay(recordedAt: string, timeZone: string) {
 }
 /** Durable domain checkpoints surround bounded calls to the configured STT and closed Mastra agent. */
 export class MeetingProcessor {
+  private onPublished?: (scope: Scope) => void;
   private active = new Map<
     string,
     { controller: AbortController; done: Promise<void> }
@@ -233,6 +235,7 @@ export class MeetingProcessor {
     private store: MeetingStore,
     options: MeetingProcessorOptions = {},
   ) {
+    this.onPublished = options.onPublished;
     this.retryDelays = options.retryDelaysMs ?? [1000, 4000];
     this.chunkSeconds = Math.max(
       MEETING_CHUNK_SECONDS.min,
@@ -1096,6 +1099,11 @@ export class MeetingProcessor {
         timeZone,
       }),
     );
+    try {
+      this.onPublished?.(scope);
+    } catch {
+      /* Bounded discovery repairs a missed mark. */
+    }
   }
   async close() {
     this.closed = true;
