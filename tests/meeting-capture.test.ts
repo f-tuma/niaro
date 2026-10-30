@@ -450,3 +450,75 @@ test("no file is imported while a meeting records", async () => {
   expect(f.capture.getSnapshot().phase).toBe("recording");
   expect(f.events).toContain("discard:file:///cache/a.mp3");
 });
+
+test("successful explicit remove retry clears only its owned deletion storage error", async () => {
+  const f = fixture();
+  await f.capture.restore();
+  await f.capture.start(id, "TEST removal", "en");
+  await f.capture.stop();
+  const remove = jest.spyOn(f.ports, "remove").mockImplementationOnce(() => {
+    throw Error("TEST remove failed");
+  });
+  await expect(f.capture.remove(id)).resolves.toBeUndefined();
+  expect(f.capture.getSnapshot().entries).toHaveLength(1);
+  expect(f.capture.getSnapshot().error).toBe("meeting_storage_failed");
+  await f.capture.remove(id);
+  expect(remove).toHaveBeenCalledTimes(2);
+  expect(f.capture.getSnapshot().entries).toHaveLength(0);
+  expect(f.capture.getSnapshot().error).toBeNull();
+});
+
+test("a successful removal cannot clear a newer same-text failure owned by another entry", async () => {
+  const f = fixture(),
+    other = "22222222-2222-4222-8222-222222222222";
+  await f.capture.restore();
+  for (const next of [id, other]) {
+    await f.capture.start(next, "TEST removal", "en");
+    await f.capture.stop();
+  }
+  jest
+    .spyOn(f.ports, "remove")
+    .mockImplementationOnce(() => {
+      throw Error("TEST first remove failed");
+    })
+    .mockImplementationOnce(() => {})
+    .mockImplementationOnce(() => {
+      throw Error("TEST newer remove failed");
+    });
+  await f.capture.remove(id);
+  const persist = f.ports.storage.setItem;
+  let complete!: () => Promise<void>;
+  f.ports.storage.setItem = (key, value) =>
+    new Promise<void>((resolve) => {
+      complete = async () => {
+        await persist(key, value);
+        resolve();
+      };
+    });
+  const pending = f.capture.remove(id);
+  await f.capture.remove(other);
+  await complete();
+  await pending;
+  expect(f.capture.getSnapshot().entries.map((e) => e.id)).toEqual([other]);
+  expect(f.capture.getSnapshot().error).toBe("meeting_storage_failed");
+});
+
+test("a successful removal preserves a newer unrelated import error", async () => {
+  const f = fixture();
+  await f.capture.restore();
+  await f.capture.start(id, "TEST removal", "en");
+  await f.capture.stop();
+  jest.spyOn(f.ports, "remove").mockImplementationOnce(() => {
+    throw Error("TEST remove failed");
+  });
+  await f.capture.remove(id);
+  await f.capture.importFile(
+    { uri: "file:///TEST.txt", name: "TEST.txt" },
+    "22222222-2222-4222-8222-222222222222",
+    "TEST import",
+    "en",
+  );
+  expect(f.capture.getSnapshot().error).toBe("meeting_import_unsupported");
+  await f.capture.remove(id);
+  expect(f.capture.getSnapshot().error).toBe("meeting_import_unsupported");
+});

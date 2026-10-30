@@ -100,6 +100,8 @@ export class MeetingCapture {
   private playback?: { stop(): void };
   private playbackOwned = false;
   private playbackAttempt = 0;
+  private errorRevision = 0;
+  private removalError?: { id: string; revision: number };
   private readonly key: string;
   constructor(
     private identity: string,
@@ -113,6 +115,8 @@ export class MeetingCapture {
     return () => this.listeners.delete(fn);
   };
   private publish(patch: Partial<MeetingCaptureState>) {
+    // Equal error text can belong to a newer operation; identity is revision-bound.
+    if (Object.hasOwn(patch, "error")) this.errorRevision++;
     this.state = { ...this.state, ...patch };
     for (const fn of this.listeners) fn();
   }
@@ -549,11 +553,24 @@ export class MeetingCapture {
     if (this.state.phase !== "idle") return;
     const entry = this.state.entries.find((e) => e.id === id);
     if (!entry) return;
+    const errorRevision = this.errorRevision;
+    const ownedError = this.removalError;
     try {
       this.ports.remove(entry.uri);
       await this.save(this.state.entries.filter((e) => e.id !== id));
+      if (
+        ownedError?.id === id &&
+        this.removalError === ownedError &&
+        this.errorRevision === ownedError.revision
+      ) {
+        this.removalError = undefined;
+        this.publish({ error: null });
+      }
     } catch {
-      this.publish({ error: "meeting_storage_failed" });
+      if (this.errorRevision === errorRevision) {
+        this.publish({ error: "meeting_storage_failed" });
+        this.removalError = { id, revision: this.errorRevision };
+      }
     }
   }
   dispose() {

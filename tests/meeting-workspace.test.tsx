@@ -1,5 +1,11 @@
 import React from "react";
-import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react-native";
 import { Workspace } from "../apps/mobile/App";
 import { MeetingCapture } from "../packages/client-core/meeting-capture";
 import { AudioSessionCoordinator } from "../packages/audio/coordinator";
@@ -84,6 +90,7 @@ function fixture(identity: string, coordinator: AudioSessionCoordinator) {
   const storage = new Map<string, string>();
   let recording = false;
   const probe = jest.fn(async () => 1000);
+  const remove = jest.fn();
   const stop = jest.fn(async () => {
     recording = false;
     return "file:///document/Audio/recording-test.m4a";
@@ -123,7 +130,7 @@ function fixture(identity: string, coordinator: AudioSessionCoordinator) {
         size: () => 64,
         probe,
         read: (_uri, _offset, n) => new Uint8Array(n),
-        remove: () => {},
+        remove,
         play: () => ({ stop: () => {} }),
       }),
   );
@@ -162,6 +169,7 @@ function fixture(identity: string, coordinator: AudioSessionCoordinator) {
     session,
     stop,
     probe,
+    remove,
   };
 }
 function view(session: ClientSession, section: Section) {
@@ -177,6 +185,37 @@ function view(session: ClientSession, section: Section) {
     />
   );
 }
+test("actual capture storage removal failure stays in the local delete modal until explicit retry", async () => {
+  const f = fixture("TEST-LOCAL-REMOVE-FAILURE", new AudioSessionCoordinator());
+  render(view(f.session, "meetings"));
+  await act(flush);
+  await act(async () => {
+    await f.capture.start(
+      "22222222-2222-4222-8222-222222222222",
+      "TEST retained local recording",
+      "en",
+    );
+    await f.capture.stop();
+  });
+  f.remove.mockImplementationOnce(() => {
+    throw Error("TEST device removal failure");
+  });
+  fireEvent.press(screen.getByRole("button", { name: "Delete recording" }));
+  fireEvent.press(screen.getByRole("button", { name: "Delete" }));
+  await act(flush);
+  expect(f.capture.getSnapshot().entries).toHaveLength(1);
+  expect(
+    within(screen.getByTestId("detail-sheet")).getByText(
+      "Couldn't delete recording.",
+    ),
+  ).toBeTruthy();
+  expect(f.remove).toHaveBeenCalledTimes(1);
+  fireEvent.press(screen.getByRole("button", { name: "Delete" }));
+  await act(flush);
+  expect(f.remove).toHaveBeenCalledTimes(2);
+  expect(f.capture.getSnapshot().entries).toHaveLength(0);
+  expect(screen.queryByTestId("detail-sheet")).toBeNull();
+});
 test("Workspace navigation retains the recorder; changing the authenticated connection interrupts the original recording", async () => {
   const coordinator = new AudioSessionCoordinator();
   const a = fixture("TEST-A", coordinator);
@@ -319,7 +358,7 @@ test("a notification the system refuses never stops the recording", async () => 
     mockNotification.show.mockImplementation(() => true);
   }
 });
-test("Upload audio file brings a recording from the device in and sends it for processing", async () => {
+test("Upload audio brings a recording from the device in and sends it for processing", async () => {
   const a = fixture("TEST-A", new AudioSessionCoordinator());
   const session = a.session as unknown as Record<string, jest.Mock>;
   session.createMeeting = jest.fn(async () => ({
@@ -338,7 +377,7 @@ test("Upload audio file brings a recording from the device in and sends it for p
   await act(flush);
   mockPicked = null;
   await act(async () => {
-    fireEvent.press(screen.getByRole("button", { name: "Upload audio file" }));
+    fireEvent.press(screen.getByRole("button", { name: "Upload audio" }));
     await flush();
   });
   expect(session.createMeeting).not.toHaveBeenCalled();
@@ -348,7 +387,7 @@ test("Upload audio file brings a recording from the device in and sends it for p
     size: 64,
   };
   await act(async () => {
-    fireEvent.press(screen.getByRole("button", { name: "Upload audio file" }));
+    fireEvent.press(screen.getByRole("button", { name: "Upload audio" }));
     await flush();
   });
   expect(session.createMeeting).toHaveBeenCalledWith(
@@ -396,7 +435,7 @@ test("the live journal entry is not a recovery failure, while older idle recover
   fireEvent.press(screen.getByRole("button", { name: "Pause" }));
   await act(flush);
   expect(screen.getAllByText(/Couldn't recover/)).toHaveLength(1);
-  fireEvent.press(screen.getByRole("button", { name: "Stop and process" }));
+  fireEvent.press(screen.getByRole("button", { name: "Stop" }));
   await act(flush);
   expect(a.capture.getSnapshot().entries[0]?.state).toBe("captured");
   expect(screen.getByText(/Not uploaded yet/)).toBeTruthy();
@@ -420,7 +459,7 @@ test("the live journal entry is not a recovery failure, while older idle recover
   fireEvent.press(
     screen.getAllByRole("button", { name: "Delete recording" })[0]!,
   );
-  fireEvent.press(screen.getByRole("button", { name: "Delete permanently" }));
+  fireEvent.press(screen.getByRole("button", { name: "Delete" }));
   await act(flush);
   expect(a.capture.getSnapshot().entries).toHaveLength(1);
   ui.unmount();
@@ -441,7 +480,7 @@ test("a settled failed recording remains recoverable while older saved audio pla
   fireEvent.press(screen.getByRole("button", { name: "Record meeting" }));
   await act(flush);
   a.probe.mockRejectedValueOnce(new Error("TEST unreadable current duration"));
-  fireEvent.press(screen.getByRole("button", { name: "Stop and process" }));
+  fireEvent.press(screen.getByRole("button", { name: "Stop" }));
   await act(flush);
   expect(a.capture.getSnapshot().phase).toBe("idle");
   expect(

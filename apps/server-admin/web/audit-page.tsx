@@ -476,7 +476,10 @@ function AuditFeed({ detail }: { detail: OrganizationDetail }) {
           if (!open) setSelected(null);
         }}
       >
-        <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
+        <SheetContent
+          showDismissAction
+          className="data-[side=right]:w-full data-[side=right]:sm:max-w-lg"
+        >
           <SheetHeader>
             <SheetTitle>
               {selected ? event(selected).title : copy.auditDetails}

@@ -17,6 +17,7 @@ import {
   TextInput,
   useWindowDimensions,
   View,
+  type GestureResponderEvent,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { tokens as t } from "../../packages/design-tokens";
@@ -263,20 +264,11 @@ export const chrome = StyleSheet.create({
     marginTop: 8,
   },
   sheetHeader: {
-    paddingLeft: t.spacing.screenGutter,
-    paddingRight: 12,
+    paddingHorizontal: t.spacing.screenGutter,
     paddingTop: 10,
     paddingBottom: 6,
     minHeight: 52,
     gap: 12,
-  },
-  sheetClose: {
-    width: 44,
-    height: 44,
-    flexShrink: 0,
-    borderRadius: t.radius.action,
-    alignItems: "center",
-    justifyContent: "center",
   },
   sheetBody: {
     paddingHorizontal: t.spacing.screenGutter,
@@ -1046,6 +1038,7 @@ export function DetailSheet({
 }>) {
   const reduced = useReducedMotion();
   const [progress] = useState(() => new Animated.Value(reduced ? 1 : 0));
+  const [dragOffset] = useState(() => new Animated.Value(0));
   const closing = useRef(false);
   const onCloseRef = useRef(onClose);
   useEffect(() => {
@@ -1082,7 +1075,13 @@ export function DetailSheet({
     animation.start();
     return () => animation.stop();
   }, [progress, reduced, finishDismiss]);
-  useEffect(() => () => progress.stopAnimation(), [progress]);
+  useEffect(
+    () => () => {
+      progress.stopAnimation();
+      dragOffset.stopAnimation();
+    },
+    [progress, dragOffset],
+  );
   const dismiss = useCallback(() => {
     if (closing.current) return;
     closing.current = true;
@@ -1102,6 +1101,74 @@ export function DetailSheet({
       if (finished) finishDismiss();
     });
   }, [progress, reduced, finishDismiss]);
+  const drag = useRef<{
+    x: number;
+    y: number;
+    lastY: number;
+    time: number;
+    velocity: number;
+  } | null>(null);
+  const point = (event: GestureResponderEvent) => {
+    const native = event.nativeEvent;
+    const touch = native.touches?.[0] ?? native.changedTouches?.[0] ?? native;
+    return { x: touch.pageX, y: touch.pageY, time: native.timestamp };
+  };
+  const resetDrag = () => {
+    drag.current = null;
+    if (reduced) dragOffset.setValue(0);
+    else
+      Animated.spring(dragOffset, {
+        toValue: 0,
+        useNativeDriver: nativeMotion,
+        isInteraction: false,
+      }).start();
+  };
+  const swipe = {
+    onStartShouldSetResponderCapture(event: GestureResponderEvent) {
+      const p = point(event);
+      drag.current =
+        event.nativeEvent.touches.length === 1
+          ? { ...p, lastY: p.y, velocity: 0 }
+          : null;
+      return false;
+    },
+    onMoveShouldSetResponderCapture(event: GestureResponderEvent) {
+      const start = drag.current,
+        p = point(event);
+      return (
+        !!start &&
+        event.nativeEvent.touches.length === 1 &&
+        p.y - start.y > 8 &&
+        p.y - start.y > Math.abs(p.x - start.x) * 1.5
+      );
+    },
+    onResponderMove(event: GestureResponderEvent) {
+      const start = drag.current;
+      if (!start || event.nativeEvent.touches.length !== 1) {
+        resetDrag();
+        return;
+      }
+      const p = point(event),
+        dy = p.y - start.y;
+      start.velocity = (p.y - start.lastY) / Math.max(1, p.time - start.time);
+      start.lastY = p.y;
+      start.time = p.time;
+      if (!reduced) dragOffset.setValue(Math.max(0, dy));
+    },
+    onResponderRelease(event: GestureResponderEvent) {
+      const start = drag.current,
+        p = point(event);
+      drag.current = null;
+      if (
+        start &&
+        (p.y - start.y > 72 || (p.y - start.y > 16 && start.velocity > 0.7))
+      )
+        dismiss();
+      else resetDrag();
+    },
+    onResponderTerminate: resetDrag,
+    onResponderTerminationRequest: () => true,
+  };
   return (
     <Modal
       transparent
@@ -1132,6 +1199,7 @@ export function DetailSheet({
             ]}
           />
           <View
+            testID="detail-sheet-scrim"
             accessible={false}
             onStartShouldSetResponder={() => true}
             onResponderRelease={dismiss}
@@ -1146,16 +1214,20 @@ export function DetailSheet({
                 opacity: progress,
                 transform: [
                   {
-                    translateY: progress.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [32, 0],
-                    }),
+                    translateY: Animated.add(
+                      dragOffset,
+                      progress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [32, 0],
+                      }),
+                    ),
                   },
                 ],
               },
             ]}
             testID="detail-sheet"
             accessibilityViewIsModal
+            onAccessibilityEscape={dismiss}
           >
             <SafeAreaView
               edges={["bottom"]}
@@ -1164,32 +1236,26 @@ export function DetailSheet({
                 fullHeight && { flex: 1, minHeight: 0 },
               ]}
             >
-              <View style={chrome.grabber} />
-              <Row style={chrome.sheetHeader}>
-                <Text
-                  role="headerTitle"
-                  accessibilityRole="header"
-                  style={{ flex: 1, minWidth: 0 }}
-                >
-                  {title}
-                </Text>
-                <MotionPressable
+              <View testID="detail-sheet-header" {...swipe}>
+                <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={translate(language)("close")}
                   onPress={dismiss}
-                  hitSlop={2}
-                  style={({ pressed }) => [
-                    chrome.sheetClose,
-                    {
-                      backgroundColor: pressed
-                        ? t.color.fillPressed
-                        : t.color.fill,
-                    },
-                  ]}
+                  hitSlop={8}
+                  style={{ minHeight: 24 }}
                 >
-                  <Icon name="close" size={18} color={t.color.text.secondary} />
-                </MotionPressable>
-              </Row>
+                  <View style={chrome.grabber} />
+                </Pressable>
+                <Row style={chrome.sheetHeader}>
+                  <Text
+                    role="headerTitle"
+                    accessibilityRole="header"
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
+                    {title}
+                  </Text>
+                </Row>
+              </View>
               <ScrollView
                 ref={scrollRef}
                 style={fullHeight ? { flex: 1, minHeight: 0 } : undefined}

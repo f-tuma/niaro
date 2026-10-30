@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Modal } from "react-native";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Workspace } from "../apps/mobile/App";
@@ -364,7 +365,7 @@ test("legacy server receives no automatic history or create commands; explicit o
       .disabled,
   ).toBe(true);
   expect(f.session.send).not.toHaveBeenCalled();
-  fireEvent.press(screen.getAllByRole("button", { name: "Close menu" })[0]!);
+  fireEvent(screen.UNSAFE_getByType(Modal), "requestClose");
   fireEvent.changeText(
     screen.getByLabelText("Type a message…"),
     "TEST legacy input",

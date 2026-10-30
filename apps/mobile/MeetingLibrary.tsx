@@ -74,6 +74,61 @@ export type MeetingRecordingControl = {
   onStop(): void;
   onTogglePause(): void;
 };
+function MeetingDeleteConfirmation({
+  language,
+  disabled,
+  onClose,
+  onDelete,
+  hint,
+  error,
+  loading,
+}: {
+  language: Language;
+  disabled: boolean;
+  onClose(): void;
+  onDelete(): void;
+  hint?: string;
+  error?: TranslationKey;
+  loading: boolean;
+}) {
+  const tr = translate(language);
+  const { width, fontScale } = useWindowDimensions();
+  const stacked = width < 380 || fontScale > 1.3;
+  return (
+    <DetailSheet
+      title={tr("meetingDelete")}
+      language={language}
+      onClose={onClose}
+      actions={
+        <Row
+          style={
+            stacked
+              ? { flexDirection: "column", alignItems: "stretch" }
+              : undefined
+          }
+        >
+          <Button
+            variant="quiet"
+            label={tr("cancel")}
+            onPress={onClose}
+            style={stacked ? { width: "100%" } : { flex: 1 }}
+          />
+          <Button
+            variant="danger"
+            label={tr("meetingDeleteConfirm")}
+            disabled={disabled}
+            loading={loading}
+            onPress={onDelete}
+            style={stacked ? { width: "100%" } : { flex: 1 }}
+          />
+        </Row>
+      }
+    >
+      {error ? <Notice error>{tr("meeting_delete_failed")}</Notice> : null}
+      {hint ? <Text tone="secondary">{hint}</Text> : null}
+    </DetailSheet>
+  );
+}
 /** Shared by record readers and overlays while the original recorder stays mounted. */
 export function MeetingRecordingControls({
   control,
@@ -532,7 +587,6 @@ export function MeetingLibrary({
       language={language}
       clock={clock}
       withPause
-      onOpenMeetings={openMeetingRecovery}
     />
   ) : null;
   if (!visible) return recordingBanner ?? stopPlayback;
@@ -754,47 +808,40 @@ export function MeetingLibrary({
         {selected &&
         !["transcribing", "analyzing"].includes(selected.status) ? (
           <View>
+            <ListRow
+              icon="trash"
+              label={tr("meetingDelete")}
+              danger
+              disabled={busy}
+              onPress={() => {
+                setError(undefined);
+                setConfirm("delete");
+              }}
+            />
             {confirm === "delete" ? (
-              <View style={styles.confirm}>
-                <Text role="caption" tone="secondary">
-                  {tr("meetingDeleteHint")}
-                </Text>
-                <Row>
-                  <Button
-                    variant="danger"
-                    icon="trash"
-                    label={tr("meetingDeleteConfirm")}
-                    disabled={localAudioBlocked}
-                    style={{ flex: 1 }}
-                    onPress={() => {
-                      void action(async () => {
-                        await session.deleteMeeting(selected.id);
-                        await capture?.remove(selected.id);
-                        invalidate();
-                        setRecord(undefined);
-                        recordUpdatedAt.current = undefined;
-                        setLoadError(undefined);
-                        select(null);
-                      }, false);
-                    }}
-                  />
-                  <Button
-                    variant="quiet"
-                    label={tr("cancel")}
-                    disabled={busy}
-                    onPress={() => setConfirm(null)}
-                  />
-                </Row>
-              </View>
-            ) : (
-              <ListRow
-                icon="trash"
-                label={tr("meetingDelete")}
-                danger
-                disabled={busy}
-                onPress={() => setConfirm("delete")}
+              <MeetingDeleteConfirmation
+                language={language}
+                hint={tr("meetingDeleteHint")}
+                disabled={localAudioBlocked}
+                loading={busy}
+                error={error}
+                onClose={() => {
+                  setConfirm(null);
+                  setError(undefined);
+                }}
+                onDelete={() => {
+                  void action(async () => {
+                    await session.deleteMeeting(selected.id);
+                    await capture?.remove(selected.id);
+                    invalidate();
+                    setRecord(undefined);
+                    recordUpdatedAt.current = undefined;
+                    setLoadError(undefined);
+                    select(null);
+                  }, false);
+                }}
               />
-            )}
+            ) : null}
           </View>
         ) : null}
         {source ? (
@@ -1041,34 +1088,39 @@ export function MeetingLibrary({
                     icon="trash"
                     label={tr("meetingDelete")}
                     disabled={localAudioBlocked}
-                    onPress={() =>
-                      setLocalDelete(localDelete === entry.id ? null : entry.id)
-                    }
+                    onPress={() => {
+                      setError(undefined);
+                      setLocalDelete(entry.id);
+                    }}
                   />
                 </Row>
                 {localDelete === entry.id ? (
-                  <Row style={styles.captureActions}>
-                    <Button
-                      style={{ flexGrow: 1, flexShrink: 1, maxWidth: "100%" }}
-                      variant="danger"
-                      icon="trash"
-                      label={tr("meetingDeleteConfirm")}
-                      disabled={localAudioBlocked}
-                      onPress={() => {
-                        void action(async () => {
-                          await capture?.remove(entry.id);
-                          setLocalDelete(null);
-                        });
-                      }}
-                    />
-                    <Button
-                      variant="quiet"
-                      label={tr("cancel")}
-                      disabled={busy}
-                      onPress={() => setLocalDelete(null)}
-                    />
-                  </Row>
-                ) : entry.state === "pending" ? (
+                  <MeetingDeleteConfirmation
+                    language={language}
+                    disabled={localAudioBlocked}
+                    loading={busy}
+                    error={error}
+                    onClose={() => {
+                      setLocalDelete(null);
+                      setError(undefined);
+                    }}
+                    onDelete={() => {
+                      void action(async () => {
+                        await capture?.remove(entry.id);
+                        // Capture reports storage failures in its snapshot rather
+                        // than rejecting: retained journal entry is not success.
+                        if (
+                          capture
+                            ?.getSnapshot()
+                            .entries.some((item) => item.id === entry.id)
+                        )
+                          throw new Error("meeting_delete_failed");
+                        setLocalDelete(null);
+                      });
+                    }}
+                  />
+                ) : null}
+                {entry.state === "pending" ? (
                   <Button
                     variant="secondary"
                     label={tr("meetingRecover")}
@@ -1182,8 +1234,8 @@ const styles = StyleSheet.create({
   captureActions: { flexWrap: "wrap", gap: t.spacing.sm },
   stackedActions: { flexDirection: "column", alignItems: "stretch" },
   stackedButton: { flexBasis: "auto", width: "100%" },
-  stopButton: { flexGrow: 1, flexBasis: 160 },
-  pauseButton: { flexGrow: 1, flexBasis: 100 },
+  stopButton: { flexGrow: 1, flexBasis: 140, paddingHorizontal: t.spacing.sm },
+  pauseButton: { flexGrow: 1, flexBasis: 140, paddingHorizontal: t.spacing.sm },
   timer: {
     fontSize: 40,
     lineHeight: 52,
@@ -1201,7 +1253,6 @@ const styles = StyleSheet.create({
   nativeOnly: { justifyContent: "center", gap: 6 },
   localRow: { padding: t.spacing.lg, gap: t.spacing.md },
   loading: { paddingVertical: t.spacing.xxl, alignItems: "center" },
-  confirm: { paddingHorizontal: t.spacing.xs, gap: t.spacing.md },
   quote: {
     paddingLeft: t.spacing.lg,
     borderLeftWidth: 3,

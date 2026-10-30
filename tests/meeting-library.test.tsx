@@ -1,5 +1,11 @@
 import React from "react";
-import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react-native";
 import { MeetingLibrary } from "../apps/mobile/MeetingLibrary";
 import type { ClientSession } from "../packages/client-core/session";
 import { meetingRecordFixture } from "../packages/test-fixtures/meeting";
@@ -59,6 +65,7 @@ const fixture = () => {
       },
     })),
     processMeeting: jest.fn(async () => {}),
+    deleteMeeting: jest.fn(async () => {}),
   } as unknown as ClientSession;
   return {
     session,
@@ -68,6 +75,75 @@ const fixture = () => {
   };
 };
 const row = `meeting-${meetingRecordFixture.meeting.id}`;
+test("a rejected delete stays visible inside the confirmation and retries only on another explicit press", async () => {
+  const f = fixture();
+  (f.session.deleteMeeting as jest.Mock).mockRejectedValueOnce(
+    new Error("meeting_processing_failed"),
+  );
+  const view = render(
+    <MeetingLibrary session={f.session} language="en" visible />,
+  );
+  await waitFor(() => expect(view.getByTestId(row)).toBeTruthy());
+  fireEvent.press(view.getByTestId(row));
+  await waitFor(() =>
+    expect(view.getByRole("button", { name: en.meetingDelete })).toBeTruthy(),
+  );
+  fireEvent.press(view.getByRole("button", { name: en.meetingDelete }));
+  fireEvent.press(view.getByRole("button", { name: en.meetingDeleteConfirm }));
+  await waitFor(() =>
+    expect(
+      within(view.getByTestId("detail-sheet")).getByText(
+        en.meeting_delete_failed,
+      ),
+    ).toBeTruthy(),
+  );
+  expect(f.session.deleteMeeting).toHaveBeenCalledTimes(1);
+  fireEvent.press(view.getByRole("button", { name: en.cancel }));
+  await waitFor(() => expect(view.queryByTestId("detail-sheet")).toBeNull());
+  fireEvent.press(view.getByRole("button", { name: en.meetingDelete }));
+  expect(
+    within(view.getByTestId("detail-sheet")).queryByText(
+      en.meeting_delete_failed,
+    ),
+  ).toBeNull();
+  expect(f.session.deleteMeeting).toHaveBeenCalledTimes(1);
+  fireEvent.press(view.getByRole("button", { name: en.meetingDeleteConfirm }));
+  await waitFor(() => expect(f.session.deleteMeeting).toHaveBeenCalledTimes(2));
+});
+test.each(["en", "cs"] as const)(
+  "%s only deletes a meeting through its modal confirmation",
+  async (language) => {
+    const f = fixture();
+    const copy = language === "cs" ? cs : en;
+    const view = render(
+      <MeetingLibrary session={f.session} language={language} visible />,
+    );
+    await waitFor(() => expect(view.getByTestId(row)).toBeTruthy());
+    fireEvent.press(view.getByTestId(row));
+    await waitFor(() =>
+      expect(
+        view.getByRole("button", { name: copy.meetingDelete }),
+      ).toBeTruthy(),
+    );
+    expect(view.queryByText(copy.meetingDeleteHint)).toBeNull();
+    fireEvent.press(view.getByRole("button", { name: copy.meetingDelete }));
+    expect(view.getByTestId("detail-sheet")).toBeTruthy();
+    expect(view.getByText(copy.meetingDeleteHint)).toBeTruthy();
+    expect(f.session.deleteMeeting).not.toHaveBeenCalled();
+    fireEvent.press(view.getByRole("button", { name: copy.cancel }));
+    await waitFor(() => expect(view.queryByTestId("detail-sheet")).toBeNull());
+    expect(f.session.deleteMeeting).not.toHaveBeenCalled();
+    fireEvent.press(view.getByRole("button", { name: copy.meetingDelete }));
+    fireEvent.press(
+      view.getByRole("button", { name: copy.meetingDeleteConfirm }),
+    );
+    await waitFor(() =>
+      expect(f.session.deleteMeeting).toHaveBeenCalledWith(
+        meetingRecordFixture.meeting.id,
+      ),
+    );
+  },
+);
 test("detail shows one full record without transcript pagination; explicit sources disappear after another device deletes the meeting", async () => {
   const f = fixture();
   const view = render(

@@ -1,9 +1,14 @@
 import * as React from "react";
 import { cn } from "cn";
 import { Dialog as SheetPrimitive } from "radix-ui";
-
 import { Button } from "@admin/components/ui/button";
-import { XIcon } from "lucide-react";
+
+function closeLabel() {
+  return typeof document !== "undefined" &&
+    document.documentElement.lang === "cs"
+    ? "Zavřít"
+    : "Close";
+}
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
@@ -13,14 +18,6 @@ function SheetTrigger({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
   return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
-}
-
-/** The console sets <html lang>; generated components have no copy context. */
-function closeLabel() {
-  return typeof document !== "undefined" &&
-    document.documentElement.lang === "cs"
-    ? "Zavřít"
-    : "Close";
 }
 
 function SheetClose({
@@ -56,13 +53,14 @@ function SheetContent({
   children,
   side = "right",
   size = "default",
-  showCloseButton = true,
+  showDismissAction = false,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left";
   /** lg: full width on phones, a wide editor panel from sm up. */
   size?: "default" | "lg";
-  showCloseButton?: boolean;
+  /** Read-only panels without their own footer retain an explicit phone exit. */
+  showDismissAction?: boolean;
 }) {
   return (
     <SheetPortal>
@@ -77,18 +75,23 @@ function SheetContent({
         )}
         {...props}
       >
+        <SheetPrimitive.Close
+          data-slot="sheet-dismiss"
+          aria-label={closeLabel()}
+          className="mx-auto flex h-6 w-12 shrink-0 items-center justify-center rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          <span
+            aria-hidden="true"
+            className="h-1 w-8 rounded-full bg-muted-foreground/40"
+          />
+        </SheetPrimitive.Close>
         {children}
-        {showCloseButton && (
-          <SheetPrimitive.Close data-slot="sheet-close" asChild>
-            <Button
-              variant="ghost"
-              className="absolute top-3 right-3"
-              size="icon-sm"
-            >
-              <XIcon />
-              <span className="sr-only">{closeLabel()}</span>
-            </Button>
-          </SheetPrimitive.Close>
+        {showDismissAction && (
+          <SheetFooter>
+            <SheetPrimitive.Close asChild>
+              <Button variant="ghost">{closeLabel()}</Button>
+            </SheetPrimitive.Close>
+          </SheetFooter>
         )}
       </SheetPrimitive.Content>
     </SheetPortal>

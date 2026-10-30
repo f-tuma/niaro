@@ -37,7 +37,7 @@ import {
   useReducedMotion,
 } from "../../packages/ui/motion";
 import * as cues from "./feedback";
-import { IconButton, MenuItem } from "./ScreenChrome";
+import { MenuItem } from "./ScreenChrome";
 import { companionCopy } from "./companion-copy";
 import { OpenWorkNotice, type OpenWorkRefusal } from "./OpenWorkNotice";
 
@@ -366,6 +366,7 @@ function OpenChatHistory({
         <Animated.View
           // An open chat menu becomes the modal layer; the drawer must not hide it.
           accessibilityViewIsModal={!menu}
+          onAccessibilityEscape={menu ? () => setMenu(undefined) : dismiss}
           style={{
             width: "86%",
             maxWidth: 340,
@@ -392,19 +393,12 @@ function OpenChatHistory({
             <Row
               style={{
                 minHeight: 64,
-                paddingLeft: 20,
-                paddingRight: 6,
-                justifyContent: "space-between",
+                paddingHorizontal: 20,
               }}
             >
               <Text role="headerTitle" accessibilityRole="header">
                 Niaro
               </Text>
-              <IconButton
-                icon="close"
-                label={tr("closeMenu")}
-                onPress={dismiss}
-              />
             </Row>
             {recordingControls ? (
               <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
