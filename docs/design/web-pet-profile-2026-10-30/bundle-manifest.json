@@ -1,0 +1,122 @@
+{
+  "README.md": {
+    "sha256": "c05b3d34ceb8a724b2e1368c6aab5f532588fa4a4238a093c1c706139f18abeb",
+    "symlink": null
+  },
+  "centered-prompts.json": {
+    "sha256": "3b1a6fd3512565b27c9c33451c6cdf0b3c594901e55b671d640151dcc9a38c60",
+    "symlink": null
+  },
+  "concept-02-new-chat.png": {
+    "sha256": "3cbdbc8815949096eaa25cc0c1f6394d4fd3618e9d8d3509609747cc8775724f",
+    "symlink": null
+  },
+  "concept-03-conversation.png": {
+    "sha256": "ea95c94ba85ff613efd9c1de03641b26a85a378453e510beb3a24f2b74164319",
+    "symlink": null
+  },
+  "concept-05-settings.png": {
+    "sha256": "3d125a4f9047a20738a98272686a46b5065f02d378a7ebe1c280b186950567d3",
+    "symlink": null
+  },
+  "concept-06-profile-light.png": {
+    "sha256": "1a5f35e75d37933020152b1f876a922efac31d16de3a663155884a03552ff6ba",
+    "symlink": null
+  },
+  "concept-07-centered-profile-ai.png": {
+    "sha256": "8e4286ecb8ce0201d273bb361955651018f21a2bd09f1835a0fcb515f7f00789",
+    "symlink": null
+  },
+  "concept-07-centered-profile.png": {
+    "sha256": "bb065b82079c6153b024e4e3eea78493b18d3856925ddf20859cc264d012b15f",
+    "symlink": null
+  },
+  "concept-08-centered-detail-ai.png": {
+    "sha256": "95b8829efae12b3c477fe320a09f3b33dc5ebd5fcbd8578f141b8e3eefd66ad3",
+    "symlink": null
+  },
+  "concept-08-centered-detail.png": {
+    "sha256": "70bd6ec7db87b81c095608a8a9cf76cca7da1dbeb7607ef36021f83bb6117cca",
+    "symlink": null
+  },
+  "concept-09-centered-narrow-ai.png": {
+    "sha256": "0d0919ccc8b460329f352c57324a7f2802b4ca0c357b2dc968a3d3227f37f2bd",
+    "symlink": null
+  },
+  "concept-09-centered-narrow.png": {
+    "sha256": "0adf6863031c62d27a15372d068fa4ef5a8229c01704e6973f6140d64a2170c7",
+    "symlink": null
+  },
+  "concepts.html": {
+    "sha256": "f497fd3e566194d366771651daa091927a369af7b7174485c4c932b29a6ce710",
+    "symlink": null
+  },
+  "design.md": {
+    "sha256": "6ec89d8d87a814466ce8b941e6c49f17d1c88b937f68ea79bcc02f22f28c84bd",
+    "symlink": null
+  },
+  "final-layout-qa.json": {
+    "sha256": "97f1803055ad81fea77b77666db452912c6ffc10af92a727fe2a5c249634ccc8",
+    "symlink": null
+  },
+  "gallery.html": {
+    "sha256": "328d502309eda71a805231bb6af913a35edc0158ed27916be9dfff2280419e13",
+    "symlink": null
+  },
+  "image-index.md": {
+    "sha256": "6a3a28f9da84721d817620cd3170d3e6e34a3db430e9d9241e97a4d5ae0d4d45",
+    "symlink": null
+  },
+  "prompts.json": {
+    "sha256": "4089306f93339a7e84a1c3327039908c98a8cba51e8de93d4bd21074f5407124",
+    "symlink": null
+  },
+  "qa-conversation-390.png": {
+    "sha256": "4359fd2c452298243f8c8ee067b39e8c143d2c4b8325e7c5700617c5ca37533f",
+    "symlink": null
+  },
+  "qa-detail-390.png": {
+    "sha256": "de5111ff2a8f5c847aeeac3f35f4ed3942aeb62a295446278027af4ffe07672d",
+    "symlink": null
+  },
+  "qa-profile-320.png": {
+    "sha256": "fc756a030686f790306b3612ca28286a0f5e24c08775b6dc83a1f06f17ed6020",
+    "symlink": null
+  },
+  "qa-profile-360.png": {
+    "sha256": "9df9997fab1e996e58adaf8a02be371c443deaf6818855d6169058011d4a43d5",
+    "symlink": null
+  },
+  "references/OFL-Manrope.txt": {
+    "sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
+    "symlink": "../../../../assets/fonts/OFL-Manrope.txt"
+  },
+  "references/logo-source.svg": {
+    "sha256": "a69b903289f019c1e1ceba77713eb8aa7bce719b6de3a3f1f8ff456d1c3913b8",
+    "symlink": "../../../../assets/brand/source/logo.svg"
+  },
+  "references/manrope.woff2": {
+    "sha256": "a30ddcd349703aff7464c34bef3fffdff405ee50c113440d7c8693c02d210972",
+    "symlink": null
+  },
+  "references/pet-dark.png": {
+    "sha256": "0adc4a005ee7db61b107280c458b558cf12d61980bae168f03ef47beed19e8ca",
+    "symlink": null
+  },
+  "references/pet-light.png": {
+    "sha256": "b23c3845c308135c2f209f07fbe6cf4b6e3d1b085dfa93e5ce5e2742ddb22c06",
+    "symlink": null
+  },
+  "references/pet-nav-icon.svg": {
+    "sha256": "6ca6f35bb269557d49a798b0e807f2751258f8d239f975858c2bce09a6e7e9ca",
+    "symlink": null
+  },
+  "research.md": {
+    "sha256": "bcbca4ad6d759faf15d48ff30599b1f119a03f820258ecc993b7520ea095c1dc",
+    "symlink": null
+  },
+  "source-hashes.json": {
+    "sha256": "eea55d5a47d36a8ec66aadebb02caf3f0b8673e76e4832960762ed7ad9688610",
+    "symlink": null
+  }
+}

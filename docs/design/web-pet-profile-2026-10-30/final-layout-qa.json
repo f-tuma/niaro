@@ -1,0 +1,555 @@
+{
+  "method": "Playwright Chromium headless local-file capture",
+  "reason": "Repeated Orca Page.captureScreenshot timed out without a drawn frame after original successful captures.",
+  "date": "2026-10-30T19:04:30.023Z",
+  "records": [
+    {
+      "name": "concept-07-centered-profile",
+      "screen": "profile",
+      "theme": "dark",
+      "width": 1440,
+      "height": 960,
+      "metrics": {
+        "width": 1440,
+        "height": 960,
+        "scrollWidth": 1440,
+        "bodyWidth": 1440,
+        "images": [
+          {
+            "src": "references/pet-dark.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [
+        {
+          "label": "Work",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Projects",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Tools",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "People",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Style",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Rhythm",
+          "width": 164,
+          "height": 48
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "concept-08-centered-detail",
+      "screen": "profile",
+      "theme": "dark",
+      "width": 1440,
+      "height": 960,
+      "section": "style",
+      "metrics": {
+        "width": 1440,
+        "height": 960,
+        "scrollWidth": 1440,
+        "bodyWidth": 1440,
+        "images": [
+          {
+            "src": "references/pet-dark.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [
+        {
+          "label": "Work",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Projects",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Tools",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "People",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Style",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Rhythm",
+          "width": 164,
+          "height": 48
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "concept-02-new-chat",
+      "screen": "newchat",
+      "theme": "dark",
+      "width": 1440,
+      "height": 960,
+      "metrics": {
+        "width": 1440,
+        "height": 960,
+        "scrollWidth": 1440,
+        "bodyWidth": 1440,
+        "images": [
+          {
+            "src": "references/pet-dark.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "composer": {
+          "x": 411,
+          "y": 821,
+          "width": 850,
+          "height": 107,
+          "top": 821,
+          "right": 1261,
+          "bottom": 928,
+          "left": 411
+        },
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [],
+      "errors": []
+    },
+    {
+      "name": "concept-03-conversation",
+      "screen": "conversation",
+      "theme": "dark",
+      "width": 1440,
+      "height": 960,
+      "metrics": {
+        "width": 1440,
+        "height": 960,
+        "scrollWidth": 1440,
+        "bodyWidth": 1440,
+        "images": [
+          {
+            "src": "references/pet-dark.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "composer": {
+          "x": 411,
+          "y": 779.953125,
+          "width": 850,
+          "height": 148.046875,
+          "top": 779.953125,
+          "right": 1261,
+          "bottom": 928,
+          "left": 411
+        },
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [],
+      "errors": []
+    },
+    {
+      "name": "concept-09-centered-narrow",
+      "screen": "profile",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "metrics": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 390,
+        "bodyWidth": 390,
+        "images": [
+          {
+            "src": "references/pet-light.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [
+        {
+          "label": "Work",
+          "width": 169,
+          "height": 48
+        },
+        {
+          "label": "Projects",
+          "width": 169,
+          "height": 48
+        },
+        {
+          "label": "Tools",
+          "width": 169,
+          "height": 48
+        },
+        {
+          "label": "People",
+          "width": 169,
+          "height": 48
+        },
+        {
+          "label": "Style",
+          "width": 169,
+          "height": 48
+        },
+        {
+          "label": "Rhythm",
+          "width": 169,
+          "height": 48
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "concept-05-settings",
+      "screen": "settings",
+      "theme": "dark",
+      "width": 1440,
+      "height": 960,
+      "metrics": {
+        "width": 1440,
+        "height": 960,
+        "scrollWidth": 1440,
+        "bodyWidth": 1440,
+        "images": [
+          {
+            "src": "references/pet-dark.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "weather": true,
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [
+        {
+          "label": "Work",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Projects",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Tools",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "People",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Style",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Rhythm",
+          "width": 164,
+          "height": 48
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "concept-06-profile-light",
+      "screen": "profile",
+      "theme": "light",
+      "width": 1440,
+      "height": 960,
+      "metrics": {
+        "width": 1440,
+        "height": 960,
+        "scrollWidth": 1440,
+        "bodyWidth": 1440,
+        "images": [
+          {
+            "src": "references/pet-light.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [
+        {
+          "label": "Work",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Projects",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Tools",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "People",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Style",
+          "width": 164,
+          "height": 48
+        },
+        {
+          "label": "Rhythm",
+          "width": 164,
+          "height": 48
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "qa-conversation-390",
+      "screen": "conversation",
+      "theme": "dark",
+      "width": 390,
+      "height": 844,
+      "metrics": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 390,
+        "bodyWidth": 390,
+        "images": [
+          {
+            "src": "references/pet-dark.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "composer": {
+          "x": 14,
+          "y": 678.5,
+          "width": 362,
+          "height": 149.5,
+          "top": 678.5,
+          "right": 376,
+          "bottom": 828,
+          "left": 14
+        },
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [],
+      "errors": []
+    },
+    {
+      "name": "qa-profile-360",
+      "screen": "profile",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "metrics": {
+        "width": 360,
+        "height": 800,
+        "scrollWidth": 360,
+        "bodyWidth": 360,
+        "images": [
+          {
+            "src": "references/pet-light.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [
+        {
+          "label": "Work",
+          "width": 154,
+          "height": 48
+        },
+        {
+          "label": "Projects",
+          "width": 154,
+          "height": 48
+        },
+        {
+          "label": "Tools",
+          "width": 154,
+          "height": 48
+        },
+        {
+          "label": "People",
+          "width": 154,
+          "height": 48
+        },
+        {
+          "label": "Style",
+          "width": 154,
+          "height": 48
+        },
+        {
+          "label": "Rhythm",
+          "width": 154,
+          "height": 48
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "qa-profile-320",
+      "screen": "profile",
+      "theme": "light",
+      "width": 320,
+      "height": 800,
+      "metrics": {
+        "width": 320,
+        "height": 800,
+        "scrollWidth": 320,
+        "bodyWidth": 320,
+        "images": [
+          {
+            "src": "references/pet-light.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [
+        {
+          "label": "Work",
+          "width": 134,
+          "height": 48
+        },
+        {
+          "label": "Projects",
+          "width": 134,
+          "height": 48
+        },
+        {
+          "label": "Tools",
+          "width": 134,
+          "height": 48
+        },
+        {
+          "label": "People",
+          "width": 134,
+          "height": 48
+        },
+        {
+          "label": "Style",
+          "width": 134,
+          "height": 48
+        },
+        {
+          "label": "Rhythm",
+          "width": 134,
+          "height": 48
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "qa-detail-390",
+      "screen": "profile",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "section": "style",
+      "metrics": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 390,
+        "bodyWidth": 390,
+        "images": [
+          {
+            "src": "references/pet-light.png",
+            "loaded": true
+          }
+        ],
+        "headerClose": false,
+        "font": "Manrope, sans-serif"
+      },
+      "sectionTargets": [
+        {
+          "label": "Work",
+          "width": 171,
+          "height": 44
+        },
+        {
+          "label": "Projects",
+          "width": 171,
+          "height": 44
+        },
+        {
+          "label": "Tools",
+          "width": 171,
+          "height": 44
+        },
+        {
+          "label": "People",
+          "width": 171,
+          "height": 44
+        },
+        {
+          "label": "Style",
+          "width": 171,
+          "height": 44
+        },
+        {
+          "label": "Rhythm",
+          "width": 171,
+          "height": 44
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "prototypeInteractions": {
+    "opened": {
+      "heading": "Style",
+      "focus": "detail-title",
+      "selected": "true"
+    },
+    "returned": {
+      "detailHidden": true,
+      "focus": "section-style"
+    },
+    "personalEmpty": "Nothing observed here yet.",
+    "workRestored": 2,
+    "note": "Synthetic local state only; no API mutations or production interaction verification."
+  }
+}
