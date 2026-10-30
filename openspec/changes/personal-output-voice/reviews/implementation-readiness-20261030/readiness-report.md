@@ -1,0 +1,81 @@
+EGM Stage 9 — Implementation Readiness, Mode REVIEW
+Reviewer: fresh isolated Orca worker; implementation-readiness persona only; no nested agents, author conversation, prior review reports, or memory/history retrieval.
+Task: task_3366ec24a716; Dispatch: ctx_8656c52a09a5.
+EGM artifact directory (coordinator writes): openspec/changes/personal-output-voice/reviews/implementation-readiness-20261030.
+
+Subject: /home/flamendrin/workspace/niaro/openspec/changes/personal-output-voice/design.md.
+Resolved semantic boundary: line 175, "## Detailed Implementation Plan"; DetailedRange 175–239; FeatureRange 1–174 read in full as governing context.
+Expected and observed target SHA-256: 6a56cdd2a9671fea319e95edc5d4df213f157752a22fd2f242afb19ab1b69811.
+HEAD observed: 3cbe09fdaff6d07b0c1b7c14e8d71e67b2ddb530. Content-hash inventory timestamp: 2026-10-30T19:43:04.805241+00:00. HEAD alone does not describe this shared working checkout.
+
+Flat findings: none established. Counts: Blocker 0; Major 0; Nit 0. I did not identify an additional implementation-readiness defect requiring a repair to this reviewed plan. This conclusion is limited to the documented proposed behavior and the source sections inspected; it is not implementation acceptance, catalogue activation, permission to edit production, or proof that future tests pass.
+
+The proposal in my own words: maintain a separate, authenticated personal output-voice resource and SQLite preference keyed by organization/workspace/user. A person chooses Server default or an opaque server-advertised alternative on mobile or web /me; only the server maps that choice to a provider voice. Reads and saves remain passive. Strict agent-speech/1 shapes and the existing provider path remain unchanged. Each synthesis resolves the effective voice and freezes it across the existing reader retry, with current authority/source/route checks at dispatch and return. Invalid bindings fall back visibly to the current workspace voice, and settings CAS plus last-committed mutation replay are separate from the existing non-durable speech requestId.
+
+Why the implementation sequence is actionable against this code:
+- design.md:183–209 lists new and existing production/test paths and assigns backend versus primary-owner changes, including registration of new Node tests. The new files are proposed paths; their present absence is not a finding. design.md:213–218 partitions contract/storage, authenticated API, dispatch, client/mobile and web/integration work with specific checks in 222–237. Store tests can execute independently before HTTP/UI integration.
+- Existing strict SpeechRequestSchema, SpeechResultSchema and SpeechCapabilitiesSchema in packages/protocol/speech.ts:13–41 support the sidecar-resource choice at design.md:64–108; extending those legacy envelopes would be incompatible. Routing.speech at packages/protocol/service-catalog.ts:236–253 and resolveSpeech at apps/server-identity/service-catalog.ts:471–484 are the output route. The input voice/transcription fields at 445–458 are a different path and are not reused by this plan.
+- accountRuntimeAccess at apps/server-identity/service.ts:3268–3330 provides authenticated organization/user scope and its serialized run/check closure. The existing synthesizer at 3512–3559 captures SpeechSelection and charges useProvider inside the HTTP dispatch guard. The plan explicitly calls for the missing current speech resolution/pin comparison there, without inventing another provider integration. SpeechSelection already includes voice at apps/server-integrations/speech.ts:28–35; the reader request maps it to audio.voice at 281–291. The existing two-attempt verbatim loop is at 241–255 and can retain the same frozen selection.
+- The actual HTTP speech path at apps/fixture-server/http.ts:1497–1566 checks the scoped assistant message, uses a per-scope active key/global limit 8, attaches cancellation/65-second timeout, and performs post-provider validation. design.md:130–138 and 216/229 preserve those boundaries while specifying additional pin revalidation. ServiceCatalogStore.useProvider at 343–354 enforces the current provider revision/daily quota; no speech spend ledger is wired into that closure. Existing speech requestId correlation and absence of automatic ClientSession write replay are described accurately in design.md:136 and 230.
+- The route compatibility epoch is warranted by the required A→B→A behavior: Routing.revision also changes on default-only and unrelated routing edits, so using that entire revision as the saved-choice binding would violate the explicit-choice-survives-default-change requirement. The plan requires a narrow successful-command hook as well as lazy reconciliation (design.md:114–122), rather than relying on a later current-route digest alone. The actual catalog controller already runs store.command inside a transaction at apps/server-identity/catalog-controller.ts:917–950.
+- Existing workspace membership authorization in apps/server-identity/mobile.ts:188–207 checks org/user/workspace and requires workspace membership for ordinary members; service.ts:4460–4489 revokes existing mobile grants on workspace removal. Existing identity FK targets are established at service.ts:423–432 and mobile.ts:91 onward. The proposed separate member FK handles organization-member deletion without giving admins access to another person's preference.
+- ClientSession already has a private authorized JSON transport, bounded UTF-8 support, sameScope checks, stopped-session cancellation and no automatic write replay (packages/client-core/session.ts:1752–1860, 2389–2424; packages/protocol/index.ts:29–40). The planned two methods and ownership fences can use that path. Web AppContext supplies workspace/identity and a nullable ClientSession at apps/server-admin/web/app/context.ts:14–27; the actual issuer/client setup is apps/server-admin/web/app/chat-session.ts:39–129. The planned editor belongs in existing AccountPage at account-page.tsx:156 onward, with no new navigation/authentication architecture.
+- Mobile VoiceSettings and the existing ReplySpeech hook separate controls from playback ownership. The all-voice-unavailable early return in VoiceSettings.tsx:53–67 must be handled when adding the proposed card so the explicitly required unavailable/reset state remains reachable; that behavior is already required by design.md:100, 144 and 231 and voice delta:49–52, so I treat it as an implementation acceptance case, not a new design finding. Saving output voice without calling the spoken-replies setter fits the proposed playback exception; existing on/off/background/session/replacement fences remain covered by the regression plan.
+- The test plan targets production schema/store/HTTP/dispatch and mounted UI behavior, with synthetic transports and explicit call counts, rather than requiring a paid probe. Existing tests/catalog-speech.node.ts supplies a production identity/reference-server harness and before/after-dispatch held transport pattern. Existing tests/web-meetings.test.tsx supplies the mounted web host pattern; Jest includes new .test.ts/.test.tsx files, Storybook matches packages/**/*.stories.tsx, and package.json explicitly enumerates Node identity tests, matching the proposed root registration.
+
+Open decisions already declared by the target remain open, rather than being newly reported defects:
+- design.md:47–60, 168–173 and 213 require explicit acceptance/rejection of the mini-reader Alloy/Echo/Shimmer inference before activation. The inspected OpenRouter metadata has supported_voices:null; the OpenRouter guide says availability varies by model; the upstream Chat Completions SDK contains those literals. These establish the stated bounded inference, not per-backend/per-privacy-route voice certification. A coordinator decision to accept that inference remains necessary. A rejected pin/default-only route must not be reported as completion of personal selection.
+- The output-voice-only playback exception and quota/durable-replay qualification need the declared product/design disposition, followed by a later exact-file implementation gate.
+- Dedicated TTS catalogue activation is out of the initial slice; the existing missing dedicated-speech privacy forwarding is disclosed and must not be treated as fixed by this plan.
+
+Read coverage: full implementation-readiness persona, full implementation-readiness standard, CONTRIBUTING.md and spec-review skill; full canonical design/proposal/tasks and both change delta specs. Relevant production sections were inspected in every explicitly required source file: packages/protocol/speech.ts (full), service-catalog.ts (routing/output contract), apps/server-integrations/speech.ts (full), apps/server-identity/service.ts (identity initialization/runtime/speech/membership/queue/transaction), service-catalog.ts (selection/credentials/quotas/authority/catalog mutations), mobile.ts (runtime/grants/membership), apps/fixture-server/http.ts (route/auth/body/failure/speech), packages/client-core/session.ts (transport/renewal/speech), apps/mobile/VoiceSettings.tsx (full), and apps/server-admin/web/app/account-page.tsx (account component and surrounding primitives). Supplemental source inspection covered protocol Scope/sameScope, integration transport types, catalog controller transaction, current personal action store pattern, inference-budget scope, client ReplySpeech, mobile ReplySpeech/App cancellation sections, SpokenRepliesCard, web context/chat-session/menu/archive patterns, main voice-spec cancellation clause, console design rules, test harnesses and test/story configuration. Large files were inspected by relevant sections, not audited in full. Read official-source snapshots: relevant OpenAI SDK audio/model signatures, OpenRouter SDK ChatRequest, OpenRouter OpenAPI ChatRequest properties, OpenRouter audio guide, selected OpenAI audio guide passages, and public-model-metadata.json. SHA-256 hashes below describe complete files, not a claim of full-file semantic review for every large source.
+
+Access limitations and unassessed areas: no compile, tests, schema-validation command, browser/native/emulator, server start/restart, real audio, paid provider request or capability probe was executed. No credentials, private databases, actor/account data or protected services were accessed. No network browsing was needed for this readiness audit because sanitized primary-source snapshots were provided; their current production applicability and private provider adapters were not independently verified. I did not re-audit future-only TTS model catalogues, underlying provider voice quality/locale performance, unrelated C1/pet/composer changes or final rendered UI. I did not read the historical S0 author plan or prior reviews; the canonical target supplied the contract. No workspace/report file was created or changed; this exact report is delivered through orchestration for the root to persist. Final implementation and UI review remain future work.
+
+Exact SHA-256 inventory (paths relative to /home/flamendrin/workspace/niaro unless absolute):
+8546a8187adffa9324860e130d0c1cc2340b5e77a96a8f8021427cbc79812bb4  CONTRIBUTING.md
+6a56cdd2a9671fea319e95edc5d4df213f157752a22fd2f242afb19ab1b69811  openspec/changes/personal-output-voice/design.md
+f102162b6aa2a405589a572f4f1e7569ca96e9f97a907551d598e80b60b40aa1  openspec/changes/personal-output-voice/proposal.md
+38c7caa83e841957a41cbefcb6f815547190cd04f95f00b3c21d3e44150f5b7d  openspec/changes/personal-output-voice/tasks.md
+e63a05bf6c98bcf1d4b3152d278716235b5cb86953d4e29cef5305b7f315deb0  openspec/changes/personal-output-voice/specs/voice/spec.md
+6ed15874d6b5cfc17bf6d3e3312c7d3f46a51d59ff52657f580e70e7169990fb  openspec/changes/personal-output-voice/specs/models-and-providers/spec.md
+210e76e66b75a58263070191bcae2c8c5f366dcaf652c6f7811d8b4d8df03da3  packages/protocol/speech.ts
+75278ef8d09633588494f48b2f510a57fd1321ebc280d0d348bf47fe2ede42bb  packages/protocol/service-catalog.ts
+0e7b8daec73161615a4c2856ed357784419ea497d989c4f8b9399ccdf42d3652  packages/protocol/index.ts
+054e4626e9378ff3571711512404c81a7800a5d6dee26bc56861897221d3f56b  apps/server-integrations/speech.ts
+daae07327c1f3cfaae0e2662156b34c8dd699caebd55cea2d13ed9475b51901d  apps/server-integrations/transport.ts
+cc5c3750348d67cd2debe9d2aabb72b5b88ad91142d7d3e4f797c4de3668d1e2  apps/server-identity/service.ts
+d18addb953110924e3e8265348db9f08c28832a9e6d636e39d11c6b0742cf7c7  apps/server-identity/service-catalog.ts
+354ef72c28d6c5a21c83e5018c8122d64588634009280d9a9fee9fdd4467389e  apps/server-identity/mobile.ts
+b460e7238fcff9d4e5ae12d08d8acf70716aaa010711c7d8a446ab09e900875a  apps/server-identity/inference-budget.ts
+ba4179aaf86536e5cea3695fe039ec64c0c65acd0c0f46f6a72b4656474f473d  apps/server-identity/catalog-controller.ts
+56d770c00c0beaf03c4a0e04f3b0ded4944cd98dceda631bdd8717d516e558ba  apps/server-identity/personal-action-policy.ts
+3a4df7f0a105272c500b490c55e8de6c13c0746474cb9506408194c59cc6b215  apps/fixture-server/http.ts
+32ddcd2cbb85ac77548e6b5e46e2dcb58a33b50a5b776f8301c9b74603e2cf18  packages/client-core/session.ts
+5f029d59e2d77c4663d09e32c8eea5918f7fc6328d436ec77662ae29ad1744bb  packages/client-core/speech.ts
+af1cc085f38d582e1c81fa8af6ec7fcb791ae247f2e333fc6265ef9ceb394236  apps/mobile/VoiceSettings.tsx
+45ad62c6f8810fcb84882fa872bff694b6dde82def6cab4bb29a697a6377c57c  apps/mobile/ReplySpeech.tsx
+99f64bf1a7f19e276fa733206c72c6bdf640f6c057d5d640c6fc0508bec5eb89  apps/mobile/App.tsx
+e7b26f8be55723821ada5095e0f062432c44f9ffcc66fec310ac4a37d8e7b2dc  packages/ui-catalog/SpokenRepliesCard.tsx
+5ef49a388c5175a029be10ede8d4b356db0ca33fd0c01d85163194bf0fbe415a  apps/server-admin/web/app/account-page.tsx
+bd04e9260808bca73ce2ca45548887f3833fa0ec6821940986c76c801fb474bd  apps/server-admin/web/app/context.ts
+5f2a403875c8731c6f7077a158f293718bd3dfd286fca71ca8fa075c85d90e49  apps/server-admin/web/app/chat-session.ts
+b995088683383e64cee25d8c2fec21dfeb4ae44d928bd0348688179ad8e2a9c2  apps/server-admin/web/app/menu-page.tsx
+168889ef751a520aa164b893987113642661b14778dfc8b0e4614f71d68e7fad  apps/server-admin/web/app/archived-chats.tsx
+4cb84c48585224e915988b6ef281a43b8ca2e148355a450b604ee0fdacb4531b  apps/server-admin/DESIGN.md
+b290cc6a6cadc1562428f5f62d5cdfc2524688da4fba44431b7f83a0f362c48e  openspec/specs/voice/spec.md
+d963670c164b6b8606f2b69413c4e1802bc72b2e947344a3cf7fd5ab7524af65  package.json
+506dc26c7a912324a7172b5ecf4299f7c93868dc21f817f748bfab07b8231830  jest.config.js
+416da9111c8a918579ae9bce48448f4d65f08cecd6555f58ac4578169ff9baaf  .rnstorybook/main.ts
+99a299faf8ae09264d4f301e9372fec37ecf5d29f8ab54c528d0ae23f5689f8b  tests/catalog-speech.node.ts
+2dae5c73c0d687dd5a99573ba71d900507cdf247bff05e702ba570750f821a72  tests/web-meetings.test.tsx
+1f6aa61cfe7cb86dc94943ab3b3fd339e5baba533937198fd10edb06dfa64e8f  /home/flamendrin/.codex/plugins/cache/egm/egm/0.1.0/agents/implementation_readiness.md
+ed0d2a085eac0fd9581d504a2ec0df2a92d6b2538636a22b16e0b1370fba6dbb  /home/flamendrin/.codex/plugins/cache/egm/egm/0.1.0/resources/document_standards/implementation-readiness-standard.md
+4bbf60c1b241eadb9a9fa2446082785cd333623cb53ed50a67cc7667a620550e  .agents/skills/spec-review/SKILL.md
+e89fbcbd0a51f09a9f1737af3fe0cebbe66c385ec60d548bf467496d7fcccc1c  /tmp/niaro-pet-parity-20261030/output-voice/public-model-metadata.json
+c42d4f538cef710809b2eea7bf1193f8093207aefc7a4d3ba3754324f3d85f91  /tmp/niaro-pet-parity-20261030/output-voice/official-source/openai-completions.ts
+15cf6803634242502525c52098acddea16b9c2bb2439f85aa388dd43fa837455  /tmp/niaro-pet-parity-20261030/output-voice/official-source/openai-shared.ts
+59c80103d3dac4d4fb61fd83976baf725dd7b7a7ea8c37e968858acf14278bf0  /tmp/niaro-pet-parity-20261030/output-voice/official-source/OpenRouterTeam-chatrequest.ts
+57f7ae9cfd167639fa0ed7692133d489db720a32eaab7d592fc16d65e372143c  /tmp/niaro-pet-parity-20261030/output-voice/official-source/openrouter-api-openapi.json
+b0da4dc921abcc5aef4afcb0531dad010b91953a3bd9bb1805e131dc95c021c5  /tmp/niaro-pet-parity-20261030/output-voice/official-source/openrouter-audio.md
+a3f7a3ae4fa8079a3ad7055430f74a133c8e1fb24d1156be38508d03d9062c13  /tmp/niaro-pet-parity-20261030/output-voice/official-source/openai-audio-chat.md
