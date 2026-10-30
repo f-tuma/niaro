@@ -1,0 +1,29 @@
+{
+  "schema": 2,
+  "server": "https://vardum.com",
+  "workspace": "6e3ef0b3-0f89-45d6-a7d5-4e8af30c64bb",
+  "vard": "c641140e-c182-4f64-a178-05478a35c4ae",
+  "items": {
+    "a1beac11-9822-4486-941c-3698b75be98e": {
+      "path": "source/lockup.svg",
+      "versionId": "fcb52e59-5108-4d6a-a2d6-b291d54b5936",
+      "fingerprint": "fcb52e59-5108-4d6a-a2d6-b291d54b5936:",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/fcb52e59-5108-4d6a-a2d6-b291d54b5936/brand/logo/lockup",
+      "checksum": "1c4721c7ef15002cfef3165458fede901c2ef64f74ed44186a47dad3c089c3b8"
+    },
+    "4be75774-7b93-48c1-88c6-da3d09ee20fd": {
+      "path": "source/logo.svg",
+      "versionId": "e48c5905-9965-4d79-a9b8-b440da49fbeb",
+      "fingerprint": "e48c5905-9965-4d79-a9b8-b440da49fbeb:",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/e48c5905-9965-4d79-a9b8-b440da49fbeb/brand/logo/mark",
+      "checksum": "a69b903289f019c1e1ceba77713eb8aa7bce719b6de3a3f1f8ff456d1c3913b8"
+    },
+    "3a8de1b1-faca-4656-a757-900518b467e4": {
+      "path": "source/micro.svg",
+      "versionId": "18520c76-a771-4351-a778-70f50387632a",
+      "fingerprint": "18520c76-a771-4351-a778-70f50387632a:",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/18520c76-a771-4351-a778-70f50387632a/brand/logo/micro",
+      "checksum": "26f6de0e95e64712da4a211e6c6de75bd3bdfdf7c4e21a8d14b9306a17a1b4b0"
+    }
+  }
+}

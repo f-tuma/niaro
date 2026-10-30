@@ -1,0 +1,181 @@
+{
+  "schema": 1,
+  "workspace": {
+    "id": "6e3ef0b3-0f89-45d6-a7d5-4e8af30c64bb",
+    "slug": "niaro",
+    "server": "https://vardum.com"
+  },
+  "cliVersion": "0.8.3",
+  "canonicalSources": [
+    {
+      "assetId": "c5159c89-2002-480d-93e6-40d359028fe7",
+      "key": "brand/logo/mark",
+      "versionId": "e48c5905-9965-4d79-a9b8-b440da49fbeb",
+      "sha256": "a69b903289f019c1e1ceba77713eb8aa7bce719b6de3a3f1f8ff456d1c3913b8",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/e48c5905-9965-4d79-a9b8-b440da49fbeb/brand/logo/mark",
+      "path": "source/logo.svg",
+      "approvedSha256": "a2ae460c9a6af384c9f3ea07caac6e533dad9f5cda76e50c7245f4013c6e51bc",
+      "normalization": "Remove root role/aria-label and wrap unchanged children in <g id=\"logo\">; browser pixel-identical."
+    },
+    {
+      "assetId": "107392d7-4288-47a7-8c44-5ce692039100",
+      "key": "brand/logo/micro",
+      "versionId": "18520c76-a771-4351-a778-70f50387632a",
+      "sha256": "26f6de0e95e64712da4a211e6c6de75bd3bdfdf7c4e21a8d14b9306a17a1b4b0",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/18520c76-a771-4351-a778-70f50387632a/brand/logo/micro",
+      "path": "source/micro.svg",
+      "approvedSha256": "0bfc56119c671b79c1dce5093a2e35dbaf5feff4dcdb8737680bb1fb7e14f521",
+      "normalization": "Remove root role/aria-label and wrap unchanged children in <g id=\"logo\">; browser pixel-identical."
+    },
+    {
+      "assetId": "f2312755-56e3-4993-889d-d32db334888b",
+      "key": "brand/logo/lockup",
+      "versionId": "fcb52e59-5108-4d6a-a2d6-b291d54b5936",
+      "sha256": "1c4721c7ef15002cfef3165458fede901c2ef64f74ed44186a47dad3c089c3b8",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/fcb52e59-5108-4d6a-a2d6-b291d54b5936/brand/logo/lockup",
+      "path": "source/lockup.svg",
+      "approvedSha256": "d924b1c62b687f97a496dd020408bf560b584380fe3cd63c44cb9a8a0abb9ea1",
+      "normalization": "Remove root role/aria-label and wrap unchanged children in <g id=\"logo\">; browser pixel-identical."
+    }
+  ],
+  "derivedInverse": {
+    "assetId": "217215c2-468f-46db-b221-7e4df818433c",
+    "key": "brand/logo/inverse",
+    "versionId": "ba6a7485-a62b-45d7-ac7b-e2e440952e4e",
+    "sha256": "2c9bdfea727c918c225c749f05ca67a62e33dc87ce566c27ad32d6af4db93689",
+    "downloadUrl": "https://vardum.com/w/niaro/__v/ba6a7485-a62b-45d7-ac7b-e2e440952e4e/brand/logo/inverse",
+    "derivedFrom": "source/logo.svg",
+    "operation": "Replace only the root fill=\"#141518\" with fill=\"#FFFFFF\"; geometry unchanged.",
+    "reason": "Raster recipes do not support darkLayer; hidden/defs/use layers are rejected. Explicitly authorized fourth service upload, no fourth canonical repository file."
+  },
+  "vards": [
+    {
+      "id": "20dedd06-3411-4e46-8123-5241c9f780dd",
+      "name": "Niaro · Application",
+      "projectDirectory": ".",
+      "isPublic": false,
+      "revision": "v1:982f123586cb69838c0c81318871de030a1674d1afc763c3206301574827ab38",
+      "folderRules": []
+    },
+    {
+      "id": "c641140e-c182-4f64-a178-05478a35c4ae",
+      "name": "Niaro · Brand delivery",
+      "projectDirectory": "assets/brand",
+      "isPublic": false,
+      "revision": "v1:138680d8e57f571bd462de8b866c60427385fa4a07e48f4933c24fb125d264fe",
+      "folderRules": []
+    }
+  ],
+  "outputs": [
+    {
+      "projectDirectory": ".",
+      "id": "08506b68-5fe9-460b-9b43-ea9de6dbfb57",
+      "assetId": "107392d7-4288-47a7-8c44-5ce692039100",
+      "path": "apps/server-admin/web/assets/brand/favicon.svg",
+      "versionId": "18520c76-a771-4351-a778-70f50387632a",
+      "writable": false,
+      "transformation": {
+        "h": 32,
+        "w": 32,
+        "fit": "contain",
+        "format": "svg",
+        "darkColor": "#ffffff",
+        "darkLayer": "logo"
+      },
+      "downloadUrl": "https://vardum.com/w/niaro/__v/18520c76-a771-4351-a778-70f50387632a/brand/logo/micro?w=32&h=32&fit=contain&format=svg&darkLayer=logo&darkColor=%23ffffff&sig=RN7n-XSj2HFRNMj4AWniExcCSjtay9XQawvDzyhqnP0"
+    },
+    {
+      "projectDirectory": ".",
+      "id": "f99ffff2-23fa-4280-9b3e-dcdcdd335212",
+      "assetId": "f2312755-56e3-4993-889d-d32db334888b",
+      "path": "apps/server-admin/web/assets/brand/logo.svg",
+      "versionId": "fcb52e59-5108-4d6a-a2d6-b291d54b5936",
+      "writable": false,
+      "transformation": {
+        "format": "svg",
+        "darkColor": "#ffffff",
+        "darkLayer": "logo"
+      },
+      "downloadUrl": "https://vardum.com/w/niaro/__v/fcb52e59-5108-4d6a-a2d6-b291d54b5936/brand/logo/lockup?format=svg&darkLayer=logo&darkColor=%23ffffff&sig=KlhYM3yKe_r5BV5pAndVe8cA6x-O8IdkgyIMQcNRb08"
+    },
+    {
+      "projectDirectory": ".",
+      "id": "14a26da9-a9c8-4b48-ae14-f284b0b45b9d",
+      "assetId": "107392d7-4288-47a7-8c44-5ce692039100",
+      "path": "assets/application/favicon.png",
+      "versionId": "18520c76-a771-4351-a778-70f50387632a",
+      "writable": false,
+      "transformation": {
+        "h": 48,
+        "w": 48,
+        "fit": "contain",
+        "format": "png"
+      },
+      "downloadUrl": "https://vardum.com/w/niaro/__v/18520c76-a771-4351-a778-70f50387632a/brand/logo/micro?w=48&h=48&fit=contain&format=png&q=80&sig=DOIN6SK-7uqm9tEuyUpP4Z4gHWgUBvJyeqK2-p4VZKU"
+    },
+    {
+      "projectDirectory": ".",
+      "id": "1b26c005-fd50-439f-8705-cba1debbae24",
+      "assetId": "217215c2-468f-46db-b221-7e4df818433c",
+      "path": "assets/application/icon.png",
+      "versionId": "ba6a7485-a62b-45d7-ac7b-e2e440952e4e",
+      "writable": false,
+      "transformation": {
+        "h": 1024,
+        "w": 1024,
+        "bg": "#4563de",
+        "fit": "contain",
+        "pad": 17.7,
+        "format": "png",
+        "render": "v2"
+      },
+      "downloadUrl": "https://vardum.com/w/niaro/__v/ba6a7485-a62b-45d7-ac7b-e2e440952e4e/brand/logo/inverse?w=1024&h=1024&fit=contain&format=png&q=80&bg=%234563de&pad=17.7&render=v2&sig=9jF3YnIB-PawnkZieVbRJOnr8MV8yMnayyyH9MvO9YA"
+    },
+    {
+      "projectDirectory": ".",
+      "id": "29828960-2f1f-4bba-a229-836c41d943f0",
+      "assetId": "217215c2-468f-46db-b221-7e4df818433c",
+      "path": "assets/application/mark.png",
+      "versionId": "ba6a7485-a62b-45d7-ac7b-e2e440952e4e",
+      "writable": false,
+      "transformation": {
+        "h": 1024,
+        "w": 1024,
+        "fit": "contain",
+        "pad": 17.7,
+        "format": "png"
+      },
+      "downloadUrl": "https://vardum.com/w/niaro/__v/ba6a7485-a62b-45d7-ac7b-e2e440952e4e/brand/logo/inverse?w=1024&h=1024&fit=contain&format=png&q=80&pad=17.7&sig=ODwO53l-A97eAVx-giSfegSWFiTk-jSI-yeOJr09l3g"
+    },
+    {
+      "projectDirectory": "assets/brand",
+      "id": "a1beac11-9822-4486-941c-3698b75be98e",
+      "assetId": "f2312755-56e3-4993-889d-d32db334888b",
+      "path": "source/lockup.svg",
+      "versionId": "fcb52e59-5108-4d6a-a2d6-b291d54b5936",
+      "writable": false,
+      "transformation": null,
+      "downloadUrl": "https://vardum.com/w/niaro/__v/fcb52e59-5108-4d6a-a2d6-b291d54b5936/brand/logo/lockup"
+    },
+    {
+      "projectDirectory": "assets/brand",
+      "id": "4be75774-7b93-48c1-88c6-da3d09ee20fd",
+      "assetId": "c5159c89-2002-480d-93e6-40d359028fe7",
+      "path": "source/logo.svg",
+      "versionId": "e48c5905-9965-4d79-a9b8-b440da49fbeb",
+      "writable": false,
+      "transformation": null,
+      "downloadUrl": "https://vardum.com/w/niaro/__v/e48c5905-9965-4d79-a9b8-b440da49fbeb/brand/logo/mark"
+    },
+    {
+      "projectDirectory": "assets/brand",
+      "id": "3a8de1b1-faca-4656-a757-900518b467e4",
+      "assetId": "107392d7-4288-47a7-8c44-5ce692039100",
+      "path": "source/micro.svg",
+      "versionId": "18520c76-a771-4351-a778-70f50387632a",
+      "writable": false,
+      "transformation": null,
+      "downloadUrl": "https://vardum.com/w/niaro/__v/18520c76-a771-4351-a778-70f50387632a/brand/logo/micro"
+    }
+  ]
+}

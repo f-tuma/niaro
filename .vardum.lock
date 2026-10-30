@@ -1,0 +1,43 @@
+{
+  "schema": 2,
+  "server": "https://vardum.com",
+  "workspace": "6e3ef0b3-0f89-45d6-a7d5-4e8af30c64bb",
+  "vard": "20dedd06-3411-4e46-8123-5241c9f780dd",
+  "items": {
+    "08506b68-5fe9-460b-9b43-ea9de6dbfb57": {
+      "path": "apps/server-admin/web/assets/brand/favicon.svg",
+      "versionId": "18520c76-a771-4351-a778-70f50387632a",
+      "fingerprint": "18520c76-a771-4351-a778-70f50387632a:w=32&h=32&fit=contain&format=svg&darkLayer=logo&darkColor=%23ffffff",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/18520c76-a771-4351-a778-70f50387632a/brand/logo/micro?w=32&h=32&fit=contain&format=svg&darkLayer=logo&darkColor=%23ffffff&sig=RN7n-XSj2HFRNMj4AWniExcCSjtay9XQawvDzyhqnP0",
+      "checksum": "8fdbcea2f4888281d785055af25845304ba769ce1c46ddb6dc2cc6e8aa268046"
+    },
+    "f99ffff2-23fa-4280-9b3e-dcdcdd335212": {
+      "path": "apps/server-admin/web/assets/brand/logo.svg",
+      "versionId": "fcb52e59-5108-4d6a-a2d6-b291d54b5936",
+      "fingerprint": "fcb52e59-5108-4d6a-a2d6-b291d54b5936:format=svg&darkLayer=logo&darkColor=%23ffffff",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/fcb52e59-5108-4d6a-a2d6-b291d54b5936/brand/logo/lockup?format=svg&darkLayer=logo&darkColor=%23ffffff&sig=KlhYM3yKe_r5BV5pAndVe8cA6x-O8IdkgyIMQcNRb08",
+      "checksum": "49a0d64a8f6464f6933f8d2754f94c8790e73c5488ee716f868462acf263f3b7"
+    },
+    "14a26da9-a9c8-4b48-ae14-f284b0b45b9d": {
+      "path": "assets/application/favicon.png",
+      "versionId": "18520c76-a771-4351-a778-70f50387632a",
+      "fingerprint": "18520c76-a771-4351-a778-70f50387632a:w=48&h=48&fit=contain&format=png&q=80",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/18520c76-a771-4351-a778-70f50387632a/brand/logo/micro?w=48&h=48&fit=contain&format=png&q=80&sig=DOIN6SK-7uqm9tEuyUpP4Z4gHWgUBvJyeqK2-p4VZKU",
+      "checksum": "a2c09e77bec948ea66482d849b1738f46885e94cdeaef910a375e533e6425844"
+    },
+    "1b26c005-fd50-439f-8705-cba1debbae24": {
+      "path": "assets/application/icon.png",
+      "versionId": "ba6a7485-a62b-45d7-ac7b-e2e440952e4e",
+      "fingerprint": "ba6a7485-a62b-45d7-ac7b-e2e440952e4e:w=1024&h=1024&fit=contain&format=png&q=80&bg=%234563de&pad=17.7&render=v2",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/ba6a7485-a62b-45d7-ac7b-e2e440952e4e/brand/logo/inverse?w=1024&h=1024&fit=contain&format=png&q=80&bg=%234563de&pad=17.7&render=v2&sig=9jF3YnIB-PawnkZieVbRJOnr8MV8yMnayyyH9MvO9YA",
+      "checksum": "20e0319798ddc27da4624c930c71cc9d43f0184a1f98ca1aeeafbf405ec49636"
+    },
+    "29828960-2f1f-4bba-a229-836c41d943f0": {
+      "path": "assets/application/mark.png",
+      "versionId": "ba6a7485-a62b-45d7-ac7b-e2e440952e4e",
+      "fingerprint": "ba6a7485-a62b-45d7-ac7b-e2e440952e4e:w=1024&h=1024&fit=contain&format=png&q=80&pad=17.7",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/ba6a7485-a62b-45d7-ac7b-e2e440952e4e/brand/logo/inverse?w=1024&h=1024&fit=contain&format=png&q=80&pad=17.7&sig=ODwO53l-A97eAVx-giSfegSWFiTk-jSI-yeOJr09l3g",
+      "checksum": "4a5bea5d6cab6f3767c4b03ff97d6e3c1eb3e627497a6b50ec5d165286630ca5"
+    }
+  }
+}
