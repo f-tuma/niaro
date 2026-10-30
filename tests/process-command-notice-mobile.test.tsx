@@ -207,7 +207,11 @@ test.each(
         status === "cancelled" ? "rejected" : status,
       );
       await act(async () => {
-        fireEvent.press(screen.getByRole("tab", { name: tr("tasks") }));
+        fireEvent.press(
+          screen.getByRole("tab", {
+            name: language === "cs" ? "Práce" : "Work",
+          }),
+        );
         await flush();
       });
       expect(screen.getByText(noticeText)).toBeTruthy();

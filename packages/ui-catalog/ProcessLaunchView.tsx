@@ -409,7 +409,7 @@ function ProcessRow({
         ) : null}
       </View>
       {checked ? (
-        <Icon name="check" size={20} color={t.color.action.primary} />
+        <Icon name="check" size={20} color={t.color.action.link} />
       ) : null}
     </Pressable>
   );

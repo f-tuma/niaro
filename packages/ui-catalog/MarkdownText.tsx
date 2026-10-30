@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   strong: { fontWeight: "600" },
   emphasis: { fontStyle: "italic" },
   deleted: { textDecorationLine: "line-through" },
-  link: { color: t.color.action.primary, textDecorationLine: "underline" },
+  link: { color: t.color.action.link, textDecorationLine: "underline" },
   monospace: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
   inlineCode: {
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",

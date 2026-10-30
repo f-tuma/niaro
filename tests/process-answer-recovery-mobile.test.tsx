@@ -253,7 +253,9 @@ test.each(
         expect(screen.queryByText(tr(key), { exact: false })).toBeNull();
       expect(screen.queryByRole("button", { name: tr("retry") })).toBeNull();
       expect(f.commands).toHaveLength(1);
-      fireEvent.press(screen.getByRole("tab", { name: tr("tasks") }));
+      fireEvent.press(
+        screen.getByRole("tab", { name: language === "cs" ? "Práce" : "Work" }),
+      );
       expect(
         screen.getByText(tr("processResultUnavailable"), { exact: false }),
       ).toBeTruthy();

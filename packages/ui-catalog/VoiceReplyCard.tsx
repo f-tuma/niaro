@@ -101,9 +101,9 @@ export function VoiceReplyCard({
       >
         {["starting", "stopping", "transcribing"].includes(stage) ? (
           reduced ? (
-            <Icon name="clock" size={18} color={t.color.action.primary} />
+            <Icon name="clock" size={18} color={t.color.action.link} />
           ) : (
-            <ActivityIndicator size="small" color={t.color.action.primary} />
+            <ActivityIndicator size="small" color={t.color.action.link} />
           )
         ) : null}
         <Text tone="secondary" style={{ flex: 1 }}>

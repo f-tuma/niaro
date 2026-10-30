@@ -7,7 +7,6 @@ import { tokens as t } from "../design-tokens";
 import { translate } from "../i18n";
 import {
   Button,
-  Disclosure,
   Field,
   Group,
   Icon,
@@ -21,7 +20,11 @@ import {
   type StatusTone,
 } from "../ui";
 import { Tabs } from "../ui/Tabs";
-import { MotionPressable } from "../ui/motion";
+import { Entrance, MotionPressable } from "../ui/motion";
+import {
+  usePresentationScroll,
+  usePresentationState,
+} from "./generative-ui-presentation";
 import { MarkdownText } from "./MarkdownText";
 import { openContact } from "./contact-link";
 import {
@@ -139,7 +142,7 @@ const SectionView: Renderer = ({ props }) => {
 function TabsView({ props }: GenerativeProps) {
   const render = useRenderNode();
   const tabs = elements(props.tabs, "Tab");
-  const [selected, setSelected] = useState("0");
+  const [selected, setSelected] = usePresentationState("tab", "0");
   if (!tabs.length) return null;
   const index = Math.min(Number(selected), tabs.length - 1);
   return (
@@ -159,12 +162,36 @@ function TabsView({ props }: GenerativeProps) {
 
 const AccordionItemView: Renderer = ({ props }) => {
   const render = useRenderNode();
+  const [expanded, setExpanded] = usePresentationState("expanded", false);
   const title = str(props.title);
   if (!title) return null;
   return (
-    <Disclosure label={title}>
-      <View style={styles.stack}>{render(props.children)}</View>
-    </Disclosure>
+    <View>
+      <MotionPressable
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded((previous) => !previous)}
+        style={{
+          minHeight: 48,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <Text role="label" style={{ flex: 1 }}>
+          {title}
+        </Text>
+        <View style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}>
+          <Icon name="chevron" size={16} color={t.color.text.secondary} />
+        </View>
+      </MotionPressable>
+      {expanded ? (
+        <Entrance distance={3}>
+          <View style={styles.stack}>{render(props.children)}</View>
+        </Entrance>
+      ) : null}
+    </View>
   );
 };
 const AccordionView: Renderer = ({ props }) => {
@@ -289,7 +316,7 @@ function LinkView({ props }: GenerativeProps) {
       onPress={() => runtime.openUrl(href)}
       style={styles.link}
     >
-      <Icon name="link" size={16} color={t.color.action.primary} />
+      <Icon name="link" size={16} color={t.color.action.link} />
       <Text style={styles.linkText}>{label}</Text>
     </MotionPressable>
   );
@@ -439,7 +466,8 @@ type Sort = { column: number; descending: boolean };
 function TableView({ props }: GenerativeProps) {
   const { language } = useRuntime();
   const tr = translate(language);
-  const [sort, setSort] = useState<Sort | null>(null);
+  const [sort, setSort] = usePresentationState<Sort | null>("sort", null);
+  const { initialOffset, saveOffset } = usePresentationScroll("scroll");
   const columns = list(props.columns).map((column) => str(column) ?? "");
   const rows = list(props.rows).filter(Array.isArray) as unknown[][];
   if (!columns.length) return null;
@@ -481,6 +509,11 @@ function TableView({ props }: GenerativeProps) {
   return (
     <ScrollView
       horizontal
+      contentOffset={initialOffset}
+      onScroll={(event) => {
+        saveOffset(event.nativeEvent.contentOffset);
+      }}
+      scrollEventThrottle={100}
       contentContainerStyle={styles.tableScroll}
       style={styles.table}
     >
@@ -729,7 +762,10 @@ const ButtonsView: Renderer = ({ props }) => {
 
 function FormView({ props }: GenerativeProps) {
   const render = useRenderNode();
-  const [errors, setErrors] = useState<Record<string, FieldError>>({});
+  const [errors, setErrors] = usePresentationState<Record<string, FieldError>>(
+    "errors",
+    {},
+  );
   const name = str(props.name) ?? "";
   // A lone submit button is the form's primary action.
   const buttons =
@@ -877,13 +913,13 @@ function SelectView({ props }: GenerativeProps) {
               ]}
             >
               {checked ? (
-                <Icon name="check" size={16} color={t.color.action.primary} />
+                <Icon name="check" size={16} color={t.color.action.link} />
               ) : null}
               <Text
                 role={compact ? "label" : "body"}
                 style={[
                   styles.shrink,
-                  checked && { color: t.color.action.primary },
+                  checked && { color: t.color.action.link },
                 ]}
               >
                 {option}
@@ -992,7 +1028,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
   },
-  linkText: { color: t.color.action.primary, fontWeight: "500" },
+  linkText: { color: t.color.action.link, fontWeight: "500" },
   metric: {
     flexGrow: 1,
     minWidth: 0,

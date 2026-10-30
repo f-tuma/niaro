@@ -57,7 +57,7 @@ function BrowserField({
           fontSize: t.typography.body.fontSize,
           lineHeight: `${t.typography.body.lineHeight}px`,
           outline: "none",
-          colorScheme: "light",
+          colorScheme: "dark",
           opacity: disabled ? 0.5 : 1,
         }}
       />

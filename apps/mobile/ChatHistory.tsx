@@ -28,8 +28,9 @@ import {
   chatChangeError,
   ConversationOpenWorkError,
 } from "../../packages/client-core/conversation-directory";
+import { useCompanionTypography } from "../../packages/ui/typography";
 import { tokens as t } from "../../packages/design-tokens";
-import { BrandMark, Button, Icon, Notice, Row, Text } from "../../packages/ui";
+import { Button, Icon, Notice, Row, Text } from "../../packages/ui";
 import {
   motionEase,
   nativeMotion,
@@ -37,9 +38,10 @@ import {
 } from "../../packages/ui/motion";
 import * as cues from "./feedback";
 import { IconButton, MenuItem } from "./ScreenChrome";
+import { companionCopy } from "./companion-copy";
 import { OpenWorkNotice, type OpenWorkRefusal } from "./OpenWorkNotice";
 
-export type MenuTarget = "processes" | "search";
+export type MenuTarget = "processes" | "search" | "tasks" | "library";
 
 type DrawerProps = {
   session: ClientSession | null;
@@ -389,13 +391,15 @@ function OpenChatHistory({
           >
             <Row
               style={{
-                minHeight: 56,
+                minHeight: 64,
                 paddingLeft: 20,
                 paddingRight: 6,
                 justifyContent: "space-between",
               }}
             >
-              <BrandMark />
+              <Text role="headerTitle" accessibilityRole="header">
+                Niaro
+              </Text>
               <IconButton
                 icon="close"
                 label={tr("closeMenu")}
@@ -444,7 +448,20 @@ function OpenChatHistory({
                   onPress={() => go("search")}
                 />
               ) : null}
-              {/* Chat, Meetings, Tasks and Settings live in the tab bar. */}
+              {onNavigate ? (
+                <>
+                  <MenuItem
+                    icon="briefcase"
+                    label={companionCopy(language).work}
+                    onPress={() => go("tasks")}
+                  />
+                  <MenuItem
+                    icon="library"
+                    label={companionCopy(language).library}
+                    onPress={() => go("library")}
+                  />
+                </>
+              ) : null}
               {onNavigate && session ? (
                 <MenuItem
                   icon="bolt"
@@ -753,6 +770,7 @@ function RowMenu({
   onClose: () => void;
 }) {
   const tr = translate(language);
+  const inputFont = useCompanionTypography(t.typography.body);
   const title = conversationTitle(conversation.title) || tr("untitledChat");
   // Renaming and deleting stay inside the menu: a field, or one confirmation.
   const [step, setStep] = useState<"menu" | "rename" | "delete">("menu");
@@ -882,7 +900,7 @@ function RowMenu({
                 void onRename(name);
                 leave(onClose);
               }}
-              style={styles.input}
+              style={[styles.input, inputFont]}
             />
             <Row style={{ justifyContent: "flex-end", gap: 8 }}>
               <Button
@@ -1041,7 +1059,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: t.color.hairline,
     color: t.color.text.primary,
-    fontSize: 16,
+    ...t.typography.body,
   },
   menuItem: {
     minHeight: 52,

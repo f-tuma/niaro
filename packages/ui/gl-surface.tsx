@@ -13,12 +13,19 @@ export function supportedGLView(): typeof GLView | null {
 }
 /** A GL visual that throws while mounting shows its static fallback instead. */
 export class GLBoundary extends React.Component<
-  { children: React.ReactNode; fallback: React.ReactNode },
+  {
+    children: React.ReactNode;
+    fallback: React.ReactNode;
+    onError?: () => void;
+  },
   { failed: boolean }
 > {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onError?.();
   }
   render() {
     return this.state.failed ? this.props.fallback : this.props.children;

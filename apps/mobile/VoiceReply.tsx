@@ -4,12 +4,9 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { AppState, BackHandler, View, type Animated } from "react-native";
+import { Animated, AppState, BackHandler, View } from "react-native";
 import { randomUUID } from "expo-crypto";
-import type {
-  HumanTaskReference,
-  Language,
-} from "../../packages/protocol";
+import type { HumanTaskReference, Language } from "../../packages/protocol";
 import { ClientSession } from "../../packages/client-core/session";
 import type { ProcessNoticeOwner } from "../../packages/client-core/process-command-notice";
 import { feedback } from "./feedback";
@@ -181,6 +178,16 @@ export function VoiceReply({
     draft.getSnapshot,
   );
   const reduced = useReducedMotion();
+  const [petLevel] = useState(() => new Animated.Value(0));
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (state.stage !== "recording") return;
+    const started = Date.now();
+    const timer = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [draft, state.stage]);
   // Sent when capture ends, an error when it fails for a reason the person should hear.
   const previous = useRef(state.stage);
   useEffect(() => {
@@ -208,6 +215,7 @@ export function VoiceReply({
   useEffect(() => {
     if (state.stage !== "recording") {
       level?.setValue(0);
+      petLevel.setValue(0);
       return;
     }
     const timer = setInterval(
@@ -219,14 +227,16 @@ export function VoiceReply({
         );
         setMeter(next);
         level?.setValue(next.level);
+        petLevel.setValue(next.level);
       },
       reduced ? 250 : 80,
     );
     return () => {
       clearInterval(timer);
       level?.setValue(0);
+      petLevel.setValue(0);
     };
-  }, [draft, state.stage, reduced, level]);
+  }, [draft, state.stage, reduced, level, petLevel]);
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (next) => {
       if (next !== "active") void draft.cancel("voice_interrupted");
@@ -252,10 +262,13 @@ export function VoiceReply({
         reviewReasons={state.reviewReasons}
         blocked={blocked && state.stage === "review"}
         level={meter.level}
+        petLevel={petLevel}
+        elapsedSeconds={elapsedSeconds}
         bands={meter.bands}
         spectrum={meter.spectrum}
         onStart={() => {
           setMeter({ level: 0 });
+          setElapsedSeconds(0);
           void draft.start();
         }}
         onStop={() => {

@@ -13,6 +13,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  useWindowDimensions,
   type TextProps,
   type TextInputProps,
   type ViewProps,
@@ -71,14 +72,18 @@ import AudioLines from "lucide-react-native/icons/audio-lines";
 import Smartphone from "lucide-react-native/icons/smartphone";
 import Circle from "lucide-react-native/icons/circle";
 import Archive from "lucide-react-native/icons/archive";
+import Paperclip from "lucide-react-native/icons/paperclip";
+import BookOpen from "lucide-react-native/icons/book-open";
+import Briefcase from "lucide-react-native/icons/briefcase";
 import ArchiveRestore from "lucide-react-native/icons/archive-restore";
 import { tokens as t } from "../design-tokens";
+import { useCompanionTypography } from "./typography";
 import { Entrance, MotionPressable } from "./motion";
 export const ui = StyleSheet.create({
-  // A pill: the text composer and the voice composer share this box.
+  // One continuous panel; inset actions use softly squared corners.
   composerFrame: {
     padding: 5,
-    borderRadius: 27,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: t.color.border,
     backgroundColor: t.color.surface,
@@ -91,9 +96,8 @@ export const ui = StyleSheet.create({
     borderRadius: t.radius.card,
     padding: t.spacing.cardPadding,
     borderWidth: 1,
-    borderColor: t.color.border,
+    borderColor: t.color.hairline,
     gap: t.spacing.md,
-    ...t.elevation.card,
   },
   input: {
     backgroundColor: t.color.fill,
@@ -111,7 +115,7 @@ export const ui = StyleSheet.create({
   },
   button: {
     minHeight: t.control.large,
-    borderRadius: t.radius.pill,
+    borderRadius: t.radius.action,
     paddingVertical: t.spacing.sm,
     paddingHorizontal: 18,
     alignItems: "center",
@@ -188,6 +192,7 @@ export function Text({
   role?: keyof typeof t.typography;
   tone?: keyof typeof t.color.text;
 }) {
+  const font = useCompanionTypography([t.typography[role], style]);
   return (
     <NativeText
       {...props}
@@ -195,6 +200,7 @@ export function Text({
         t.typography[role],
         { color: t.color.text[tone], includeFontPadding: false },
         style,
+        font,
       ]}
     />
   );
@@ -237,6 +243,7 @@ export function Row(props: ViewProps) {
 }
 export function Field({ label, ...props }: TextInputProps & { label: string }) {
   const [focused, setFocused] = useState(false);
+  const font = useCompanionTypography([ui.input, props.style]);
   return (
     <View style={{ gap: 6 }}>
       <Text role="section" tone="secondary">
@@ -256,6 +263,7 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
         }}
         style={[
           ui.input,
+          font,
           props.style,
           focused && {
             borderColor: t.color.action.primary,
@@ -287,7 +295,7 @@ const buttonColors: Record<
   quiet: {
     fill: "transparent",
     pressed: t.color.pressed,
-    content: t.color.action.primary,
+    content: t.color.action.link,
   },
   // Destructive, tonal red.
   danger: {
@@ -490,6 +498,9 @@ const icons = {
   pause: Pause,
   volume: Volume2,
   settings: Settings,
+  paperclip: Paperclip,
+  library: BookOpen,
+  briefcase: Briefcase,
   mail: Mail,
   phone: Phone,
   close: X,
@@ -796,6 +807,8 @@ export function ListRow({
   testID?: string;
 }>) {
   const color = danger ? t.color.action.danger : t.color.text.primary;
+  const { fontScale } = useWindowDimensions();
+  const stackedValue = fontScale > 1.3;
   const grouped = useContext(InGroup);
   // The separator starts where the text does, wherever the leading ends.
   const [inset, setInset] = useState<number>(
@@ -834,9 +847,10 @@ export function ListRow({
             {description}
           </Text>
         ) : null}
+        {value && stackedValue ? <Text tone="secondary">{value}</Text> : null}
         {children}
       </View>
-      {value ? (
+      {value && !stackedValue ? (
         <Text
           tone="secondary"
           numberOfLines={1}
@@ -1097,6 +1111,9 @@ export function StatusPill({
     <View
       style={{
         minHeight: compact ? 20 : 26,
+        maxWidth: "100%",
+        flexShrink: 1,
+        paddingVertical: 2,
         paddingHorizontal: compact ? 7 : 9,
         borderRadius: t.radius.pill,
         flexDirection: "row",
@@ -1124,7 +1141,7 @@ export function StatusPill({
           }}
         />
       )}
-      <Text role="overline" numberOfLines={1} style={{ color, flexShrink: 1 }}>
+      <Text role="overline" style={{ color, flexShrink: 1 }}>
         {label}
       </Text>
     </View>

@@ -1,3 +1,9 @@
+import { useCompanionFonts } from "./CompanionFonts";
+import { CompanionFontContext } from "../../packages/ui/typography";
+import { CompanionLibrary } from "./CompanionLibrary";
+import { companionCopy } from "./companion-copy";
+import { LanguageMenu } from "./LanguageMenu";
+import { PetView } from "../../packages/ui/PetView";
 import {
   MeetingLibrary,
   MeetingRecordingControls,
@@ -109,7 +115,6 @@ import {
   IconTile,
   ListRow,
   Row,
-  Segmented,
 } from "../../packages/ui";
 import { MobileWorkItemCard } from "./MobileWorkItemCard";
 import { ProcessAnswerRecoveryCard } from "../../packages/ui-catalog/ProcessAnswerRecoveryCard";
@@ -159,6 +164,7 @@ import {
   TaskTabs,
   Composer,
   ReadOnlyComposer,
+  DetailSheet,
   EmptyState,
   IconButton,
   AssistantMessage,
@@ -254,21 +260,7 @@ function Settings({
           enabled={feedbackOn}
           onChange={changeFeedback}
         />
-        <ListRow
-          icon="globe"
-          label={tr("language")}
-          trailing={
-            <Segmented
-              accessibilityLabel={tr("language")}
-              value={language}
-              onChange={changeLanguage}
-              options={[
-                { value: "en", label: tr("english") },
-                { value: "cs", label: tr("czech") },
-              ]}
-            />
-          }
-        />
+        <LanguageMenu language={language} onChange={changeLanguage} />
       </Group>
     </Stack>
   );
@@ -383,6 +375,7 @@ export function Workspace({
     >(),
   );
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState(false);
   // Search in chats, a screen of its own over everything (from the menu).
   const [searchOpen, setSearchOpen] = useState(false);
   const [historySelection, setHistorySelection] =
@@ -467,6 +460,8 @@ export function Workspace({
           setSelectedProcessRunId(null);
         else if (processOpen) setProcessOpen(false);
         else if (meetingOpen) setMeetingId(null);
+        else if (section === "meetings" || section === "more")
+          setSection("library");
         else setSection("chat");
         return true;
       },
@@ -1733,6 +1728,7 @@ export function Workspace({
     focusWork.current = undefined;
     closeVoice();
     setMeetingId(null);
+    setContextMenu(false);
     setSection(next);
   };
   const openMeetingRecovery = () => {
@@ -1830,10 +1826,24 @@ export function Workspace({
                 />
               }
               title={
-                conversationTitle(historySelection?.title ?? "") ||
-                tr("assistantTitle")
+                conversationTitle(historySelection?.title ?? "") || "Niaro"
               }
               subtitle={statusLine}
+              emblem={
+                hasConversation && !voice ? (
+                  <PetView
+                    size={44}
+                    state={
+                      speech.state.phase === "playing"
+                        ? "speaking"
+                        : busy
+                          ? "working"
+                          : "idle"
+                    }
+                    label={companionCopy(language).pet}
+                  />
+                ) : undefined
+              }
               trailing={
                 session ? (
                   <IconButton
@@ -1849,15 +1859,25 @@ export function Workspace({
             <TopBar
               // Tabs are peers; only an open meeting record has a way back.
               leading={
-                meetingOpen ? (
+                meetingOpen || section === "meetings" || section === "more" ? (
                   <IconButton
                     icon="back"
                     label={tr("back")}
-                    onPress={() => setMeetingId(null)}
+                    onPress={() =>
+                      meetingOpen
+                        ? setMeetingId(null)
+                        : changeSection("library")
+                    }
                   />
                 ) : undefined
               }
-              title={tr(section === "more" ? "settingsTitle" : section)}
+              title={
+                section === "library"
+                  ? companionCopy(language).library
+                  : section === "tasks"
+                    ? companionCopy(language).work
+                    : tr(section === "more" ? "settingsTitle" : section)
+              }
               subtitle={statusLine}
               trailing={
                 session && section === "tasks" ? (
@@ -2176,10 +2196,21 @@ export function Workspace({
               key={section}
               style={[
                 styles.section,
-                section === "chat" && !session && { flexGrow: 1 },
+                section === "chat" &&
+                  !hasConversation &&
+                  !busy && { flexGrow: 1 },
               ]}
             >
-              {section === "more" ? (
+              {section === "library" ? (
+                <CompanionLibrary
+                  language={language}
+                  connected={!!session}
+                  onMeetings={() => changeSection("meetings")}
+                  onHistory={openMenu}
+                  onProcesses={() => openProcesses()}
+                  onSettings={() => changeSection("more")}
+                />
+              ) : section === "more" ? (
                 <>
                   {settings}
                   {session ? (
@@ -2222,6 +2253,14 @@ export function Workspace({
                   count={count}
                   voice={voiceAvailability}
                   voiceBusy={!!voice}
+                  petState={
+                    speech.state.phase === "playing"
+                      ? "speaking"
+                      : meetingRecording
+                        ? "listening"
+                        : "idle"
+                  }
+                  compact={keyboardOpen}
                   level={voiceLevel}
                   meetingRecording={meetingRecording}
                   onTalk={openVoice}
@@ -2347,6 +2386,18 @@ export function Workspace({
                 )}
               </View>
             ) : null}
+            {speech.state.phase === "playing" ? (
+              <Row style={{ justifyContent: "space-between" }}>
+                <Text role="caption" tone="secondary">
+                  {companionCopy(language).speaking}
+                </Text>
+                <IconButton
+                  icon="stop"
+                  label={companionCopy(language).stopSpeech}
+                  onPress={speech.player.stop}
+                />
+              </Row>
+            ) : null}
             {speech.state.phase === "error" ? (
               <ActionToast
                 message={tr("spoken_replies_failed")}
@@ -2432,6 +2483,10 @@ export function Workspace({
                 }}
                 onSend={() => submitMessage()}
                 onVoice={openVoice}
+                onAttach={() => {
+                  Keyboard.dismiss();
+                  setContextMenu(true);
+                }}
                 disabled={
                   !online ||
                   busy ||
@@ -2452,7 +2507,9 @@ export function Workspace({
           </View>
         ) : null}
         {/* While typing, the keyboard needs the room more than the tabs do. */}
-        {keyboardOpen ? null : (
+        {keyboardOpen ||
+        voice ||
+        (section === "chat" && hasConversation) ? null : (
           <Navigation
             section={section}
             onChange={changeSection}
@@ -2461,6 +2518,19 @@ export function Workspace({
           />
         )}
       </View>
+      {contextMenu ? (
+        <DetailSheet
+          title={companionCopy(language).context}
+          language={language}
+          onClose={() => setContextMenu(false)}
+        >
+          <ListRow
+            icon="tasks"
+            label={companionCopy(language).task}
+            onPress={() => changeSection("tasks")}
+          />
+        </DetailSheet>
+      ) : null}
       <ChatHistory
         session={session}
         language={language}
@@ -2491,6 +2561,8 @@ export function Workspace({
         onNavigate={(target) => {
           setHistoryOpen(false);
           if (target === "search") setSearchOpen(true);
+          else if (target === "tasks" || target === "library")
+            changeSection(target);
           else openProcesses();
         }}
         processesLabel={processesLabel}
@@ -2663,6 +2735,7 @@ export function Workspace({
 }
 
 export default function App() {
+  const fonts = useCompanionFonts();
   const [language, setLanguage] = useState<Language>("en");
   const [spokenReplies, setSpokenReplies] = useState(true);
   const [feedbackOn, setFeedbackOn] = useState(true);
@@ -2806,57 +2879,61 @@ export default function App() {
     void saved(saveSpokenReplies(AsyncStorage, enabled));
   };
   return (
-    <MotionProvider>
-      <SafeAreaProvider>
-        <View style={[styles.flex, { backgroundColor: t.color.background }]}>
-          <StatusBar style="dark" />
-          <SafeAreaView style={styles.screen}>
-            <KeyboardAvoidingView
-              style={styles.flex}
-              behavior={
-                Platform.OS === "ios"
-                  ? "padding"
-                  : Platform.OS === "android"
-                    ? "height"
-                    : undefined
-              }
-            >
-              {ready ? (
-                <Workspace
-                  key={connection.generation}
-                  session={session}
-                  language={language}
-                  spokenReplies={spokenReplies}
-                  section={section}
-                  setSection={setSection}
-                  authError={connectionError}
-                  settings={
-                    <Settings
-                      language={language}
-                      changeLanguage={changeLanguage}
-                      spokenReplies={spokenReplies}
-                      changeSpokenReplies={changeSpokenReplies}
-                      feedbackOn={feedbackOn}
-                      changeFeedback={changeFeedback}
-                      address={address}
-                      setAddress={setAddress}
-                      connect={connect}
-                      browserSignIn={browserSignIn}
-                      openBrowser={openBrowser}
-                      disconnect={disconnect}
-                      connection={connection}
-                      error={settingsError ? "storage_error" : connectionError}
-                    />
-                  }
-                />
-              ) : (
-                <Text>{translate(language)("loading")}</Text>
-              )}
-            </KeyboardAvoidingView>
-          </SafeAreaView>
-        </View>
-      </SafeAreaProvider>
-    </MotionProvider>
+    <CompanionFontContext.Provider value={fonts.loaded}>
+      <MotionProvider>
+        <SafeAreaProvider>
+          <View style={[styles.flex, { backgroundColor: t.color.background }]}>
+            <StatusBar style="light" />
+            <SafeAreaView style={styles.screen}>
+              <KeyboardAvoidingView
+                style={styles.flex}
+                behavior={
+                  Platform.OS === "ios"
+                    ? "padding"
+                    : Platform.OS === "android"
+                      ? "height"
+                      : undefined
+                }
+              >
+                {ready && fonts.ready ? (
+                  <Workspace
+                    key={connection.generation}
+                    session={session}
+                    language={language}
+                    spokenReplies={spokenReplies}
+                    section={section}
+                    setSection={setSection}
+                    authError={connectionError}
+                    settings={
+                      <Settings
+                        language={language}
+                        changeLanguage={changeLanguage}
+                        spokenReplies={spokenReplies}
+                        changeSpokenReplies={changeSpokenReplies}
+                        feedbackOn={feedbackOn}
+                        changeFeedback={changeFeedback}
+                        address={address}
+                        setAddress={setAddress}
+                        connect={connect}
+                        browserSignIn={browserSignIn}
+                        openBrowser={openBrowser}
+                        disconnect={disconnect}
+                        connection={connection}
+                        error={
+                          settingsError ? "storage_error" : connectionError
+                        }
+                      />
+                    }
+                  />
+                ) : (
+                  <Text>{translate(language)("loading")}</Text>
+                )}
+              </KeyboardAvoidingView>
+            </SafeAreaView>
+          </View>
+        </SafeAreaProvider>
+      </MotionProvider>
+    </CompanionFontContext.Provider>
   );
 }
 

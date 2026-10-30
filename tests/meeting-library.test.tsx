@@ -3,7 +3,7 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import { MeetingLibrary } from "../apps/mobile/MeetingLibrary";
 import type { ClientSession } from "../packages/client-core/session";
 import { meetingRecordFixture } from "../packages/test-fixtures/meeting";
-import { en } from "../packages/i18n";
+import { en, cs } from "../packages/i18n";
 import { Text } from "react-native";
 jest.mock("../apps/mobile/ProcessLaunch", () => {
   const ReactModule = jest.requireActual<typeof import("react")>("react");
@@ -328,3 +328,36 @@ test("scheduled calendar meetings belong to the list, never under an open record
   await waitFor(() => expect(view.getByTestId("meeting-detail")).toBeTruthy());
   expect(view.queryByText("TEST scheduled meeting")).toBeNull();
 });
+
+test.each(["en", "cs"] as const)(
+  "%s distinguishes loading, load failure and a confirmed empty library",
+  async (language) => {
+    const f = fixture();
+    const copy = language === "en" ? en : cs;
+    let reject!: (error: Error) => void;
+    (f.session.readMeetings as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    const view = render(
+      <MeetingLibrary session={f.session} language={language} visible />,
+    );
+    expect(view.getByText(copy.loading)).toBeTruthy();
+    expect(view.queryByText(copy.meetingsEmptyTitle)).toBeNull();
+    await waitFor(() => expect(f.session.readMeetings).toHaveBeenCalled());
+    await act(async () => {
+      reject(new Error("meeting_connection_failed"));
+    });
+    expect(view.getByText(copy.meeting_connection_failed)).toBeTruthy();
+    expect(view.queryByText(copy.loading)).toBeNull();
+    expect(view.queryByText(copy.meetingsEmptyTitle)).toBeNull();
+    (f.session.readMeetings as jest.Mock).mockResolvedValue({ meetings: [] });
+    fireEvent.press(view.getByRole("button", { name: copy.refresh }));
+    await waitFor(() =>
+      expect(view.getByText(copy.meetingsEmptyTitle)).toBeTruthy(),
+    );
+    expect(view.queryByText(copy.meeting_connection_failed)).toBeNull();
+  },
+);

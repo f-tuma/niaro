@@ -24,6 +24,7 @@ import {
   Row,
   Stack,
   Surface,
+  SectionLabel,
   Text,
 } from "../../packages/ui";
 import {
@@ -31,6 +32,7 @@ import {
   HumanTaskCard,
   HumanTaskDetail,
 } from "../../packages/ui-catalog/HumanTaskView";
+import { companionCopy } from "./companion-copy";
 import { DetailSheet, EmptyState } from "./ScreenChrome";
 
 const decisionLabel = {
@@ -289,9 +291,20 @@ export function HumanTaskLibrary({
           />
         </Stack>
       ) : null}
-      {tab === "open" ? leading : null}
+      {tab === "open" && leading?.length ? (
+        <Stack>
+          <SectionLabel>{companionCopy(language).needsYou}</SectionLabel>
+          {leading}
+        </Stack>
+      ) : null}
       {tasks.length ? (
-        <Group>
+        <Group
+          title={
+            tab === "open" && leading?.length
+              ? companionCopy(language).yourTasks
+              : undefined
+          }
+        >
           {tasks.map((task, index) => (
             <HumanTaskCard
               key={task.id}

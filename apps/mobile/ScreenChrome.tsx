@@ -15,6 +15,7 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -30,7 +31,9 @@ import {
   Button,
   type IconName,
 } from "../../packages/ui";
-import { VoiceOrb } from "../../packages/ui/VoiceOrb";
+import { useCompanionTypography } from "../../packages/ui/typography";
+import { PetView, type PetState } from "../../packages/ui/PetView";
+import { companionCopy } from "./companion-copy";
 import { Tabs } from "../../packages/ui/Tabs";
 
 import {
@@ -41,7 +44,7 @@ import {
   useReducedMotion,
 } from "../../packages/ui/motion";
 
-export type Section = "chat" | "meetings" | "tasks" | "more";
+export type Section = "chat" | "meetings" | "tasks" | "library" | "more";
 export type TaskTab = "open" | "done";
 export const chrome = StyleSheet.create({
   flex: { flex: 1, minHeight: 0 },
@@ -62,28 +65,20 @@ export const chrome = StyleSheet.create({
   // The section entrance wraps the content, so it carries the same rhythm.
   section: { gap: 16 },
   topbar: {
-    minHeight: 52,
-    paddingHorizontal: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-  },
-  topbarTitle: { flex: 1, minWidth: 0, paddingHorizontal: 6, gap: 1 },
-  // Tab roots: a large left-aligned title, actions on its line.
-  topbarLarge: {
-    minHeight: 60,
-    paddingLeft: t.spacing.screenGutter,
-    paddingRight: 8,
-    paddingTop: 10,
-    paddingBottom: 6,
+    minHeight: 64,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
   },
+  topbarTitle: { flex: 1, minWidth: 0, gap: 2 },
+  // Root titles align to content; nested titles follow a 44-point control.
+  topbarLarge: { paddingLeft: t.spacing.screenGutter },
   iconButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: t.radius.action,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -145,10 +140,10 @@ export const chrome = StyleSheet.create({
   },
   home: {
     flex: 1,
-    minHeight: 440,
+    minHeight: 380,
     justifyContent: "space-between",
     gap: t.spacing.xl,
-    paddingTop: t.spacing.lg,
+    paddingTop: t.spacing.sm,
     paddingBottom: t.spacing.sm,
   },
   stage: {
@@ -157,22 +152,17 @@ export const chrome = StyleSheet.create({
     justifyContent: "center",
     gap: t.spacing.md,
   },
-  headline: { alignItems: "center", gap: 8, maxWidth: 320 },
+  headline: { alignItems: "center", alignSelf: "stretch", gap: 8 },
   center: { textAlign: "center" },
-  shortcuts: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: t.spacing.sm,
-  },
+  shortcuts: { gap: 0 },
   shortcut: {
-    minHeight: 44,
-    paddingLeft: 14,
-    paddingRight: 16,
-    borderRadius: t.radius.pill,
+    minHeight: 62,
+    paddingHorizontal: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: t.color.border,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 14,
   },
   footer: {
     paddingTop: 6,
@@ -180,11 +170,10 @@ export const chrome = StyleSheet.create({
     paddingHorizontal: t.spacing.screenGutter,
     gap: 8,
   },
-  // 44 + 2 × 4 + 1px edges = 54: the voice composer has the same box, and its
-  // Done button sits exactly where the microphone was.
+  // Text and inset actions share the vertical centre of the continuous bar.
   readOnly: {
     ...ui.composerFrame,
-    minHeight: 54,
+    minHeight: 62,
     paddingLeft: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -192,12 +181,12 @@ export const chrome = StyleSheet.create({
   },
   composer: {
     ...ui.composerFrame,
-    minHeight: 54,
-    paddingLeft: 16,
-    paddingRight: 4,
-    paddingVertical: 4,
+    minHeight: 62,
+    paddingLeft: 6,
+    paddingRight: 6,
+    paddingVertical: 6,
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     gap: 4,
   },
   input: {
@@ -205,7 +194,7 @@ export const chrome = StyleSheet.create({
     minHeight: 44,
     maxHeight: 132,
     paddingHorizontal: 0,
-    paddingVertical: 11,
+    paddingVertical: 10,
     textAlignVertical: "center",
     includeFontPadding: false,
     color: t.color.text.primary,
@@ -214,7 +203,7 @@ export const chrome = StyleSheet.create({
   composerAction: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: t.radius.action,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -235,7 +224,7 @@ export const chrome = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 20,
     borderBottomRightRadius: 6,
-    backgroundColor: t.color.accent.softBlue,
+    backgroundColor: t.color.fill,
   },
   assistant: { alignSelf: "stretch", gap: 10 },
   answer: { paddingHorizontal: 2 },
@@ -282,9 +271,10 @@ export const chrome = StyleSheet.create({
     gap: 12,
   },
   sheetClose: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    flexShrink: 0,
+    borderRadius: t.radius.action,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -361,8 +351,7 @@ export function IconButton({
 }
 /**
  * One bar for every screen: a leading control, a title and up to two actions.
- * Tab roots (no leading control) get a large left-aligned title; nested
- * screens a compact one beside Back.
+ * Root and nested titles share a type scale; only the leading inset changes.
  */
 export function TopBar({
   leading,
@@ -370,6 +359,7 @@ export function TopBar({
   subtitle,
   trailing,
   large = !leading,
+  emblem,
 }: {
   /** A Back or Menu control; tab roots have none. */
   leading?: React.ReactNode;
@@ -377,25 +367,14 @@ export function TopBar({
   subtitle?: React.ReactNode;
   trailing?: React.ReactNode;
   large?: boolean;
+  emblem?: React.ReactNode;
 }) {
-  if (large)
-    return (
-      <View style={chrome.topbarLarge}>
-        {leading}
-        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-          <Text role="largeTitle" accessibilityRole="header" numberOfLines={1}>
-            {title}
-          </Text>
-          {subtitle}
-        </View>
-        {trailing}
-      </View>
-    );
   return (
-    <View style={chrome.topbar}>
+    <View style={[chrome.topbar, large && chrome.topbarLarge]}>
       {leading}
+      {emblem}
       <View style={chrome.topbarTitle}>
-        <Text role="cardTitle" accessibilityRole="header" numberOfLines={1}>
+        <Text role="headerTitle" accessibilityRole="header" numberOfLines={2}>
           {title}
         </Text>
         {subtitle}
@@ -405,12 +384,11 @@ export function TopBar({
   );
 }
 const destinations = [
-  { id: "chat", icon: "chat", label: "chat" },
-  { id: "meetings", icon: "calendar", label: "meetings" },
-  { id: "tasks", icon: "tasks", label: "tasks" },
-  { id: "more", icon: "settings", label: "settingsTitle" },
+  { id: "chat", icon: "chat" },
+  { id: "tasks", icon: "briefcase" },
+  { id: "library", icon: "library" },
 ] as const;
-/** The four places of the app, always one tap away; the choice turns blue. */
+/** Three destinations; meetings and settings remain inside Library. */
 export function Navigation({
   section,
   onChange,
@@ -431,13 +409,21 @@ export function Navigation({
       style={chrome.nav}
     >
       {destinations.map((destination) => {
-        const selected = destination.id === section;
+        const selected =
+          destination.id ===
+          (section === "meetings" || section === "more" ? "library" : section);
+        const label =
+          destination.id === "chat"
+            ? tr("chat")
+            : companionCopy(language)[
+                destination.id === "tasks" ? "work" : "library"
+              ];
         const waiting = destination.id === "tasks" ? count : 0;
         return (
           <MotionPressable
             key={destination.id}
             accessibilityRole="tab"
-            accessibilityLabel={tr(destination.label)}
+            accessibilityLabel={label}
             accessibilityValue={waiting ? { text: String(waiting) } : undefined}
             accessibilityState={{ selected }}
             aria-selected={selected}
@@ -454,7 +440,7 @@ export function Navigation({
                   name={destination.icon}
                   size={24}
                   color={
-                    selected ? t.color.action.primary : t.color.text.secondary
+                    selected ? t.color.action.link : t.color.text.secondary
                   }
                 />
               </Entrance>
@@ -476,13 +462,11 @@ export function Navigation({
               style={{
                 fontSize: 11,
                 lineHeight: 14,
-                color: selected
-                  ? t.color.action.primary
-                  : t.color.text.secondary,
+                color: selected ? t.color.action.link : t.color.text.secondary,
                 fontWeight: selected ? "600" : "500",
               }}
             >
-              {tr(destination.label)}
+              {label}
             </Text>
           </MotionPressable>
         );
@@ -612,16 +596,16 @@ export function Home({
   connected,
   busy,
   count = 0,
-  voice = "unknown",
   voiceBusy = false,
   meetingRecording = false,
   level,
-  onTalk,
   onMeeting,
   onRecord,
   onTasks,
   onProcesses,
   onConnect,
+  compact = false,
+  petState = busy ? "working" : meetingRecording ? "listening" : "idle",
 }: {
   language: Language;
   /** A server is configured; otherwise this is the introduction. */
@@ -643,13 +627,19 @@ export function Home({
   onTasks: () => void;
   onProcesses?: () => void;
   onConnect: () => void;
+  compact?: boolean;
+  petState?: PetState;
 }) {
   const tr = translate(language);
   if (!paired)
     return (
       <View testID="home-screen" style={chrome.home}>
         <View style={chrome.stage}>
-          <VoiceOrb state="dormant" size={132} />
+          <PetView
+            state="idle"
+            size={200}
+            label={companionCopy(language).pet}
+          />
           <View style={chrome.headline}>
             <Text
               role="screenTitle"
@@ -682,15 +672,11 @@ export function Home({
         </View>
       </View>
     );
-  const intro: TranslationKey = !connected
+  const intro: TranslationKey | null = !connected
     ? "homeOffline"
     : meetingRecording
       ? "homeVoiceRecording"
-      : voice === "unavailable"
-        ? "homeNoVoice"
-        : "homeIntro";
-  const talkable =
-    connected && !meetingRecording && voice !== "unavailable" && !!onTalk;
+      : null;
   const shortcuts: {
     id: string;
     label: string;
@@ -750,74 +736,86 @@ export function Home({
       ),
     );
   return (
-    <View testID="home-screen" style={chrome.home}>
-      <View style={chrome.stage}>
-        {/* While a voice draft is open below, the orb becomes its live picture. */}
-        <VoiceOrb
-          testID="home-voice"
-          label={tr("talkToAssistant")}
-          onPress={voiceBusy ? undefined : onTalk}
-          state={voiceBusy ? "live" : talkable ? "ready" : "disabled"}
-          level={level}
-        />
-        <View style={chrome.headline}>
-          <Text
-            role="screenTitle"
-            accessibilityRole="header"
-            style={chrome.center}
-          >
-            {tr("hello")}
-          </Text>
-          {/* Stays put while voice is open: nothing on the page may jump. */}
-          <Text tone="secondary" style={chrome.center}>
-            {tr(intro)}
-          </Text>
-        </View>
-      </View>
-      <View testID="home-shortcuts" style={chrome.shortcuts}>
-        {shortcuts.map((shortcut) => (
-          <MotionPressable
-            key={shortcut.id}
-            accessibilityRole="button"
-            accessibilityLabel={
-              shortcut.count
-                ? `${shortcut.label}: ${shortcut.count}`
-                : shortcut.label
-            }
-            accessibilityState={{ disabled: !!shortcut.disabled }}
-            aria-disabled={!!shortcut.disabled}
-            disabled={shortcut.disabled}
-            onPress={shortcut.onPress}
-            style={({ pressed }) => [
-              chrome.shortcut,
-              {
-                opacity: shortcut.disabled ? 0.45 : 1,
-                backgroundColor: pressed ? t.color.fillPressed : t.color.fill,
-              },
-            ]}
-          >
-            <Icon
-              name={shortcut.icon}
-              size={18}
-              color={t.color.action.primary}
-            />
-            <Text role="label" numberOfLines={1} style={{ flexShrink: 1 }}>
-              {shortcut.label}
+    <View
+      testID="home-screen"
+      style={[chrome.home, (voiceBusy || compact) && { minHeight: 0, flex: 0 }]}
+    >
+      {!voiceBusy && !compact ? (
+        <View style={chrome.stage}>
+          <PetView
+            testID="home-pet"
+            label={companionCopy(language).petTouch}
+            interactive
+            disabled={busy || meetingRecording}
+            state={petState}
+            size={220}
+            level={level}
+          />
+          <View style={chrome.headline}>
+            <Text
+              role="screenTitle"
+              accessibilityRole="header"
+              style={chrome.center}
+            >
+              {tr("hello")}
             </Text>
-            {shortcut.count ? (
-              <View style={chrome.count}>
-                <Text
-                  role="caption"
-                  tone="inverse"
-                  style={{ fontWeight: "600", fontSize: 12, lineHeight: 16 }}
-                >
-                  {shortcut.count}
-                </Text>
-              </View>
+            {intro ? (
+              <Text tone="secondary" style={chrome.center}>
+                {tr(intro)}
+              </Text>
             ) : null}
-          </MotionPressable>
-        ))}
-      </View>
+          </View>
+        </View>
+      ) : null}
+      {!voiceBusy && !compact ? (
+        <View testID="home-shortcuts" style={chrome.shortcuts}>
+          {shortcuts.map((shortcut) => (
+            <MotionPressable
+              key={shortcut.id}
+              accessibilityRole="button"
+              accessibilityLabel={
+                shortcut.count
+                  ? `${shortcut.label}: ${shortcut.count}`
+                  : shortcut.label
+              }
+              accessibilityState={{ disabled: !!shortcut.disabled }}
+              aria-disabled={!!shortcut.disabled}
+              disabled={shortcut.disabled}
+              onPress={shortcut.onPress}
+              style={({ pressed }) => [
+                chrome.shortcut,
+                {
+                  opacity: shortcut.disabled ? 0.45 : 1,
+                  backgroundColor: pressed
+                    ? t.color.fillPressed
+                    : "transparent",
+                },
+              ]}
+            >
+              <Icon
+                name={shortcut.icon}
+                size={18}
+                color={t.color.action.link}
+              />
+              <Text role="body" numberOfLines={2} style={{ flex: 1 }}>
+                {shortcut.label}
+              </Text>
+              {shortcut.count ? (
+                <View style={chrome.count}>
+                  <Text
+                    role="caption"
+                    tone="inverse"
+                    style={{ fontWeight: "600", fontSize: 12, lineHeight: 16 }}
+                  >
+                    {shortcut.count}
+                  </Text>
+                </View>
+              ) : null}
+              <Icon name="chevron" size={18} color={t.color.text.secondary} />
+            </MotionPressable>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -921,6 +919,8 @@ export function Composer({
   sending = false,
   inputRef,
   voice = "ready",
+  onAttach,
+  hasAttachments = false,
 }: {
   language: Language;
   value: string;
@@ -932,11 +932,20 @@ export function Composer({
   inputRef?: React.Ref<TextInput>;
   /** Hidden where another control starts voice or the server has none. */
   voice?: "ready" | "disabled" | "hidden";
+  onAttach?: () => void;
+  /** Presentation only; the parent still decides disabled/send eligibility. */
+  hasAttachments?: boolean;
 }) {
   const tr = translate(language);
   const [inputHeight, setInputHeight] = useState(44);
   const [focused, setFocused] = useState(false);
-  const typed = !!value.trim();
+  const typed = !!value.trim() || hasAttachments;
+  const { fontScale } = useWindowDimensions();
+  const minimumInputHeight = Math.max(
+    44,
+    t.typography.body.lineHeight * fontScale + 20,
+  );
+  const font = useCompanionTypography(chrome.input);
   return (
     <View
       testID="message-composer"
@@ -945,10 +954,22 @@ export function Composer({
         focused && { borderColor: t.color.text.disabled },
       ]}
     >
+      {onAttach ? (
+        <ComposerAction
+          filled={false}
+          icon="paperclip"
+          label={companionCopy(language).context}
+          onPress={onAttach}
+        />
+      ) : null}
       <TextInput
         ref={inputRef}
         accessibilityLabel={tr("composer")}
-        placeholder={tr("composer")}
+        placeholder={
+          fontScale > 1.3
+            ? companionCopy(language).composerLargeText
+            : companionCopy(language).composer
+        }
         placeholderTextColor={t.color.text.secondary}
         value={value}
         onChangeText={onChange}
@@ -958,13 +979,23 @@ export function Composer({
         onBlur={() => setFocused(false)}
         onContentSizeChange={(e) =>
           setInputHeight(
-            Math.min(132, Math.max(44, e.nativeEvent.contentSize.height)),
+            Math.min(
+              Math.max(132, minimumInputHeight),
+              Math.max(minimumInputHeight, e.nativeEvent.contentSize.height),
+            ),
           )
         }
         numberOfLines={1}
         style={[
           chrome.input,
-          { height: value ? inputHeight : 44 },
+          font,
+          {
+            minHeight: minimumInputHeight,
+            maxHeight: Math.max(132, minimumInputHeight),
+            height: value
+              ? Math.max(inputHeight, minimumInputHeight)
+              : minimumInputHeight,
+          },
           Platform.OS === "web" && { outlineStyle: "solid", outlineWidth: 0 },
         ]}
       />
@@ -1089,7 +1120,7 @@ export function DetailSheet({
               : undefined
         }
       >
-        <View style={chrome.modal}>
+        <SafeAreaView edges={["top"]} style={chrome.modal}>
           <Animated.View
             style={[
               StyleSheet.absoluteFill,
@@ -1136,7 +1167,7 @@ export function DetailSheet({
               <View style={chrome.grabber} />
               <Row style={chrome.sheetHeader}>
                 <Text
-                  role="sheetTitle"
+                  role="headerTitle"
                   accessibilityRole="header"
                   style={{ flex: 1, minWidth: 0 }}
                 >
@@ -1146,7 +1177,7 @@ export function DetailSheet({
                   accessibilityRole="button"
                   accessibilityLabel={translate(language)("close")}
                   onPress={dismiss}
-                  hitSlop={8}
+                  hitSlop={2}
                   style={({ pressed }) => [
                     chrome.sheetClose,
                     {
@@ -1172,47 +1203,26 @@ export function DetailSheet({
               ) : null}
             </SafeAreaView>
           </Animated.View>
-        </View>
+        </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>
   );
 }
-/** The one empty state: icon well, a short title, at most one line of hint. */
+/** One centred sentence. Recovery actions remain explicit below it. */
 export function EmptyState({
-  icon,
   title,
-  hint,
   action,
 }: {
   icon: IconName;
   title: string;
   hint?: string;
-  /** One small Button, e.g. "Refresh". */
   action?: React.ReactNode;
 }) {
   return (
     <View style={chrome.empty}>
-      <View
-        style={{
-          width: 64,
-          height: 64,
-          borderRadius: 32,
-          marginBottom: 10,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: t.color.fill,
-        }}
-      >
-        <Icon name={icon} size={28} color={t.color.text.secondary} />
-      </View>
-      <Text role="cardTitle" style={{ textAlign: "center" }}>
+      <Text tone="secondary" style={{ textAlign: "center" }}>
         {title}
       </Text>
-      {hint ? (
-        <Text tone="secondary" style={{ textAlign: "center", maxWidth: 280 }}>
-          {hint}
-        </Text>
-      ) : null}
       {action ? <View style={{ marginTop: 14 }}>{action}</View> : null}
     </View>
   );

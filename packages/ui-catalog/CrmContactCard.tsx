@@ -86,13 +86,13 @@ function ContactField({
       style={styles.field}
     >
       <View style={styles.fieldIcon}>
-        <Icon name={icon} size={18} color={t.color.action.primary} />
+        <Icon name={icon} size={18} color={t.color.action.link} />
       </View>
       <View style={styles.fieldText}>
         <Text role="meta" tone="secondary">
           {label}
         </Text>
-        <Text style={[styles.value, { color: t.color.action.primary }]}>
+        <Text style={[styles.value, { color: t.color.action.link }]}>
           {value}
         </Text>
       </View>

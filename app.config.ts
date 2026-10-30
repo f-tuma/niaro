@@ -2,11 +2,12 @@ import type { ExpoConfig } from "expo/config";
 const development = process.env.AGENT_CLIENT_DEVELOPMENT === "1";
 const audioSpike = process.env.AUDIO_SPIKE === "1";
 const config: ExpoConfig = {
-  name: audioSpike ? "Agent Client Audio Spike" : "Agent Client",
+  name: audioSpike ? "Agent Client Audio Spike" : "Niaro",
   slug: audioSpike ? "agent-client-audio" : "agent-client",
   version: "0.1.0",
   scheme: audioSpike ? "agentclient-audio" : "agentclient",
-  userInterfaceStyle: "light",
+  userInterfaceStyle: "dark",
+  icon: "./assets/application/icon.png",
   ios: {
     bundleIdentifier: audioSpike
       ? "dev.agentclient.demo.audio"
@@ -21,9 +22,27 @@ const config: ExpoConfig = {
   },
   android: {
     package: audioSpike ? "dev.agentclient.demo.audio" : "dev.agentclient.demo",
+    adaptiveIcon: {
+      foregroundImage: "./assets/application/mark.png",
+      monochromeImage: "./assets/application/mark.png",
+      backgroundColor: "#4563DE",
+    },
   },
-  web: { bundler: "metro", name: "Agent Client" },
+  web: {
+    bundler: "metro",
+    name: "Niaro",
+    shortName: "Niaro",
+    favicon: "./assets/application/favicon.png",
+  },
   plugins: [
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/application/mark.png",
+        imageWidth: 224,
+        backgroundColor: "#4563DE",
+      },
+    ],
     "@react-native-community/datetimepicker",
     "expo-dev-client",
     [

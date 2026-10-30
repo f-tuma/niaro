@@ -4,7 +4,7 @@ import type { Language } from "../protocol";
 import type { RequestActivity } from "../protocol/activity";
 import { translate } from "../i18n";
 import { tokens as t } from "../design-tokens";
-import { Button, Icon, Text } from "../ui";
+import { Button, Icon, Text, ui } from "../ui";
 import { nativeMotion, useReducedMotion } from "../ui/motion";
 
 type StepStatus =
@@ -166,16 +166,36 @@ export function RequestProgressCard({
               ? tr(workflowLabels[workflow.stage])
               : `${tr(labels[step.id])}${step.calls > 1 ? ` · ${step.calls}×` : ""}`;
             return (
-              <Text
-                key={step.id}
-                testID={`progress-step-${step.id}-${status}`}
-                role="caption"
-                tone={status === "running" ? undefined : "secondary"}
-                accessibilityLabel={`${label}. ${tr(statuses[status])}`}
-                style={status === "pending" ? styles.pending : undefined}
-              >
-                {`${label} · ${tr(statuses[status])}`}
-              </Text>
+              <View key={step.id} style={styles.step}>
+                <Icon
+                  name={
+                    status === "succeeded"
+                      ? "check"
+                      : status === "failed"
+                        ? "alert"
+                        : "record"
+                  }
+                  size={14}
+                  color={
+                    status === "running"
+                      ? t.color.action.link
+                      : t.color.text.secondary
+                  }
+                />
+                <Text
+                  key={step.id}
+                  testID={`progress-step-${step.id}-${status}`}
+                  role="caption"
+                  tone={status === "running" ? undefined : "secondary"}
+                  accessibilityLabel={`${label}. ${tr(statuses[status])}`}
+                  style={[
+                    { flex: 1 },
+                    status === "pending" ? styles.pending : undefined,
+                  ]}
+                >
+                  {`${label} · ${tr(statuses[status])}`}
+                </Text>
+              </View>
             );
           })}
         </View>
@@ -213,20 +233,20 @@ export function RequestProgressCard({
 }
 
 const styles = StyleSheet.create({
-  card: { gap: t.spacing.sm, alignItems: "flex-start" },
+  card: { ...ui.surface, gap: t.spacing.sm },
   title: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    minHeight: 32,
+    minHeight: 44,
+    flexWrap: "wrap",
   },
   chevronOpen: { transform: [{ rotate: "90deg" }] },
   steps: {
-    gap: 6,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: t.color.text.disabled,
-    paddingLeft: t.spacing.md,
+    gap: t.spacing.md,
+    paddingVertical: t.spacing.sm,
   },
+  step: { flexDirection: "row", alignItems: "flex-start", gap: t.spacing.sm },
   pending: { opacity: 0.6 },
   action: { alignSelf: "flex-start", marginLeft: -14, marginVertical: -4 },
 });

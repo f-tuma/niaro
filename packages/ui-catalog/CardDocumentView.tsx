@@ -202,7 +202,7 @@ function CardBody({
                   <Icon
                     name={item.icon}
                     size={18}
-                    color={t.color.action.primary}
+                    color={t.color.action.link}
                   />
                 ) : null}
                 <View style={styles.content}>
@@ -280,7 +280,7 @@ function CardBody({
         <Row style={styles.header}>
           {document.icon ? (
             <View style={styles.headerIcon}>
-              <Icon name={document.icon} color={t.color.action.primary} />
+              <Icon name={document.icon} color={t.color.action.link} />
             </View>
           ) : null}
           <View style={styles.content}>

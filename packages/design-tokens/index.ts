@@ -1,37 +1,47 @@
-// White canvas, neutral greys, near-black text and one confident blue.
+// Mobile companion: graphite canvas, quiet neutral surfaces, cobalt actions.
 // Grouped screens (settings) may sit on `grouped`; everything else is `background`.
 export const tokens = {
   color: {
-    /** The app canvas: plain white. */
-    background: "#FFFFFF",
+    /** The app canvas matches the web graphite theme. */
+    background: "#141518",
     /** A light neutral canvas for grouped/settings screens, under white groups. */
-    grouped: "#F5F6F8",
+    grouped: "#111214",
     /** Cards, groups and sheets. */
-    surface: "#FFFFFF",
-    surfaceRaised: "#FFFFFF",
+    surface: "#1D1F23",
+    surfaceRaised: "#27292F",
     /** Quiet neutral fill: tonal buttons, chips, inputs, icon wells. */
-    fill: "#F2F3F5",
-    fillPressed: "#E7E9EC",
-    border: "#E4E6EA",
-    glass: "rgba(255,255,255,0.72)",
-    scrim: "rgba(12,14,18,0.32)",
+    fill: "#24262B",
+    fillPressed: "#32353C",
+    border: "#35373E",
+    glass: "rgba(29,31,35,0.92)",
+    scrim: "rgba(0,0,0,0.56)",
     /** A light veil for in-place menus: focus without blacking out the page. */
-    scrimSoft: "rgba(12,14,18,0.12)",
-    hairline: "rgba(12,14,18,0.09)",
-    pressed: "rgba(12,14,18,0.05)",
+    scrimSoft: "rgba(0,0,0,0.28)",
+    hairline: "rgba(255,255,255,0.09)",
+    pressed: "rgba(255,255,255,0.06)",
     text: {
-      primary: "#111317",
-      secondary: "#6B7079",
-      disabled: "#A3A8B0",
+      primary: "#F4F4F6",
+      secondary: "#A3A7B2",
+      disabled: "#777D8B",
       inverse: "#FFFFFF",
     },
     action: {
-      primary: "#2F5BE7",
-      pressed: "#2349C4",
-      disabled: "#EEF0F3",
-      danger: "#D42F3A",
-      dangerSoft: "#FDEDEE",
-      dangerPressed: "#FADBDD",
+      primary: "#4563DE",
+      link: "#9AAFFF",
+      pressed: "#4263DE",
+      disabled: "#30333B",
+      danger: "#FF8B91",
+      dangerSoft: "#382327",
+      dangerPressed: "#4A292F",
+    },
+    pet: {
+      bodyLight: "#5B537D",
+      bodyDeep: "#333042",
+      rim: "#C1BCE7",
+      face: "#120F1A",
+      highlight: "#FFFFFF",
+      eyeRim: "rgba(255,255,255,0.27)",
+      shadow: "#000000",
     },
     wave: {
       mist: "#D4F4FC",
@@ -46,26 +56,26 @@ export const tokens = {
     accent: {
       blue: "#5C85F7",
       /** Tonal primary: selected rows, pressable chips, user bubbles. */
-      softBlue: "#EBF0FE",
+      softBlue: "#252F4A",
       cyan: "#C8EAF7",
       lilac: "#E9E3F4",
     },
     status: {
-      warning: "#A65A00",
-      needsInput: "#2F5BE7",
-      running: "#5A55C8",
-      success: "#16794C",
-      error: "#D42F3A",
-      unknown: "#6B7079",
+      warning: "#EDBC73",
+      needsInput: "#9AAFFF",
+      running: "#B1A3FF",
+      success: "#88D4AD",
+      error: "#FF8B91",
+      unknown: "#A3A7B2",
     },
     /** Pill and tile backgrounds paired with the status text colour above. */
     statusSoft: {
-      warning: "#FDF1E1",
-      needsInput: "#EBF0FE",
-      running: "#EFEEFB",
-      success: "#E6F4EC",
-      error: "#FDEDEE",
-      unknown: "#F1F2F4",
+      warning: "#362D20",
+      needsInput: "#252F4A",
+      running: "#2C2742",
+      success: "#20352D",
+      error: "#382327",
+      unknown: "#292B30",
     },
     /** Live microphone capture only; never a generic error or brand colour. */
     record: "#E5484D",
@@ -94,18 +104,18 @@ export const tokens = {
     },
     /** Icon tiles that tell destinations apart at a glance. */
     tile: {
-      blue: { background: "#E8EEFE", foreground: "#2F5BE7" },
-      violet: { background: "#ECE8FF", foreground: "#5A4CC8" },
-      teal: { background: "#DCF2EF", foreground: "#14776C" },
-      amber: { background: "#FBEFD9", foreground: "#93560A" },
-      rose: { background: "#FDE8EA", foreground: "#C42A35" },
+      blue: { background: "#252F4A", foreground: "#9AAFFF" },
+      violet: { background: "#302943", foreground: "#B1A3FF" },
+      teal: { background: "#203735", foreground: "#82CFC4" },
+      amber: { background: "#362D20", foreground: "#EDBC73" },
+      rose: { background: "#382327", foreground: "#FF8B91" },
     },
     /**
      * Chart series in this fixed order (identity, never rank), checked for
      * colour-blind separation on white. Ink stays text tokens beside them.
      */
     chart: [
-      "#2F5BE7",
+      "#5475F5",
       "#EB6834",
       "#1BAF7A",
       "#EDA100",
@@ -116,6 +126,13 @@ export const tokens = {
     ],
   },
   typography: {
+    /** Mobile navigation and sheets share one readable title hierarchy. */
+    headerTitle: {
+      fontSize: 20,
+      lineHeight: 28,
+      fontWeight: "600",
+      letterSpacing: -0.3,
+    },
     /** Tab-root screen titles, left-aligned (iOS/Bolt large title). */
     largeTitle: {
       fontSize: 30,
@@ -154,7 +171,7 @@ export const tokens = {
     rowTitle: { fontSize: 16, lineHeight: 22, fontWeight: "600" },
     /** A settings/action row label. */
     rowLabel: { fontSize: 16, lineHeight: 22, fontWeight: "500" },
-    body: { fontSize: 15, lineHeight: 22, fontWeight: "400" },
+    body: { fontSize: 16, lineHeight: 24, fontWeight: "400" },
     /** Large button text. */
     button: { fontSize: 15, lineHeight: 20, fontWeight: "600" },
     label: { fontSize: 14, lineHeight: 20, fontWeight: "600" },
@@ -188,6 +205,8 @@ export const tokens = {
     hero: 40,
   },
   radius: {
+    /** Header, composer and sheet actions share softly squared corners. */
+    action: 14,
     /** Small controls inside rows: icon wells, small buttons, segments. */
     small: 8,
     /** Inputs, notices, segmented tracks. */
@@ -210,10 +229,10 @@ export const tokens = {
   },
   elevation: {
     card: {
-      boxShadow: "0 1px 2px rgba(12,14,18,0.04), 0 2px 8px rgba(12,14,18,0.04)",
+      boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
     },
-    drawer: { boxShadow: "8px 0 32px rgba(12,14,18,0.12)" },
-    floating: { boxShadow: "0 8px 24px rgba(12,14,18,0.12)" },
+    drawer: { boxShadow: "8px 0 32px rgba(0,0,0,0.28)" },
+    floating: { boxShadow: "0 8px 24px rgba(0,0,0,0.28)" },
     sheet: { boxShadow: "0 -8px 32px rgba(12,14,18,0.10)" },
   },
   motion: {

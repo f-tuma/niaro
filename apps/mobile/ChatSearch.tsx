@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, TextInput, View } from "react-native";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { ClientSession } from "../../packages/client-core/session";
 import {
@@ -16,6 +23,7 @@ import { translate } from "../../packages/i18n";
 import { tokens as t } from "../../packages/design-tokens";
 import { Button, Notice, Row, Segmented, Text } from "../../packages/ui";
 import { EmptyState, IconButton } from "./ScreenChrome";
+import { useCompanionTypography } from "../../packages/ui/typography";
 
 /** Typing settles this long before the server is asked. */
 export const MOBILE_SEARCH_DEBOUNCE_MS = 250;
@@ -128,6 +136,8 @@ export function ChatSearchScreen({
 }) {
   const c = copy[language];
   const tr = translate(language);
+  const searchFont = useCompanionTypography(t.typography.body);
+  const largeText = useWindowDimensions().fontScale > 1.3;
   const [query, setQuery] = useState("");
   const [words, setWords] = useState("");
   const [filter, setFilter] = useState<ChatSearchFilter>("all");
@@ -229,7 +239,7 @@ export function ChatSearchScreen({
         edges={["top", "bottom", "left", "right"]}
         style={{ flex: 1, backgroundColor: t.color.background }}
       >
-        <Row style={{ minHeight: 56, paddingHorizontal: 6, gap: 4 }}>
+        <Row style={{ minHeight: 64, paddingHorizontal: 12, gap: 4 }}>
           <IconButton icon="back" label={c.back} onPress={onClose} />
           <TextInput
             testID="chat-search-input"
@@ -244,9 +254,11 @@ export function ChatSearchScreen({
             maxLength={200}
             style={{
               flex: 1,
+              minWidth: 0,
               minHeight: 44,
               color: t.color.text.primary,
-              fontSize: 17,
+              ...t.typography.body,
+              ...searchFont,
             }}
           />
           {query ? (
@@ -257,7 +269,16 @@ export function ChatSearchScreen({
             />
           ) : null}
         </Row>
-        <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+        <ScrollView
+          horizontal
+          keyboardShouldPersistTaps="handled"
+          style={{ flexGrow: 0, flexShrink: 0 }}
+          contentContainerStyle={{
+            minWidth: "100%",
+            paddingHorizontal: t.spacing.screenGutter,
+            paddingBottom: 8,
+          }}
+        >
           <Segmented
             accessibilityLabel={c.filters}
             options={CHAT_SEARCH_FILTERS.map((value) => ({
@@ -267,7 +288,7 @@ export function ChatSearchScreen({
             value={filter}
             onChange={setFilter}
           />
-        </View>
+        </ScrollView>
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: 24 }}
@@ -312,23 +333,39 @@ export function ChatSearchScreen({
                 backgroundColor: pressed ? t.color.pressed : "transparent",
               })}
             >
-              <Row style={{ gap: 8 }}>
+              <Row
+                style={{
+                  gap: 8,
+                  ...(largeText
+                    ? ({
+                        flexDirection: "column",
+                        alignItems: "stretch",
+                      } as const)
+                    : {}),
+                }}
+              >
                 <Text
-                  numberOfLines={1}
-                  style={{ flex: 1, minWidth: 0, fontWeight: "600" }}
+                  numberOfLines={largeText ? 2 : 1}
+                  style={{
+                    flex: largeText ? undefined : 1,
+                    minWidth: 0,
+                    fontWeight: "600",
+                  }}
                 >
                   <Marked text={row.title} ranges={row.titleRanges} />
                 </Text>
-                {row.archived ? (
+                <Row style={{ gap: 8, flexWrap: "wrap" }}>
+                  {row.archived ? (
+                    <Text role="caption" tone="secondary">
+                      {c.archived}
+                    </Text>
+                  ) : null}
                   <Text role="caption" tone="secondary">
-                    {c.archived}
+                    {searchDateLabel(row.at, language, {
+                      yesterday: tr("chatsYesterday"),
+                    })}
                   </Text>
-                ) : null}
-                <Text role="caption" tone="secondary">
-                  {searchDateLabel(row.at, language, {
-                    yesterday: tr("chatsYesterday"),
-                  })}
-                </Text>
+                </Row>
               </Row>
               {row.snippet ? (
                 <Text role="caption" tone="secondary" numberOfLines={2}>

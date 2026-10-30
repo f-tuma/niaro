@@ -389,7 +389,7 @@ test.each([
     const command = state.pending;
     expect(command?.type).toBe("conversation.create");
     if (cancellation === "tab")
-      fireEvent.press(screen.getByRole("tab", { name: "Meetings" }));
+      fireEvent.press(screen.getByRole("tab", { name: "Library" }));
     else if (cancellation === "menu") {
       await act(async () => {
         fireEvent.press(screen.getByRole("button", { name: "Menu" }));
@@ -423,10 +423,13 @@ test.each([
     expect(screen.queryByText(en.requestRejected)).toBeNull();
     if (cancellation === "menu")
       expect(screen.getByTestId("chat-history-panel")).toBeTruthy();
-    else
+    else if (
+      !accepted ||
+      !["none", "repeat_voice", "send_then_voice"].includes(cancellation)
+    )
       expect(
         screen.getByRole("tab", {
-          name: cancellation === "tab" ? "Meetings" : "Chat",
+          name: cancellation === "tab" ? "Library" : "Chat",
         }).props.accessibilityState.selected,
       ).toBe(true);
     if (!accepted) {
@@ -757,7 +760,7 @@ test.each([
       fireEvent.press(panel.getByRole("button", { name: en.meetings }));
       expect(screen.getByTestId("meeting-library")).toBeTruthy();
       expect(
-        screen.getByRole("tab", { name: en.meetings }).props.accessibilityState
+        screen.getByRole("tab", { name: "Library" }).props.accessibilityState
           .selected,
       ).toBe(true);
       expect(captureSubscription).toHaveBeenCalledTimes(1);

@@ -35,7 +35,7 @@ export function MeetingFacts({
   return (
     <View style={{ gap: 10 }}>
       <Row style={{ alignItems: "flex-start", gap: 10 }}>
-        <Icon name="calendar" size={20} color={t.color.action.primary} />
+        <Icon name="calendar" size={20} color={t.color.action.link} />
         <Text role="label" style={{ flex: 1, minWidth: 0 }}>
           {parameters.title}
         </Text>

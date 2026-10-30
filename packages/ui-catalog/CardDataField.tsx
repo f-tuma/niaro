@@ -77,5 +77,5 @@ const styles = StyleSheet.create({
   content: { flex: 1, minWidth: 0, gap: 1 },
   value: { minWidth: 0, flexShrink: 1 },
   linkField: { minHeight: 44, justifyContent: "center" },
-  linkValue: { color: t.color.action.primary, fontWeight: "500" },
+  linkValue: { color: t.color.action.link, fontWeight: "500" },
 });

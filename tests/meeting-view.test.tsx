@@ -1,4 +1,5 @@
 import React from "react";
+import * as Native from "react-native";
 import { fireEvent, render, within } from "@testing-library/react-native";
 import {
   MeetingDetailView,
@@ -231,3 +232,33 @@ test("ready rows stay quiet; progress shows only what the server reports", () =>
   expect(analyzing.queryByText(/%|min/)).toBeNull();
   expect(meetingDuration(4320)).toBe("1 h 12 min");
 });
+
+test.each([1, 2])(
+  "meeting date is announced once at font scale %s",
+  (fontScale) => {
+    const dimensions = jest
+      .spyOn(Native, "useWindowDimensions")
+      .mockReturnValue({
+        width: 320,
+        height: 852,
+        scale: 1,
+        fontScale,
+      });
+    try {
+      const view = render(
+        <MeetingRow meeting={meetingFixture} language="cs" onOpen={() => {}} />,
+      );
+      const date = new Intl.DateTimeFormat("cs", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      }).format(new Date(meetingFixture.recordedAt));
+      const label = view.getByRole("button").props.accessibilityLabel as string;
+      expect(label.split(date)).toHaveLength(2);
+      expect(label).toContain(meetingFixture.title);
+      expect(label).toContain("1 min");
+    } finally {
+      dimensions.mockRestore();
+    }
+  },
+);

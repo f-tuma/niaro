@@ -1,0 +1,29 @@
+{
+  "source": "https://github.com/google/fonts/blob/main/ofl/manrope/Manrope%5Bwght%5D.ttf",
+  "sourceSha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+  "license": "OFL-Manrope.txt",
+  "tool": "fontTools 4.67.0 varLib.instancer",
+  "modification": "Static weight instances, registered as distinct Niaro families with regular-face metadata. Original copyright and license retained.",
+  "fonts": [
+    {
+      "file": "NiaroRegular.ttf",
+      "sourceWeight": 400,
+      "sha256": "c8d87fc7ff391e76273932a31ea3fdb0dad164f4d697cc7f67135ce5144e4d6c"
+    },
+    {
+      "file": "NiaroMedium.ttf",
+      "sourceWeight": 500,
+      "sha256": "2e2f7a56495d882c8d761e20ca9e467a0e73a2b9b22e73ce9a43b84dd1296e76"
+    },
+    {
+      "file": "NiaroSemibold.ttf",
+      "sourceWeight": 600,
+      "sha256": "cf7465923d92be5f7e2d389f7a9c6ec160f72006d150e62e32db81170d59b4b1"
+    },
+    {
+      "file": "NiaroBold.ttf",
+      "sourceWeight": 700,
+      "sha256": "8655d25fbc96bfa8f8622b7b04e81037785debdd4145211402569d1417e8262a"
+    }
+  ]
+}

@@ -8,8 +8,8 @@ jest.mock("../apps/mobile/voice-capture", () => ({
   createVoiceCapture: jest.fn(),
 }));
 
-// This existing composer already has catalogue stories. Exercise the changed
-// busy-state controls here; no new layout or visual variant is introduced.
+// Exercise the real voice draft through the tray: pending work must not
+// prevent microphone controls, but an uncertain transcript still cannot send.
 test("an outstanding command allows microphone start and stop while keeping transcript send blocked", async () => {
   const capture = {
     supported: () => true,

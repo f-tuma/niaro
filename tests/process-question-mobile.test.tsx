@@ -645,7 +645,7 @@ test("a pending native answer is not displayed inside a different task conversat
       },
     }),
   );
-  fireEvent.press(screen.getByRole("tab", { name: f.tr("tasks") }));
+  fireEvent.press(screen.getByRole("tab", { name: "Work" }));
   expect(screen.queryByTestId("summary-TEST-other-parent")).toBeNull();
   expect(screen.queryByTestId("pending-message")).toBeNull();
   expect(screen.queryByText("TEST pending answer A")).toBeNull();

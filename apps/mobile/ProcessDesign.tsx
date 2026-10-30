@@ -51,6 +51,7 @@ import {
 import { readProcessDesignPages } from "../../packages/client-core/process-design-pages";
 import { translate, type TranslationKey } from "../../packages/i18n";
 import { MarkdownText } from "../../packages/ui-catalog/MarkdownText";
+import { useCompanionTypography } from "../../packages/ui/typography";
 
 const targetProfile = (serviceId?: string | null) =>
   serviceId ? DESIGN_PROFILE : WORKSPACE_DESIGN_PROFILE;
@@ -182,6 +183,7 @@ export function ProcessDesign({
   onServiceChange,
 }: Props) {
   const tr = translate(language);
+  const inputFont = useCompanionTypography(t.typography.body);
   const sessionState = session.getSnapshot();
   const scope = sessionState.store?.scope ?? null;
   const key = scope
@@ -1217,7 +1219,7 @@ export function ProcessDesign({
                     recoveryReady &&
                     !denied
                   }
-                  style={styles.input}
+                  style={[styles.input, inputFont]}
                 />
                 <Button
                   label={tr("processDesignSend")}
@@ -1301,7 +1303,7 @@ export function ProcessDesign({
 
 /** The chosen design destination. */
 function Selected() {
-  return <Icon name="check" size={20} color={t.color.action.primary} />;
+  return <Icon name="check" size={20} color={t.color.action.link} />;
 }
 /** An empty-state line inside a Group. */
 function ListBlockText({ children }: { children: React.ReactNode }) {
@@ -1378,6 +1380,7 @@ const styles = StyleSheet.create({
     borderColor: t.color.border,
   },
   input: {
+    ...t.typography.body,
     minHeight: 92,
     backgroundColor: t.color.fill,
     borderRadius: t.radius.control,

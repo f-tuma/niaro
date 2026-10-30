@@ -172,7 +172,7 @@ function ResultList({
           <View
             style={{ transform: [{ rotate: expanded ? "-90deg" : "90deg" }] }}
           >
-            <Icon name="chevron" size={15} color={t.color.action.primary} />
+            <Icon name="chevron" size={15} color={t.color.action.link} />
           </View>
         </MotionPressable>
       ) : null}
@@ -195,7 +195,7 @@ function ResultRow({
   return (
     <Row style={styles.row}>
       <View style={styles.leadingIcon}>
-        <Icon name={icon} size={18} color={t.color.action.primary} />
+        <Icon name={icon} size={18} color={t.color.action.link} />
       </View>
       <View style={styles.content}>{children}</View>
     </Row>
@@ -221,10 +221,10 @@ function ContactValue({
       hitSlop={8}
       style={styles.contactValue}
     >
-      <Icon name={icon} size={14} color={t.color.action.primary} />
+      <Icon name={icon} size={14} color={t.color.action.link} />
       <Text
         role="caption"
-        style={[styles.value, { color: t.color.action.primary }]}
+        style={[styles.value, { color: t.color.action.link }]}
       >
         {value}
       </Text>
@@ -281,5 +281,5 @@ const styles = StyleSheet.create({
     gap: t.spacing.sm,
     borderRadius: t.radius.control,
   },
-  expandLabel: { color: t.color.action.primary },
+  expandLabel: { color: t.color.action.link },
 });

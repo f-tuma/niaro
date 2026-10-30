@@ -66,7 +66,7 @@ export function ServiceConnectionCard({
         <Icon
           name={phase === "connected" ? "check" : "info"}
           size={20}
-          color={t.color.action.primary}
+          color={t.color.action.link}
         />
         <View style={{ flex: 1, gap: 3 }}>
           <Text role="label">{tr("serviceConnectionTitle")}</Text>

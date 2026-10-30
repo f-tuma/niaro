@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   View,
+  useWindowDimensions,
 } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import type { Language } from "../protocol";
@@ -18,12 +19,6 @@ import {
   meetingTime,
   transcriptParagraphs,
 } from "./meeting-format";
-export {
-  cleanTranscriptForReading,
-  meetingDuration,
-  meetingTime,
-  transcriptParagraphs,
-};
 import { tokens as t } from "../design-tokens";
 import { nativeMotion, useReducedMotion } from "../ui/motion";
 import { Ripple } from "../ui/Ripple";
@@ -38,6 +33,12 @@ import {
   type IconName,
   type StatusTone,
 } from "../ui";
+export {
+  cleanTranscriptForReading,
+  meetingDuration,
+  meetingTime,
+  transcriptParagraphs,
+};
 
 export function MeetingNotice({
   title,
@@ -156,34 +157,38 @@ export function MeetingRow({
   onOpen(): void;
 }) {
   const tr = translate(language);
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale > 1.3;
   const { time, full } = dayParts(meeting.recordedAt, language);
-  const meta = [
+  const timeAndDuration = [
     time,
     meeting.durationSeconds ? meetingDuration(meeting.durationSeconds) : null,
   ]
     .filter(Boolean)
     .join(" · ");
+  const meta = largeText ? `${full} · ${timeAndDuration}` : timeAndDuration;
   return (
     <Pressable
       testID={`meeting-${meeting.id}`}
       accessibilityRole="button"
-      accessibilityLabel={`${meeting.title}, ${full} ${meta}, ${tr(`meeting_status_${meeting.status}`)}`}
+      accessibilityLabel={`${meeting.title}, ${full} ${timeAndDuration}, ${tr(`meeting_status_${meeting.status}`)}`}
       onPress={onOpen}
       style={({ pressed }) => [
         styles.row,
         { backgroundColor: pressed ? t.color.pressed : "transparent" },
       ]}
     >
-      <DateLeaf iso={meeting.recordedAt} language={language} />
-      <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-        <Text role="rowTitle" numberOfLines={1}>
+      {largeText ? null : (
+        <DateLeaf iso={meeting.recordedAt} language={language} />
+      )}
+      <View style={{ flex: 1, minWidth: 0, gap: t.spacing.xs }}>
+        <Text role="rowTitle" numberOfLines={largeText ? undefined : 2}>
           {meeting.title}
         </Text>
-        <Row style={{ gap: 6 }}>
+        <Row style={{ gap: 6, flexWrap: "wrap" }}>
           <Text
             role="meta"
             tone="secondary"
-            numberOfLines={1}
             style={{ fontVariant: ["tabular-nums"], flexShrink: 1 }}
           >
             {meta}
@@ -389,7 +394,7 @@ export function MeetingProgress({
                 <View style={styles.dotSlot}>
                   <Ripple
                     size={22}
-                    color={t.color.action.primary}
+                    color={t.color.action.link}
                     running={active && !!working}
                     period={1600}
                     reach={1.9}
@@ -515,7 +520,7 @@ export function TranscriptReader({
             >
               <Text
                 role="caption"
-                style={{ color: t.color.action.primary, fontWeight: "600" }}
+                style={{ color: t.color.action.link, fontWeight: "600" }}
               >
                 {showOriginal
                   ? tr("meetingTranscriptReadable")
@@ -617,7 +622,7 @@ export function MeetingDetailView({
                 >
                   <Text
                     role="section"
-                    style={{ color: t.color.action.primary }}
+                    style={{ color: t.color.action.link }}
                   >
                     {tr("meetingOpenHumanTasks")}
                   </Text>
@@ -718,7 +723,7 @@ export function MeetingDetailView({
                 <Row>
                   <Text
                     role="label"
-                    style={{ color: t.color.action.primary, flex: 1 }}
+                    style={{ color: t.color.action.link, flex: 1 }}
                   >
                     {tr("meetingReadTranscript")}
                   </Text>
@@ -801,11 +806,11 @@ function SourceLink({
         { opacity: pressed ? 0.6 : 1 },
       ]}
     >
-      <Icon name="quote" size={13} color={t.color.action.primary} />
+      <Icon name="quote" size={13} color={t.color.action.link} />
       <Text
         role="meta"
         style={{
-          color: t.color.action.primary,
+          color: t.color.action.link,
           fontWeight: "600",
           fontVariant: ["tabular-nums"],
         }}
@@ -945,7 +950,7 @@ function SourceEvidence({
                   <Text
                     role="meta"
                     style={{
-                      color: t.color.action.primary,
+                      color: t.color.action.link,
                       fontWeight: "600",
                       fontVariant: ["tabular-nums"],
                     }}
@@ -955,7 +960,7 @@ function SourceEvidence({
                   <Icon
                     name="chevron"
                     size={14}
-                    color={t.color.action.primary}
+                    color={t.color.action.link}
                   />
                 </Row>
               </Pressable>
@@ -1009,7 +1014,7 @@ const styles = StyleSheet.create({
   row: {
     minHeight: 68,
     paddingHorizontal: t.spacing.lg,
-    paddingVertical: 10,
+    paddingVertical: t.spacing.md,
     flexDirection: "row",
     alignItems: "center",
     gap: t.spacing.md,
@@ -1017,12 +1022,14 @@ const styles = StyleSheet.create({
     borderTopColor: t.color.hairline,
   },
   leaf: {
-    width: 44,
-    height: 48,
-    borderRadius: 12,
-    paddingTop: 6,
+    minWidth: 44,
+    minHeight: 48,
+    flexShrink: 0,
+    borderRadius: t.radius.control,
+    paddingHorizontal: t.spacing.xs,
+    paddingVertical: t.spacing.xs,
     alignItems: "center",
-    backgroundColor: t.color.tile.blue.background,
+    backgroundColor: t.color.fill,
   },
   leafMonth: {
     alignSelf: "stretch",
@@ -1031,7 +1038,7 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     letterSpacing: 0.6,
     textTransform: "uppercase",
-    color: t.color.tile.blue.foreground,
+    color: t.color.text.secondary,
   },
   leafDay: {
     fontSize: 19,

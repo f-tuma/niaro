@@ -420,7 +420,7 @@ function InputEditor(props: EditorProps) {
             <Icon
               name={draft.present ? "check" : "plus"}
               size={18}
-              color={t.color.action.primary}
+              color={t.color.action.link}
             />
             <Text style={styles.flex}>
               {copy(language, "include", { field: label })}
@@ -446,7 +446,7 @@ function InputEditor(props: EditorProps) {
               onPress={() => setExpanded((current) => !current)}
             >
               <Row>
-                <Icon name="chevron" size={18} color={t.color.action.primary} />
+                <Icon name="chevron" size={18} color={t.color.action.link} />
                 <Text style={styles.flex}>
                   {copy(language, expanded ? "hide" : "edit", { field: label })}
                 </Text>
@@ -515,7 +515,7 @@ function Choices({
                 {text}
               </Text>
               {checked ? (
-                <Icon name="check" size={18} color={t.color.action.primary} />
+                <Icon name="check" size={18} color={t.color.action.link} />
               ) : null}
             </Row>
           </MotionPressable>

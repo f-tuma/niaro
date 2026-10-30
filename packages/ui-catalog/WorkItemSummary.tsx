@@ -8,7 +8,15 @@ import type {
 } from "../protocol";
 import { translate } from "../i18n";
 import { tokens as t } from "../design-tokens";
-import { Text, Row, Icon, Badge, ui } from "../ui";
+import {
+  Text,
+  Row,
+  Icon,
+  IconTile,
+  StatusPill,
+  ui,
+  type StatusTone,
+} from "../ui";
 import { MotionPressable } from "../ui/motion";
 
 /** Opening a summary only reveals details. Consent lives in ActionApprovalCard. */
@@ -69,6 +77,20 @@ export function WorkItemSummary({
             ? "processInterrupted"
             : work.status,
   );
+  const tone: StatusTone =
+    work.native?.process?.status === "unknown"
+      ? "warning"
+      : work.status === "waiting_approval"
+        ? "warning"
+        : work.status === "waiting_input"
+          ? "needsInput"
+          : work.status === "succeeded"
+            ? "success"
+            : work.status === "failed"
+              ? "error"
+              : work.status === "running"
+                ? "running"
+                : "unknown";
   return (
     <MotionPressable
       testID={`summary-${work.id}`}
@@ -85,31 +107,21 @@ export function WorkItemSummary({
       style={({ pressed }) => [
         ui.surface,
         {
-          backgroundColor: pressed ? t.color.surfaceRaised : t.color.glass,
-          padding: 16,
-          gap: 10,
+          backgroundColor: pressed ? t.color.surfaceRaised : t.color.surface,
         },
       ]}
     >
       <Row style={{ alignItems: "flex-start", gap: 12 }}>
-        <View
-          style={{
-            padding: 10,
-            borderRadius: 15,
-            backgroundColor: t.color.accent.softBlue,
-          }}
-        >
-          <Icon
-            name={
-              work.status === "succeeded"
-                ? "check"
-                : work.native
-                  ? "chat"
-                  : "calendar"
-            }
-            color={t.color.action.primary}
-          />
-        </View>
+        <IconTile
+          size={38}
+          icon={
+            work.status === "succeeded"
+              ? "check"
+              : work.native
+                ? "chat"
+                : "calendar"
+          }
+        />
         <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
           <Text role="cardTitle">{work.title}</Text>
           <Text role="caption" tone="secondary" numberOfLines={2}>
@@ -138,8 +150,8 @@ export function WorkItemSummary({
           </Row>
         </View>
       ) : null}
-      <View style={{ paddingLeft: details ? 0 : 54 }}>
-        <Badge label={status} success={work.status === "succeeded"} />
+      <View style={{ paddingLeft: details ? 0 : 50 }}>
+        <StatusPill label={status} tone={tone} compact />
       </View>
     </MotionPressable>
   );

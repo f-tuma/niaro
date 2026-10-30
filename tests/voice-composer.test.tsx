@@ -15,7 +15,8 @@ const props = {
 afterEach(() => jest.clearAllMocks());
 test("recording composer exposes completion and cancellation, never starts or sends on render", () => {
   render(<VoiceComposer {...props} level={0.7} />);
-  expect(screen.queryByText("Recording")).toBeNull();
+  expect(screen.getByText("Listening")).toBeTruthy();
+  expect(screen.queryByLabelText("Recognized text")).toBeNull();
   expect(screen.queryByText(/0:20|Done transcribes/)).toBeNull();
   expect(props.onStart).not.toHaveBeenCalled();
   expect(props.onSend).not.toHaveBeenCalled();
@@ -68,11 +69,20 @@ test("failed transcription needs explicit retry and does not reopen the micropho
 });
 
 test.each(["starting", "stopping", "transcribing"] as const)(
-  "%s uses the curve instead of visible loading text",
+  "%s names the actual state without implying the microphone is still recording",
   (stage) => {
     render(<VoiceComposer {...props} stage={stage} />);
-    expect(screen.getByTestId("voice-waveform")).toBeTruthy();
-    expect(screen.queryByText(/Starting|Stopping|Transcribing/)).toBeNull();
+    expect(screen.queryByTestId("voice-waveform")).toBeNull();
+    const status = {
+      starting: "Requesting microphone…",
+      stopping: "Stopping microphone…",
+      transcribing: "Transcribing…",
+    };
+    expect(screen.getByText(status[stage])).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Start recording" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
     expect(props.onStart).not.toHaveBeenCalled();
     fireEvent.press(
       screen.getByRole("button", { name: "Discard voice draft" }),
@@ -89,4 +99,18 @@ test("recording errors appear outside the unchanged composer", () => {
       .getByTestId("voice-composer")
       .findAllByProps({ accessibilityRole: "alert" }),
   ).toHaveLength(0);
+});
+
+test("review makes room for editable text and removes the recording pet and meter", () => {
+  const { rerender } = render(<VoiceComposer {...props} elapsedSeconds={18} />);
+  expect(screen.getAllByTestId("voice-pet")).toHaveLength(1);
+  expect(screen.getByText("0:18")).toBeTruthy();
+  rerender(<VoiceComposer {...props} stage="review" text="My request" />);
+  expect(screen.queryByTestId("voice-pet")).toBeNull();
+  expect(screen.queryByTestId("voice-waveform")).toBeNull();
+  expect(screen.queryByText("0:18")).toBeNull();
+  expect(screen.getByLabelText("Recognized text")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Discard voice draft" }),
+  ).toBeTruthy();
 });

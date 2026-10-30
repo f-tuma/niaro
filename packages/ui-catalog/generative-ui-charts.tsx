@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { usePresentationState } from "./generative-ui-presentation";
 import { Pressable, StyleSheet, View } from "react-native";
 import Svg, {
   Circle,
@@ -220,7 +221,10 @@ function CategoryPlot({
 
 export function BarChartView({ props }: Props) {
   const { language } = useRuntime();
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = usePresentationState<number | null>(
+    "selected",
+    null,
+  );
   const labels = labelsOf(props);
   const series = seriesOf(props, labels.length);
   if (!labels.length || !series.length) return null;
@@ -405,7 +409,10 @@ function HorizontalBars({
 
 export function LineChartView({ props }: Props) {
   const { language } = useRuntime();
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = usePresentationState<number | null>(
+    "selected",
+    null,
+  );
   const labels = labelsOf(props);
   const series = seriesOf(props, labels.length);
   if (!labels.length || !series.length) return null;

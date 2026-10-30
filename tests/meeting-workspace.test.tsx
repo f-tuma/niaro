@@ -83,6 +83,7 @@ const flush = async () => {
 function fixture(identity: string, coordinator: AudioSessionCoordinator) {
   const storage = new Map<string, string>();
   let recording = false;
+  const probe = jest.fn(async () => 1000);
   const stop = jest.fn(async () => {
     recording = false;
     return "file:///document/Audio/recording-test.m4a";
@@ -120,9 +121,10 @@ function fixture(identity: string, coordinator: AudioSessionCoordinator) {
         status: () => ({ isRecording: recording, durationMillis: 1000 }),
         valid: () => true,
         size: () => 64,
-        probe: async () => 1000,
+        probe,
         read: (_uri, _offset, n) => new Uint8Array(n),
         remove: () => {},
+        play: () => ({ stop: () => {} }),
       }),
   );
   const snapshot = emptySnapshot();
@@ -159,6 +161,7 @@ function fixture(identity: string, coordinator: AudioSessionCoordinator) {
     },
     session,
     stop,
+    probe,
   };
 }
 function view(session: ClientSession, section: Section) {
@@ -246,8 +249,9 @@ test("an open meeting record is its own screen: Back returns to the list; tabs l
   expect(setSection).not.toHaveBeenCalled();
   expect(screen.queryByTestId("meeting-detail")).toBeNull();
   expect(screen.getByTestId(`meeting-${meeting.id}`)).toBeTruthy();
-  // The list is a tab root: no Back, the tab bar leads elsewhere.
-  expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  // Meetings is nested in Library; Back returns there, while Chat remains one tap away.
+  fireEvent.press(screen.getByRole("button", { name: "Back" }));
+  expect(setSection).toHaveBeenCalledWith("library");
   fireEvent.press(screen.getByRole("tab", { name: "Chat" }));
   expect(setSection).toHaveBeenCalledWith("chat");
 });
@@ -359,5 +363,110 @@ test("Upload audio file brings a recording from the device in and sends it for p
     state: "captured",
     uploaded: true,
   });
+  ui.unmount();
+});
+
+test("the live journal entry is not a recovery failure, while older idle recovery and saved audio remain actionable", async () => {
+  const a = fixture("TEST-JOURNAL-DISPLAY", new AudioSessionCoordinator());
+  const ui = render(view(a.session, "meetings"));
+  await act(flush);
+  await act(async () => {
+    // A prior recording whose duration could not be read remains recoverable.
+    await a.capture.start(
+      "22222222-2222-4222-8222-222222222222",
+      "TEST earlier recording",
+      "en",
+    );
+    a.probe.mockRejectedValueOnce(new Error("TEST unreadable duration"));
+    await a.capture.stop();
+  });
+  expect(a.capture.getSnapshot().entries[0]?.state).toBe("pending");
+  fireEvent.press(screen.getByRole("button", { name: "Record meeting" }));
+  await act(flush);
+  expect(
+    a.capture
+      .getSnapshot()
+      .entries.filter((entry) => entry.state === "pending"),
+  ).toHaveLength(2);
+  expect(screen.getAllByText(/Couldn't recover/)).toHaveLength(1);
+  expect(screen.getByText("TEST earlier recording")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Recover recording" }),
+  ).toBeDisabled();
+  fireEvent.press(screen.getByRole("button", { name: "Pause" }));
+  await act(flush);
+  expect(screen.getAllByText(/Couldn't recover/)).toHaveLength(1);
+  fireEvent.press(screen.getByRole("button", { name: "Stop and process" }));
+  await act(flush);
+  expect(a.capture.getSnapshot().entries[0]?.state).toBe("captured");
+  expect(screen.getByText(/Not uploaded yet/)).toBeTruthy();
+  const recover = screen.getByRole("button", { name: "Recover recording" });
+  expect(recover).toBeEnabled();
+  fireEvent.press(recover);
+  await act(flush);
+  expect(
+    a.capture
+      .getSnapshot()
+      .entries.every((entry) => entry.state === "captured"),
+  ).toBe(true);
+  expect(
+    screen.queryByRole("button", { name: "Recover recording" }),
+  ).toBeNull();
+  fireEvent.press(
+    screen.getAllByRole("button", { name: "Delete recording" })[0]!,
+  );
+  fireEvent.press(screen.getByRole("button", { name: "Cancel" }));
+  expect(a.capture.getSnapshot().entries).toHaveLength(2);
+  fireEvent.press(
+    screen.getAllByRole("button", { name: "Delete recording" })[0]!,
+  );
+  fireEvent.press(screen.getByRole("button", { name: "Delete permanently" }));
+  await act(flush);
+  expect(a.capture.getSnapshot().entries).toHaveLength(1);
+  ui.unmount();
+});
+
+test("a settled failed recording remains recoverable while older saved audio plays", async () => {
+  const a = fixture("TEST-SETTLED-JOURNAL", new AudioSessionCoordinator());
+  const ui = render(view(a.session, "meetings"));
+  await act(flush);
+  await act(async () => {
+    await a.capture.start(
+      "22222222-2222-4222-8222-222222222222",
+      "TEST older saved recording",
+      "en",
+    );
+    await a.capture.stop();
+  });
+  fireEvent.press(screen.getByRole("button", { name: "Record meeting" }));
+  await act(flush);
+  a.probe.mockRejectedValueOnce(new Error("TEST unreadable current duration"));
+  fireEvent.press(screen.getByRole("button", { name: "Stop and process" }));
+  await act(flush);
+  expect(a.capture.getSnapshot().phase).toBe("idle");
+  expect(
+    a.capture
+      .getSnapshot()
+      .entries.filter((entry) => entry.state === "pending"),
+  ).toHaveLength(1);
+  expect(
+    screen.getByRole("button", { name: "Recover recording" }),
+  ).toBeEnabled();
+  fireEvent.press(screen.getByRole("button", { name: "Play saved recording" }));
+  await act(flush);
+  expect(a.capture.getSnapshot().phase).toBe("playback");
+  expect(
+    screen.getByRole("button", { name: "Recover recording" }),
+  ).toBeDisabled();
+  expect(
+    a.capture
+      .getSnapshot()
+      .entries.filter((entry) => entry.state === "pending"),
+  ).toHaveLength(1);
+  fireEvent.press(screen.getByRole("button", { name: "Stop playback" }));
+  await act(flush);
+  expect(
+    screen.getByRole("button", { name: "Recover recording" }),
+  ).toBeEnabled();
   ui.unmount();
 });

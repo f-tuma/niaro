@@ -1,22 +1,13 @@
-import React from "react";
-import {
-  ActivityIndicator,
-  Animated,
-  StyleSheet,
-  TextInput,
-  View,
-} from "react-native";
+import React, { useEffect, useState } from "react";
+import { Animated, Platform, StyleSheet, TextInput, View } from "react-native";
 import { translate, en, type TranslationKey } from "../i18n";
 import type { Language } from "../protocol";
 import type { VoiceTranscript } from "../protocol/voice";
-import { VoiceVisualizer } from "../ui/VoiceVisualizer";
+import { useCompanionTypography } from "../ui/typography";
+import { PetView } from "../ui/PetView";
 import { tokens as t } from "../design-tokens";
-import { Button, Icon, Text, ui, type IconName } from "../ui";
-import {
-  MotionPressable,
-  useMotionTarget,
-  useReducedMotion,
-} from "../ui/motion";
+import { Icon, Text, ui, type IconName } from "../ui";
+import { MotionPressable, useReducedMotion } from "../ui/motion";
 
 export type VoiceComposerProps = {
   language: Language;
@@ -35,6 +26,10 @@ export type VoiceComposerProps = {
   error?: string | null;
   blocked?: boolean;
   level?: number;
+  /** The same live microphone meter shared with the pet, without React frames. */
+  petLevel?: Animated.Value;
+  /** Actual time since capture entered recording, not a processing estimate. */
+  elapsedSeconds?: number;
   bands?: readonly [number, number, number];
   /** 24 bands, 0–1, low to high: the shape of the voice. */
   spectrum?: readonly number[];
@@ -45,55 +40,120 @@ export type VoiceComposerProps = {
   onSend(): void;
   onCancel(): void;
 };
-/** A ring behind the Done button that grows with the voice it hears. */
-function LevelRing({ level }: { level: number }) {
-  const scale = useMotionTarget(1 + Math.min(1, Math.max(0, level)) * 0.45, 90);
-  return (
-    <Animated.View
-      aria-hidden
-      style={[styles.ring, { transform: [{ scale }] }]}
-    />
-  );
-}
+
+const copy = {
+  cs: {
+    listening: "Poslouchám",
+    silence: "Odmlkou nahrávku ukončíš.",
+  },
+  en: {
+    listening: "Listening",
+    silence: "Pause to finish.",
+  },
+} as const;
+
 function Control({
   label,
+  accessibilityLabel = label,
   icon,
   onPress,
   primary = false,
   disabled = false,
-  compact = false,
 }: {
   label: string;
-  icon: IconName;
+  accessibilityLabel?: string;
+  icon?: IconName;
   onPress(): void;
   primary?: boolean;
   disabled?: boolean;
-  compact?: boolean;
 }) {
   return (
     <MotionPressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      hitSlop={compact ? 4 : undefined}
-      style={[
+      style={({ pressed }) => [
         styles.control,
-        compact && styles.compactControl,
         {
-          backgroundColor: primary ? t.color.action.primary : "transparent",
-          opacity: disabled ? 0.5 : 1,
+          backgroundColor: primary
+            ? pressed
+              ? t.color.action.pressed
+              : t.color.action.primary
+            : pressed
+              ? t.color.fillPressed
+              : t.color.fill,
+          borderColor: primary ? "transparent" : t.color.border,
+          opacity: disabled ? 0.45 : 1,
         },
       ]}
     >
-      <Icon
-        name={icon}
-        color={primary ? t.color.text.inverse : t.color.text.primary}
-      />
+      {icon ? (
+        <Icon
+          name={icon}
+          size={18}
+          color={primary ? t.color.text.inverse : t.color.text.primary}
+        />
+      ) : null}
+      <Text
+        role="button"
+        style={[
+          styles.controlLabel,
+          { color: primary ? t.color.text.inverse : t.color.text.primary },
+        ]}
+      >
+        {label}
+      </Text>
     </MotionPressable>
   );
 }
+
+/** A small meter of actual capture intensity. No generated activity after capture. */
+function CaptureMeter({
+  level,
+  bands,
+  spectrum,
+  label,
+}: Pick<VoiceComposerProps, "bands" | "spectrum"> & {
+  level: number;
+  label: string;
+}) {
+  const reduced = useReducedMotion();
+  const strength = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
+  return (
+    <View
+      testID="voice-waveform"
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={label}
+      style={styles.wave}
+    >
+      {Array.from({ length: 24 }, (_, i) => {
+        const sample = spectrum?.[i] ?? bands?.[Math.min(2, Math.floor(i / 8))];
+        const amplitude = reduced
+          ? 0
+          : sample !== undefined && Number.isFinite(sample)
+            ? Math.min(1, Math.max(0, sample))
+            : strength * (0.35 + 0.65 * Math.sin(((i + 1) / 25) * Math.PI));
+        return (
+          <View
+            key={i}
+            style={[
+              styles.waveBar,
+              {
+                height: 3 + amplitude * 25,
+                backgroundColor: t.color.action.primary,
+                opacity: reduced ? 0.6 : 0.35 + amplitude * 0.65,
+              },
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
 export function VoiceComposer({
   language,
   stage,
@@ -102,6 +162,8 @@ export function VoiceComposer({
   blocked,
   reviewReasons = [],
   level = 0,
+  petLevel,
+  elapsedSeconds,
   bands,
   spectrum,
   onStart,
@@ -112,7 +174,8 @@ export function VoiceComposer({
   onCancel,
 }: VoiceComposerProps) {
   const tr = translate(language);
-  const reduced = useReducedMotion();
+  const inputFont = useCompanionTypography(t.typography.body);
+  const words = copy[language];
   const recording = stage === "recording";
   const review = stage === "review";
   const pending = [
@@ -121,6 +184,11 @@ export function VoiceComposer({
     "transcribing",
     "cancelling",
   ].includes(stage);
+  // Stories and independent consumers may provide only the numerical meter.
+  const [localLevel] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    if (!petLevel) localLevel.setValue(recording ? level : 0);
+  }, [petLevel, localLevel, recording, level]);
   const status = {
     idle: "voice_ready",
     starting: "voice_starting",
@@ -132,6 +200,14 @@ export function VoiceComposer({
     submitted: "voice_submitted",
     cancelling: "voice_cancelling",
   } as const;
+  const primaryLabel = tr(
+    recording
+      ? "voice_stop"
+      : stage === "recorded"
+        ? "voice_upload"
+        : "voice_start",
+  );
+  const seconds = Math.max(0, Math.floor(elapsedSeconds ?? 0));
   return (
     <View>
       {error ? (
@@ -154,112 +230,22 @@ export function VoiceComposer({
       ) : null}
       <View
         testID="voice-composer"
-        style={[
-          ui.composerFrame,
-          styles.bubble,
-          review ? styles.review : styles.live,
-        ]}
+        style={[ui.composerFrame, styles.tray, review && styles.review]}
       >
-        {recording || pending ? (
-          <VoiceVisualizer
-            level={recording ? level : 0}
-            bands={recording ? bands : undefined}
-            variant="border"
-            mode={recording ? "recording" : "processing"}
-          />
-        ) : null}
-        <View style={styles.row}>
-          {!review ? (
-            <Control
-              label={tr("voice_discard")}
-              icon="close"
-              onPress={onCancel}
-            />
-          ) : null}
-          <View style={styles.center}>
-            {!recording && !pending && !error ? (
-              <View style={styles.status} accessibilityLiveRegion="polite">
-                {!recording &&
-                !review &&
-                stage !== "idle" &&
-                stage !== "recorded" ? (
-                  reduced ? (
-                    <Icon name="clock" size={16} />
-                  ) : (
-                    <ActivityIndicator
-                      size="small"
-                      color={t.color.action.primary}
-                    />
-                  )
-                ) : null}
-                <Text
-                  role={review ? "label" : "caption"}
-                  style={{ flexShrink: 1 }}
-                >
-                  {tr(status[stage])}
-                </Text>
-              </View>
-            ) : null}
-            {recording || pending || error ? (
-              <View
-                testID="voice-waveform"
-                accessible
-                accessibilityRole="image"
-                accessibilityLabel={tr(status[stage])}
-                accessibilityLiveRegion={pending ? "polite" : undefined}
-                style={styles.wave}
-              >
-                <VoiceVisualizer
-                  key={error ? "inactive" : "active"}
-                  level={recording ? level : 0}
-                  bands={recording ? bands : undefined}
-                  spectrum={recording ? spectrum : undefined}
-                  mode={
-                    recording || !pending
-                      ? "recording"
-                      : stage === "starting"
-                        ? "starting"
-                        : "processing"
-                  }
-                />
-              </View>
-            ) : null}
-          </View>
-          {review ? (
-            <Control
-              label={tr("voice_discard")}
-              icon="close"
-              onPress={onCancel}
-              compact
-            />
-          ) : (
-            <View style={styles.primary}>
-              {recording ? <LevelRing level={level} /> : null}
-              <Control
-                label={tr(
-                  recording
-                    ? "voice_stop"
-                    : stage === "recorded"
-                      ? "voice_upload"
-                      : "voice_start",
-                )}
-                icon={
-                  recording ? "check" : stage === "recorded" ? "refresh" : "mic"
-                }
-                primary
-                disabled={
-                  blocked ||
-                  (!recording && stage !== "idle" && stage !== "recorded")
-                }
-                onPress={
-                  recording ? onStop : stage === "recorded" ? onUpload : onStart
-                }
-              />
-            </View>
-          )}
-        </View>
         {review ? (
           <>
+            <Text role="sheetTitle" accessibilityRole="header">
+              {tr("voice_review")}
+            </Text>
+            {reviewReasons.length ? (
+              <Text role="caption" tone="secondary">
+                {tr(
+                  reviewReasons.includes("limit")
+                    ? "voice_limit_review"
+                    : "voice_uncertain_review_short",
+                )}
+              </Text>
+            ) : null}
             <TextInput
               accessibilityLabel={tr("voice_transcript")}
               value={text}
@@ -268,65 +254,147 @@ export function VoiceComposer({
               multiline
               maxLength={4000}
               scrollEnabled
-              style={styles.input}
+              placeholderTextColor={t.color.text.secondary}
+              style={[styles.input, inputFont]}
             />
-            <Text role="caption" tone="secondary">
-              {tr(
-                reviewReasons.includes("limit")
-                  ? "voice_limit_review"
-                  : reviewReasons.length
-                    ? "voice_uncertain_review_short"
-                    : "voice_review_hint",
-              )}
-            </Text>
-            <Button
-              label={tr("voice_send")}
-              disabled={blocked || !text.trim()}
-              onPress={onSend}
-            />
+            <View style={styles.actions}>
+              <Control
+                label={tr("cancel")}
+                accessibilityLabel={tr("voice_discard")}
+                onPress={onCancel}
+              />
+              <Control
+                label={tr("voice_send")}
+                primary
+                disabled={blocked || !text.trim()}
+                onPress={onSend}
+              />
+            </View>
           </>
-        ) : null}
+        ) : (
+          <>
+            <View
+              style={styles.grabber}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            />
+            <View style={styles.pet}>
+              <PetView
+                testID="voice-pet"
+                size={140}
+                background={t.color.surfaceRaised}
+                state={
+                  recording ? "listening" : pending ? "working" : "resting"
+                }
+                level={petLevel ?? localLevel}
+                label={recording ? words.listening : tr(status[stage])}
+              />
+            </View>
+            <Text
+              role="sheetTitle"
+              accessibilityLiveRegion="polite"
+              style={styles.center}
+            >
+              {recording ? words.listening : tr(status[stage])}
+            </Text>
+            {recording ? (
+              <>
+                {elapsedSeconds !== undefined ? (
+                  <Text role="meta" tone="secondary" style={styles.timer}>
+                    {Math.floor(seconds / 60)}:
+                    {String(seconds % 60).padStart(2, "0")}
+                  </Text>
+                ) : null}
+                <CaptureMeter
+                  level={level}
+                  bands={bands}
+                  spectrum={spectrum}
+                  label={tr("voice_recording_short")}
+                />
+                <Text role="caption" tone="secondary" style={styles.center}>
+                  {words.silence}
+                </Text>
+              </>
+            ) : null}
+            <View style={styles.actions}>
+              <Control
+                label={tr("cancel")}
+                accessibilityLabel={tr("voice_discard")}
+                onPress={onCancel}
+              />
+              {recording || stage === "idle" || stage === "recorded" ? (
+                <Control
+                  label={primaryLabel}
+                  icon={
+                    recording
+                      ? "check"
+                      : stage === "recorded"
+                        ? "refresh"
+                        : "mic"
+                  }
+                  primary
+                  disabled={blocked}
+                  onPress={
+                    recording
+                      ? onStop
+                      : stage === "recorded"
+                        ? onUpload
+                        : onStart
+                  }
+                />
+              ) : null}
+            </View>
+          </>
+        )}
       </View>
     </View>
   );
 }
+
 const styles = StyleSheet.create({
-  bubble: { gap: 8 },
-  // Same outer height as the text composer (44 + 2 × 4 + 1px edges): no jump.
-  live: { padding: 4 },
-  primary: { alignItems: "center", justifyContent: "center" },
-  ring: {
-    position: "absolute",
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: t.color.action.primary,
-    opacity: 0.22,
+  tray: {
+    padding: 16,
+    paddingTop: 8,
+    gap: 6,
+    borderRadius: 24,
+    backgroundColor: t.color.surfaceRaised,
   },
-  review: { padding: t.spacing.cardPadding, gap: t.spacing.md },
-  row: { flexDirection: "row", alignItems: "center", gap: 8 },
-  center: { flex: 1, minWidth: 0, gap: 2 },
-  status: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: 4,
+  review: { paddingTop: 16, gap: 12 },
+  grabber: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: t.color.text.disabled,
+    alignSelf: "center",
+    opacity: 0.5,
   },
+  pet: { alignItems: "center", marginTop: -2, marginBottom: -8 },
+  center: { textAlign: "center" },
+  timer: { textAlign: "center", fontVariant: ["tabular-nums"] },
+  actions: { flexDirection: "row", gap: 10, marginTop: 4 },
   control: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 48,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 6,
     alignItems: "center",
     justifyContent: "center",
   },
-  compactControl: { width: 40, height: 40, borderRadius: 20 },
-  wave: { height: 40, justifyContent: "center", overflow: "hidden" },
+  controlLabel: { flexShrink: 1, textAlign: "center" },
+  wave: {
+    height: 28,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+  },
+  waveBar: { width: 3, borderRadius: 2 },
   toast: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: "100%",
     marginBottom: 10,
     padding: 12,
     borderRadius: t.radius.control,
@@ -334,14 +402,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    ...t.elevation.card,
   },
   input: {
-    minHeight: t.typography.body.lineHeight * 3,
-    maxHeight: t.typography.body.lineHeight * 4,
-    padding: 0,
+    minHeight: 80,
+    maxHeight: 120,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: t.color.border,
+    borderRadius: 14,
     textAlignVertical: "top",
     color: t.color.text.primary,
+    backgroundColor: t.color.background,
     ...t.typography.body,
+    ...(Platform.OS === "web"
+      ? { outlineStyle: "solid", outlineWidth: 0 }
+      : {}),
   },
 });

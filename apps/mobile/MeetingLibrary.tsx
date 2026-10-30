@@ -13,6 +13,7 @@ import {
   Modal,
   StyleSheet,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { randomUUID } from "expo-crypto";
@@ -37,7 +38,6 @@ import {
   ui,
 } from "../../packages/ui";
 import { useReducedMotion } from "../../packages/ui/motion";
-import { VoiceOrb } from "../../packages/ui/VoiceOrb";
 import {
   MeetingActionCard,
   MeetingDetailView,
@@ -50,7 +50,7 @@ import {
 } from "../../packages/ui-catalog/MeetingView";
 import { useMeetingDevice } from "./meeting-device";
 import { useMeetingNotification } from "./meeting-notification";
-import { DetailSheet, EmptyState, IconButton, TopBar } from "./ScreenChrome";
+import { DetailSheet, IconButton, TopBar } from "./ScreenChrome";
 import { ProcessLaunch } from "./ProcessLaunch";
 const empty = {
   phase: "idle" as const,
@@ -101,7 +101,7 @@ export function MeetingRecordingControls({
           )}
           <Text
             role="label"
-            style={{ flex: 1, fontVariant: ["tabular-nums"] }}
+            style={{ flex: 1, minWidth: 120, fontVariant: ["tabular-nums"] }}
             accessibilityLiveRegion="polite"
           >
             {tr(control.paused ? "meetingPaused" : "meetingRecording")}
@@ -171,6 +171,8 @@ export function MeetingLibrary({
   scheduled?: React.ReactNode;
 }) {
   const tr = translate(language);
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale > 1.3;
   const reduced = useReducedMotion();
   const { capture, durationMillis, elapsed, pickAudio } = useMeetingDevice(
     session.identityKey,
@@ -218,6 +220,10 @@ export function MeetingLibrary({
   const processTaskSelection = useRef(0);
   const inFlight = useRef(false);
   const recordingStartPending = useRef(false);
+  const [recordingEntryId, setRecordingEntryId] = useState<string | null>(null);
+  // Settled capture must not hide recovery during later playback/import work.
+  if (recordingEntryId && local.phase === "idle" && !startingRecording)
+    setRecordingEntryId(null);
   const recordingVisibilityGeneration = useRef(0);
   const wasVisible = useRef(visible);
   useLayoutEffect(() => {
@@ -493,7 +499,7 @@ export function MeetingLibrary({
   const stopPlayback =
     local.phase === "playback" ? (
       <Row style={styles.banner}>
-        <Icon name="speaker" size={18} color={t.color.action.primary} />
+        <Icon name="speaker" size={18} color={t.color.action.link} />
         <Text role="label" style={{ flex: 1 }}>
           {tr("meetingPlaying")}
         </Text>
@@ -568,8 +574,11 @@ export function MeetingLibrary({
         alive.current &&
         visible &&
         visibilityGeneration === recordingVisibilityGeneration.current
-      )
-        await capture?.start(randomUUID(), automaticTitle(), language);
+      ) {
+        const id = randomUUID();
+        setRecordingEntryId(id);
+        await capture?.start(id, automaticTitle(), language);
+      }
     } catch (failure) {
       if (alive.current) setError(errorKey(failure));
     } finally {
@@ -692,7 +701,7 @@ export function MeetingLibrary({
           />
         ) : !problem ? (
           <View style={styles.loading}>
-            <ActivityIndicator color={t.color.action.primary} />
+            <ActivityIndicator color={t.color.action.link} />
           </View>
         ) : null}
         {record &&
@@ -833,7 +842,13 @@ export function MeetingLibrary({
   const uploading = local.phase === "uploading";
   const pendingLocal = local.entries.filter(
     (entry) =>
-      !meetings.some((m) => m.id === entry.id && m.status !== "uploading"),
+      // The current journal entry belongs to the recorder until it settles.
+      // An idle pending entry still needs its original recovery actions.
+      !(
+        entry.id === recordingEntryId &&
+        local.phase !== "idle" &&
+        entry.state === "pending"
+      ) && !meetings.some((m) => m.id === entry.id && m.status !== "uploading"),
   );
   const listed = meetings.filter(
     (meeting) =>
@@ -856,77 +871,77 @@ export function MeetingLibrary({
         />
       ) : null}
       {capture ? (
-        // One card, one control: the same lens as voice, warm because it records.
         <View
           testID="meeting-recorder"
-          style={[styles.recorder, recording && styles.recorderLive]}
+          style={[
+            styles.recorder,
+            (recording || uploading) && styles.recorderActive,
+            recording && styles.recorderLive,
+          ]}
         >
-          <VoiceOrb
-            tone="record"
-            size={128}
-            glyph={recording ? "stop" : "record"}
-            state={
-              recording
-                ? paused
-                  ? "ready"
-                  : "live"
-                : busy || startingRecording || local.phase !== "idle"
-                  ? "disabled"
-                  : "ready"
-            }
-            label={tr(
-              recording
-                ? "meetingStop"
-                : startingRecording
-                  ? "meetingStarting"
-                  : "meetingRecord",
-            )}
-            onPress={() => {
-              if (recording) {
-                if (!busy) void action(stop);
-                return;
-              }
-              void startRecording();
-            }}
-          />
           {recording ? (
-            <View style={styles.recorderText}>
-              <Text
-                accessibilityLiveRegion="polite"
-                accessibilityLabel={`${tr(paused ? "meetingPaused" : "meetingRecording")} ${clock}`}
-                style={styles.timer}
-              >
-                {clock}
-              </Text>
-              {paused ? (
-                <Text role="label" tone="secondary">
-                  {tr("meetingPaused")}
-                </Text>
-              ) : (
-                <Row style={{ gap: 6 }}>
-                  <View style={styles.liveDot} />
-                  <Text role="label" style={{ color: t.color.record }}>
-                    {tr("meetingRecording")}
+            <>
+              <View style={styles.recorderText}>
+                <Row style={{ gap: t.spacing.sm }}>
+                  {paused ? (
+                    <Icon
+                      name="pause"
+                      size={16}
+                      color={t.color.text.secondary}
+                    />
+                  ) : (
+                    <View style={styles.liveDot} />
+                  )}
+                  <Text
+                    role="label"
+                    tone="secondary"
+                    accessibilityLiveRegion="polite"
+                    style={{ flexShrink: 1 }}
+                  >
+                    {tr(paused ? "meetingPaused" : "meetingRecording")}
                   </Text>
                 </Row>
-              )}
-              <Button
-                variant="secondary"
-                icon={paused ? "play" : "pause"}
-                label={tr(paused ? "meetingResume" : "meetingPause")}
-                disabled={busy}
-                onPress={() => (paused ? capture.resume() : capture.pause())}
-                style={styles.pauseButton}
-              />
-            </View>
-          ) : uploading ? (
-            <View style={styles.recorderText}>
-              <Text role="cardTitle">{tr("meeting_status_uploading")}</Text>
-              <Row style={{ gap: 6 }}>
-                <ActivityIndicator
-                  size="small"
-                  color={t.color.action.primary}
+                <Text
+                  accessibilityLabel={`${tr(paused ? "meetingPaused" : "meetingRecording")} ${clock}`}
+                  style={styles.timer}
+                >
+                  {clock}
+                </Text>
+              </View>
+              <Row
+                style={[
+                  styles.captureActions,
+                  largeText && styles.stackedActions,
+                ]}
+              >
+                <Button
+                  variant="danger"
+                  icon="stop"
+                  label={tr("meetingStop")}
+                  disabled={busy}
+                  onPress={() => void action(stop)}
+                  style={[styles.stopButton, largeText && styles.stackedButton]}
                 />
+                <Button
+                  variant="secondary"
+                  icon={paused ? "play" : "pause"}
+                  label={tr(paused ? "meetingResume" : "meetingPause")}
+                  disabled={busy}
+                  onPress={() => (paused ? capture.resume() : capture.pause())}
+                  style={[
+                    styles.pauseButton,
+                    largeText && styles.stackedButton,
+                  ]}
+                />
+              </Row>
+            </>
+          ) : uploading ? (
+            <Row style={{ gap: t.spacing.md }}>
+              <ActivityIndicator size="small" color={t.color.action.link} />
+              <View style={{ flex: 1, gap: t.spacing.xs }}>
+                <Text role="label" accessibilityLiveRegion="polite">
+                  {tr("meeting_status_uploading")}
+                </Text>
                 <Text
                   role="caption"
                   tone="secondary"
@@ -934,21 +949,19 @@ export function MeetingLibrary({
                 >
                   {Math.round(local.uploadOffset / 1024)} KiB
                 </Text>
-              </Row>
-            </View>
+              </View>
+            </Row>
           ) : (
-            <View style={styles.recorderText}>
-              <Text role="cardTitle" style={{ textAlign: "center" }}>
-                {tr("meetingRecord")}
-              </Text>
-              <Text
-                role="caption"
-                tone="secondary"
-                style={{ textAlign: "center" }}
-              >
-                {tr("meetingRecordHint")}
-              </Text>
-              {/* A recording made elsewhere is processed like one made here. */}
+            <>
+              <Button
+                icon="mic"
+                label={tr(
+                  startingRecording ? "meetingStarting" : "meetingRecord",
+                )}
+                loading={startingRecording || local.phase === "preparing"}
+                disabled={localAudioBlocked}
+                onPress={() => void startRecording()}
+              />
               <Button
                 variant="secondary"
                 icon="upload"
@@ -969,9 +982,8 @@ export function MeetingLibrary({
                     if (id) await capture.upload(id, session);
                   });
                 }}
-                style={styles.importButton}
               />
-            </View>
+            </>
           )}
         </View>
       ) : null}
@@ -994,13 +1006,10 @@ export function MeetingLibrary({
                     size={36}
                   />
                   <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                    <Text role="label" numberOfLines={1}>
-                      {entry.title}
-                    </Text>
+                    <Text role="label">{entry.title}</Text>
                     <Text
                       role="caption"
                       tone="secondary"
-                      numberOfLines={2}
                       style={{ fontVariant: ["tabular-nums"] }}
                     >
                       {meetingTime(entry.durationMillis / 1000)} ·{" "}
@@ -1013,8 +1022,12 @@ export function MeetingLibrary({
                       )}
                     </Text>
                   </View>
+                </Row>
+                <Row style={styles.captureActions}>
                   {entry.state === "captured" ? (
-                    <IconButton
+                    <Button
+                      variant="secondary"
+                      style={{ flex: 1 }}
                       icon="play"
                       label={tr("meetingPlay")}
                       disabled={localAudioBlocked}
@@ -1034,18 +1047,27 @@ export function MeetingLibrary({
                   />
                 </Row>
                 {localDelete === entry.id ? (
-                  <Button
-                    variant="danger"
-                    icon="trash"
-                    label={tr("meetingDeleteConfirm")}
-                    disabled={localAudioBlocked}
-                    onPress={() => {
-                      void action(async () => {
-                        await capture?.remove(entry.id);
-                        setLocalDelete(null);
-                      });
-                    }}
-                  />
+                  <Row style={styles.captureActions}>
+                    <Button
+                      style={{ flexGrow: 1, flexShrink: 1, maxWidth: "100%" }}
+                      variant="danger"
+                      icon="trash"
+                      label={tr("meetingDeleteConfirm")}
+                      disabled={localAudioBlocked}
+                      onPress={() => {
+                        void action(async () => {
+                          await capture?.remove(entry.id);
+                          setLocalDelete(null);
+                        });
+                      }}
+                    />
+                    <Button
+                      variant="quiet"
+                      label={tr("cancel")}
+                      disabled={busy}
+                      onPress={() => setLocalDelete(null)}
+                    />
+                  </Row>
                 ) : entry.state === "pending" ? (
                   <Button
                     variant="secondary"
@@ -1089,12 +1111,28 @@ export function MeetingLibrary({
             ))}
           </Group>
         </View>
-      ) : loaded && !pendingLocal.length && !scheduled ? (
-        <EmptyState
-          icon="waveform"
-          title={tr("meetingsEmptyTitle")}
-          hint={tr("meetingsEmptyHint")}
-        />
+      ) : !loaded && !loadError ? (
+        <Row style={styles.libraryState} accessibilityLiveRegion="polite">
+          <ActivityIndicator size="small" color={t.color.text.secondary} />
+          <Text role="caption" tone="secondary">
+            {tr("loading")}
+          </Text>
+        </Row>
+      ) : loaded &&
+        !loadError &&
+        !pendingLocal.length &&
+        !scheduled &&
+        !recording &&
+        !uploading ? (
+        <View style={styles.empty}>
+          <Icon name="waveform" size={28} color={t.color.text.secondary} />
+          <Text role="cardTitle" style={{ textAlign: "center" }}>
+            {tr("meetingsEmptyTitle")}
+          </Text>
+          <Text role="caption" tone="secondary" style={{ textAlign: "center" }}>
+            {tr("meetingRecordHint")}
+          </Text>
+        </View>
       ) : null}
       {capture ? null : (
         <Row style={styles.nativeOnly}>
@@ -1110,43 +1148,55 @@ export function MeetingLibrary({
 const styles = StyleSheet.create({
   banner: {
     minHeight: 56,
-    paddingLeft: t.spacing.lg,
-    paddingRight: 6,
+    padding: t.spacing.md,
+    flexWrap: "wrap",
     borderRadius: t.radius.group,
     backgroundColor: t.color.surface,
     borderWidth: 1,
     borderColor: t.color.surfaceRaised,
     ...t.elevation.card,
   },
-  bannerButton: { minHeight: 40, paddingVertical: 8 },
+  bannerButton: {
+    minHeight: t.control.minHeight,
+    paddingVertical: 8,
+    maxWidth: "100%",
+    flexShrink: 1,
+  },
   liveDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
     backgroundColor: t.color.record,
   },
-  recorder: {
+  recorder: { gap: t.spacing.sm },
+  recorderActive: {
     padding: t.spacing.lg,
-    paddingTop: t.spacing.md,
-    gap: t.spacing.md,
-    // The orb is the centre of the card; only the name field spans it.
-    alignItems: "center",
+    gap: t.spacing.lg,
     borderRadius: t.radius.card,
     backgroundColor: t.color.surface,
     borderWidth: 1,
-    borderColor: t.color.surfaceRaised,
-    ...t.elevation.card,
+    borderColor: t.color.border,
   },
   recorderLive: { borderColor: t.color.statusSoft.error },
-  recorderText: { alignItems: "center", gap: 4 },
-  pauseButton: { marginTop: 8 },
-  importButton: { marginTop: 12 },
+  recorderText: { alignItems: "center", gap: t.spacing.xs },
+  captureActions: { flexWrap: "wrap", gap: t.spacing.sm },
+  stackedActions: { flexDirection: "column", alignItems: "stretch" },
+  stackedButton: { flexBasis: "auto", width: "100%" },
+  stopButton: { flexGrow: 1, flexBasis: 160 },
+  pauseButton: { flexGrow: 1, flexBasis: 100 },
   timer: {
-    fontSize: 48,
-    lineHeight: 54,
-    fontWeight: "300",
+    fontSize: 40,
+    lineHeight: 52,
+    fontWeight: "500",
     color: t.color.text.primary,
     fontVariant: ["tabular-nums"],
+  },
+  libraryState: { padding: t.spacing.xl, justifyContent: "center" },
+  empty: {
+    alignItems: "center",
+    gap: t.spacing.sm,
+    paddingHorizontal: t.spacing.lg,
+    paddingVertical: t.spacing.xxl,
   },
   nativeOnly: { justifyContent: "center", gap: 6 },
   localRow: { padding: t.spacing.lg, gap: t.spacing.md },

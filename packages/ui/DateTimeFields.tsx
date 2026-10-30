@@ -58,7 +58,7 @@ function NativeField({
             mode={mode}
             display="compact"
             disabled={disabled}
-            themeVariant="light"
+            themeVariant="dark"
             accentColor={t.color.action.primary}
             onValueChange={(_event, selected) => onSelect(selected)}
             style={{ flexShrink: 1 }}

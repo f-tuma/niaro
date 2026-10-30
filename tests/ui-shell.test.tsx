@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Composer, Navigation, Home } from "../apps/mobile/ScreenChrome";
 import { WorkItemSummary } from "../packages/ui-catalog/WorkItemSummary";
 import { choosePeter, meetingProposal } from "../packages/test-fixtures";
@@ -121,14 +121,12 @@ test("tab bar navigates only on a tap and shows waiting work", () => {
     screen.getByRole("tab", { name: "Chat" }).props.accessibilityState.selected,
   ).toBe(true);
   expect(
-    screen.getByRole("tab", { name: "Úlohy" }).props.accessibilityValue,
+    screen.getByRole("tab", { name: "Práce" }).props.accessibilityValue,
   ).toEqual({ text: "3" });
-  fireEvent.press(screen.getByRole("tab", { name: "Úlohy" }));
+  fireEvent.press(screen.getByRole("tab", { name: "Práce" }));
   expect(navigate).toHaveBeenCalledWith("tasks");
-  fireEvent.press(screen.getByRole("tab", { name: "Schůzky" }));
-  expect(navigate).toHaveBeenLastCalledWith("meetings");
-  fireEvent.press(screen.getByRole("tab", { name: "Nastavení" }));
-  expect(navigate).toHaveBeenLastCalledWith("more");
+  fireEvent.press(screen.getByRole("tab", { name: "Knihovna" }));
+  expect(navigate).toHaveBeenLastCalledWith("library");
 });
 test("composer shows an accessible busy state and cannot send again while waiting for a model", () => {
   const send = jest.fn();
@@ -185,8 +183,10 @@ test("offline home keeps local recording and tasks but not server actions", () =
     />,
   );
   expect(screen.getByText("Not connected to your server.")).toBeTruthy();
-  fireEvent.press(
-    screen.getByRole("button", { name: "Talk to the assistant" }),
+  act(() =>
+    screen
+      .getByRole("button", { name: "Pet Niaro" })
+      .props.onAccessibilityAction({ nativeEvent: { actionName: "activate" } }),
   );
   fireEvent.press(screen.getByRole("button", { name: "Plan a meeting" }));
   expect(talk).not.toHaveBeenCalled();
@@ -214,15 +214,19 @@ test("connected home leads with waiting work and starts nothing by itself", () =
   );
   expect(screen.queryByText(/Listening/)).toBeNull();
   const [orb, first] = screen.getAllByRole("button");
-  expect(orb!.props.accessibilityLabel).toBe("Talk to the assistant");
+  expect(orb!.props.accessibilityLabel).toBe("Pet Niaro");
   expect(first!.props.accessibilityLabel).toBe("Waiting for you: 2");
   expect(tasks).not.toHaveBeenCalled();
   expect(meeting).not.toHaveBeenCalled();
   expect(talk).not.toHaveBeenCalled();
   fireEvent.press(first!);
   expect(tasks).toHaveBeenCalledTimes(1);
-  fireEvent.press(orb!);
-  expect(talk).toHaveBeenCalledTimes(1);
+  act(() =>
+    orb!.props.onAccessibilityAction({
+      nativeEvent: { actionName: "activate" },
+    }),
+  );
+  expect(talk).not.toHaveBeenCalled();
   fireEvent.press(screen.getByRole("button", { name: "Processes" }));
   expect(processes).toHaveBeenCalledTimes(1);
   rerender(
@@ -238,12 +242,13 @@ test("connected home leads with waiting work and starts nothing by itself", () =
     />,
   );
   expect(screen.queryByRole("button", { name: "Processes" })).toBeNull();
-  expect(screen.getByText("Type to get started.")).toBeTruthy();
-  fireEvent.press(
-    screen.getByRole("button", { name: "Talk to the assistant" }),
+  act(() =>
+    screen
+      .getByRole("button", { name: "Pet Niaro" })
+      .props.onAccessibilityAction({ nativeEvent: { actionName: "activate" } }),
   );
   fireEvent.press(screen.getByRole("button", { name: "Plan a meeting" }));
-  expect(talk).toHaveBeenCalledTimes(1);
+  expect(talk).not.toHaveBeenCalled();
   expect(meeting).not.toHaveBeenCalled();
   rerender(
     <Home
@@ -258,10 +263,12 @@ test("connected home leads with waiting work and starts nothing by itself", () =
     />,
   );
   expect(screen.getByText("Voice paused while recording.")).toBeTruthy();
-  fireEvent.press(
-    screen.getByRole("button", { name: "Talk to the assistant" }),
+  act(() =>
+    screen
+      .getByRole("button", { name: "Pet Niaro" })
+      .props.onAccessibilityAction({ nativeEvent: { actionName: "activate" } }),
   );
-  expect(talk).toHaveBeenCalledTimes(1);
+  expect(talk).not.toHaveBeenCalled();
 });
 test("composer offers voice only where it can work", () => {
   const voice = jest.fn();
