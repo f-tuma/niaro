@@ -1,0 +1,11 @@
+{
+  "packages/ui/PetView.tsx": "0741bfb5ec2038455945fdc3713dd71101d73975d2da3efb6ab0e512be302dad",
+  "packages/ui/PetFallback.tsx": "b351a576b681821469341429434c839fff198cf8acbc30c0a090aae5d3f81ba1",
+  "packages/ui/pet-motion.ts": "6d8e365f0770e705cc166a22600f3ced45ea64e60bae3a13ff628c161b60f4cb",
+  "packages/ui/pet-shader.ts": "f2ef6ed3bb633883e0d8edff7eb249e94e493dbe492767890790e42a970b1b1b",
+  "packages/ui/pet-interaction.ts": "271ff918ad4430f6b3199e4a2a3d269665b36f3eecdd0393c081d8f4743ae77f",
+  "tests/pet-interaction.test.ts": "222de4dcc68e886ec48123b58688f55a4fbc5ddf4d7fe423fab240c9991d1f7f",
+  "tests/pet-motion.test.ts": "ac07b0b938fefbca0e26257e377b7f5090aaeacbd012b9e3fe29492947ff3126",
+  "tests/pet-touch.test.tsx": "22f006ba0fcfedb5c1c4d0b22b71bbd7497fc99aced2be28e469632ff68ce728",
+  "tests/pet-shader.test.ts": "616ced06ba2fd442cd45fde3bf420159c480acdb26ea738dd68baef460303659"
+}
