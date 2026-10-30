@@ -99,7 +99,8 @@
     "test:meetings": "node --import tsx --test tests/meetings.node.ts tests/meeting-record.node.ts tests/meetings-http.node.ts tests/meeting-pipeline.node.ts tests/meeting-diarization.node.ts tests/meeting-workspace.node.ts && jest --runInBand tests/meeting-capture.test.ts tests/meeting-view.test.tsx tests/meeting-library.test.tsx tests/meeting-workspace.test.tsx tests/web-meeting-capture.test.ts tests/web-meeting-process.test.ts tests/web-meetings.test.tsx",
     "server:storage-check": "tsx scripts/storage-check.ts",
     "server:storage-bootstrap": "tsx scripts/storage-bootstrap.ts",
-    "test:storage": "node --import tsx --test tests/storage-*.node.ts"
+    "test:storage": "node --import tsx --test tests/storage-*.node.ts",
+    "test:conversion": "go -C services/conversion test ./... && go -C services/conversion build ./cmd/... && node --import tsx --test tests/attachment-conversion-wire.node.ts tests/attachment-conversion-imports.node.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1160.0",

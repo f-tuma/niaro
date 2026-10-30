@@ -1,0 +1,1987 @@
+{
+  "purpose": "Synthetic checkpoint A DTO constraints, not parser-format qualification",
+  "cases": [
+    {
+      "name": "complete-text",
+      "valid": true,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "documentBlock",
+            "ordinal": 1
+          }
+        ],
+        "blocks": [
+          {
+            "source": 0,
+            "ordinal": 1,
+            "method": "native",
+            "text": "x"
+          }
+        ],
+        "tables": [],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "complete-typed-table",
+      "valid": true,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "overlap",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 2,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "bad-decimal",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "NaN",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "bad-boolean",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "1",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "bad-calendar-date",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2023-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "unknown-cell-key",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General",
+                "command": "exec"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "cell-source-out-of-range",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 2,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "bad-parent",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 1
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "duplicate-table-ordinal",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          },
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "incomplete-complete",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 2,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "unknown-root-key",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": [],
+        "path": "/private"
+      }
+    },
+    {
+      "name": "bad-region",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0,
+            "region": [
+              0,
+              0,
+              1,
+              1
+            ]
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "visibility-on-table",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0,
+            "visibility": "hidden"
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "unknown-warning",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": [
+          {
+            "code": "oops"
+          }
+        ]
+      }
+    },
+    {
+      "name": "failed-with-evidence",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "failed",
+        "reason": "malformed",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "partial-no-omission",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "partial",
+        "reason": "coverage_incomplete",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "duplicate-block-ordinal",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "documentBlock",
+            "ordinal": 1
+          }
+        ],
+        "blocks": [
+          {
+            "source": 0,
+            "ordinal": 1,
+            "method": "native",
+            "text": "x"
+          },
+          {
+            "source": 0,
+            "ordinal": 1,
+            "method": "native",
+            "text": "x"
+          }
+        ],
+        "tables": [],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "bad-processor",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.<x&y>",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "text",
+                "value": "x",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": []
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "ocr-partial",
+      "valid": true,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "partial",
+        "reason": "ocr_review",
+        "sources": [
+          {
+            "kind": "documentBlock",
+            "ordinal": 1
+          }
+        ],
+        "blocks": [
+          {
+            "source": 0,
+            "ordinal": 1,
+            "method": "ocr",
+            "text": "x"
+          }
+        ],
+        "tables": [],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": [
+            {
+              "kind": "unknown",
+              "reason": "coverage_unknown"
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "ocr_requires_review"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ocr-complete",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "complete",
+        "reason": "none",
+        "sources": [
+          {
+            "kind": "documentBlock",
+            "ordinal": 1
+          }
+        ],
+        "blocks": [
+          {
+            "source": 0,
+            "ordinal": 1,
+            "method": "ocr",
+            "text": "x"
+          }
+        ],
+        "tables": [],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": [
+            {
+              "kind": "unknown",
+              "reason": "coverage_unknown"
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "ocr_requires_review"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ocr-without-review",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "partial",
+        "reason": "ocr_review",
+        "sources": [
+          {
+            "kind": "documentBlock",
+            "ordinal": 1
+          }
+        ],
+        "blocks": [
+          {
+            "source": 0,
+            "ordinal": 1,
+            "method": "ocr",
+            "text": "x"
+          }
+        ],
+        "tables": [],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": [
+            {
+              "kind": "unknown",
+              "reason": "coverage_unknown"
+            }
+          ]
+        },
+        "warnings": []
+      }
+    },
+    {
+      "name": "formula-literal-partial",
+      "valid": true,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "partial",
+        "reason": "coverage_incomplete",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "formula",
+                "value": "=1+1",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": [
+            {
+              "kind": "table",
+              "source": 1,
+              "reason": "formula_not_evaluated"
+            }
+          ]
+        },
+        "warnings": [
+          {
+            "code": "formula_not_evaluated",
+            "source": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "formula-without-warning",
+      "valid": false,
+      "value": {
+        "version": 1,
+        "processorVersion": "conversion-v1.fixture",
+        "status": "partial",
+        "reason": "coverage_incomplete",
+        "sources": [
+          {
+            "kind": "sheet",
+            "ordinal": 1,
+            "name": "Synthetic",
+            "visibility": "visible"
+          },
+          {
+            "kind": "table",
+            "ordinal": 1,
+            "parent": 0
+          }
+        ],
+        "blocks": [],
+        "tables": [
+          {
+            "source": 1,
+            "ordinal": 1,
+            "rows": 2,
+            "columns": 5,
+            "cells": [
+              {
+                "row": 0,
+                "column": 0,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "formula",
+                "value": "=1+1",
+                "display": "x",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 1,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "number",
+                "value": "-12.50e2",
+                "display": "-12.50e2",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 2,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "boolean",
+                "value": "true",
+                "display": "true",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 3,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "date",
+                "value": "2024-02-29",
+                "display": "2024-02-29",
+                "numberFormat": "General"
+              },
+              {
+                "row": 0,
+                "column": 4,
+                "rowSpan": 1,
+                "columnSpan": 1,
+                "type": "empty",
+                "value": null,
+                "display": "",
+                "numberFormat": "General"
+              }
+            ]
+          }
+        ],
+        "coverage": {
+          "totalUnits": 1,
+          "visitedUnits": 1,
+          "omitted": [
+            {
+              "kind": "table",
+              "source": 1,
+              "reason": "formula_not_evaluated"
+            }
+          ]
+        },
+        "warnings": []
+      }
+    }
+  ]
+}

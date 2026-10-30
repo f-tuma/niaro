@@ -1,0 +1,26 @@
+{
+  "design.md": {
+    "path": "../niaro-documents-pilot/openspec/changes/chat-attachments-camera-s3/design.md",
+    "sha256": "8e0d56292d545a200aeffa856f6d547ca8eecb05a84bf47adaf3ebcb19c46b7b"
+  },
+  "specs/message-attachments/spec.md": {
+    "path": "../niaro-documents-pilot/openspec/changes/chat-attachments-camera-s3/specs/message-attachments/spec.md",
+    "sha256": "5f1e46de440e31ce1ff103732a1f5b5323e58154e43adf55c44b82370fe8109b"
+  },
+  "specs/deployment/spec.md": {
+    "path": "../niaro-documents-pilot/openspec/changes/chat-attachments-camera-s3/specs/deployment/spec.md",
+    "sha256": "473b7ee4b8b4fce26b6a43bcf99f68798d3ee0dcc14a461316cf39e1766ad3cd"
+  },
+  "reviews/conversion-closure-fix-20261030/report.md": {
+    "path": "../niaro-documents-pilot/openspec/changes/chat-attachments-camera-s3/reviews/conversion-closure-fix-20261030/report.md",
+    "sha256": "d69dbdf23ba9248b0763750a165c91814c0783deb47a4d6c018e8a777ad4f6f3"
+  },
+  "wire-fixtures.v2.json": {
+    "path": "../niaro-documents-pilot/openspec/changes/chat-attachments-camera-s3/reviews/conversion-closure-fix-20261030/wire-fixtures.v2.json",
+    "sha256": "0bdeabba47682210098db1a066073f7929d74b8ef426f02df99da20a5c2dbda7"
+  },
+  "hash-vectors.v2.json": {
+    "path": "../niaro-documents-pilot/openspec/changes/chat-attachments-camera-s3/reviews/conversion-closure-fix-20261030/hash-vectors.v2.json",
+    "sha256": "05de01b6a439a0ff17861cb05476a32b72b8370d343753220a06c99a5590a020"
+  }
+}
