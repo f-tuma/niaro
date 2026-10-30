@@ -482,4 +482,104 @@ PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core npm run smoke
 
 See [private object storage](object-storage.md) for exact operator settings, mounted secrets, the offline `check` versus explicit `storage-check`, and repeat-safe `storage-bootstrap`. Both Compose files offer the opt-in `object-storage` profile with pinned RustFS, a private persistent volume and a separately scoped application principal. External S3 deployments leave that profile disabled. Root/bootstrap credentials are never passed to Niaro. The local API binds loopback; Dokploy publishes no storage ports and the console is disabled.
 
-This checkpoint does not activate attachment upload/UI or change meeting audio. Niaro metadata remains under its single data directory; S3 originals are an additional external persistence/backup dependency. A Niaro-volume backup does not contain those bytes, and coordinated attachment manifests/quiescence/restore verification remain later feature work. Storage location replacement is refused while retained/uncertain reservations remain; no force-reset or unknown-PUT reconciliation command is provided in this phase.
+This checkpoint does not activate attachment upload/UI or change meeting audio. Niaro metadata remains under its single data directory; S3 originals are an additional external persistence/backup dependency. A Niaro-volume backup does not contain those bytes. The default-off lifecycle checkpoint below supplies coordinated manifests, quiescence attestations and restore verification; these do not enable interpretation or qualify production coexistence. Storage location replacement is refused while retained/uncertain reservations remain; no force-reset or unknown-PUT reconciliation command is provided in this phase.
+
+## Attachment backup and restore barrier
+
+Retention is default-off (`NIARO_ATTACHMENTS_ENABLED=false`); this checkpoint
+always advertises `processingAvailable:false`. The storage guide describes the
+wire profile, resource gate and lifecycle. No new host service or daemon is used.
+
+Existing `node scripts/backup.mjs D OUTPUT` calls default to metadata-only
+attachment coverage. They derive the manifest from the copied workflow DB and
+leave original bytes in S3. For a coordinated tuple, stop all original owners and
+other writers, create an external matching object snapshot, and run:
+
+```sh
+node scripts/backup.mjs D OUTPUT --attachments coordinated --object-snapshot-id operator-snapshot-1
+node scripts/restore.mjs OUTPUT EMPTY_TARGET
+niaro attachment-restore-verify --reconcile /private/deletions.json
+niaro attachment-restore-verify --reconcile /private/deletions.json --activate
+```
+
+The container wrapper also forwards backup/restore operands and flags verbatim;
+omitted stream operands default to `-`. Snapshot IDs match
+`[A-Za-z0-9._:-]{1,160}`; coordinated mode requires an ID and metadata-only
+refuses one. Coordinated backup acquires identity then workflow owner locks and
+refuses unresolved PUT/mutation state. Existing two-operand text archives remain
+compatible. Stderr includes `attachments: text-only|metadata-only|coordinated|unverified`;
+backup stdout remains archive-safe. Usage errors exit 64, execution failures 1.
+The archive remains sensitive despite its secret-free attachment manifest.
+Protect backups and retain/delete them under the operator's backup policy.
+
+Restore requires an empty target. Before copying payload it fsyncs a fresh
+`.attachment-restore.json` instance marker containing a new restoreId, manifest
+SHA-256 and recoveryCutoff. Attachment rows, missing lineage or incomplete
+originals cannot inherit archived activation. A crash before the workflow barrier
+is installed still blocks serving through the marker. Normal startup may serve
+safe text but cannot release attachment routes, source hydration or cleanup.
+
+The offline verifier takes `PROFILE [--reconcile FILE] [--activate]`; the
+container wrapper supplies its configured profile (including an empty automatic
+profile). It holds both owner locks for the full invocation, starts no HTTP or
+normal recovery owner, and invokes no provider/action. It checks exact local
+manifest/registry lineage, location/key/owner/size/digest and all original bytes,
+one existing storage operation at a time. Missing/corrupt live bytes block;
+repairing S3 requires a fresh verification. Positive never-uploaded reservations
+need no object. Already tombstoned, settled missing bytes may leave physical
+purge jobs pending; unresolved PUT/quarantine never releases.
+
+Each restore has an unreconciled deletion gap, even if every hash matches.
+Before recoveryCutoff the operator must stop **all original/old authoritative
+owners and writers** and keep them stopped continuously through restored
+activation. If this boundary is unknown or breaks, keep the instance blocked and
+make a new empty-target restore after stopping writers. Local locks cannot prove
+remote quiescence. Review deletion history from snapshot createdAt through the
+cutoff; a stale empty list or stale nonempty list is refused.
+
+The operator evidence is strict JSON, at most 1 MiB/10,000 unique exact targets:
+
+```json
+{
+  "version": 1,
+  "restoreId": "00000000-0000-4000-8000-000000000001",
+  "manifestSha256": "replace-with-the-64-character-restored-manifest-sha256",
+  "objectSnapshotId": null,
+  "recoveryCutoff": "2026-10-30T12:00:00.000Z",
+  "basis": "manual-review",
+  "reviewedThrough": "2026-10-30T12:00:00.000Z",
+  "quiescence": {
+    "oldOwnersStoppedBeforeCutoff": true,
+    "remainStoppedThroughActivation": true
+  },
+  "complete": true,
+  "deletions": []
+}
+```
+
+Replace the illustrative identity/hash/cutoff with the actual restored instance;
+objectSnapshotId must match the backup's ID or null. Listed deletions have
+`{scope:{connectionId,serverId,userId,workspaceId},conversationId,generation}`.
+An empty list attests no deletions in the entire reviewed interval. The verifier
+requires `snapshot.createdAt <= recoveryCutoff <= reviewedThrough <= invocation time`,
+matching marker/workflow/evidence cutoff, exact target ownership and native
+retirement fences. A replacement list must be a superset of applied deletions.
+Local text deletions invalidate the reconciliation revision and require another
+reconciliation/fence pass. Machine checks establish identities, coverage and
+fences; deletion completeness, continuous old-owner quiescence and matching
+external S3 snapshot consistency remain explicit operator attestations.
+
+Only explicit `--activate` may CAS the still-unverified matching instance to
+serving after fresh successful verification and reconciliation. Before-COMMIT
+interruption stays blocked; after-COMMIT repetition reports already-serving.
+No startup probe, HEAD, matching hashes alone, config switch or force flag can
+release it. Verifier stdout is one strict secret-free JSON result; exit 0 means
+verified/activated/already-serving, 2 safely blocked, 1 local failure, 64 usage.
+Verified without activate leaves the barrier closed. Hetzner qualification needs
+an explicitly designated test bucket; the isolated RustFS suite is separate evidence.
+
+## Private observation learning
+
+The existing memory plugin allowlist and workspace enablement govern private learning; deployment does not enable it for any account. The person's memory opt-out disables context and extraction. Learning additionally requires a current sign-in, workspace membership, configured workspace model and an enforce-mode inference policy with a matching model/provider price. Observe-mode or unpriced policies defer it without a provider call; ordinary chat retains its existing budget behavior.
+
+Source cursors and paid batch/call markers live in identity/workflow storage; payloads and temporary response checkpoints are encrypted. Back up identity, workflow and native saved memory consistently with the original secret. An uncertain paid response retains its original root and ledger hold and is never automatically purchased again. There is no automatic reconciliation/reset API in this checkpoint. See [private memory](memory.md) for evidence restrictions, controls, bounds and upgrade limits. In-place downgrade after the new memory columns or observed envelopes is unsupported; use a forward fix or a consistent stopped-writer pre-upgrade backup.

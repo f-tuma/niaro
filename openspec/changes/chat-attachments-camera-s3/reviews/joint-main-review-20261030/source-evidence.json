@@ -1,0 +1,74 @@
+{
+  "subject": "exact final joint-r7 bounded MAIN integration",
+  "sourceManifestSha256": "cf97542a1b21c84d0904e14270b9ad2d66edc73d1b5d9156e16e68f864f5a8c3",
+  "ownBaselinePatchSha256": "55e4bc5c01c8623ecc01b7e3a6f1efbf206a930d008d08d3b21df0d8a9548a01",
+  "sourcePaths": 150,
+  "originalReview": "/tmp/niaro-joint-seam-review-20261030/review.md",
+  "reviewSha256": "15eaa87c9ae3cd81d14b9a65b746779fbff364b0619b3ffcd6475fd57643fff7",
+  "verdict": "ready for exact bounded subject; root source acceptance msg_606d7e6afd9a",
+  "findings": {
+    "JIR-01": "closed in r2: exact authoritative memory checkpoint map restored",
+    "JIR-02": "closed in r4: existing microphone permission/text retained in Android/iOS normal/spike"
+  },
+  "independentSeamProbes": {
+    "passed": 4,
+    "coverage": [
+      "actual acceptance lost response/reopen/exact ModelService replay and one source/binding",
+      "actual material builder excludes file bytes/name, quoted/assistant text",
+      "fixed archive locator/current-clear isolation",
+      "production HTTP text-only compatibility and strict server-info/2 with no unnegotiated attachment fields"
+    ]
+  },
+  "nativeConfig": "Independent actual/clean Expo introspection closes microphone finding for both platforms/profiles; stale ignored MAIN spike tree caveat retained in review",
+  "suppliedExecutionInspected": {
+    "attachments": "71/71",
+    "conversion": "Go test/build plus14/14Node",
+    "combinedAndNativePublication": "10/10",
+    "identity": "2000tests;1988pass;exact inherited12names/diagnostics",
+    "Jest": "original full207passed suites/1brand import-failed suite,2305passed assertions; root-authorized correction19/19affected rerun, no repeated whole-suite pass claim"
+  },
+  "qualifications": [
+    "required npm check stops at unchanged historical UI probe lint error; no ignores added",
+    "Jest forced exit/open-handle handling retained",
+    "SPEC semantic result unknown",
+    "native/device review separate",
+    "no converter B-E/OCR/CRM, live semantic memory quality, coexistence/activation, designated Hetzner or whole release approval"
+  ],
+  "fullEvidencePacket": "/tmp/niaro-joint-seam-review-20261030; not copied into source",
+  "acceptedBroaderSubject": "r4; unchanged accepted boundaries supplemented by exact r5/r6 correction",
+  "correctionReview": {
+    "path": "correction-review.md",
+    "original": "/tmp/niaro-reference-recovery-review-20261030/review.md",
+    "sha256": "c4d2d6a5ce16dff5df612fe4949fc40696a8665e0b091f4dbf1664ae86bb692b",
+    "rootAcceptance": "msg_553bf2da43e0",
+    "verdict": "ready exact r6; JMR01/JMR02 closed",
+    "independentExecution": {
+      "r5ProductionHttp": 1,
+      "r5Workspace": 9,
+      "r6Workspace": 12,
+      "runtimeTransportPresentationBoundaries": 19
+    },
+    "authorExecutionInspected": {
+      "r5Node": 20,
+      "r5Jest": 52,
+      "r6Jest": 77,
+      "typescript": "pass",
+      "affectedLint": "pass"
+    },
+    "executionScopes": "Counts are per declared run; overlapping suites are not summed. r5 boundary execution applies to unchanged r6 runtime."
+  },
+  "runtimeSha256": "12e4f11c22416ac47daaeb53d2d6147842042b0ab15099c26104452b8af7ce65",
+  "appSha256": "99f64bf1a7f19e276fa733206c72c6bdf640f6c057d5d640c6fc0508bec5eb89",
+  "fullCorrectionPacket": "/tmp/niaro-reference-recovery-review-20261030; no executable probes/log dumps copied",
+  "r7DiscoverySourceReview": {
+    "review": "native-review.md",
+    "sha256": "6549e0e5b3d6e9b086b0a7a4b8e47351165ab23619c573a328c1f066d221626d",
+    "rootAcceptance": "msg_26db9649cc8e",
+    "runtimeSourceReview": "Passive discovery catch retains epoch fence and capabilities=null without altering explicit state.error; selection/error writers and UI Notice remain unchanged; available remains false without enabled/storage capabilities. Callers are mount, readConversation, open delivery paths and session.refresh.",
+    "independentFinalTests": {
+      "Workspace": 21,
+      "clientHttpRuntime": 19
+    },
+    "scope": "r7 discovery delta independently inspected/executed; earlier r4/r6 executions retain their named scope"
+  }
+}

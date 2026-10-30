@@ -8,17 +8,17 @@ The application uses one S3 adapter for RustFS, Hetzner and endpoints that pass 
 
 Storage configuration belongs to the server environment and mounted secrets, separately from member/workspace settings and exports. Any nonempty `NIARO_S3_*` variable opts into validation; partial or unknown settings are invalid. All absent means disabled. Invalid storage makes storage unavailable while ordinary server startup continues; `server:check` exits nonzero.
 
-| Variable | Contract |
-| --- | --- |
-| `NIARO_S3_ENDPOINT` | HTTP(S) origin without userinfo/path/query/fragment. Omission selects `https://s3.<region>.amazonaws.com`. |
-| `NIARO_S3_REGION` | Required lowercase signing region. For example `fsn1` for the corresponding Hetzner location; RustFS bootstrap requires `us-east-1`. |
-| `NIARO_S3_BUCKET` | Required existing private dedicated bucket, lowercase DNS-style name. No access-point ARNs. |
-| `NIARO_S3_PREFIX` | Default `attachments`, maximum 256 characters; slash-separated letters/digits/underscore/hyphen segments. No empty/dot/encoded segments. |
-| `NIARO_S3_CREDENTIAL_MODE` | Required `static` or `default`. No implicit ambient fallback. |
-| `NIARO_S3_ACCESS_KEY_ID`, `NIARO_S3_SECRET_ACCESS_KEY` | Required in static mode, each with the exact `_FILE` alternative. |
-| `NIARO_S3_SESSION_TOKEN` | Optional static token, also `_FILE`. |
-| `NIARO_S3_FORCE_PATH_STYLE` | Exactly `true`/`false`, default `false`. RustFS uses `true`. |
-| `NIARO_S3_ALLOW_HTTP` | Exactly `true`/`false`, default `false`; enable only for a private HTTP endpoint. |
+| Variable                                               | Contract                                                                                                                                 |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `NIARO_S3_ENDPOINT`                                    | HTTP(S) origin without userinfo/path/query/fragment. Omission selects `https://s3.<region>.amazonaws.com`.                               |
+| `NIARO_S3_REGION`                                      | Required lowercase signing region. For example `fsn1` for the corresponding Hetzner location; RustFS bootstrap requires `us-east-1`.     |
+| `NIARO_S3_BUCKET`                                      | Required existing private dedicated bucket, lowercase DNS-style name. No access-point ARNs.                                              |
+| `NIARO_S3_PREFIX`                                      | Default `attachments`, maximum 256 characters; slash-separated letters/digits/underscore/hyphen segments. No empty/dot/encoded segments. |
+| `NIARO_S3_CREDENTIAL_MODE`                             | Required `static` or `default`. No implicit ambient fallback.                                                                            |
+| `NIARO_S3_ACCESS_KEY_ID`, `NIARO_S3_SECRET_ACCESS_KEY` | Required in static mode, each with the exact `_FILE` alternative.                                                                        |
+| `NIARO_S3_SESSION_TOKEN`                               | Optional static token, also `_FILE`.                                                                                                     |
+| `NIARO_S3_FORCE_PATH_STYLE`                            | Exactly `true`/`false`, default `false`. RustFS uses `true`.                                                                             |
+| `NIARO_S3_ALLOW_HTTP`                                  | Exactly `true`/`false`, default `false`; enable only for a private HTTP endpoint.                                                        |
 
 An empty environment value counts as absent. A nonempty direct secret and its file alternative conflict. Files must be regular and at most 16 KiB; one trailing LF/CRLF is removed, remaining controls/empty contents are invalid. Mount secrets read-only at the configured paths; Compose does not automatically mount a host path merely because `_FILE` names it. Direct secrets are supported for local trials, but Docker administrators can inspect container environment values.
 
@@ -105,3 +105,73 @@ node --import tsx tests/storage-rustfs.live.ts
 ```
 
 It creates uniquely named containers/volumes, tests bootstrap and permissions, recreates its container, checks exact persisted bytes, and removes only those resources. It does not touch an existing RustFS, live server, emulator or `.env`. Full checkpoint execution evidence and limits are recorded beside the change in `reviews/storage-checkpoint-verification.md`.
+
+## Attachment retention checkpoint
+
+Attachment retention is opt-in: `NIARO_ATTACHMENTS_ENABLED=false` by default.
+Capability discovery is `GET /v1/:workspace/attachments/capabilities?profile=agent-attachments%2F1`.
+It always reports `processingAvailable:false` at this checkpoint. An accepted
+file-bearing send stores its user message and original references atomically and
+reports `blocked_capability`; it performs no caption-only inference, conversion,
+OCR, image routing, CRM action or automatic paid retry. Uploading alone never
+interprets a file. Existing server-info output stays unchanged.
+
+Use the strict shapes in `packages/protocol/attachments.ts`. Attachment routes
+require exactly one `profile=agent-attachments/1`; command/snapshot/event/stream
+delivery requires exactly one `attachments=agent-attachments/1` alongside the
+existing chat projection. Older clients receive 406 before command effects when
+the selected response would contain attachment evidence. A file-only message is
+valid; the text allowance remains 4,000 characters and the command body 64 KiB.
+The internal assistant publication seam uses the existing native projection and
+workflow save transaction, with a unique attempt publication key and no second
+user message or receipt. Native admission is a separate strict catalog sidecar;
+old complete native journal rows remain readable. Preparation interrupted after
+possible inference stays unknown; absence of a native root is no no-dispatch proof.
+
+The workflow database owns generations, drafts, immutable content, separate
+message bindings, ingestion/attempt rows, request replay and purge jobs. Account
+ownership includes server/workspace/user rather than device credentials. Web
+unsaved drafts must be adopted by the existing conversation.create command.
+Ordinary archive moves the public locator while preserving the ownership
+generation and native session identity. Clearing a fixed chat creates a new
+generation; an old generation's purge cannot select the new thread or original.
+Again creates new message bindings; removing an Edit chip does not erase source
+history. Original reads reauthorize current membership/device and generation on
+each response chunk; originals use private no-store attachment downloads,
+octet-stream and nosniff. Preview and model derivative routes are unavailable.
+
+Default limits are 25 MiB per file, 10 files/50 MiB per message; four open drafts
+per owner/100 globally; 20/200 staged files and 100 MiB/1 GiB staged bytes;
+500/5,000 retained objects and 1 GiB/10 GiB retained bytes. Draft expiry is an
+absolute 24 hours. The capability response publishes validated effective limits;
+invalid settings disable attachment admission. Global inbound upload and original
+download slots are one each, with no wait queue. A transfer writes exclusive
+0600 disk spools in the private workflow attachment-spool directory, checks disk
+headroom of 50 MiB plus declared bytes, enforces the exact length/digest and a
+120-second absolute/15-second idle deadline, then materializes the bounded
+original for the accepted storage API. Spools are excluded from backup and stale
+owned files are removed at startup. File signatures and bounded container names
+are identification only, never execution or document interpretation.
+
+Fifty MiB is a logical payload limit, not an RSS bound: caller buffers, adapter
+read chunks/concatenation, upload buffers and a stalled download can coexist.
+The opt-in synthetic resource/roundtrip suite is
+`node --import tsx tests/attachment-rustfs.live.ts`. It owns only its random
+RustFS container/volume, samples the application in a separate process during
+25 MiB upload/download coexistence with meeting upload and native process model
+traffic, and reports RustFS separately. It does not qualify converters, OCR,
+real device capture, arbitrary host workloads or an unprovided Hetzner bucket.
+The application's existing 2 GiB cap is unchanged; keep processing activation off.
+
+Logical deletion immediately denies access, scrubs workflow/history/search/event
+source projections, retires local tokens and queues exact object/native erasure.
+Approved business records and content-free execution/action replay protection
+retain their existing policy. Cleanup runs one durable job/object operation at a
+time, yields to foreground transfers, retries settled failures with bounded
+backoff and releases retained quota only after registry deletion settles. Native
+cleanup retires exact generation aliases, threads and executable checkpoints
+without resuming them. Missing native lineage stays blocked rather than deleting
+all threads of a fixed chat. Diagnostics expose content-free counts and age.
+An unknown PUT remains quarantined even after missing HEAD or delayed arrival;
+it keeps quota and the location reference. Generic-S3 uncertainty reconciliation,
+quota reset, fallback originals and an operator force-release are unsupported.

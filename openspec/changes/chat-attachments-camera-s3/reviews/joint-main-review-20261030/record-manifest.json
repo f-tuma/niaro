@@ -1,0 +1,42 @@
+{
+  "kind": "root-authorized final documentation-only supplement",
+  "authorization": "msg_3c0ee62abac1 and msg_26db9649cc8e",
+  "acceptedProductionSubject": "joint-r7",
+  "acceptedProductionManifestSha256": "cf97542a1b21c84d0904e14270b9ad2d66edc73d1b5d9156e16e68f864f5a8c3",
+  "acceptedProductionOwnPatchSha256": "55e4bc5c01c8623ecc01b7e3a6f1efbf206a930d008d08d3b21df0d8a9548a01",
+  "files": {
+    "openspec/changes/chat-attachments-camera-s3/reviews/joint-main-acceptance-20261030.md": {
+      "sha256": "947be56d55f76031498ef75b7746e533f635ed2013a7c3fa7df561b9885abddd",
+      "bytes": 3720
+    },
+    "openspec/changes/chat-attachments-camera-s3/reviews/joint-main-review-20261030/README.md": {
+      "sha256": "d59bcc0e296118163073a882e13a20f8c059116b33ad90d28294d1f483748bc7",
+      "bytes": 3350
+    },
+    "openspec/changes/chat-attachments-camera-s3/reviews/joint-main-review-20261030/native-evidence.json": {
+      "sha256": "bd14732eb16db6d48665f8a56beebcc9be616997752872871fd3b17b55e34cd3",
+      "bytes": 3745
+    },
+    "openspec/changes/chat-attachments-camera-s3/reviews/joint-main-review-20261030/recovered-send.png": {
+      "sha256": "3506448ec4f94ba8a7470d99b4c637895093144af6e64bf0281c93ec4ccb00ff",
+      "bytes": 183122
+    },
+    "openspec/changes/chat-attachments-camera-s3/reviews/joint-main-review-20261030/native-review.md": {
+      "sha256": "6549e0e5b3d6e9b086b0a7a4b8e47351165ab23619c573a328c1f066d221626d",
+      "bytes": 21335
+    },
+    "openspec/changes/chat-attachments-camera-s3/reviews/joint-main-review-20261030/correction-review.md": {
+      "sha256": "c4d2d6a5ce16dff5df612fe4949fc40696a8665e0b091f4dbf1664ae86bb692b",
+      "bytes": 7355
+    },
+    "openspec/changes/chat-attachments-camera-s3/reviews/joint-main-review-20261030/source-evidence.json": {
+      "sha256": "d84a8225b6545e023069fedb173a35a8130a001ec1596514cd764a0e9772dade",
+      "bytes": 4110
+    },
+    "openspec/changes/chat-attachments-camera-s3/reviews/joint-main-review-20261030/source-review.md": {
+      "sha256": "15eaa87c9ae3cd81d14b9a65b746779fbff364b0619b3ffcd6475fd57643fff7",
+      "bytes": 15617
+    }
+  },
+  "integrityNote": "This manifest covers the other doc records; this manifest itself is bound by the outer final handoff manifest. No executable source/log/state/APK copies."
+}

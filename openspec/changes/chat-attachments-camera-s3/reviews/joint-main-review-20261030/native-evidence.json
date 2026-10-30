@@ -1,0 +1,67 @@
+{
+  "status": "PASS bounded final joint-r7 source/native review; root msg_26db9649cc8e",
+  "sourceManifestSha256": "cf97542a1b21c84d0904e14270b9ad2d66edc73d1b5d9156e16e68f864f5a8c3",
+  "appSha256": "99f64bf1a7f19e276fa733206c72c6bdf640f6c057d5d640c6fc0508bec5eb89",
+  "runtimeSha256": "12e4f11c22416ac47daaeb53d2d6147842042b0ab15099c26104452b8af7ce65",
+  "originalReport": "/tmp/niaro-joint-mobile-review-20261030/review.md",
+  "reportSha256": "6549e0e5b3d6e9b086b0a7a4b8e47351165ab23619c573a328c1f066d221626d",
+  "platform": "Android17/API37 emulator-5554; whole production App with isolated DTO/OS boundary",
+  "nativeApkSha256": "2d163da02e4304db1be9b0782445a2ee046d0907ae6c7217f3bfa8e4ee3de3c3",
+  "findings": {
+    "JMR-01": "closed: native exact B replay/C order, source caption, zero autosend/one explicit Send/no reupload",
+    "JMR-02": "closed: actual row Retry and accepted Send have no stale global staging alert",
+    "JMR-03": "closed: normal saved offline startup quiet; actual permission denial/zero-byte selection remain visible with no PUT/command"
+  },
+  "independentFinalTests": {
+    "Workspace": 21,
+    "clientHttpRuntime": 19
+  },
+  "sourceReviewJMR03": "Passive discovery catch retains epoch fence and capabilities=null without altering explicit state.error; selection/error writers and UI Notice remain unchanged; available remains false without enabled/storage capabilities. Callers are mount, readConversation, open delivery paths and session.refresh.",
+  "restoration": {
+    "normalMainConnected": true,
+    "savedConnectionAccountPreserved": true,
+    "displayRestored": true,
+    "cameraMicGrantsDenied": true,
+    "retainedReverses": [
+      8087,
+      38683
+    ],
+    "ownedRunnersStopped": [
+      1450144,
+      1465004
+    ],
+    "retainedMainRunner": 1505407,
+    "sharedServicesUnchanged": true,
+    "storageChangedAfterAuthorizedNormalReconnect": [],
+    "preferencesAndSavedAddressUnchanged": true,
+    "finalDatabaseSha256": "fcaeb4c9cd4ef7d89c78d79fe3cde37385ff38ef05415f4f9c0f9d92ff3bb459",
+    "noAppFatalError": true
+  },
+  "restorationSha256": "92f765780a484af0beb6b76887107024e82b88d9cb406c775cb7591a8ea3ec04",
+  "logicalStorageValuesPreserved": 20,
+  "credentialPreservationQualification": "Exact credential/preference bytes preserved through isolated QA. Normal authorized App startup/refresh/reconnect changed SecureStore ciphertext; plaintext baseline was not captured, so exact logical credential/ciphertext equivalence after that point is not proved. Root accepted current normal refresh state and prohibited rollback. Saved account/workspace/address and all20 logical storage values were verified unchanged.",
+  "retainedNormalRunner": {
+    "terminal": "term_951a9045-334c-47e9-8f76-dfe59c76c890",
+    "pid": 1505407,
+    "port": 8087,
+    "reverses": [
+      8087,
+      38683
+    ],
+    "rootAuthorized": true
+  },
+  "screenshots": {
+    "recovered-send.png": {
+      "original": "/tmp/niaro-joint-mobile-review-20261030/jmr02-sent.png",
+      "sha256": "3506448ec4f94ba8a7470d99b4c637895093144af6e64bf0281c93ec4ccb00ff",
+      "captureSubject": "joint-r6 App99/runtimec0bb; later r7 changes only passive discovery"
+    }
+  },
+  "limits": [
+    "Native HTTP server is a labelled synthetic DTO fixture, not production S3/ingestion/model/CRM qualification",
+    "Actual Node production HTTP/store/S3 seams have separate source-review evidence",
+    "Physical-device/iOS/HEIC, live RustFS/Hetzner, semantic processing/resource activation and whole-feature release remain open",
+    "Full external native packet is retained externally; raw logs/state/base64/APK/video are not copied here"
+  ],
+  "normalAccountScreenshots": "Retained only in original packet; not copied into repository"
+}

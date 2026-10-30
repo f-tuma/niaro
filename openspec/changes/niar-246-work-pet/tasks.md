@@ -1,0 +1,84 @@
+# Tasks
+
+Requirement references are to this change's `memory` and `work-pet` deltas. The authoritative Create/Modify/Delete action map is `reviews/memory-learning-checkpoint-map.md`; the preimplementation map is historical. Fast checks run real production logic with controlled time, model and storage. The current supervised server checkpoint owns 1.1–3.4 and the observation portions of 6.1/6.2 only; pet server/page/weather/Graph work remains open. A checked planning artifact is not an executed test or live evaluation.
+
+## 1. Observation records
+
+- [ ] 1.1 Implement the exact D3a encrypted/public provenance, origin/seenAt/view/command contracts; add the `observed` source (`sources`, `section`, `personal`) to `MemorySourceSchema`, the `classify` and `personalThings` commands to the memory command schema and `origin` to the memory item view in `packages/protocol/memory.ts`; strict-schema tests in `tests/memory.node.ts` (unknown section, 301-character statement and 6 sources refused). NIAR-243 is unstarted: supply its server-only strict `scope=private` query, private listing/total and idempotent `forgetAll` dependency here, with ownership, staged/expired-lineage and replay tests; do not mark its page change implemented. Maintain the existing typed admin source consumer with an explicit observed label and EN/CS copy; add its focused rendering test and typecheck. Extend `MemoryPayloadSchema` for observed length/invariants without weakening explicit payloads. Verify with `node --import tsx --test tests/memory.node.ts` and `pnpm exec jest --runInBand tests/admin-memory-observed.test.tsx`, plus `npm run typecheck`. (Observations, Observation provenance, Observation commands)
+- [ ] 1.2 Migrate `agent_memory` (`origin`, `seen_at`) and `agent_memory_preference` (`personal_things`) with a `PRAGMA table_info` check; add `MemoryStore.observe()` (stage encrypted native payloads outside SQLite, revalidate captured version/authority/source digests, then add / refresh / update and cursor checkpoint in one transaction with one version bump, writes only the actor's own `observed` rows, 300 cap evicting by `seen_at`, expiry from last seen). Tests: refresh does not duplicate, an update supersedes, an id of an explicit or foreign row is ignored, eviction order, expiry moves on refresh, source dedup/order/ties and last-five merge, exact 20-operation/20-owner/80-global stage bounds, duplicate/conflicting targets, checkpoint/no-op rollback, stale-version/deletion races and invisible abandoned stages after restart. Verify the populated old-format store upgrades with explicit reads/writes/preferences intact; direct old-binary downgrade remains unsupported, with schema/decoder evidence as D3a/Migration specifies. Verify with `node --import tsx --test tests/memory.node.ts tests/saved-memory-native.node.ts`. (Observations, Merging observations, Observation capacity and retention)
+- [ ] 1.3 Implement `classify` and `personalThings` (switching to `drop` erases personal observations by lineage, and a later `classify personal` erases), and make `revise` of an observation produce an explicit `user_note`, including chat corrections; test that erased observed portions of mixed lineages cannot be restored by late inference or replay, while corrected explicit heads/receipts survive drop and ordinary forget/forgetAll still erase the complete lineage. Route these in the memory HTTP handler (allowed while the plugin is off, like `forget`). Tests in `tests/memory.node.ts` and `tests/memory-http.node.ts`, including another person's id answering `memory_not_found`. Verify with `node --import tsx --test tests/memory.node.ts tests/memory-http.node.ts`. (Observation commands, Personal things setting, Observations apply immediately)
+
+## 2. Observations in the agent's context
+
+- [ ] 2.1 Restrict automatic lexical context to `origin='explicit'` while direct `memory_search` includes both origins and add `observationsForTurn()` (up to 12, work before personal, newest seen first, 1,500 serialized characters, expiry and version validation; a default-empty confirmed-position port for task 4.2). Append its block in `createMemoryRuntime().context()`, separate from saved memories and framed as untrusted. Tests: explicit memories keep their `maxItems`, observations are bounded, opt-out yields none, and the block wording never suggests permission. Verify with `node --import tsx --test tests/memory.node.ts` and the memory runtime tests. (Memory tools, Observations apply immediately)
+
+## 3. Extraction
+
+- [ ] 3.1 Add `agent_profile_cursor` and minimal monotonic source-reference indexes committed with accepted own chat messages in `FixtureStorage.execute()` and records in `MeetingStore.publishRecord()`. Wire owner-scoped source ports through existing HTTP/service wiring, best-effort dirty marks and bounded restart discovery; reference rows contain no text. Test replay deduplication, crash/missed-mark recovery, deleted-source monotonicity, stable source locator rebinding on main-chat new session/archive/restore, and that notification failure never fails a turn/meeting. Verify with `node --import tsx --test tests/profile-sources.node.ts tests/profile-learner.node.ts` (new). (Extraction timing)
+- [ ] 3.2 Build the material builder: the person's persisted own message text with conservatively excluded quotes/code/forwarded tails, actual dispatched service/action names from bound receipts, and two-track `me` utterances plus explicitly `owner=me` tasks backed by those utterances. Bound UTF-8 JSON to 24 KiB, page source references and persist within-source offsets so oversized batches resume without loss. Never service results, other speakers, unknown-speaker turns, arbitrary trace details or unattributed meeting summaries. Model evidence keys resolve only to this batch; source deletion/change is rechecked before commit. Tests with a fixture chat containing a mail result carrying an instruction, a two-track meeting and a single-track meeting. Verify with `node --import tsx --test tests/profile-material.node.ts tests/profile-sources.node.ts tests/profile-learner.node.ts`. (Observation sources, Untrusted content is not a source)
+- [ ] 3.3 Build `ProfileLearner`:
+  - the exact D3a cursor/offset/generation and lease contract: a 60 s tick, up to 4 people per tick, 10-minute attempt spacing, 120-second deadline, 180-second nonrenewing lease with token/generation fencing, plugin and opt-out checks;
+  - one structured-output call through a closed `quiet()` agent (one schema repair at most, no provider retries/tools) and the actual workspace model/budget transport, as its own root `profile/…` capped at 2 calls, 40,000 tokens and 100,000 cost micros plus workspace limits; existing `canStartModel` enforce/priced admission before preparation and held dispatch, 6KiB/24-row prior projection, 12KiB user and 24KiB full first/repair-request bounds with a 2,000-token output limit;
+  - a strict evidence-bound output schema plus conservative normalized EN/CS sensitive-data, credential/account-number and instruction filters, and the Personal things filter;
+  - `observe()` and cursor compare-and-swap in one commit after current membership/sign-in/plugin/model/policy/version/source checks; lease/restart and shutdown cancellation; D3b stable source-batch/logical-attempt/root and two ordinal call records, bounded actor-bound encrypted response checkpoints and no automatic repeated paid work after unknown outcome;
+  - durable backoff and an unmoved cursor/profile on failure or a budget refusal, at least 10 minutes between attempts.
+
+  Wire it in `service.ts` next to `HubScheduler`. Tests with a stub model: several turns become one run, a refused budget leaves the turn and the profile untouched, a filtered statement is dropped, and a restart resumes from the cursor. Verify with `node --import tsx --test tests/profile-learner.node.ts tests/profile-extraction.node.ts tests/profile-material.node.ts tests/profile-sources.node.ts tests/inference-budget.node.ts`. Include real ledger default/priced observe refusal, enforce/unpriced/refused caps, full 300-row multilingual request admission/progress, same-root repair and policy/lease races. Implement the narrow optional existing-ledger checkpoint hook and owner-checked state lookup; prove reservation/dispatch and response settlement/checkpoint atomicity in the same identity DB, with start after commit. Run actual-learner/real-ledger 504/throw/crash/late-response/restart/backoff/dirty-material tests: unresolved batch dispatches once, retains the same root/hold and pending input; valid received/missing-usage response can commit, checkpoint replay never infers again, unpaid refusal can retry, cache expiry/erasure cannot reset the paid root. Add a same-ledger no-hook caller regression after injected profile hook failure and preserve ordinary observe/unpriced behavior, clamp/usage/accounting, scrubbed-fingerprint tombstone replay and command-kind conflicts. (Extraction timing, Extraction model and budget, Excluded personal data)
+- [ ] 3.4 Write the extraction instructions and an EN/CS fixture set of about 12 chat and meeting snippets with expected observations and forbidden ones (health, an instruction in a quote, a colleague's statement). Supply a deterministic controlled-model logic evaluation and record expected positives, false positives and forbidden-item misses. Run live only if an already-authorized designated dev model is available, with synthetic snippets through its normal budget/transport; otherwise record live as not executed and keep this task unchecked. Never load real user chats/accounts for evaluation. Verify with `node --import tsx scripts/profile-extraction-eval.ts` (new, not part of `check`). (Observations, Excluded personal data, Untrusted content is not a source)
+
+## 4. Pet server
+
+- [ ] 4.1 Add `agent_pet` and `agent_pet_request`, the pure functions in `apps/server-identity/work-pet.ts` (stage, the look: droplet weights per section from work observations only and the automatic shape, greeting templates in EN and CS without personal statements), and the `work-pet/1` schema in protocol. Unit tests for every stage boundary, droplet weights and the automatic shape (including ties and deleted observations), personal observations never changing the look, and greeting selection. Verify with `node --import tsx --test tests/work-pet.node.ts` (new). (Growth stages, Appearance reflects real work, Greeting)
+- [ ] 4.2 Add the pet route `GET|POST /admin/api/identity/pet`:
+  - commands `personalize` (name, colour, shape or automatic), `setPosition` and `acceptSuggestion`, each with a revision and an idempotent `requestId`;
+  - a lazily created pet;
+  - `404 pet_not_found` for anyone else and `403 identity_account_required` for the operator session;
+  - audit entries without values;
+  - a test that the job title never reaches role or grant checks;
+  - wire confirmed owner job title/department into the bounded context port from task 2.1, ahead of observations, and test plugin-off/opt-out, ordering and budget bounds.
+
+  Verify with `node --import tsx --test tests/work-pet-http.node.ts` (new) and `npm run test:identity`. (Pet API, Owner-only pet, Pet personalization, Job title and department)
+- [ ] 4.3 Add the Microsoft 365 suggestion: `User.Read` in the hosted template's sign-in scopes, and a Graph `/me?$select=jobTitle,department` call with the person's Microsoft connection token, cached for 24 h and silent on any failure. Tests with a controlled transport: a suggestion that differs from the saved values, an equal value producing no suggestion, an expired token refreshed, and a failure producing no suggestion. Document the re-sign-in note in `docs/guides/hosted-connectors.md`. Verify with `node --import tsx --test tests/work-pet-http.node.ts`. (Job title and department)
+
+- [ ] 4.4 Add the workspace location setting (administration, Settings) and the weather state. The server fetches Open-Meteo at most every 30 minutes per workspace with a controlled transport, maps the weather codes to sun/rain/snow/storm/fog, and computes night from the person's time zone and the sun times. The state goes in the `work-pet/1` view. Tests: code mapping, the refresh interval, a failure keeping the last state for 2 hours and then none, and no location meaning no weather. Verify with `node --import tsx --test tests/work-pet-weather.node.ts` (new). (Weather mood)
+
+## 5. Pet page
+
+- [ ] 5.1 Add the `/pet` route, the sidebar entry after Connections (`PawPrint`) and the no-session rendering. Update `docs/ui-system.md` (sidebar order) and `tests/web-app-routes.test.tsx`. Verify with `npx jest tests/web-app-routes.test.tsx`. (Pet area)
+- [ ] 5.2 Build the pet renderer in `packages/ui`, starting from the prototype and the `VoiceOrb` shader pattern:
+  - `pet-shader.ts`: the shape family with 8 shapes and a cross-fade morph, the inflated body, up to 6 droplets, the face, the asleep state, without an exterior stage-4 glow;
+  - `PetView.web.tsx`: the uniforms from props, breathing, blink, orbits and the new-observation pulse; the 30 fps cap, pause off screen and on a hidden tab, one still frame under reduced motion, and the DPR and 480 px cap;
+  - the static SVG fallback from the same formula, also used as the sidebar icon;
+  - body and section colour tokens in light and dark;
+  - the `aria-label`.
+
+  Add a Storybook story with every shape, stage, the asleep state and the fallback. Verify with `npx jest tests/web-pet-view.test.tsx` (new: props map to uniforms and to the label, the fallback renders without WebGL, reduced motion draws once), a Storybook visual review, and a frame-time check on a low-end laptop profile in Chrome DevTools (under 8 ms GPU per frame at 480 px). (Pet personalization, Appearance reflects real work, Rendering budget, Growth stages, Pet states)
+- [ ] 5.2b Add expressions, touch reactions and the weather mood to the renderer:
+  - face presets and easing;
+  - the 2D symbol and particle overlay with an edge fade;
+  - pointer reactions (cycle, giggle burst, sleeping stir) and idle behaviour;
+  - mood uniforms, which leave the plain pet unchanged when there is no weather and it is day;
+  - nothing of this under reduced motion except the resting face.
+
+  Verify with `npx jest tests/web-pet-view.test.tsx` (preset blending, the tap cycle, reduced motion with no particles) and a Storybook review of each face and each weather. (Expressions, Reactions to touch, Weather mood)
+- [ ] 5.3 Build `app/pet-page.tsx` and `pet-copy.ts` (EN and CS), consisting of:
+  - the pet with its greeting and the "what helps it grow" line;
+  - a personalize sheet (name, form, colour);
+  - the position card with the Microsoft 365 suggestion (accept or edit);
+  - profile sections with sources, last seen, Correct, Mark personal/work and Delete (with a confirmation), plus the Personal things setting with a confirmation for "Don't keep";
+  - the states: loading, error, plugin off, opted out and empty;
+  - command retries keeping the `requestId`.
+
+  Verify with `npx jest tests/web-pet-page.test.tsx` (new) and `npm run lint`. (Profile sections, Pet states, Job title and department, Personal things setting)
+- [ ] 5.4 Do a browser review on the dev server after `npm run admin:build`. Cover these states: a new pet, a grown pet with every section, a pinned shape and an automatic shape change, a suggestion, plugin off, opted out and an error. Cover these settings: 1440 and 390 px, EN and CS, light and dark, reduced motion, and keyboard-only use. Attach screenshots to the PR. (Pet area, Pet states)
+
+## 6. Documentation and integration
+
+- [ ] 6.1 Document the pet and observations for members (`docs/guides/` member guide), note in `docs/guides/deployment.md` that the pet learns only with the memory plugin allowlisted, and amend the `docs/architecture.md` Memory bullet "Memory is explicit and user-asserted" to cover observations. Verify the links resolve and the text matches the specs.
+- [ ] 6.2 Register all four new deterministic `tests/profile-{sources,material,learner,extraction}.node.ts` suites in existing `test:identity` and `test:saved-memory` scripts, preserving accepted S3 commands/pins. Run `npm run check`, `npm run admin:build` and `spec openspec --project . -- validate niar-246-work-pet --strict`. Compare any failures against the known baseline in NIAR-233.
+
+## Workflow follow-up
+
+- Review the design in a fresh context (EGM) before 1.1; fix design findings in design.md and specs first.
+- Archive after review and merge; archiving is not proof of deployment. Production needs the memory plugin allowlisted and Microsoft 365 users to sign in again for the suggestion.
+- Next changes: voice profiles with biometric consent (meetings), shared index by position and permissions, sharing pets.
