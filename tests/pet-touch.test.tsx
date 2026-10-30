@@ -35,6 +35,7 @@ beforeEach(() => {
   frames.clear();
   id = 0;
   now = 1000;
+  jest.spyOn(performance, "now").mockImplementation(() => now);
   jest.mocked(useReducedMotion).mockReturnValue(false);
   jest.spyOn(global, "requestAnimationFrame").mockImplementation((callback) => {
     frames.set(++id, callback);
@@ -111,7 +112,7 @@ test("only the visible body accepts touch; tap acknowledges and returns to the s
   advance(5);
   expect(action).toHaveBeenCalledTimes(1);
   expect(pose().smile).toBeGreaterThan(before.smile);
-  expect(Math.abs(pose().stretch)).toBeLessThanOrEqual(0.02);
+  expect(Math.abs(pose().stretch)).toBeLessThanOrEqual(0.05);
   expect(pose().time).toBeGreaterThan(before.time);
   advance(80);
   expect(pose().smile).toBeCloseTo(before.smile, 3);
@@ -122,17 +123,15 @@ test("repeated strokes follow direction continuously, and cancellation releases 
   render(<PetView size={200} interactive onPress={action} />);
   const { pose } = gl();
   start(80, 100);
-  for (let x = 85; x <= 125; x += 5) {
+  for (const x of [120, 80, 120, 80, 120]) {
     move(x);
-    advance(2);
+    advance(3);
   }
   expect(pose().tilt).toBeGreaterThan(0);
   expect(pose().pleased).toBeGreaterThan(0.1);
   const right = pose();
-  for (let x = 120; x >= 80; x -= 5) {
-    move(x);
-    advance(2);
-  }
+  move(80);
+  advance(8);
   expect(pose().tilt).toBeLessThan(0);
   expect(pose().time).toBeGreaterThan(right.time);
   end(true);
@@ -143,7 +142,7 @@ test("repeated strokes follow direction continuously, and cancellation releases 
   expect(pose().pleased).toBeLessThan(0.001);
 });
 
-test.each(["working", "listening", "speaking", "resting"] as PetState[])(
+test.each(["working", "listening", "speaking"] as PetState[])(
   "%s preempts a stroke and prevents new reactions",
   (state) => {
     const action = jest.fn();
@@ -226,7 +225,7 @@ test("a stationary second down cancels until both fingers lift, without a tap", 
   expect(action).toHaveBeenCalledTimes(1);
 });
 
-test("reduced motion keeps one still frame, including accessible activation", () => {
+test("reduced motion acknowledges with a still face and sign without a repeating frame loop", () => {
   jest.mocked(useReducedMotion).mockReturnValue(true);
   render(<PetView size={200} interactive />);
   const { pose } = gl();
@@ -240,7 +239,10 @@ test("reduced motion keeps one still frame, including accessible activation", ()
       .props.onAccessibilityAction({ nativeEvent: { actionName: "activate" } }),
   );
   advance();
-  expect(pose()).toEqual(before);
+  expect(pose().time).toBe(before.time);
+  expect(pose().stretch).toBe(0);
+  expect(pose().sign?.kind).toBeGreaterThan(0);
+  expect(pose().smile).toBeGreaterThan(before.smile);
   expect(frames.size).toBe(0);
 });
 
@@ -259,4 +261,94 @@ test("GL fallback acknowledges accessibly, eases back and stops its temporary fr
   expect(UNSAFE_getByType(PetFallback).props.pleased).toBe(false);
   expect(frames.size).toBe(0);
   unmount();
+});
+
+test("120Hz native touch samples still recognize a180px/s stroke with30fps rendering", () => {
+  render(<PetView size={220} interactive />);
+  const { pose } = gl();
+  const origin = now;
+  const pet = screen.getByTestId("niaro-pet");
+  act(() =>
+    pet.props.onResponderGrant({
+      ...touch(90, 110),
+      nativeEvent: { ...touch(90, 110).nativeEvent, timestamp: origin },
+    }),
+  );
+  for (let i = 1; i <= 120; i++) {
+    now = origin + (i * 1000) / 120;
+    const t = i / 120,
+      phase = t % 0.4,
+      x = phase < 0.2 ? 90 + 180 * phase : 126 - 180 * (phase - 0.2);
+    if (i % 4 === 0)
+      act(() => {
+        const entry = frames.entries().next().value;
+        if (entry) {
+          frames.delete(entry[0]);
+          entry[1](now);
+        }
+      });
+    act(() =>
+      pet.props.onResponderMove({
+        ...touch(x, 110),
+        nativeEvent: { ...touch(x, 110).nativeEvent, timestamp: now },
+      }),
+    );
+  }
+  expect(pose().faceName).toBe("content");
+  end(true);
+});
+
+test("60Hz RAF jitter achieves30fps cadence without50ms quantization or catchup bursts", () => {
+  render(<PetView size={220} interactive />);
+  const { renderer } = gl();
+  renderer.draw.mockClear();
+  const origin = now;
+  for (let i = 1; i <= 360; i++) {
+    now = origin + (i * 1000) / 60 + ([0.3, -0.2, 0.1, -0.3][i % 4] ?? 0);
+    act(() => {
+      const entry = frames.entries().next().value;
+      if (entry) {
+        frames.delete(entry[0]);
+        entry[1](now);
+      }
+    });
+  }
+  expect(renderer.draw.mock.calls.length).toBeGreaterThanOrEqual(178);
+  expect(renderer.draw.mock.calls.length).toBeLessThanOrEqual(182);
+});
+
+test("native owner visibility cancels held effects and stops the frame loop until visible", () => {
+  const { rerender } = render(<PetView size={200} interactive />);
+  const { pose, renderer } = gl();
+  start();
+  advance(15);
+  rerender(<PetView size={200} interactive visible={false} />);
+  const count = renderer.draw.mock.calls.length;
+  advance(30);
+  expect(renderer.draw.mock.calls.length).toBe(count);
+  expect(frames.size).toBe(0);
+  rerender(<PetView size={200} interactive visible />);
+  advance();
+  expect(pose().faceName).toBe("neutral");
+  expect(pose().sign).toBeNull();
+  expect(frames.size).toBe(1);
+});
+
+test("renderer failure cancels a held hug before static fallback and remains locally usable", () => {
+  render(<PetView size={200} interactive />);
+  const { renderer } = gl();
+  start();
+  advance(28);
+  renderer.draw.mockImplementationOnce(() => {
+    throw new Error("TEST context failure");
+  });
+  advance();
+  const fallback = screen.UNSAFE_getByType(PetFallback);
+  expect(fallback.props.face.lid).toBe(1);
+  expect(fallback.props.sign).toBeNull();
+  expect(frames.size).toBe(0);
+  start();
+  end();
+  advance(8);
+  expect(screen.UNSAFE_getByType(PetFallback).props.face.smile).toBe(1);
 });

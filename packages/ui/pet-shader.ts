@@ -1,9 +1,11 @@
 // Approved Niaro water renderer, extracted from the 2026-10-30 pet study (external halo removed).
 // Only the platform lifecycle and uniform adapter are new. No DOM or profile state.
+import { petNoise } from "./pet-interaction";
 import {
   PET_COLORS,
   PET_COUNTS,
   petFrame,
+  petTransform,
   type PetMotion,
   type PetState,
 } from "./pet-motion";
@@ -793,7 +795,7 @@ export function createPetShader(gl: WebGLRenderingContext, background: string) {
         if (!program) return;
         gl.useProgram(program);
         backdrop(backgroundColor);
-        const frame = petFrame(motion, state, reduced);
+        const frame = petFrame(motion, state, reduced, gl.drawingBufferWidth);
         const time = frame.time;
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
         one(
@@ -810,27 +812,59 @@ export function createPetShader(gl: WebGLRenderingContext, background: string) {
         two("uTenB", Math.cos(2.7 * time), Math.sin(2.7 * time));
         one("uWobble", reduced ? 0.6 : 1 - 0.5 * frame.sleep);
         two("uGaze", frame.gazeX, frame.gazeY);
-        four("uFace", 1, 1, frame.pleased, 0);
-        four("uMouth", frame.smile, frame.mouth, frame.blush, 0);
-        four("uEye", Math.cos(9 * time), -Math.sin(9 * time), 1, frame.sleep);
+        four("uFace", frame.open, frame.lid, frame.pleased, frame.faceTilt);
+        four("uFace2", frame.love, frame.wink, frame.asym, frame.love);
+        two("uLean", frame.leanX, frame.leanY);
+        two("uRoll", Math.cos(frame.roll), Math.sin(frame.roll));
+        four("uMouth", frame.smile, frame.mouth, frame.blush, frame.wave);
+        const emblem = frame.sign;
+        four(
+          "uEmote",
+          emblem?.kind ?? 0,
+          emblem?.scale ?? 1,
+          emblem?.opacity ?? 0,
+          2 / Math.max(1, gl.drawingBufferWidth),
+        );
+        two("uEmotePos", emblem?.x ?? 0, emblem?.y ?? 0.8);
+        three("uEmoteCol", emblem?.color ?? [1, 1, 1]);
+        four(
+          "uEmoteXf",
+          Math.cos(emblem?.rotation ?? 0),
+          Math.sin(emblem?.rotation ?? 0),
+          emblem?.sx ?? 1,
+          emblem?.sy ?? 1,
+        );
+        two("uEmotePart", emblem?.w ?? 0, emblem?.w2 ?? 0);
+        one("uEmoteM", emblem?.formed ?? 0);
+        const contact = frame.dentPoint;
+        four(
+          "uDent",
+          contact?.x ?? 0,
+          contact?.y ?? 0,
+          contact?.z ?? 0,
+          frame.dent,
+        );
+        four(
+          "uEye",
+          Math.cos(9 * time),
+          -Math.sin(9 * time),
+          1 + 0.12 * Math.sin(2 * Math.PI * 1.4 * time),
+          frame.eyeSleep,
+        );
         one("uBlink", frame.blink);
         one("uSleep", frame.sleep);
-        one("uInk", 1 - 0.8 * frame.sleep);
-        three("uSq", [frame.stretch, 0, 1]);
+        one("uInk", 1 - 0.8 * frame.bodySleep);
+        three("uSq", [
+          frame.stretch,
+          Math.cos(frame.axis),
+          Math.sin(frame.axis),
+        ]);
         one("uBob", frame.bob);
-        const inverseX = Math.sqrt(1 + frame.stretch),
-          inverseY = 1 / (1 + frame.stretch);
-        rotation.fill(0);
-        // One affine transform for geometry, ink and studio reflections.
-        const cos = Math.cos(frame.tilt),
-          sin = Math.sin(frame.tilt);
-        rotation[0] = inverseX * cos;
-        rotation[1] = -inverseY * sin;
-        rotation[3] = inverseX * sin;
-        rotation[4] = inverseY * cos;
-        rotation[8] = inverseX;
+        const inverseX = Math.sqrt(1 + frame.stretch);
+        // Same affine transform is used by the silhouette and hit-zone classifier.
+        const transform = petTransform(frame, rotation);
         three("uRot[0]", rotation);
-        two("uOffset", 0, 0.4 * 0.7 * (inverseY - 1));
+        two("uOffset", transform.offsetX, transform.offsetY);
         const scale = Math.max(1 + frame.stretch, 1 / inverseX);
         const shift =
           0.4 *
@@ -840,7 +874,7 @@ export function createPetShader(gl: WebGLRenderingContext, background: string) {
           "uBound",
           frame.bob,
           (0.7 * 1.075 + 0.004 * 0.7 * 1.675) * scale + shift + 0.02,
-          0.42 / 1.15,
+          (0.42 + Math.max(0, -frame.dent)) / 1.15,
           0,
         );
         PET_COUNTS.forEach((count, i) => {
@@ -849,14 +883,27 @@ export function createPetShader(gl: WebGLRenderingContext, background: string) {
             : 0;
           const phase = i * 1.047 + 0.3,
             speed = 0.18 + i * 0.035;
-          const orbit = Math.max(0, 0.7 * 0.4 - size * 0.55);
-          const x = Math.cos(time * speed + phase) * orbit;
+          const weight = 0.3 * (0.7 + (0.6 * Math.max(0, size)) / 0.36),
+            limit = 0.05 * 0.7;
+          const ox = Math.max(-limit, Math.min(limit, frame.lagX * weight)),
+            oy = Math.max(-limit, Math.min(limit, frame.lagY * weight));
+          const orbit = Math.max(
+            0,
+            Math.max(0, 0.7 * 0.4 - size * 0.55) *
+              (1 + 0.1 * petNoise(0.11 * frame.inkTime + 3.7 * i)) -
+              Math.hypot(ox, oy),
+          );
+          const x = Math.cos(frame.inkTime * speed + phase) * orbit + ox;
           const y =
-            Math.sin(time * speed * 1.3 + phase) * orbit * 0.75 - 0.7 * 0.08;
-          drops[i * 4] = x + ((i - 2) * 0.182 - x) * frame.sleep;
-          drops[i * 4 + 1] = y + (-0.385 - y) * frame.sleep;
+            Math.sin(frame.inkTime * speed * 1.3 + phase) * orbit * 0.75 -
+            0.7 * 0.08 +
+            oy;
+          drops[i * 4] = x + ((i - 2) * 0.182 - x) * frame.bodySleep;
+          drops[i * 4 + 1] = y + (-0.385 - y) * frame.bodySleep;
           drops[i * 4 + 2] =
-            Math.sin(time * speed * 0.7 + phase * 2) * 0.08 * (1 - frame.sleep);
+            Math.sin(frame.inkTime * speed * 0.7 + phase * 2) *
+            0.08 *
+            (1 - frame.bodySleep);
           drops[i * 4 + 3] = size;
         });
         const loc = locations.get("uDrop[0]");

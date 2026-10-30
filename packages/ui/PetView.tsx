@@ -13,6 +13,8 @@ import {
   Animated,
   View,
   type GestureResponderEvent,
+  type NativeSyntheticEvent,
+  type TargetedEvent,
 } from "react-native";
 import type { ExpoWebGLRenderingContext } from "expo-gl";
 import { tokens as t } from "../design-tokens";
@@ -20,17 +22,31 @@ import { GLBoundary, supportedGLView } from "./gl-surface";
 import { useReducedMotion } from "./motion";
 import { createPetShader } from "./pet-shader";
 import {
+  createPetCadence,
+  petCadenceDue,
   advancePetMotion,
   createPetInteraction,
   petFrame,
-  petHitTest,
   resetPetInteraction,
-  strokePet,
+  pressPet,
+  movePet,
+  releasePet,
+  petContactPoint,
   petRenderSize,
   type PetMotion,
   type PetState,
 } from "./pet-motion";
 import { PetFallback } from "./PetFallback";
+import {
+  focusPetPlay,
+  keyPetPlay,
+  hoverPetPlay,
+  PET_FACES,
+  petPlayBusy,
+  updatePetPlay,
+  type PetFace,
+  type PetSignName,
+} from "./pet-interaction";
 
 export type PetViewProps = {
   size?: number;
@@ -44,6 +60,10 @@ export type PetViewProps = {
   interactive?: boolean;
   onPress?: () => void;
   disabled?: boolean;
+  /** Suppresses idle glances while the person is composing. */
+  occupied?: boolean;
+  /** Native screen owner visibility; web also observes its actual viewport. */
+  visible?: boolean;
 };
 export type { PetState } from "./pet-motion";
 
@@ -58,6 +78,8 @@ export const PetView = memo(function PetView({
   onPress,
   interactive = false,
   disabled = false,
+  occupied = false,
+  visible: ownerVisible = true,
 }: PetViewProps) {
   const reduced = useReducedMotion();
   const [Surface] = useState(supportedGLView);
@@ -73,11 +95,21 @@ export const PetView = memo(function PetView({
   const fallbackScale = useRef(new Animated.ValueXY({ x: 1, y: 1 })).current;
   const fallbackTilt = useRef(new Animated.Value(0)).current;
   const fallbackPose = useRef({ stretch: 0, tilt: 0 });
-  const [pleased, setPleased] = useState(false);
-  const pleasedRef = useRef(false);
+  const [expression, setExpression] = useState<{
+    face: PetFace;
+    sign: PetSignName | null;
+    stir: boolean;
+  }>({ face: PET_FACES.neutral, sign: null, stir: false });
+  const semantic = useRef("");
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const playGeneration = useRef(0);
   const alive = useRef(true);
   const actionable = interactive || !!onPress;
-  const enabled = actionable && !disabled && state === "idle";
+  const enabled =
+    actionable &&
+    !disabled &&
+    ownerVisible &&
+    (state === "idle" || state === "resting");
 
   const dimensions = petRenderSize(size, PixelRatio.get());
   const latest = useRef({
@@ -89,7 +121,9 @@ export const PetView = memo(function PetView({
       AppState.currentState !== "background" &&
       AppState.currentState !== "inactive",
     visible: true,
+    ownerVisible,
     enabled,
+    occupied,
   });
   const motion = useRef<PetMotion>({
     time: 2,
@@ -98,18 +132,23 @@ export const PetView = memo(function PetView({
     sleep: state === "resting" ? 1 : 0,
     interaction: createPetInteraction(),
   });
-  const control = useRef<{ wake: () => void; stop: () => void } | null>(null);
+  const control = useRef<{
+    wake: (immediate?: boolean) => void;
+    stop: () => void;
+  } | null>(null);
   useLayoutEffect(() => {
     latest.current.enabled = enabled;
+    latest.current.ownerVisible = ownerVisible;
     gesture.current = null;
     resetPetInteraction(motion.current);
-    pleasedRef.current = false;
-    setPleased(false);
+    clearPlayTimers();
+    syncFallback();
     latest.current.state = state;
+    latest.current.occupied = occupied;
     latest.current.reduced = reduced;
     latest.current.background = background;
     control.current?.wake();
-  }, [state, reduced, size, background, enabled]);
+  }, [state, reduced, size, background, enabled, occupied, ownerVisible]);
   useEffect(() => {
     latest.current.level = 0;
     if (!level) return;
@@ -126,8 +165,8 @@ export const PetView = memo(function PetView({
       if (!latest.current.active) {
         gesture.current = null;
         resetPetInteraction(motion.current);
-        pleasedRef.current = false;
-        setPleased(false);
+        clearPlayTimers();
+        syncFallback();
       }
       control.current?.wake();
     });
@@ -137,8 +176,8 @@ export const PetView = memo(function PetView({
       if (!latest.current.active) {
         gesture.current = null;
         resetPetInteraction(motion.current);
-        pleasedRef.current = false;
-        setPleased(false);
+        clearPlayTimers();
+        syncFallback();
       }
       control.current?.wake();
     };
@@ -148,11 +187,11 @@ export const PetView = memo(function PetView({
       if (typeof IntersectionObserver !== "undefined" && host.current) {
         observer = new IntersectionObserver(([entry]) => {
           latest.current.visible = entry?.isIntersecting ?? true;
-          if (!latest.current.visible) {
+          if (!latest.current.visible || !latest.current.ownerVisible) {
             gesture.current = null;
             resetPetInteraction(motion.current);
-            pleasedRef.current = false;
-            setPleased(false);
+            clearPlayTimers();
+            syncFallback();
           }
           control.current?.wake();
         });
@@ -161,6 +200,7 @@ export const PetView = memo(function PetView({
     }
     return () => {
       alive.current = false;
+      clearPlayTimers();
       gesture.current = null;
       resetPetInteraction(ownedMotion);
       app.remove();
@@ -171,6 +211,27 @@ export const PetView = memo(function PetView({
       control.current = null;
     };
   }, []);
+  const failRenderer = useCallback(() => {
+    control.current?.stop();
+    control.current = null;
+    gesture.current = null;
+    clearPlayTimers();
+    resetPetInteraction(motion.current);
+    updatePetPlay(
+      motion.current.interaction!.play,
+      0,
+      latest.current.reduced ? performance.now() / 1000 : motion.current.time,
+      latest.current.state,
+      latest.current.reduced,
+      latest.current.occupied,
+    );
+    fallbackScale.setValue({ x: 1, y: 1 });
+    fallbackTilt.setValue(0);
+    fallbackPose.current = { stretch: 0, tilt: 0 };
+    if (!alive.current) return;
+    syncFallback();
+    setFailed(true);
+  }, [fallbackScale, fallbackTilt]);
   const create = useCallback(
     (gl?: ExpoWebGLRenderingContext) => {
       if (!alive.current) return;
@@ -180,11 +241,13 @@ export const PetView = memo(function PetView({
         last = 0,
         stopped = false,
         rendered = false;
+      let cadence = createPetCadence(),
+        forceDraw = true;
       const canvas = Platform.OS === "web" ? gl?.canvas : undefined;
       const lost = (event: Event) => {
         event.preventDefault();
         stop();
-        setFailed(true);
+        failRenderer();
       };
       const stop = () => {
         stopped = true;
@@ -199,24 +262,44 @@ export const PetView = memo(function PetView({
       };
       const draw = (now: number) => {
         frame = 0;
-        if (stopped || !latest.current.active || !latest.current.visible) {
+        if (
+          stopped ||
+          !latest.current.active ||
+          !latest.current.visible ||
+          !latest.current.ownerVisible
+        ) {
           last = 0;
           return;
         }
-        if (!latest.current.reduced && last && now - last < 1000 / 30) {
+        const play = motion.current.interaction!.play;
+        const fps =
+          play.ch.doze.t === 1 && play.ch.doze.x > 0.98
+            ? 15
+            : (latest.current.state === "resting" && play.ch.sleep.x > 0.99) ||
+                play.now - play.ch.lastInput > 60
+              ? 20
+              : 30;
+        if (
+          !latest.current.reduced &&
+          !petCadenceDue(cadence, now, fps, forceDraw)
+        ) {
           frame = requestAnimationFrame(draw);
           return;
         }
+        forceDraw = false;
         const dt = last ? (now - last) / 1000 : 0;
         last = now;
         try {
-          if (!latest.current.reduced)
-            advancePetMotion(
-              motion.current,
-              dt,
-              latest.current.state,
-              latest.current.level,
-            );
+          advancePetMotion(
+            motion.current,
+            latest.current.reduced ? 0 : dt,
+            latest.current.state,
+            latest.current.level,
+            latest.current.reduced ? now / 1000 : undefined,
+            latest.current.reduced,
+            latest.current.occupied,
+          );
+          syncFallback();
           renderer?.draw(
             motion.current,
             latest.current.state,
@@ -227,7 +310,7 @@ export const PetView = memo(function PetView({
           if (!renderer) {
             const settled =
               motion.current.touch < 0.001 &&
-              !motion.current.interaction?.pressed;
+              !petPlayBusy(motion.current.interaction!.play);
             const pose = petFrame(
               motion.current,
               latest.current.state,
@@ -242,15 +325,6 @@ export const PetView = memo(function PetView({
             if (fallbackPose.current.tilt !== pose.tilt)
               fallbackTilt.setValue(pose.tilt);
             fallbackPose.current = { stretch: pose.stretch, tilt: pose.tilt };
-            // Two expression transitions per contact, not per-frame React state.
-            if (
-              pleasedRef.current &&
-              motion.current.touch < 0.015 &&
-              !motion.current.interaction?.pressed
-            ) {
-              pleasedRef.current = false;
-              setPleased(false);
-            }
           }
           if (!rendered && renderer) {
             rendered = true;
@@ -260,20 +334,34 @@ export const PetView = memo(function PetView({
             !latest.current.reduced &&
             (renderer ||
               motion.current.touch > 0.001 ||
-              motion.current.interaction?.pressed ||
+              petPlayBusy(motion.current.interaction!.play) ||
               (motion.current.interaction?.acknowledgement ?? 0) > 0.001)
           )
             frame = requestAnimationFrame(draw);
         } catch {
           stop();
-          setFailed(true);
+          failRenderer();
         }
       };
-      const wake = () => {
-        cancelAnimationFrame(frame);
-        last = 0;
-        if (!stopped && latest.current.active && latest.current.visible)
+      const wake = (immediate = false) => {
+        forceDraw ||= immediate;
+        if (
+          stopped ||
+          !latest.current.active ||
+          !latest.current.visible ||
+          !latest.current.ownerVisible
+        ) {
+          cancelAnimationFrame(frame);
+          frame = 0;
+          last = 0;
+          return;
+        }
+        if (!frame) {
+          last = 0;
+          cadence = createPetCadence();
+          forceDraw = true;
           frame = requestAnimationFrame(draw);
+        }
       };
       control.current = { wake, stop };
       try {
@@ -283,41 +371,119 @@ export const PetView = memo(function PetView({
         if (gl) wake();
       } catch {
         stop();
-        setFailed(true);
+        failRenderer();
       }
     },
-    [fallbackScale, fallbackTilt],
+    [fallbackScale, fallbackTilt, failRenderer],
   );
   useEffect(() => {
     if (!Surface || failed) create();
   }, [Surface, failed, create]);
+  const clockNow = () =>
+    latest.current.reduced ? performance.now() / 1000 : motion.current.time;
+  // Gesture velocity uses each native sample, not the quantized rendered pose clock.
+  const sampleNow = (event: GestureResponderEvent) =>
+    Number.isFinite(event.nativeEvent.timestamp)
+      ? event.nativeEvent.timestamp / 1000
+      : performance.now() / 1000;
+  function clearPlayTimers() {
+    playGeneration.current++;
+    for (const timer of timers.current) clearTimeout(timer);
+    timers.current.clear();
+  }
+  function syncFallback() {
+    if (!alive.current) return;
+    const play = motion.current.interaction!.play;
+    const sign = play.sign && play.now >= play.sign.at ? play.sign.name : null;
+    const key = `${latest.current.state}:${play.faceName}:${play.target.wink}:${play.pressed}:${play.hug}:${sign}`;
+    if (key !== semantic.current) {
+      semantic.current = key;
+      setExpression({
+        face: { ...play.target },
+        sign,
+        stir: play.faceName === "stir",
+      });
+    }
+  }
+  function scheduleStill(delay: number) {
+    const generation = playGeneration.current;
+    const timer = setTimeout(() => {
+      timers.current.delete(timer);
+      if (
+        generation !== playGeneration.current ||
+        !alive.current ||
+        !latest.current.active ||
+        !latest.current.enabled
+      )
+        return;
+      updatePetPlay(
+        motion.current.interaction!.play,
+        0,
+        clockNow(),
+        latest.current.state,
+        true,
+        latest.current.occupied,
+      );
+      syncFallback();
+      control.current?.wake();
+    }, delay);
+    timers.current.add(timer);
+  }
+  const cancel = () => {
+    gesture.current = null;
+    clearPlayTimers();
+    resetPetInteraction(motion.current);
+    syncFallback();
+    control.current?.wake();
+  };
   const acknowledge = () => {
     if (!latest.current.enabled || !latest.current.active) return;
-    if (!latest.current.reduced) {
-      motion.current.interaction!.acknowledgement = 1;
-      pleasedRef.current = true;
-      setPleased(true);
-      control.current?.wake();
-    }
-    onPress?.();
-  };
-  const release = () => {
-    gesture.current = null;
-    motion.current.interaction!.pressed = false;
+    clearPlayTimers();
+    const now = clockNow();
+    pressPet(
+      motion.current,
+      dimensions.logical / 2,
+      dimensions.logical / 2,
+      dimensions.logical,
+      now - 0.1,
+      latest.current.state,
+      latest.current.reduced,
+    );
+    releasePet(motion.current, now, false, latest.current.reduced);
+    updatePetPlay(
+      motion.current.interaction!.play,
+      0,
+      now,
+      latest.current.state,
+      latest.current.reduced,
+      latest.current.occupied,
+    );
+    syncFallback();
     control.current?.wake();
+    if (latest.current.reduced) scheduleStill(1420);
+    onPress?.();
   };
   const start = (event: GestureResponderEvent) => {
     const { locationX: x, locationY: y } = event.nativeEvent;
-    gesture.current = { x, y, distance: 0, started: Date.now() };
-    if (!latest.current.reduced) {
-      const interaction = motion.current.interaction!;
-      interaction.pressed = true;
-      interaction.targetX = (0.5 - x / dimensions.logical) * 2;
-      interaction.targetY = (0.5 - y / dimensions.logical) * 2;
-      pleasedRef.current = true;
-      setPleased(true);
-      control.current?.wake();
-    }
+    if (!latest.current.enabled || !latest.current.active) return;
+    clearPlayTimers();
+    const now = clockNow();
+    if (
+      !pressPet(
+        motion.current,
+        x,
+        y,
+        dimensions.logical,
+        now,
+        latest.current.state,
+        latest.current.reduced,
+        sampleNow(event),
+      )
+    )
+      return;
+    gesture.current = { x, y, distance: 0, started: now };
+    syncFallback();
+    control.current?.wake(true);
   };
   const move = (event: GestureResponderEvent) => {
     const current = gesture.current;
@@ -326,18 +492,47 @@ export const PetView = memo(function PetView({
     if (
       !latest.current.enabled ||
       (touches && touches.length !== 1) ||
-      !petHitTest(x, y, dimensions.logical)
+      !movePet(
+        motion.current,
+        x,
+        y,
+        dimensions.logical,
+        clockNow(),
+        latest.current.state,
+        sampleNow(event),
+      )
     ) {
-      release();
+      cancel();
       return;
     }
-    const dx = x - current.x,
-      dy = y - current.y;
-    current.distance += Math.hypot(dx, dy);
+    current.distance += Math.hypot(x - current.x, y - current.y);
     current.x = x;
     current.y = y;
-    if (!latest.current.reduced)
-      strokePet(motion.current, dx, dy, dimensions.logical);
+    syncFallback();
+    control.current?.wake();
+  };
+  const end = () => {
+    if (!gesture.current) return;
+    gesture.current = null;
+    clearPlayTimers();
+    const tap = releasePet(
+      motion.current,
+      clockNow(),
+      false,
+      latest.current.reduced,
+    );
+    updatePetPlay(
+      motion.current.interaction!.play,
+      0,
+      clockNow(),
+      latest.current.state,
+      latest.current.reduced,
+      latest.current.occupied,
+    );
+    syncFallback();
+    control.current?.wake();
+    if (latest.current.reduced) scheduleStill(1420);
+    if (tap) onPress?.();
   };
   const fallback = (
     <Animated.View
@@ -357,8 +552,10 @@ export const PetView = memo(function PetView({
     >
       <PetFallback
         size={dimensions.logical}
-        resting={state === "resting"}
-        pleased={pleased && !reduced && state === "idle"}
+        resting={state === "resting" && !expression.stir}
+        pleased={expression.face.low > 0.5}
+        face={expression.face}
+        sign={expression.sign}
       />
     </Animated.View>
   );
@@ -380,14 +577,92 @@ export const PetView = memo(function PetView({
       {...(Platform.OS === "web"
         ? {
             onKeyDown: (event: React.KeyboardEvent) => {
-              if (
-                !event.repeat &&
-                (event.key === "Enter" || event.key === " ")
+              if (event.repeat) return;
+              if (event.key === "Enter") {
+                event.preventDefault();
+                if (!latest.current.enabled || gesture.current) return;
+                clearPlayTimers();
+                keyPetPlay(
+                  motion.current.interaction!.play,
+                  "Enter",
+                  clockNow(),
+                  latest.current.reduced,
+                );
+                syncFallback();
+                control.current?.wake();
+                if (latest.current.reduced) scheduleStill(1420);
+              } else if (event.key === " ") {
+                event.preventDefault();
+                if (!gesture.current)
+                  start({
+                    nativeEvent: {
+                      locationX: dimensions.logical / 2,
+                      locationY: dimensions.logical / 2,
+                    },
+                  } as GestureResponderEvent);
+              } else if (
+                event.key.startsWith("Arrow") &&
+                latest.current.enabled
               ) {
                 event.preventDefault();
-                acknowledge();
+                keyPetPlay(
+                  motion.current.interaction!.play,
+                  event.key,
+                  clockNow(),
+                  latest.current.reduced,
+                );
+                control.current?.wake();
               }
             },
+            onFocus: (event: NativeSyntheticEvent<TargetedEvent>) => {
+              if (
+                !latest.current.enabled ||
+                !(event.currentTarget as unknown as HTMLElement).matches(
+                  ":focus-visible",
+                )
+              )
+                return;
+              focusPetPlay(
+                motion.current.interaction!.play,
+                clockNow(),
+                latest.current.reduced,
+              );
+              control.current?.wake();
+            },
+            onMouseMove: (event: React.MouseEvent<HTMLElement>) => {
+              if (
+                !latest.current.enabled ||
+                gesture.current ||
+                latest.current.reduced
+              )
+                return;
+              const box = event.currentTarget.getBoundingClientRect(),
+                span = Math.max(box.width, 320) * 1.2;
+              hoverPetPlay(
+                motion.current.interaction!.play,
+                (event.clientX - box.left - box.width / 2) / span,
+                -(event.clientY - box.top - box.height / 2) / span,
+                clockNow(),
+              );
+              control.current?.wake();
+            },
+            onMouseLeave: () => {
+              hoverPetPlay(
+                motion.current.interaction!.play,
+                0,
+                0,
+                clockNow(),
+                false,
+              );
+              control.current?.wake();
+            },
+            onKeyUp: (event: React.KeyboardEvent) => {
+              if (event.key === " ") {
+                event.preventDefault();
+                end();
+              }
+            },
+            onBlur: cancel,
           }
         : {})}
       onStartShouldSetResponder={(event) =>
@@ -395,32 +670,32 @@ export const PetView = memo(function PetView({
         latest.current.active &&
         (!event.nativeEvent.touches ||
           event.nativeEvent.touches.length === 1) &&
-        petHitTest(
+        !!petContactPoint(
           event.nativeEvent.locationX,
           event.nativeEvent.locationY,
           dimensions.logical,
+          motion.current,
+          latest.current.state,
         )
       }
       onResponderGrant={start}
       onResponderStart={(event) => {
         // A stationary second finger produces start, not necessarily move.
         // Once cancelled, this contact sequence cannot become a tap again.
-        if (event.nativeEvent.touches?.length !== 1) release();
+        if (event.nativeEvent.touches?.length !== 1) cancel();
       }}
       onResponderMove={move}
-      onResponderRelease={() => {
-        const current = gesture.current;
-        release();
-        if (
-          current &&
-          current.distance < 8 &&
-          Date.now() - current.started < 600
-        )
-          acknowledge();
-      }}
-      onResponderTerminate={release}
+      onResponderRelease={end}
+      onResponderTerminate={cancel}
       onResponderTerminationRequest={() => true}
       style={{
+        ...(Platform.OS === "web"
+          ? {
+              outlineColor: t.color.action.link,
+              outlineWidth: 2,
+              outlineOffset: 2,
+            }
+          : {}),
         width: dimensions.logical,
         height: dimensions.logical,
         alignItems: "center",
@@ -430,7 +705,7 @@ export const PetView = memo(function PetView({
       {!Surface || failed ? (
         fallback
       ) : (
-        <GLBoundary fallback={fallback} onError={() => setFailed(true)}>
+        <GLBoundary fallback={fallback} onError={failRenderer}>
           {!ready ? (
             <View pointerEvents="none" style={{ position: "absolute" }}>
               {fallback}

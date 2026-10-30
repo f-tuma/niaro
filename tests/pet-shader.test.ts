@@ -1,3 +1,9 @@
+import {
+  createPetInteraction,
+  advancePetMotion,
+  pressPet,
+  type PetMotion,
+} from "../packages/ui/pet-motion";
 import { createPetShader } from "../packages/ui/pet-shader";
 function context() {
   return {
@@ -106,4 +112,42 @@ test("optimized-out uniforms do not corrupt native uniform location zero", () =>
       true,
     );
   expect(gl.drawArrays).toHaveBeenCalledTimes(1);
+});
+
+test("a held-hug water sign reaches the real renderer above-right with original scale and live material", () => {
+  const gl = context();
+  const shader = createPetShader(
+    gl as unknown as WebGLRenderingContext,
+    "#141518",
+  );
+  const motion: PetMotion = {
+    time: 2,
+    level: 0,
+    touch: 0,
+    sleep: 0,
+    interaction: createPetInteraction(),
+  };
+  pressPet(motion, 110, 110, 220, 2);
+  for (let i = 0; i < 72; i++) advancePetMotion(motion, 1 / 60, "idle", 0);
+  shader.draw(motion, "idle", false);
+  const anchor = gl.uniform2f.mock.calls
+    .filter(([key]) => key === "uEmotePos")
+    .at(-1)!;
+  expect(anchor[1]).toBeGreaterThan(0.3);
+  expect(anchor[2]).toBeGreaterThan(0.6);
+  expect(anchor[2]).toBeLessThan(0.85);
+  const emote = gl.uniform4f.mock.calls
+    .filter(([key]) => key === "uEmote")
+    .at(-1)!;
+  expect(emote[1]).toBe(4);
+  expect(emote[2]).toBeGreaterThan(0.9);
+  expect(emote[2]).toBeLessThan(1.2);
+  expect(
+    gl.uniform1f.mock.calls.filter(([key]) => key === "uEmoteM").at(-1)![1],
+  ).toBeGreaterThan(0.9);
+  const part = gl.uniform2f.mock.calls
+    .filter(([key]) => key === "uEmotePart")
+    .at(-1)!;
+  expect(part[2]).toBeGreaterThan(0);
+  shader.dispose();
 });
