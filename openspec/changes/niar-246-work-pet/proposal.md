@@ -14,6 +14,7 @@ The assistant learns nothing about the person unless they type "Remember …", s
 - **Pet page.** A new web app area **Pet** (sidebar, after the work areas) with an abstract mascot: a small, glossy liquid body in a Material 3–style shape with coloured droplets inside, one per part of the profile it knows. The person names it and picks its colour; its shape changes by itself with the profile unless the person pins one; the droplets come only from the profile, so it reflects their real work. It grows through four stages as it knows more and greets the person with a short line drawn from what it recently learned, without a model call. It is drawn by one small WebGL shader (no 3D library), within a fixed frame and resolution budget. Below the pet, the profile is grouped into sections (Work, Projects, Tools, People, Style, Rhythm, Personal) listing the observations.
 - **Position and department.** The person's job title and department are suggested from their Microsoft 365 account when they are signed in to it, and the person confirms or overwrites them. They are profile facts for the agent, never a source of permission.
 - **Private.** The pet and the profile are visible only to their owner. Administrators see neither; sharing pets with colleagues is a later change.
+- **Existing mobile companion.** Reuse the accepted shared pet and its exact original interaction semantics. Local day/evening/night works without location or network. Optional personal weather is Off by default, or an explicitly selected City or approximate foreground Device source after OS consent; no background tracking, shared workspace location or automatic City fallback. Source and attribution/timestamps live in Settings, without extra Home greeting/helper prose. This bounded mobile slice does not implement the profile page or learning backend.
 - **States.** Memory plugin off (the pet sleeps and explains that learning is off), memory opted out, empty profile (a new pet), loading and error. EN and CS.
 
 ## Non-goals
@@ -23,7 +24,8 @@ The assistant learns nothing about the person unless they type "Remember …", s
 - Sharing or showing pets to colleagues.
 - Reading mailboxes, calendars or documents in the background to build the profile; observations come only from the person's own chats with Niaro and meetings they recorded.
 - A generated portrait, photo or image model.
-- A native mobile screen (the page works in a phone browser).
+- A new native profile screen (the profile page works in a phone browser); the existing mobile companion gains only the bounded clock/weather controls above.
+- Reverse geocoding, web-to-phone activation/synchronization, exact-address lookup, new production shapes and minigames.
 
 ## Risks
 
@@ -46,7 +48,9 @@ The assistant learns nothing about the person unless they type "Remember …", s
 
 - Server: `apps/server-identity/memory.ts` (origin `observed`, personal flag, sources, merge, capacity, setting), a new extraction step and its scheduling after chat turns and meeting publication, the pet/profile API, the Microsoft 365 job title suggestion.
 - Agent context: retrieval of observations next to saved memories.
-- Protocol: `packages/protocol/memory.ts` and a new pet/profile schema.
-- Web app: new Pet area (router, sidebar, page, copy), `docs/ui-system.md` sidebar order and its route test; mascot artwork as inline SVG components.
+- Protocol: `packages/protocol/memory.ts`, a later pet/profile schema and a separately negotiated `pet-weather/1` sidecar; existing strict ServerInfo and speech schemas stay unchanged.
+- Web app: new Pet area (router, sidebar, page, copy), `docs/ui-system.md` sidebar order and its route test; shared pet renderer with static fallback.
+- Mobile companion: existing PetView/Settings integration and local clock, exact SDK57 location/localization dependencies only after approval; native generation/build/install is a separate gate.
+- Weather: private actor/workspace source and encrypted City preference in identity storage; server-only MET Norway and operator-selected Nominatim adapters disabled until informed setup, genuine contact and single-owner application-wide admission are ready. Open-Meteo free hosted access is not a generic commercial-free service.
 - Depends on NIAR-243 (member Memory page): observations also appear there as private memories.
 - Tests: memory store and HTTP tests, extraction tests with a controlled model, web page tests.

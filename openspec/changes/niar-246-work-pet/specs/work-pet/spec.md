@@ -61,7 +61,7 @@ With the shape set to automatic, the pet SHALL take the body shape assigned to t
 
 ### Requirement: Rendering budget
 
-The animated pet SHALL render at most 30 frames per second on a canvas of at most 480 × 480 device pixels, only while it is visible on screen and the tab is active, and SHALL show a single still frame when the person prefers reduced motion. Where the animation cannot run, the page SHALL show a still image of the same pet. The pet SHALL have a text alternative naming it, its stage and the sections it knows.
+The animated pet SHALL render at most 30 frames per second on a canvas of at most 480 × 480 device pixels, only while it is visible on screen and the tab is active, and SHALL show still frames without repeating animation when the person prefers reduced motion; a local touch MAY show a static acknowledgment for1,400ms. Where the animation cannot run, the page SHALL show a still image of the same pet. The pet SHALL have a text alternative naming it, its stage and the sections it knows.
 
 #### Scenario: Reduced motion
 
@@ -70,7 +70,7 @@ The animated pet SHALL render at most 30 frames per second on a canvas of at mos
 
 ### Requirement: Expressions
 
-The pet SHALL show tamagotchi-style expressions on its face: eyes (round, happy arcs, hearts, a wink, closed when asleep), a small mouth (smile, frown, open) and blush, changing smoothly between them. Its resting expression SHALL follow its state and the weather mood, and it SHALL now and then look around or, at night, yawn.
+The pet SHALL express emotion through eyes, mouth and blush. Actual work/listening/speaking and supplied rest state SHALL take priority over touch, bounded idle and clock/weather mood. Night SHALL NOT create authoritative sleep. Idle SHALL pause while occupied, hidden, inactive or under reduced motion.
 
 #### Scenario: Rainy day
 
@@ -79,26 +79,156 @@ The pet SHALL show tamagotchi-style expressions on its face: eyes (round, happy 
 
 ### Requirement: Reactions to touch
 
-Clicking or tapping the pet SHALL make it squish, lean away from the touch and show a short reaction with a small symbol above its head (a sparkle, a note, an exclamation mark or a heart), taking reactions in turn; many quick taps SHALL make it giggle, and a tap on a sleeping pet SHALL make it stir and fall asleep again. Reactions SHALL be produced without a model call and SHALL NOT change the profile.
+Touch SHALL preserve the original release-classified quiet/cadence/zone/BAG behavior, bounded hug/stroke and sleeping stir, with one projected upper-right water sign. It SHALL remain local, never change the profile or call a model/provider, and cancel owned effects on lifecycle/work preemption. Reduced motion SHALL give a1,400ms static face/sign acknowledgment without repeating animation.
 
-#### Scenario: Tap
+#### Scenario: First tap after quiet
 
-- **WHEN** the person taps the pet
-- **THEN** it squishes, smiles with happy eyes for about a second and a sparkle rises above it
+- **WHEN** the person releases a tap after at least30s quiet
+- **THEN** the pet shows happy and sparkle, after its bounded press/release response
+
+#### Scenario: Original rapid cadence precedes zones
+
+- **WHEN** accepted rapid taps reach counts2–4,5–8 or9+
+- **THEN** the corresponding giggle, laugh or quiet dots moment wins before zone selection, with gaps<700ms incrementing count, slower gaps cooling count by gap/1.5s to a floor of1, and ninth+ resetting count with2s pause; ordinary BAG is happy+sparkle / wink+sparkle / happy+notes without immediate repeat
+
+#### Scenario: Hug and stroke
+
+- **WHEN** a hold with<12logicalpx initial travel reaches450ms and later900ms
+- **THEN** bliss/blush and slower breath precede hearts, first hug is guaranteed and subsequent hearts share a25s budget; movement alone preserves hug, while meaningful stroke takes ownership
+- **AND** stroke requires120–1600logicalpx/s, valid elapsed<=250ms,6px accumulation and three reversals in1.5s, and expires600ms after meaningful movement
+
+#### Scenario: Reduced-motion local acknowledgment
+
+- **WHEN** the person activates the pet under reduced motion
+- **THEN** a static face/sign remains for1,400ms and returns without animated hug/cadence/particles; cancellation cannot leave a late sign
 
 ### Requirement: Weather mood
 
-When the workspace has a location set, the pet SHALL reflect the current weather there (sun, rain, snow, storm, fog) and the night in the person's time zone through the studio light, particles and its resting expression, refreshed at most every 30 minutes; without a location it SHALL show only day and night. Under reduced motion it SHALL show the mood without particles or flashes.
+Optional personal weather SHALL affect only the existing pet's light, bounded particles and resting face. Off SHALL be the default. Day/evening/night SHALL work without weather. Day with no weather SHALL preserve plain optics. Reduced motion SHALL use static mood/face without particles or flashes. This slice SHALL add no lightning flash or extra Home/greeting/helper prose.
 
 #### Scenario: Snow
 
-- **WHEN** it snows at the workspace's location
-- **THEN** the pet's light turns cool, snow falls around it and it rests with rosy cheeks
+- **WHEN** accepted current-source weather is snow and higher-priority state is idle
+- **THEN** the pet has restrained cool light and rosy cheeks, with bounded snow only when animation is allowed
 
-#### Scenario: No location
+#### Scenario: Weather unavailable
 
-- **WHEN** no location is set for the workspace
-- **THEN** the pet shows no weather, only night after dark in the person's time zone
+- **WHEN** weather is Off, unsupported, unconfigured or has no eligible sample
+- **THEN** the same pet still follows local day/evening/night without provider or location dependence
+
+### Requirement: Local companion clock
+
+The companion SHALL classify day07–18, evening18–20 and night20–07 using fresh device time and a validated current IANA zone. It SHALL refresh each foreground minute and on resume/zone change, stop clock timers in background, and handle DST/manual clock changes. If no valid native or current Intl zone exists it SHALL use a neutral unknown-clock mood without location/network fallback.
+
+#### Scenario: Evening with weather Off
+
+- **WHEN** local time changes from17:59 to18:00 with weather Off and no network
+- **THEN** day becomes evening;20:00 becomes night and07:00 becomes day, without a permission prompt or weather request
+
+#### Scenario: Changed zone and clock
+
+- **WHEN** the device zone, DST or manual clock changes while active or away
+- **THEN** the next relevant foreground reading uses fresh time/current zone, without advancing a cached offset or replaying missed ticks
+
+### Requirement: Weather source and privacy
+
+Weather source SHALL be owner/workspace-scoped Off, City or Device. Stored source/City SHALL never grant OS consent, mutate workspace location, become learned memory or activate another phone/web client. Source, selectedCity, identity or permission changes SHALL clear owned pending/displayed weather immediately. Settings detail SHALL expose source, attribution and truthful forecast/check/stale times.
+
+#### Scenario: Device denial with saved City
+
+- **WHEN** Device is selected but permission is denied or revoked and a City was saved earlier
+- **THEN** Device weather clears and clock-only mood remains; City is available only by an explicit source choice
+
+#### Scenario: Source changes while pending
+
+- **WHEN** a person selects Off or changes City/account while acquisition or a provider request is pending
+- **THEN** old-generation completion cannot restore weather or position, including a same-source stale sample
+
+#### Scenario: Personal source is not shared workspace configuration
+
+- **WHEN** an administrator changes their own weather source
+- **THEN** another person's settings and workspace location remain unchanged and unreadable through the weather API
+
+### Requirement: Device weather consent
+
+Device weather SHALL require deliberate local Device opt-in and foreground OS consent; no mount/resume prompt, background/watch or accuracy upgrade. Coordinates SHALL round to two decimals before application state/transport and never persist raw/precise values. Volatile coarse position expires at30m; acquisition has an8s deadline with discarded late results. Services/module/permission failure SHALL clear Device weather.
+
+#### Scenario: Local opt-in survives cold launch
+
+- **WHEN** a cold app launch has current authenticated Device source and matching prior local installation/actor/workspace opt-in
+- **THEN** it may check existing OS permission and resume a due foreground read without prompting, without restoring any position or permission snapshot
+
+#### Scenario: Stored Device without local opt-in
+
+- **WHEN** a new installation, another actor or a remote Device choice has no matching deliberate local opt-in
+- **THEN** it shows Use this device and clock-only mood; an existing app-global OS grant alone cannot activate that actor
+
+#### Scenario: Foreground resume
+
+- **WHEN** an activated live runtime returns to foreground
+- **THEN** it checks existing permission/services without prompting before showing or refreshing Device weather, and refreshes position only when due or explicitly requested
+
+#### Scenario: Coarse-only permission
+
+- **WHEN** Android grants only approximate foreground access, or iOS grants reduced accuracy
+- **THEN** Device can use the lowest-accuracy request without asking for fine/full or background access; an existing iOS full grant also uses Lowest and immediate rounding without an accuracy upgrade or forced Settings action
+
+#### Scenario: Existing iOS full grant
+
+- **WHEN** a locally opted-in person already granted iOS full foreground access
+- **THEN** the app uses Lowest and immediate two-decimal rounding without an accuracy upgrade or forced Settings roundtrip; raw SDK values remain transient
+
+#### Scenario: Deadline and position expiry
+
+- **WHEN** an acquisition resolves after its8s deadline, or retained position reaches30m
+- **THEN** expired position cannot enter application state or transport; weather remains neutral until a current permitted acquisition succeeds
+
+### Requirement: Submitted city lookup
+
+City lookup SHALL require an explicit submitted city-name search through an authenticated configured server adapter, followed by deliberate result selection. It SHALL be bounded, cached, identified, attributed and switchable, with application-wide admission. It SHALL NOT autocomplete, reverse geocode, infer from memories/IP, accept exact addresses or activate a public provider without informed operator setup.
+
+#### Scenario: Search, then select
+
+- **WHEN** a person submits a city name
+- **THEN** up to five bounded settlement choices are returned without changing source, and only an owner-bound unexpired selected result becomes their City
+
+#### Scenario: No configured lookup
+
+- **WHEN** the operator has not deliberately configured the city adapter or shared admission is unavailable
+- **THEN** no external request occurs and the settings show concise unavailable state with Off/local clock still usable
+
+### Requirement: Weather freshness
+
+Weather fetches SHALL remain server-only and disabled until identified operator setup. Shared cache/deduplication SHALL enforce at least30m between cell attempts and provider Expires/conditional validation. A failed refresh MAY retain eligible same-source weather only until2h after accepted200/304 revalidation; Device also requires current<=30m position. Invalid responses SHALL NOT renew validity.
+
+#### Scenario: Provider expiry exceeds display limit
+
+- **WHEN** a cached sample reaches2h since accepted revalidation while provider Expires still prevents another fetch
+- **THEN** weather becomes none until permitted successful revalidation; no premature fetch or extended display occurs
+
+#### Scenario: Conditional unchanged forecast
+
+- **WHEN** a permitted conditional request returns valid304 for cached forecast data
+- **THEN** its check time renews and the current covering forecast interval is selected; a missing/expired interval cannot fabricate current weather
+
+#### Scenario: Single-owner global city admission
+
+- **WHEN** people in different workspaces submit public city searches together
+- **THEN** the one existing identity owner shares a single dispatcher enforcing at most1request/sec, restart honors persisted gates/cooldown, and unsupported independent-owner public topology cannot claim shared admission
+
+### Requirement: Weather sidecar compatibility
+
+The system SHALL negotiate weather through separate strict scoped `pet-weather/1` capability/current/city routes, leaving existing strict ServerInfo/speech contracts unchanged. Owner commands SHALL be revision/generation checked and idempotent. Unsupported404/406, malformed/foreign responses and unknown mutation outcomes SHALL never produce fake weather, implicit permission or an automatic replacement write.
+
+#### Scenario: Old server
+
+- **WHEN** a server answers404/406 to sidecar capability discovery
+- **THEN** weather controls report unsupported and perform no provider/location operation, while the local clock and ordinary session remain usable
+
+#### Scenario: Replayed preference after later change
+
+- **WHEN** a recorded source/City command is retried after another preference was accepted
+- **THEN** a still-matching last receipt returns current snapshot without reapplying; an older retry after a newer command conflicts on its old revision and cannot restore clearedCity
 
 ### Requirement: Growth stages
 
