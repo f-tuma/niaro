@@ -23,6 +23,7 @@ import {
   humanTaskRoute,
 } from "../server-identity/meeting-http";
 import { clientAddress } from "../server-identity/client-address";
+import { outputVoiceHttp } from "./output-voice-http";
 import {
   PROCESS_OUTPUT_PROFILE,
   PROCESS_OUTPUT_WORK_PROFILE,
@@ -808,7 +809,7 @@ export function createFixtureServer(
       }
     }
     const match =
-      /^\/v1\/([A-Za-z0-9-]+)\/(server|snapshot|events|meetings(?:\/[A-Fa-f0-9-]{36}(?:\/(?:blocks|seal|process|record|audio))?)?|human-tasks(?:\/[A-Za-z0-9%:._-]{1,480})?|conversations(?:\/messages)?|commands(?:\/interrupt)?|activity|auth\/pair|auth\/session|auth\/refresh|services\/(?:start|status|cancel)|process-design(?:\/(?:capabilities|start|update|acknowledge|accept|turns(?:\/list)?|sessions\/list|drafts\/list))?|processes(?:\/(?:input|runs|output(?:\/capabilities)?|commands(?:\/interrupt)?))?|hub(?:\/open)?|skills|mentions|search|process-proposals|voice|voice\/transcriptions|voice\/speech|attachments(?:\/(?:capabilities|[a-f0-9-]{36}\/original))?|attachment-drafts(?:\/[a-f0-9-]{36}(?:\/(?:uploads|references|remove|items\/[a-f0-9-]{36}\/remove))?)?|attachment-uploads\/[a-f0-9-]{36}(?:\/bytes)?|attachment-ingestions\/[a-f0-9-]{36}(?:\/retry-local)?)$/.exec(
+      /^\/v1\/([A-Za-z0-9-]+)\/(server|snapshot|events|meetings(?:\/[A-Fa-f0-9-]{36}(?:\/(?:blocks|seal|process|record|audio))?)?|human-tasks(?:\/[A-Za-z0-9%:._-]{1,480})?|conversations(?:\/messages)?|commands(?:\/interrupt)?|activity|auth\/pair|auth\/session|auth\/refresh|services\/(?:start|status|cancel)|process-design(?:\/(?:capabilities|start|update|acknowledge|accept|turns(?:\/list)?|sessions\/list|drafts\/list))?|processes(?:\/(?:input|runs|output(?:\/capabilities)?|commands(?:\/interrupt)?))?|hub(?:\/open)?|skills|mentions|search|process-proposals|voice|voice\/transcriptions|voice\/speech|voice\/output-settings|attachments(?:\/(?:capabilities|[a-f0-9-]{36}\/original))?|attachment-drafts(?:\/[a-f0-9-]{36}(?:\/(?:uploads|references|remove|items\/[a-f0-9-]{36}\/remove))?)?|attachment-uploads\/[a-f0-9-]{36}(?:\/bytes)?|attachment-ingestions\/[a-f0-9-]{36}(?:\/retry-local)?)$/.exec(
         url.pathname,
       );
     if (!match) return respond(404, { error: "not_found" });
@@ -1285,6 +1286,14 @@ export function createFixtureServer(
               return fn();
             });
       const runtimeModels = bridge ? accountModels : models;
+      if (route === "voice/output-settings")
+        return await outputVoiceHttp(
+          req,
+          url,
+          bridge?.outputVoiceSettings,
+          body,
+          respond,
+        );
       if (attachmentRoute)
         return attachmentHttp(
           req,

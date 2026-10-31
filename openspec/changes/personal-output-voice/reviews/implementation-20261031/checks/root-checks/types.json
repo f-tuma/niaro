@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "node_modules/.bin/tsc",
+    "--noEmit",
+    "--incremental",
+    "false"
+  ],
+  "exit": 0,
+  "seconds": 28.19017503399982
+}

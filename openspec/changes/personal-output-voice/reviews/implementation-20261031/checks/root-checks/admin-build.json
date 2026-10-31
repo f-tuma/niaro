@@ -1,0 +1,9 @@
+{
+  "argv": [
+    "npm",
+    "run",
+    "admin:build"
+  ],
+  "exit": 0,
+  "seconds": 1.265968828000041
+}

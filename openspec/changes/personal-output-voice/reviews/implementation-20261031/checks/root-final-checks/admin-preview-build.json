@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "npm",
+    "run",
+    "admin:build"
+  ],
+  "cwd": "/tmp/niaro-resume-20261031/voice-preview",
+  "started": "2026-10-31T10:10:26.486149+00:00",
+  "seconds": 1.174724784999853,
+  "exit": 0,
+  "subject": "../voice-preview-subject.json"
+}

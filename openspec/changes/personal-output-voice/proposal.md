@@ -2,7 +2,7 @@
 
 Tracker: **NIAR-255**
 
-Status: **Design accepted for bounded implementation.** The [owner decision](reviews/implementation-readiness-20261030/owner-decision.md) records independent closure, the exact three-voice inference and playback decisions, and the separate S1–S3 backend Dispatch. Client/UI ownership and implementation acceptance remain pending.
+Status: **Bounded implementation accepted.** [Verification](reviews/implementation-20261031/verification.md) records implemented mobile/web selection, independent source and rendered-UI closure, synthetic integration evidence and inherited full-check failures. Provider compatibility remains the explicitly accepted bounded upstream-contract inference; live audio, full CI and release certification are not claimed.
 
 ## Why
 
@@ -12,7 +12,7 @@ A person currently hears the workspace's one configured output voice and cannot 
 
 - Add a personal output-voice preference shared by that person's mobile and web sessions in the same organization/workspace, with owner-only read/write, persistence, conflict handling and cross-account response isolation.
 - Keep the workspace's `speech.voice` as explicit **Server default**; show its current label (Cedar in the inspected configuration). An invalid or removed personal choice falls back to that current value and explains the fallback.
-- Advertise only a bounded server-reviewed catalogue bound to the exact provider/model/method and authenticated actor. Proposed initial alternatives for the current OpenRouter `openai/gpt-audio-mini` reader route are Alloy, Echo and Shimmer, inferred from the exact upstream Chat Completions/model contract plus OpenRouter audio semantics. That inference still needs review; missing reader metadata does not prove alternatives unsupported, and fallback-only does not fulfill the personal-choice outcome.
+- Advertise only a bounded server-reviewed catalogue bound to the exact provider/model/method and authenticated actor. Proposed initial alternatives for the current OpenRouter `openai/gpt-audio-mini` reader route are Alloy, Echo and Shimmer, inferred from the exact upstream Chat Completions/model contract plus OpenRouter audio semantics. The owner accepted that bounded inference; missing reader metadata does not prove alternatives unsupported, and fallback-only does not fulfill the personal-choice outcome.
 - Negotiate a separate `agent-output-voice/1` settings resource while preserving the strict `agent-speech/1` shapes. Clients select advertised opaque options; only the server resolves provider voice IDs and revalidates them at speech dispatch.
 - Use text labels and save immediately on an explicit option selection, with no extra Save confirmation; retain the last acknowledged state until success and keep a stale-choice Reset reachable even when speech is unavailable. Opening/saving settings never triggers synthesis, preview, recording, provider discovery, workflow commands or automatic paid retries.
 - Clarify the voice spec's phone-only boundary to allow a web preference editor while retaining phone-only voice input/playback. Propose that saving the new output-voice preference affects the next requested synthesis without stopping/restarting existing audio; the existing spoken-replies toggle still cancels playback.
@@ -38,4 +38,4 @@ None; extend the existing voice and model-routing capabilities.
 
 ## Impact
 
-Add a protocol module, server catalogue/preference store and authenticated settings handler; integrate the existing speech dispatch through `apps/server-identity/service.ts`, `service-catalog.ts`, `mobile.ts` and `apps/fixture-server/http.ts`. The primary UI/client owner later adds ClientSession methods, mobile VoiceSettings and a web `/me` section with EN/CS states and tests. Existing main specs and all production files remain untouched by this draft; `design.md` names exact proposed file boundaries and verification. No dependency, provider activation or deployment is included.
+Add a protocol module, server catalogue/preference store and authenticated settings handler; integrate the existing speech dispatch through `apps/server-identity/service.ts`, `service-catalog.ts`, `mobile.ts` and `apps/fixture-server/http.ts`. The primary UI/client owner later adds ClientSession methods, mobile VoiceSettings and a web `/me` section with EN/CS states and tests. Main specs remain unsynced; the bounded implementation and evidence are recorded in this change, and `design.md` names exact proposed file boundaries and verification. No dependency, provider activation or deployment is included.

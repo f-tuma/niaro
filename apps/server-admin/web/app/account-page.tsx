@@ -37,6 +37,7 @@ import { api, ApiError } from "../lib/api";
 import { AccessSchema, browserLabel, type Access } from "../lib/account-access";
 import { useApp } from "./context";
 import { MenuPage } from "./menu-page";
+import { OutputVoiceSettings } from "./output-voice-settings";
 import { ArchivedChats } from "./archived-chats";
 
 const en = {
@@ -282,6 +283,7 @@ export function AccountPage() {
           )}
         </>
       )}
+      <OutputVoiceSettings />
       <ArchivedChats />
     </MenuPage>
   );

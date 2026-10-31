@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "npm",
+    "run",
+    "check"
+  ],
+  "started": "2026-10-31T09:46:08.852909+00:00",
+  "seconds": 76.39663666399997,
+  "exit": 1,
+  "subject": "final-voice-subject.json plus approved weather docs and mobile design bundle; original unrelated dirty files preserved"
+}

@@ -1,5 +1,7 @@
 # Design
 
+Implementation record (2026-10-31): [bounded checkpoint verification](reviews/implementation-20261031/verification.md). Historical ownership gates below record the accepted implementation sequence; current status is in tasks.md. Full CI and live provider/native limitations remain explicit.
+
 Tracker: **NIAR-255**
 
 Status: **Accepted design for bounded implementation.** See the [owner decision](reviews/implementation-readiness-20261030/owner-decision.md) for exact reviewed hashes, catalogue/playback dispositions and the separate S1–S3 backend gate. Pending-decision wording below describes the reviewed proposal; that decision record supersedes it. No implementation/test acceptance is implied.
@@ -125,7 +127,7 @@ Alternative considered: local device preferences or workspace routing writes. Lo
 
 ### D4. Effective voice frozen and revalidated at real dispatch
 
-In `accountRuntimeAccess`, expose personal output-settings callbacks using the existing authenticated `run`/`check` closure and actor `{organizationId: orgId, workspaceId, userId: initial.session.scope.userId}`. HTTP trusts neither URL actor overrides nor body scope. Browser uses the same short workspace credential as mobile, so both surfaces share the same persisted preference.
+In `accountRuntimeAccess`, expose personal output-settings callbacks through a settings-only guard in the existing identity queue. It reauthenticates current membership/scope and closing state without the general runtime's captured model-policy check, so the store can enforce the documented current catalogue conflict and last-receipt rules. Keep the general `run`/`check` and synthesis guards unchanged. Derive the actor `{organizationId: orgId, workspaceId, userId: initial.session.scope.userId}`. HTTP trusts neither URL actor overrides nor body scope. Browser uses the same short workspace credential as mobile, so both surfaces share the same persisted preference.
 
 At `synthesizer.synthesize` entry, inside the identity queue, re-resolve the **current** enabled speech route and current catalogue, resolve this actor's effective voice, and freeze an immutable internal `SpeechSelection` plus route/catalogue epoch, model/provider revision and chosen voice. Client speech request still contains no voice. A stale saved preference already invalid at this point uses current server default with the explicit settings fallback reason.
 
@@ -178,7 +180,7 @@ Rollback before client rollout can leave the additive tables dormant. Rolled-bac
 
 ## Detailed Implementation Plan
 
-Everything above this header describes proposed feature behavior, boundaries and review decisions. Everything below it describes implementation ownership, sequencing and verification; it is not permission to edit production. `tasks.md` is the executable checklist and all items remain unchecked in this draft.
+Everything above this header describes proposed feature behavior, boundaries and review decisions. Everything below it describes implementation ownership, sequencing and verification; it is not permission to edit production. `tasks.md` is the executable checklist; its completed items are bounded by the linked implementation verification and recorded inherited failures.
 
 ### Exact proposed ownership and before/after paths
 
@@ -209,7 +211,8 @@ Coordinator must accept an exact file set before edits. Rehash the shared workin
 - `packages/client-core/session.ts`: two methods only; `tests/output-voice-client.test.ts` (new) for strict responses and identity/uncertainty behavior.
 - `apps/mobile/VoiceSettings.tsx`, `packages/ui-catalog/OutputVoiceCard.tsx` (new), `packages/i18n/index.ts`, `tests/output-voice-mobile.test.tsx` (new), `packages/ui-catalog/OutputVoiceCard.stories.tsx` (new; matched by current `.rnstorybook/main.ts` packages glob): VoiceSettings owns existing DetailSheet/effects; card stays presentation-only; test immediate option-tap lifecycle, dismissal/reconciliation and both-disabled stale-choice Reset with EN/CS states.
 - `apps/server-admin/web/app/account-page.tsx`, `apps/server-admin/web/app/output-voice-settings.tsx` (new), `tests/output-voice-web.test.tsx` (new): web own-settings editor, using existing web test host conventions.
-- `package.json`: root appends the five new Node test paths to the actual `test:identity` command so fullcheck executes them; no dependency/lock changes. UI/core .test files already match Jest config.
+- `tests/output-voice-client-http.node.ts`: added real ClientSession→reference HTTP→identity/store cross-surface verification with synthetic credentials/transport; no provider calls.
+- `package.json`: root appends the six new Node test paths to the actual `test:identity` command so fullcheck executes them; no dependency/lock changes. UI/core .test files already match Jest config.
 - This six-file `openspec/changes/personal-output-voice/` draft is the canonical NIAR-255 change. Later accepted revisions remain with its designated owner; do not create a competing change. Root owns any main-spec sync/archive and .spec-pilot changes, if any. The drafting worker has no implementation/canonical authority beyond this new change.
 
 ### Checkpoint sequence and stop conditions

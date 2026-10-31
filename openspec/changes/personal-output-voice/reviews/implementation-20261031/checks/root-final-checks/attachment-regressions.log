@@ -1,0 +1,18 @@
+jest-haste-map: Haste module naming collision: agent-hosted-microsoft-365
+  The following files share their name; please adjust your hasteImpl:
+    * <rootDir>/apps/server-hosting/templates/microsoft-365/package.json
+    * <rootDir>/.identity/hosted/hs_95d5ea011e4019df691017e8/package.json
+
+jest-haste-map: Haste module naming collision: agent-hosted-microsoft-365
+  The following files share their name; please adjust your hasteImpl:
+    * <rootDir>/apps/server-hosting/templates/microsoft-365/package.json
+    * <rootDir>/.identity/hosted/hs_95d5ea011e4019df691017e8/package.json
+
+PASS ui tests/attachment-client-ui.test.tsx (17.982 s)
+PASS core tests/attachment-device.test.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       22 passed, 22 total
+Snapshots:   0 total
+Time:        18.953 s
+Ran all test suites within paths "tests/attachment-client-ui.test.tsx", "tests/attachment-device.test.ts" in 2 projects.

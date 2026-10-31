@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "node",
+    "--import",
+    "tsx",
+    "--test",
+    "tests/output-voice-protocol.node.ts",
+    "tests/output-voice-catalogue.node.ts",
+    "tests/output-voice-store.node.ts",
+    "tests/output-voice-http.node.ts",
+    "tests/output-voice-dispatch.node.ts",
+    "tests/output-voice-client-http.node.ts",
+    "tests/catalog-speech.node.ts",
+    "tests/catalog-voice.node.ts",
+    "tests/service-catalog.node.ts"
+  ],
+  "started": "2026-10-31T09:46:08.852839+00:00",
+  "seconds": 12.746683442999938,
+  "exit": 0
+}

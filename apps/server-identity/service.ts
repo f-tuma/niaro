@@ -1,6 +1,7 @@
 import { purgeNativeAttachmentGeneration , closeNativeCatalogRuntime } from "./mastra-runtime";
 import { budgetedInferenceTransport } from "./inference-budget";
 import { clientAddress } from "./client-address";
+import { outputVoiceCatalogue } from "../server-integrations/speech-voices";
 import { MeetingStore } from "./meeting-store";
 import { meetingAgentAccess } from "./meeting-agent";
 import {
@@ -84,6 +85,7 @@ import { CalDavCalendar } from "../fixture-server/calendar";
 import {
   AUTH_PROFILE,
   PROFILE,
+  sameScope,
   type AuthSession,
   type Scope,
   type Operation,
@@ -3301,12 +3303,12 @@ export class IdentityService {
       const row = selected
         ? this.connections.row(workspaceId, selected.id)
         : undefined;
-      const check = () => {
+      const check = (expectedPolicyVersion = policyVersion) => {
         if (this.closing) throw new ModelError("model_unavailable");
         const actor = authenticate(initial.credentialId);
         const currentBinding = this.connections.binding(workspaceId);
         if (
-          this.connections.policyVersion(orgId) !== policyVersion ||
+          this.connections.policyVersion(orgId) !== expectedPolicyVersion ||
           this.ai.read(workspaceId).revision !== ai.revision ||
           this.plugins.read(workspaceId).revision !== plugins.revision ||
           this.calendars.row(workspaceId)?.id !== calendarRevision?.id ||
@@ -3326,6 +3328,19 @@ export class IdentityService {
       const run = <T>(fn: () => T | Promise<T>) =>
         this.serial(async () => {
           check();
+          return fn();
+        });
+      // Reauthenticate settings; the store checks the current catalogue and CAS.
+      const runOutputVoiceSettings = <T>(fn: () => T) =>
+        this.serial(async () => {
+          if (this.closing)
+            throw new IdentityError(503, "identity_unavailable");
+          const actor = authenticate(initial.credentialId);
+          if (
+            actor.grant.organization_id !== orgId ||
+            !sameScope(actor.session.scope, initial.session.scope)
+          )
+            throw new IdentityError(403, "identity_forbidden");
           return fn();
         });
       const memoryActor: MemoryActor = {
@@ -3510,53 +3525,117 @@ export class IdentityService {
         // An unavailable selection must not break authenticated snapshot reads.
       }
       let synthesizer: SpeechSynthesizer | undefined;
-      try {
-        const speech = this.catalog.store.resolveSpeech(orgId, workspaceId);
-        if (speech)
-          synthesizer = {
-            model: speech.model.model,
-            synthesize: async (text, language, signal, beforeDispatch) => {
-              try {
-                await run(() => {});
-                const result = await synthesizeSpeech(
-                  this.catalog.transport,
-                  speech,
-                  text,
-                  language,
-                  signal,
-                  (start) =>
-                    beforeDispatch(() => {
-                      signal.throwIfAborted();
-                      // The HTTP guard runs in this same identity queue and checks the current message.
-                      check();
-                      this.catalog.store.useProvider(
-                        orgId,
-                        speech.provider.id,
-                        speech.provider.revision,
-                      );
-                      start();
-                    }),
-                );
-                await run(() => {});
+      const initialSpeechRoute = this.catalog.store.speechVoiceRoute(
+        orgId,
+        workspaceId,
+      );
+      if (initialSpeechRoute)
+        synthesizer = {
+          model: initialSpeechRoute.model.model,
+          synthesize: async (text, language, signal, beforeDispatch) => {
+            try {
+              // Admission resolves today's route and preference, even for a retained runtime.
+              const pin = await this.serial(async () => {
+                const policyVersion = this.connections.policyVersion(orgId);
+                check(policyVersion);
                 signal.throwIfAborted();
-                return result;
-              } catch (error) {
-                logFailure("spoken reply", error);
-                if (error instanceof SpeechError) throw error;
-                throw new SpeechError(
-                  error instanceof IdentityError &&
-                  (error.code === "catalog_budget_exhausted" ||
-                    error.code === "catalog_provider_limit")
-                    ? "speech_model_limit"
-                    : "speech_unavailable",
-                  503,
+                const speech = this.catalog.store.resolveSpeech(orgId, workspaceId);
+                const route = this.catalog.store.speechVoiceRoute(
+                  orgId,
+                  workspaceId,
                 );
-              }
-            },
-          };
-      } catch {
-        /* Missing/disabled speech must not break chat reads. */
-      }
+                const effective = this.catalog.store.outputVoice.resolve(
+                  memoryActor,
+                  initial.session.scope,
+                  route,
+                );
+                if (!speech || !route || !effective.voice)
+                  throw new SpeechError("speech_unavailable", 503);
+                return Object.freeze({
+                  selection: Object.freeze({
+                    ...speech,
+                    model: Object.freeze({ ...speech.model }),
+                    provider: Object.freeze({ ...speech.provider }),
+                    voice: effective.voice,
+                  }),
+                  policyVersion,
+                  identity: effective.identity,
+                  catalogueRevision: effective.snapshot.catalogueRevision,
+                  choice: effective.snapshot.effective.choice,
+                });
+              });
+              const validatePin = () => {
+                const route = this.catalog.store.speechVoiceRoute(
+                  orgId,
+                  workspaceId,
+                );
+                const current = this.catalog.store.outputVoice.resolve(
+                  memoryActor,
+                  initial.session.scope,
+                  route,
+                );
+                const catalogue = outputVoiceCatalogue(
+                  memoryActor,
+                  route,
+                  current.epoch,
+                );
+                const choice = pin.choice;
+                if (
+                  !route ||
+                  current.identity !== pin.identity ||
+                  current.snapshot.catalogueRevision !== pin.catalogueRevision ||
+                  (choice.kind === "catalogue"
+                    ? !catalogue.options.some(
+                        (option) =>
+                          option.optionId === choice.optionId &&
+                          option.voice === pin.selection.voice,
+                      )
+                    : route.voice !== pin.selection.voice)
+                )
+                  throw new SpeechError("speech_unavailable", 503);
+              };
+              const result = await synthesizeSpeech(
+                this.catalog.transport,
+                pin.selection,
+                text,
+                language,
+                signal,
+                (start) =>
+                  beforeDispatch(() => {
+                    signal.throwIfAborted();
+                    // The HTTP guard checks current scoped text in this same queue turn.
+                    check(pin.policyVersion);
+                    validatePin();
+                    this.catalog.store.useProvider(
+                      orgId,
+                      pin.selection.provider.id,
+                      pin.selection.provider.revision,
+                    );
+                    start();
+                  }),
+              );
+              // Reuse the HTTP guard for current text plus this exact pin before audio return.
+              await beforeDispatch(() => {
+                signal.throwIfAborted();
+                check(pin.policyVersion);
+                validatePin();
+              });
+              signal.throwIfAborted();
+              return result;
+            } catch (error) {
+              logFailure("spoken reply", error);
+              if (error instanceof SpeechError) throw error;
+              throw new SpeechError(
+                error instanceof IdentityError &&
+                (error.code === "catalog_budget_exhausted" ||
+                  error.code === "catalog_provider_limit")
+                  ? "speech_model_limit"
+                  : "speech_unavailable",
+                503,
+              );
+            }
+          },
+        };
       const meetingModel = (
         signal: AbortSignal,
         runId: string,
@@ -3619,6 +3698,25 @@ export class IdentityService {
         nativeRequests: this.nativeRequests,
         retireProcessRequest,
         cancelProcessRun,
+        outputVoiceSettings: {
+          read: () =>
+            runOutputVoiceSettings(() =>
+              this.catalog.store.outputVoice.read(
+                memoryActor,
+                initial.session.scope,
+                this.catalog.store.speechVoiceRoute(orgId, workspaceId),
+              ),
+            ),
+          save: (update) =>
+            runOutputVoiceSettings(() =>
+              this.catalog.store.outputVoice.save(
+                memoryActor,
+                initial.session.scope,
+                this.catalog.store.speechVoiceRoute(orgId, workspaceId),
+                update,
+              ),
+            ),
+        },
         synthesizer,
         meetingTranscriber,
         timeZone: plugins.settings.timeZone,

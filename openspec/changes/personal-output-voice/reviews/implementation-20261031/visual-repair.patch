@@ -1,0 +1,386 @@
+--- a/apps/server-admin/web/app/output-voice-settings.tsx
++++ b/apps/server-admin/web/app/output-voice-settings.tsx
+@@ -73,7 +73,7 @@
+         : snapshot?.availability === "server-default-only"
+           ? "outputVoiceDefaultOnly"
+           : undefined;
+-  const disabled = owner.busy || !!owner.pending;
++  const disabled = owner.busy || owner.reading || !!owner.pending;
+   return (
+     <Section title={tr("outputVoice")}>
+       <Card>
+@@ -103,7 +103,7 @@
+                       id="account-output-voice"
+                       aria-label={tr("outputVoice")}
+                       aria-invalid={!!owner.issue}
+-                      aria-busy={owner.busy}
++                      aria-busy={owner.saving || owner.reading}
+                     >
+                       <SelectValue>{label}</SelectValue>
+                     </SelectTrigger>
+@@ -134,9 +134,11 @@
+               {detail ? (
+                 <FieldDescription>{tr(detail)}</FieldDescription>
+               ) : null}
+-              {owner.busy ? (
++              {snapshot && (owner.saving || owner.reading) ? (
+                 <FieldDescription role="status">
+-                  {tr("outputVoiceSaving")}
++                  {tr(
++                    owner.saving ? "outputVoiceSaving" : "outputVoiceLoading",
++                  )}
+                 </FieldDescription>
+               ) : null}
+               {owner.issue ? <FieldError>{tr(owner.issue)}</FieldError> : null}
+@@ -196,6 +198,8 @@
+   snapshot: OutputVoiceSnapshot | null | undefined;
+   issue: TranslationKey | undefined;
+   busy = false;
++  /** Only the POST wait; busy also spans passive reconciliation. */
++  saving = false;
+   pending: OutputVoiceUpdate | undefined;
+   read: AbortController | undefined;
+   saveRequest: AbortController | undefined;
+@@ -280,6 +284,7 @@
+   };
+   abandon = () => {
+     this.generation++;
++    this.saving = false;
+     this.read?.abort();
+     this.saveRequest?.abort();
+     this.pending = undefined;
+@@ -351,6 +356,7 @@
+     const controller = new AbortController();
+     this.saveRequest = controller;
+     this.busy = true;
++    this.saving = true;
+     this.pending = update;
+     this.issue = undefined;
+     this.notify();
+@@ -370,6 +376,7 @@
+       this.pending = undefined;
+     } catch (error) {
+       if (!this.owns(generation) || controller.signal.aborted) return;
++      this.saving = false;
+       const message = error instanceof Error ? error.message : "";
+       if (
+         [
+@@ -407,6 +414,7 @@
+     } finally {
+       if (this.owns(generation)) {
+         this.busy = false;
++        this.saving = false;
+         this.notify();
+       }
+     }
+--- a/tests/output-voice-web.test.tsx
++++ b/tests/output-voice-web.test.tsx
+@@ -8,6 +8,7 @@
+   type OutputVoiceSnapshot,
+ } from "../packages/protocol/output-voice";
+ import type { AppContextValue } from "../apps/server-admin/web/app/context";
++import { translate } from "../packages/i18n";
+ let mockContext: AppContextValue;
+ jest.mock("../apps/server-admin/web/app/context", () => ({
+   useApp: () => mockContext,
+@@ -271,6 +272,103 @@
+   expect(nodes("Select")[0]!.props.value).toBe(snapshot().options[0]!.optionId);
+   h.session.stop();
+ });
++test.each(["en", "cs"] as const)(
++  "%s held recovery GET reports loading and uncertainty, preserves Cedar and permits only explicit exact retry",
++  async (language) => {
++    const value = {
++      ...snapshot(),
++      options: [{ ...snapshot().options[0]!, label: "Shimmer" }],
++    };
++    const h = setup(value);
++    mockContext.language = language;
++    const tr = translate(language);
++    let finishPost: ((value: Response) => void) | undefined;
++    let finishRead: ((value: Response) => void) | undefined;
++    const statuses = () =>
++      nodes("FieldDescription")
++        .filter((node) => node.props.role === "status")
++        .map((node) => text(node));
++    try {
++      await mount();
++      h.transport
++        .mockImplementationOnce(
++          () =>
++            new Promise((resolve) => {
++              finishPost = resolve;
++            }),
++        )
++        .mockImplementationOnce(
++          () =>
++            new Promise((resolve) => {
++              finishRead = resolve;
++            }),
++        );
++      await choose(value.options[0]!.optionId);
++      expect(posts(h)).toHaveLength(1);
++      expect(statuses()).toEqual([tr("outputVoiceSaving")]);
++      expect(text()).not.toContain(tr("outputVoiceUnknown"));
++      const originalBody = posts(h)[0]![1]!.body;
++
++      await act(async () => {
++        finishPost!(response({ error: "service_unavailable" }, 503));
++        await flush();
++      });
++      expect(finishRead).toBeDefined();
++      expect(h.transport).toHaveBeenCalledTimes(3);
++      expect(h.transport.mock.calls.at(-1)![1]?.method).not.toBe("POST");
++      expect(nodes("Select")[0]!.props).toMatchObject({
++        value: "server-default",
++        disabled: true,
++      });
++      expect(text(nodes("SelectValue")[0]!)).toBe(
++        `${tr("outputVoiceDefault")} (Cedar)`,
++      );
++      expect(nodes("SelectTrigger")[0]!.props["aria-busy"]).toBe(true);
++      expect(text()).toContain(tr("outputVoiceUnknown"));
++      expect(statuses()).toEqual([tr("outputVoiceLoading")]);
++      expect(text()).not.toContain(tr("outputVoiceSaving"));
++      expect(button(tr("outputVoiceRetry"))).toBeUndefined();
++      await choose(value.options[0]!.optionId);
++      expect(posts(h)).toHaveLength(1);
++
++      await act(async () => {
++        finishRead!(response(value));
++        await flush();
++      });
++      expect(statuses()).toEqual([]);
++      expect(nodes("Select")[0]!.props).toMatchObject({
++        value: "server-default",
++        disabled: true,
++      });
++      expect(text()).toContain(tr("outputVoiceUnknown"));
++      expect(button(tr("outputVoiceRetry"))).toBeTruthy();
++      expect(posts(h)).toHaveLength(1);
++
++      h.set(selected(value));
++      await act(async () => {
++        button(tr("outputVoiceRetry")).props.onClick();
++        await flush();
++      });
++      expect(posts(h)).toHaveLength(2);
++      expect(posts(h)[1]![1]!.body).toBe(originalBody);
++      expect(nodes("Select")[0]!.props).toMatchObject({
++        value: value.options[0]!.optionId,
++        disabled: false,
++      });
++      expect(text(nodes("SelectValue")[0]!)).toBe("Shimmer");
++      expect(text()).not.toContain(tr("outputVoiceUnknown"));
++      expect(statuses()).toEqual([]);
++      expect(button(tr("outputVoiceRetry"))).toBeUndefined();
++    } finally {
++      await act(async () => {
++        h.session.stop();
++        finishPost?.(response({ error: "service_unavailable" }, 503));
++        finishRead?.(response(value));
++        await flush();
++      });
++    }
++  },
++);
+ test("lost ACK resolved by GET applies committed snapshot with no Retry or extra POST", async () => {
+   const h = setup();
+   await mount();
+--- a/packages/ui-catalog/OutputVoiceCard.tsx
++++ b/packages/ui-catalog/OutputVoiceCard.tsx
+@@ -102,11 +102,23 @@
+         <ListRow
+           icon="speaker"
+           label={tr("outputVoice")}
+-          value={snapshot ? label : undefined}
+-          description={detail}
++          description={snapshot ? label : detail}
++          accessibilityLabel={[
++            tr("outputVoice"),
++            snapshot ? label : undefined,
++            detail,
++          ]
++            .filter(Boolean)
++            .join(", ")}
+           onPress={canChoose ? onOpen : undefined}
+           disabled={inactive}
+-        />
++        >
++          {snapshot && detail ? (
++            <Text role="meta" tone="secondary">
++              {detail}
++            </Text>
++          ) : null}
++        </ListRow>
+       )}
+       {options && detail && canChoose ? (
+         <ListBlock>
+--- a/tests/output-voice-mobile.test.tsx
++++ b/tests/output-voice-mobile.test.tsx
+@@ -1,4 +1,5 @@
+ import React from "react";
++import { StyleSheet } from "react-native";
+ import {
+   act,
+   fireEvent,
+@@ -97,6 +98,84 @@
+   };
+ }
+ afterEach(() => jest.restoreAllMocks());
++describe.each(["en", "cs"] as const)(
++  "%s acknowledged voice summary",
++  (language) => {
++    test.each(["selectable", "server-default-only", "long-choice"] as const)(
++      "%s keeps the full current voice naturally wrapping at normal font scale",
++      async (state) => {
++        const native =
++          jest.requireActual<typeof import("react-native")>("react-native");
++        jest.spyOn(native, "useWindowDimensions").mockReturnValue({
++          width: 390,
++          height: 844,
++          scale: 1,
++          fontScale: 1,
++        });
++        const tr = translate(language);
++        const value = snapshot();
++        if (state === "server-default-only") {
++          value.availability = state;
++          value.options = [];
++        } else if (state === "long-choice") {
++          const option = value.options[0]!;
++          option.label =
++            "TEST calm narration with a clear warm tone and an intentionally long voice label";
++          value.saved = {
++            choice: { kind: "catalogue", optionId: option.optionId },
++            label: option.label,
++          };
++          value.effective = {
++            choice: value.saved.choice,
++            label: option.label,
++            reason: "selected",
++          };
++        }
++        const currentLabel =
++          state === "long-choice"
++            ? value.effective.label
++            : `${tr("outputVoiceDefault")} (Cedar)`;
++        const h = setup(value);
++        try {
++          render(
++            <VoiceSettings
++              session={h.session}
++              language={language}
++              spokenReplies
++              onSpokenReplies={h.toggled}
++            />,
++          );
++          await act(flush);
++          const current = screen.getByText(currentLabel);
++          expect(current.props.numberOfLines).toBeUndefined();
++          expect(StyleSheet.flatten(current.props.style)).not.toMatchObject({
++            maxWidth: "45%",
++          });
++          expect(screen.getAllByText(currentLabel)).toHaveLength(1);
++          expect(screen.getByText(tr("outputVoice"))).toBeTruthy();
++          if (state === "server-default-only") {
++            expect(screen.getByText(tr("outputVoiceDefaultOnly"))).toBeTruthy();
++            expect(
++              screen.queryByRole("button", {
++                name: new RegExp(`^${tr("outputVoice")}(?:,|$)`),
++              }),
++            ).toBeNull();
++          } else {
++            expect(
++              screen.getByRole("button", {
++                name: `${tr("outputVoice")}, ${currentLabel}`,
++              }).props.accessibilityState.disabled,
++            ).toBe(false);
++          }
++          expect(posts(h)).toHaveLength(0);
++          expect(h.toggled).not.toHaveBeenCalled();
++        } finally {
++          h.session.stop();
++        }
++      },
++    );
++  },
++);
+ test.each(["en", "cs"] as const)(
+   "%s successful owned retry clears the recovered load error",
+   async (language) => {
+@@ -173,7 +252,9 @@
+       });
+       await act(async () => {
+         fireEvent.press(
+-          screen.getByRole("button", { name: tr("outputVoice") }),
++          screen.getByRole("button", {
++            name: new RegExp(`^${tr("outputVoice")}, `),
++          }),
+         );
+         await flush();
+       });
+@@ -286,7 +367,9 @@
+   render(h.element());
+   await act(flush);
+   await act(async () => {
+-    fireEvent.press(screen.getByRole("button", { name: "Output voice" }));
++    fireEvent.press(
++      screen.getByRole("button", { name: /^Output voice(?:,|$)/ }),
++    );
+     await flush();
+   });
+ }
+@@ -332,7 +415,9 @@
+     const view = render(h.element());
+     await act(flush);
+     await act(async () => {
+-      fireEvent.press(screen.getByRole("button", { name: "Output voice" }));
++      fireEvent.press(
++        screen.getByRole("button", { name: /^Output voice(?:,|$)/ }),
++      );
+       await flush();
+     });
+     await act(async () => {
+@@ -374,7 +459,9 @@
+     const h = setup(value);
+     render(h.element());
+     await act(flush);
+-    expect(screen.queryByRole("button", { name: "Output voice" })).toBeNull();
++    expect(
++      screen.queryByRole("button", { name: /^Output voice(?:,|$)/ }),
++    ).toBeNull();
+     h.transport.mockImplementationOnce(async (url, init) => {
+       h.requests.push({ url: String(url), init });
+       return response({
+@@ -567,7 +654,9 @@
+     expect(view.queryByTestId("detail-sheet")).toBeNull();
+     h.set(selected());
+     await act(async () => {
+-      fireEvent.press(view.getByRole("button", { name: "Output voice" }));
++      fireEvent.press(
++        view.getByRole("button", { name: /^Output voice(?:,|$)/ }),
++      );
+       await flush();
+     });
+     expect(
+@@ -676,7 +765,7 @@
+     ).toBeTruthy();
+     expect(
+       screen.queryByRole("button", {
+-        name: language === "en" ? "Output voice" : "Výstupní hlas",
++        name: new RegExp(`^${translate(language)("outputVoice")}(?:,|$)`),
+       }),
+     ).toBeNull();
+     expect(
+@@ -722,7 +811,9 @@
+   const view = render(h.element());
+   await act(flush);
+   await act(async () => {
+-    fireEvent.press(screen.getByRole("button", { name: "Output voice" }));
++    fireEvent.press(
++      screen.getByRole("button", { name: /^Output voice(?:,|$)/ }),
++    );
+     await flush();
+   });
+   let finish!: (value: OutputVoiceSnapshot) => void;

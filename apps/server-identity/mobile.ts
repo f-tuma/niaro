@@ -45,6 +45,17 @@ export type MobileRuntime = {
   /** The workspace's time zone, for meeting deadlines. */
   timeZone?: string;
   synthesizer?: import("../server-integrations/speech").SpeechSynthesizer;
+  /** Own settings only; callbacks derive the actor and recheck current access. */
+  outputVoiceSettings?: {
+    read(): Promise<
+      import("../../packages/protocol/output-voice").OutputVoiceSnapshot
+    >;
+    save(
+      update: import("../../packages/protocol/output-voice").OutputVoiceUpdate,
+    ): Promise<
+      import("../../packages/protocol/output-voice").OutputVoiceSnapshot
+    >;
+  };
   tools: Pick<ToolRegistry, "has" | "invoke">;
   /** Validate policy and perform a synchronous workflow read/commit in one identity queue turn. */
   run<T>(fn: () => T): Promise<T>;

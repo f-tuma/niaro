@@ -1,0 +1,29 @@
+{
+  "argv": [
+    "node_modules/.bin/jest",
+    "--runInBand",
+    "--cacheDirectory",
+    "/tmp/niaro-resume-20261031/root-checks/jest-cache",
+    "tests/output-voice-client.test.ts",
+    "tests/output-voice-mobile.test.tsx",
+    "tests/output-voice-web.test.tsx",
+    "tests/speech.test.ts",
+    "tests/speech-http.test.ts",
+    "tests/speech-client.test.ts",
+    "tests/automatic-speech.test.ts",
+    "tests/native-speech-playback.test.ts",
+    "tests/speech-playback.test.ts",
+    "tests/detail-sheet.test.tsx",
+    "tests/mobile-mentions.test.tsx",
+    "tests/voice-composer.test.tsx",
+    "tests/conversation-history-mobile.test.tsx",
+    "tests/session.test.ts",
+    "tests/auth-client.test.ts",
+    "tests/auth-http.test.ts",
+    "tests/preferences.test.ts",
+    "tests/audio-session.test.ts"
+  ],
+  "started": "2026-10-31T09:46:36.437307+00:00",
+  "seconds": 26.911917814999924,
+  "exit": 0
+}

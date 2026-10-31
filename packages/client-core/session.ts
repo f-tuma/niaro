@@ -52,6 +52,14 @@ import {
   SPEECH_BODY_BYTES,
   type SpeechRequest,
 } from "../protocol/speech";
+import {
+  OUTPUT_VOICE_PROFILE,
+  OUTPUT_VOICE_SNAPSHOT_BYTES,
+  OutputVoiceSnapshotSchema,
+  OutputVoiceUpdateSchema,
+  type OutputVoiceSnapshot,
+  type OutputVoiceUpdate,
+} from "../protocol/output-voice";
 import { replyCorrelationPath } from "../protocol/reply-correlation";
 import {
   ServiceConnectionStart,
@@ -2038,6 +2046,98 @@ export class ClientSession {
     } finally {
       done();
     }
+  }
+  /** Negotiated personal settings; legacy speech envelopes stay unchanged. */
+  async outputVoiceSettings(
+    signal: AbortSignal,
+  ): Promise<OutputVoiceSnapshot | null> {
+    const scope = { ...this.credential.scope };
+    const { response, controller, done } = await this.open(
+      `voice/output-settings?profile=${OUTPUT_VOICE_PROFILE}`,
+      { signal },
+    );
+    try {
+      if (!sameScope(scope, this.credential.scope) || signal.aborted)
+        throw new Error("output_voice_context_changed");
+      // Old servers may return an empty/non-JSON 404 body.
+      if (response.status === 404) return null;
+      const { value } = await this.readJson(
+        response,
+        controller,
+        OUTPUT_VOICE_SNAPSHOT_BYTES,
+        OUTPUT_VOICE_SNAPSHOT_BYTES,
+      );
+      if (!sameScope(scope, this.credential.scope) || signal.aborted)
+        throw new Error("output_voice_context_changed");
+      if (
+        response.status === 406 &&
+        z
+          .strictObject({
+            error: z.literal("output_voice_profile_unsupported"),
+          })
+          .safeParse(value).success
+      )
+        return null;
+      if (!response.ok) throw new Error("output_voice_load_failed");
+      const snapshot = OutputVoiceSnapshotSchema.parse(value);
+      if (
+        this.stopped ||
+        this.invalid ||
+        signal.aborted ||
+        !sameScope(scope, this.credential.scope) ||
+        !sameScope(snapshot.scope, scope)
+      )
+        throw new Error("output_voice_context_changed");
+      return snapshot;
+    } finally {
+      done();
+    }
+  }
+  /** A single authorized POST. Unknown outcomes belong to passive GET/explicit retry. */
+  async saveOutputVoiceSettings(
+    update: OutputVoiceUpdate,
+    signal: AbortSignal,
+  ): Promise<OutputVoiceSnapshot> {
+    const body = JSON.stringify(OutputVoiceUpdateSchema.parse(update));
+    const scope = { ...this.credential.scope };
+    const { response, value } = await this.json(
+      `voice/output-settings?profile=${OUTPUT_VOICE_PROFILE}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        signal,
+      },
+      8000,
+      OUTPUT_VOICE_SNAPSHOT_BYTES,
+      OUTPUT_VOICE_SNAPSHOT_BYTES,
+    );
+    if (!response.ok) {
+      const refusal = z
+        .strictObject({
+          error: z.enum([
+            "invalid_payload",
+            "output_voice_conflict",
+            "output_voice_catalogue_changed",
+            "output_voice_choice_unavailable",
+            "output_voice_profile_unsupported",
+          ]),
+        })
+        .safeParse(value);
+      if ([400, 406, 409, 422].includes(response.status) && refusal.success)
+        throw new Error(refusal.data.error);
+      throw new Error("output_voice_outcome_unknown");
+    }
+    const snapshot = OutputVoiceSnapshotSchema.parse(value);
+    if (
+      this.stopped ||
+      this.invalid ||
+      signal.aborted ||
+      !sameScope(scope, this.credential.scope) ||
+      !sameScope(snapshot.scope, scope)
+    )
+      throw new Error("output_voice_context_changed");
+    return snapshot;
   }
   async speechCapabilities(signal: AbortSignal) {
     const { response, value } = await this.json("voice/speech", { signal });

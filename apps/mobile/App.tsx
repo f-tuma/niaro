@@ -2746,18 +2746,17 @@ export function Workspace({
               />
             ) : (
               <View>
+                <MobileAttachmentDraft value={attachments} />
                 <MobileMentionSuggestions
                   items={mentions.items}
                   language={language}
                   onPick={mentions.pick}
                 />
-                <MobileAttachmentDraft value={attachments} />
                 <Composer
                   inputRef={composerInput}
                   language={language}
                   value={draft}
                   onChange={mentions.type}
-                  onMention={mentions.available ? mentions.open : undefined}
                   onSelectionChange={mentions.select}
                   selection={mentions.selection}
                   onFocus={() => setOwnedComposerFocus(true)}
@@ -2847,6 +2846,16 @@ export function Workspace({
         >
           <AttachmentPicker
             language={language}
+            references={
+              mentions.available
+                ? {
+                    onPress: () => {
+                      setContextMenu(false);
+                      mentions.open();
+                    },
+                  }
+                : undefined
+            }
             choices={{
               task: {
                 onPress: () => {

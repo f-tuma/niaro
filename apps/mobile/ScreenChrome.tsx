@@ -190,6 +190,7 @@ export const chrome = StyleSheet.create({
     paddingVertical: 6,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 4,
   },
   input: {
@@ -964,7 +965,6 @@ export function Composer({
   inputRef,
   voice = "ready",
   onAttach,
-  onMention,
   selection,
   onSelectionChange,
   onBlur,
@@ -984,7 +984,6 @@ export function Composer({
   /** An unavailable server keeps voice settings discoverable without recording. */
   voice?: "ready" | "disabled" | "hidden" | "settings";
   onAttach?: () => void;
-  onMention?: () => void;
   selection?: { start: number; end: number };
   onSelectionChange?: (selection: { start: number; end: number }) => void;
   onBlur?: () => void;
@@ -1002,10 +1001,7 @@ export function Composer({
   const { fontScale, width: windowWidth } = useWindowDimensions();
   const [rowWidth, setRowWidth] = useState<number | null>(null);
   const actionCount =
-    Number(!!onAttach) +
-    Number(!!onMention) +
-    Number(voice !== "hidden") +
-    Number(typed);
+    Number(!!onAttach) + Number(voice !== "hidden") + Number(typed);
   const availableWidth =
     rowWidth ?? Math.max(0, windowWidth - 2 * t.spacing.screenGutter - 14);
   const stacked =
@@ -1016,35 +1012,23 @@ export function Composer({
     t.typography.body.lineHeight * fontScale + 20,
   );
   const font = useCompanionTypography(chrome.input);
-  const leftActions =
-    onAttach || onMention ? (
-      <View
-        key="left"
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 4,
-          flexGrow: stacked ? 1 : 0,
-        }}
-      >
-        {onAttach ? (
-          <ComposerAction
-            filled={false}
-            icon="paperclip"
-            label={companionCopy(language).context}
-            onPress={onAttach}
-          />
-        ) : null}
-        {onMention ? (
-          <ComposerAction
-            filled={false}
-            icon="at"
-            label={tr("composerReferences")}
-            onPress={onMention}
-          />
-        ) : null}
-      </View>
-    ) : null;
+  const leftActions = onAttach ? (
+    <View
+      key="left"
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        flexGrow: stacked ? 1 : 0,
+      }}
+    >
+      <ComposerAction
+        filled={false}
+        icon="paperclip"
+        label={companionCopy(language).context}
+        onPress={onAttach}
+      />
+    </View>
+  ) : null;
   const input = (
     <TextInput
       key="input"
@@ -1182,12 +1166,15 @@ export function DetailSheet({
   fullHeight = false,
   scrollRef,
   onShown,
+  onDismissRequested,
 }: PropsWithChildren<{
   title: string;
   language: Language;
   onClose: () => void;
   /** Once, after native Modal show and completed entrance; never after dismissal. */
   onShown?: () => void;
+  /** Once at user dismissal start, before exit; onClose still follows exit. */
+  onDismissRequested?: () => void;
   /** Pinned under the content, e.g. the sheet's one primary Button. */
   actions?: React.ReactNode;
   fullHeight?: boolean;
@@ -1225,10 +1212,12 @@ export function DetailSheet({
     };
   }, []);
   const onCloseRef = useRef(onClose);
+  const onDismissRequestedRef = useRef(onDismissRequested);
   useEffect(() => {
     onCloseRef.current = onClose;
     onShownRef.current = onShown;
-  }, [onClose, onShown]);
+    onDismissRequestedRef.current = onDismissRequested;
+  }, [onClose, onShown, onDismissRequested]);
   const [dismissed, setDismissed] = useState(false);
   const notified = useRef(false);
   const finishDismiss = useCallback(() => {
@@ -1277,6 +1266,7 @@ export function DetailSheet({
   const dismiss = useCallback(() => {
     if (closing.current) return;
     closing.current = true;
+    onDismissRequestedRef.current?.();
     if (reduced) {
       finishDismiss();
       return;

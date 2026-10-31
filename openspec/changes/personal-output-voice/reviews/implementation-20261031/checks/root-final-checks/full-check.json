@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "npm",
+    "run",
+    "check"
+  ],
+  "started": "2026-10-31T10:07:19.936738+00:00",
+  "seconds": 73.21774128700008,
+  "exit": 1,
+  "subject": "subject.json"
+}

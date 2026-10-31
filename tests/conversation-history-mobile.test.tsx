@@ -1117,6 +1117,14 @@ test("foreground capability refresh changes right-mic availability without captu
     .mockImplementation(originalAppStateListener!);
 });
 
+function openReferencesMenu() {
+  expect(
+    screen.queryByRole("button", { name: en.composerReferences }),
+  ).toBeNull();
+  fireEvent.press(screen.getByRole("button", { name: "Add context" }));
+  fireEvent.press(screen.getByRole("button", { name: en.composerReferences }));
+}
+
 test("explicit mobile reference sheet inserts at the captured caret without sending", async () => {
   const f = fixture();
   Object.assign(f.session, {
@@ -1132,7 +1140,7 @@ test("explicit mobile reference sheet inserts at the captured caret without send
   fireEvent(input, "selectionChange", {
     nativeEvent: { selection: { start: 7, end: 7 } },
   });
-  fireEvent.press(screen.getByRole("button", { name: en.composerReferences }));
+  openReferencesMenu();
   expect(screen.getByLabelText("Find a reference")).toBeTruthy();
   fireEvent.press(
     screen.getByRole("button", { name: "TEST process, Process" }),
@@ -1153,7 +1161,7 @@ test("stale explicit mobile picker rejects a newer equal-text draft revision", a
   await act(flush);
   const input = screen.getByLabelText(en.composer);
   fireEvent.changeText(input, "kept");
-  fireEvent.press(screen.getByRole("button", { name: en.composerReferences }));
+  openReferencesMenu();
   const pick = screen.UNSAFE_getByType(MobileMentionSheet).props.onPick;
   fireEvent.changeText(input, "kept");
   act(() => pick({ kind: "skill", id: "TEST-skill", name: "TEST skill" }));
@@ -1318,7 +1326,6 @@ test("actual Composer keeps a full-width input above all44dp actions at320/font2
         onSend={send}
         onVoice={jest.fn()}
         onAttach={jest.fn()}
-        onMention={jest.fn()}
         disabled={false}
       />,
     );
@@ -1329,7 +1336,7 @@ test("actual Composer keeps a full-width input above all44dp actions at320/font2
     });
     const row = screen.getByTestId("composer-input-row");
     expect(StyleSheet.flatten(row.props.style).flexWrap).toBe("wrap");
-    expect(screen.getAllByRole("button")).toHaveLength(4);
+    expect(screen.getAllByRole("button")).toHaveLength(3);
     for (const action of screen.getAllByRole("button"))
       expect(StyleSheet.flatten(action.props.style)).toMatchObject({
         width: 44,
@@ -1425,7 +1432,7 @@ async function explicitAndroidReference() {
   fireEvent(input, "selectionChange", {
     nativeEvent: { selection: { start: 7, end: 7 } },
   });
-  fireEvent.press(screen.getByRole("button", { name: en.composerReferences }));
+  openReferencesMenu();
   const focus = jest.mocked(
     screen
       .UNSAFE_getAllByType(TextInput)

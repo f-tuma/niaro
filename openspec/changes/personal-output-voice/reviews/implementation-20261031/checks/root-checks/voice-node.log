@@ -1,0 +1,1396 @@
+TAP version 13
+# (node:98705) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# spoken reply failed: model_unavailable
+# spoken reply failed: model_unavailable
+# spoken reply failed: catalog_provider_limit
+# Subtest: catalog speech routes are isolated, revocable, budgeted and preserve model usage references
+ok 1 - catalog speech routes are isolated, revocable, budgeted and preserve model usage references
+  ---
+  duration_ms: 2067.292455
+  type: 'test'
+  ...
+# (node:98706) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# transcription failed: voice_empty
+# transcription failed: model_unavailable
+# transcription failed: model_unavailable
+# transcription failed: voice_processing_failed
+# transcription failed: catalog_provider_limit
+# Subtest: Catalog voice interpreter uses workspace provider, is revocable, budgeted and explicitly disabled
+ok 2 - Catalog voice interpreter uses workspace provider, is revocable, budgeted and explicitly disabled
+  ---
+  duration_ms: 1725.302276
+  type: 'test'
+  ...
+# transcription failed: voice_empty
+# transcription failed: model_unavailable
+# transcription failed: model_unavailable
+# transcription failed: voice_processing_failed
+# transcription failed: catalog_provider_limit
+# Subtest: Catalog voice transcription uses workspace provider, is revocable, budgeted and explicitly disabled
+ok 3 - Catalog voice transcription uses workspace provider, is revocable, budgeted and explicitly disabled
+  ---
+  duration_ms: 351.331798
+  type: 'test'
+  ...
+# Subtest: only the accepted exact mini reader PCM16 route admits the three reviewed voices
+ok 4 - only the accepted exact mini reader PCM16 route admits the three reviewed voices
+  ---
+  duration_ms: 1.127374
+  type: 'test'
+  ...
+# Subtest: unreviewed providers, identifiers, methods and formats stay default-only
+ok 5 - unreviewed providers, identifiers, methods and formats stay default-only
+  ---
+  duration_ms: 0.188153
+  type: 'test'
+  ...
+# (node:98708) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: actual ClientSession shares own mobile/browser voice through reference HTTP without provider or workflow calls
+ok 6 - actual ClientSession shares own mobile/browser voice through reference HTTP without provider or workflow calls
+  ---
+  duration_ms: 1771.397121
+  type: 'test'
+  ...
+# (node:98709) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: personal output dispatch uses the production closure and HTTP guards with held synthetic transport
+    # Subtest: current configured Cedar and exact personal Echo reach actual audio.voice without legacy fields
+    ok 1 - current configured Cedar and exact personal Echo reach actual audio.voice without legacy fields
+      ---
+      duration_ms: 34.623751
+      type: 'test'
+      ...
+    # Subtest: default-only edits preserve explicit voice; reset and stale epoch follow today's Cedar
+    ok 2 - default-only edits preserve explicit voice; reset and stale epoch follow today's Cedar
+      ---
+      duration_ms: 73.995061
+      type: 'test'
+      ...
+    # Subtest: retained runtime resolves the current route at invocation entry; unreviewed routes are default-only
+    ok 3 - retained runtime resolves the current route at invocation entry; unreviewed routes are default-only
+      ---
+      duration_ms: 21.665509
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: before dispatch: default invalidates the pin without another voice/provider
+    ok 4 - before dispatch: default invalidates the pin without another voice/provider
+      ---
+      duration_ms: 41.74358
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: before dispatch: privacy invalidates the pin without another voice/provider
+    ok 5 - before dispatch: privacy invalidates the pin without another voice/provider
+      ---
+      duration_ms: 41.739803
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: before dispatch: disabled route invalidates the pin without another voice/provider
+    ok 6 - before dispatch: disabled route invalidates the pin without another voice/provider
+      ---
+      duration_ms: 34.585115
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: before dispatch: method invalidates the pin without another voice/provider
+    ok 7 - before dispatch: method invalidates the pin without another voice/provider
+      ---
+      duration_ms: 43.63231
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: before dispatch: provider identity invalidates the pin without another voice/provider
+    ok 8 - before dispatch: provider identity invalidates the pin without another voice/provider
+      ---
+      duration_ms: 49.509516
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: before dispatch: provider revision invalidates the pin without another voice/provider
+    ok 9 - before dispatch: provider revision invalidates the pin without another voice/provider
+      ---
+      duration_ms: 53.850798
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: before dispatch: model revision invalidates the pin without another voice/provider
+    ok 10 - before dispatch: model revision invalidates the pin without another voice/provider
+      ---
+      duration_ms: 47.580861
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: before dispatch: disabled provider invalidates the pin without another voice/provider
+    ok 11 - before dispatch: disabled provider invalidates the pin without another voice/provider
+      ---
+      duration_ms: 52.494089
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: before dispatch: disabled model invalidates the pin without another voice/provider
+    ok 12 - before dispatch: disabled model invalidates the pin without another voice/provider
+      ---
+      duration_ms: 50.761408
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: before dispatch: A to B to A epoch invalidates the pin without another voice/provider
+    ok 13 - before dispatch: A to B to A epoch invalidates the pin without another voice/provider
+      ---
+      duration_ms: 51.77432
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: after dispatch: default invalidates the pin without another voice/provider
+    ok 14 - after dispatch: default invalidates the pin without another voice/provider
+      ---
+      duration_ms: 37.697442
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: after dispatch: privacy invalidates the pin without another voice/provider
+    ok 15 - after dispatch: privacy invalidates the pin without another voice/provider
+      ---
+      duration_ms: 33.786719
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: after dispatch: disabled route invalidates the pin without another voice/provider
+    ok 16 - after dispatch: disabled route invalidates the pin without another voice/provider
+      ---
+      duration_ms: 36.984308
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: after dispatch: method invalidates the pin without another voice/provider
+    ok 17 - after dispatch: method invalidates the pin without another voice/provider
+      ---
+      duration_ms: 36.271357
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: after dispatch: provider identity invalidates the pin without another voice/provider
+    ok 18 - after dispatch: provider identity invalidates the pin without another voice/provider
+      ---
+      duration_ms: 37.658448
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: after dispatch: provider revision invalidates the pin without another voice/provider
+    ok 19 - after dispatch: provider revision invalidates the pin without another voice/provider
+      ---
+      duration_ms: 34.225146
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: after dispatch: model revision invalidates the pin without another voice/provider
+    ok 20 - after dispatch: model revision invalidates the pin without another voice/provider
+      ---
+      duration_ms: 39.752665
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: after dispatch: disabled provider invalidates the pin without another voice/provider
+    ok 21 - after dispatch: disabled provider invalidates the pin without another voice/provider
+      ---
+      duration_ms: 35.661685
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: after dispatch: disabled model invalidates the pin without another voice/provider
+    ok 22 - after dispatch: disabled model invalidates the pin without another voice/provider
+      ---
+      duration_ms: 35.036823
+      type: 'test'
+      ...
+# spoken reply failed: model_unavailable
+    # Subtest: after dispatch: A to B to A epoch invalidates the pin without another voice/provider
+    ok 23 - after dispatch: A to B to A epoch invalidates the pin without another voice/provider
+      ---
+      duration_ms: 40.211128
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: before dispatch: lower catalogue default mutation independently exercises the voice pin guard
+    ok 24 - before dispatch: lower catalogue default mutation independently exercises the voice pin guard
+      ---
+      duration_ms: 20.935099
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: before dispatch: lower catalogue privacy mutation independently exercises the voice pin guard
+    ok 25 - before dispatch: lower catalogue privacy mutation independently exercises the voice pin guard
+      ---
+      duration_ms: 25.334629
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: before dispatch: lower catalogue epoch mutation independently exercises the voice pin guard
+    ok 26 - before dispatch: lower catalogue epoch mutation independently exercises the voice pin guard
+      ---
+      duration_ms: 23.857824
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: after dispatch: lower catalogue default mutation independently exercises the voice pin guard
+    ok 27 - after dispatch: lower catalogue default mutation independently exercises the voice pin guard
+      ---
+      duration_ms: 25.852861
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: after dispatch: lower catalogue privacy mutation independently exercises the voice pin guard
+    ok 28 - after dispatch: lower catalogue privacy mutation independently exercises the voice pin guard
+      ---
+      duration_ms: 21.339604
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: after dispatch: lower catalogue epoch mutation independently exercises the voice pin guard
+    ok 29 - after dispatch: lower catalogue epoch mutation independently exercises the voice pin guard
+      ---
+      duration_ms: 22.105428
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: before dispatch: removing the pinned allowed voice in isolated registry memory fails closed
+    ok 30 - before dispatch: removing the pinned allowed voice in isolated registry memory fails closed
+      ---
+      duration_ms: 20.993617
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: after dispatch: removing the pinned allowed voice in isolated registry memory fails closed
+    ok 31 - after dispatch: removing the pinned allowed voice in isolated registry memory fails closed
+      ---
+      duration_ms: 18.86567
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+    # Subtest: the existing second verbatim attempt revalidates the route before spending again
+    ok 32 - the existing second verbatim attempt revalidates the route before spending again
+      ---
+      duration_ms: 30.615863
+      type: 'test'
+      ...
+    # Subtest: preference save during the existing verbatim retry retains one voice and charges each attempt once
+    ok 33 - preference save during the existing verbatim retry retains one voice and charges each attempt once
+      ---
+      duration_ms: 29.100059
+      type: 'test'
+      ...
+    # Subtest: a preference-only save during a normal invocation changes only the next synthesis
+    ok 34 - a preference-only save during a normal invocation changes only the next synthesis
+      ---
+      duration_ms: 22.095355
+      type: 'test'
+      ...
+# spoken reply failed: speech_unavailable
+# spoken reply failed: speech_unavailable
+# spoken reply failed: speech_model_limit
+# spoken reply failed: speech_unavailable
+    # Subtest: nonverbatim audio has at most the existing two attempts; provider refusals get no fallback
+    ok 35 - nonverbatim audio has at most the existing two attempts; provider refusals get no fallback
+      ---
+      duration_ms: 36.458622
+      type: 'test'
+      ...
+# spoken reply failed: auth_expired
+    # Subtest: before dispatch: revoked credential with current membership withholds audio
+    ok 36 - before dispatch: revoked credential with current membership withholds audio
+      ---
+      duration_ms: 9.370579
+      type: 'test'
+      ...
+# spoken reply failed: speech_context_changed
+    # Subtest: before dispatch: deleting the scoped assistant source fails the production HTTP text guard
+    ok 37 - before dispatch: deleting the scoped assistant source fails the production HTTP text guard
+      ---
+      duration_ms: 154.368858
+      type: 'test'
+      ...
+# spoken reply failed: auth_expired
+    # Subtest: after dispatch: revoked credential with current membership withholds audio
+    ok 38 - after dispatch: revoked credential with current membership withholds audio
+      ---
+      duration_ms: 10.853777
+      type: 'test'
+      ...
+# spoken reply failed: speech_context_changed
+    # Subtest: after dispatch: deleting the scoped assistant source fails the production HTTP text guard
+    ok 39 - after dispatch: deleting the scoped assistant source fails the production HTTP text guard
+      ---
+      duration_ms: 149.181161
+      type: 'test'
+      ...
+# spoken reply failed: auth_expired
+# spoken reply failed: auth_expired
+    # Subtest: current workspace membership revocation guards both paid dispatch and audio return
+    ok 40 - current workspace membership revocation guards both paid dispatch and audio return
+      ---
+      duration_ms: 609.293005
+      type: 'test'
+      ...
+    # Subtest: raw client voice/text/provider injection is rejected before transport
+    ok 41 - raw client voice/text/provider injection is rejected before transport
+      ---
+      duration_ms: 9.159729
+      type: 'test'
+      ...
+# spoken reply failed: catalog_provider_limit
+# spoken reply failed: 20
+    # Subtest: daily provider limit applies per actual retry, without a speech ledger or free extra attempt
+    ok 42 - daily provider limit applies per actual retry, without a speech ledger or free extra attempt
+      ---
+      duration_ms: 31.599301
+      type: 'test'
+      ...
+    # Subtest: pre-aborted actual runtime invocation makes no provider attempt
+    ok 43 - pre-aborted actual runtime invocation makes no provider attempt
+      ---
+      duration_ms: 2.461885
+      type: 'test'
+      ...
+# spoken reply failed: 20
+    # Subtest: production HTTP deadline aborts its actual transport and releases concurrency
+    ok 44 - production HTTP deadline aborts its actual transport and releases concurrency
+      ---
+      duration_ms: 22.934303
+      type: 'test'
+      ...
+# spoken reply failed: 20
+    # Subtest: client disconnect before dispatch aborts the production transport and releases the scope
+    ok 45 - client disconnect before dispatch aborts the production transport and releases the scope
+      ---
+      duration_ms: 15.735073
+      type: 'test'
+      ...
+# spoken reply failed: 20
+    # Subtest: client disconnect after dispatch aborts the production transport and releases the scope
+    ok 46 - client disconnect after dispatch aborts the production transport and releases the scope
+      ---
+      duration_ms: 14.203264
+      type: 'test'
+      ...
+    # Subtest: one active synthesis per scope and eight globally; unrelated identity work proceeds while network is held
+    ok 47 - one active synthesis per scope and eight globally; unrelated identity work proceeds while network is held
+      ---
+      duration_ms: 1242.884698
+      type: 'test'
+      ...
+    1..47
+ok 7 - personal output dispatch uses the production closure and HTTP guards with held synthetic transport
+  ---
+  duration_ms: 5604.318041
+  type: 'test'
+  ...
+# (node:98715) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: output settings: actual reference HTTP derives own mobile/browser actors without provider I/O
+    # Subtest: negotiated strict GET and identical mobile/browser own state
+    ok 1 - negotiated strict GET and identical mobile/browser own state
+      ---
+      duration_ms: 10.408317
+      type: 'test'
+      ...
+    # Subtest: own save, browser sync, exact replay, competing CAS and ID collision
+    ok 2 - own save, browser sync, exact replay, competing CAS and ID collision
+      ---
+      duration_ms: 19.776172
+      type: 'test'
+      ...
+    # Subtest: admin/member/second workspace cannot obtain or replay owner options
+    ok 3 - admin/member/second workspace cannot obtain or replay owner options
+      ---
+      duration_ms: 31.1345
+      type: 'test'
+      ...
+    # Subtest: strict profile/method/body statuses; auth happens first
+    ok 4 - strict profile/method/body statuses; auth happens first
+      ---
+      duration_ms: 45.052833
+      type: 'test'
+      ...
+    # Subtest: raw UTF-8 bytes, whitespace, duplicate keys and malformed JSON are bounded before save
+    ok 5 - raw UTF-8 bytes, whitespace, duplicate keys and malformed JSON are bounded before save
+      ---
+      duration_ms: 19.33124
+      type: 'test'
+      ...
+    # Subtest: catalogue conflict, stale saved Reset and unavailable Reset use no synthesis
+    ok 6 - catalogue conflict, stale saved Reset and unavailable Reset use no synthesis
+      ---
+      duration_ms: 46.455914
+      type: 'test'
+      ...
+    # Subtest: held settings saves classify the current catalogue after an administrator route edit
+    ok 7 - held settings saves classify the current catalogue after an administrator route edit
+      ---
+      duration_ms: 23.875429
+      type: 'test'
+      ...
+    # Subtest: a held exact receipt replay returns current catalogue state and still requires current authentication
+    ok 8 - a held exact receipt replay returns current catalogue state and still requires current authentication
+      ---
+      duration_ms: 31.36602
+      type: 'test'
+      ...
+    # Subtest: second organization has isolated state even for the same authenticated person
+    ok 9 - second organization has isolated state even for the same authenticated person
+      ---
+      duration_ms: 14.20909
+      type: 'test'
+      ...
+    # Subtest: credential revocation blocks retained callbacks while membership remains valid
+    ok 10 - credential revocation blocks retained callbacks while membership remains valid
+      ---
+      duration_ms: 9.06092
+      type: 'test'
+      ...
+    # Subtest: current membership revocation refuses held runtime callbacks and both grant types
+    ok 11 - current membership revocation refuses held runtime callbacks and both grant types
+      ---
+      duration_ms: 17.610294
+      type: 'test'
+      ...
+    # Subtest: legacy speech capabilities keep strict field keys and settings leave workflow untouched
+    ok 12 - legacy speech capabilities keep strict field keys and settings leave workflow untouched
+      ---
+      duration_ms: 10.580859
+      type: 'test'
+      ...
+    1..12
+ok 8 - output settings: actual reference HTTP derives own mobile/browser actors without provider I/O
+  ---
+  duration_ms: 2411.634874
+  type: 'test'
+  ...
+# Subtest: output settings accept the exact bounded contract and reject routing/actor injection
+ok 9 - output settings accept the exact bounded contract and reject routing/actor injection
+  ---
+  duration_ms: 7.953941
+  type: 'test'
+  ...
+# Subtest: all snapshot nesting, label/count/byte limits and unavailable shape are bounded
+ok 10 - all snapshot nesting, label/count/byte limits and unavailable shape are bounded
+  ---
+  duration_ms: 2.15316
+  type: 'test'
+  ...
+# Subtest: legacy speech field sets stay strict and unchanged
+ok 11 - legacy speech field sets stay strict and unchanged
+  ---
+  duration_ms: 1.573026
+  type: 'test'
+  ...
+# (node:98722) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: absent preference returns a complete default snapshot and initializes no actor rows
+ok 12 - absent preference returns a complete default snapshot and initializes no actor rows
+  ---
+  duration_ms: 18.500172
+  type: 'test'
+  ...
+# Subtest: personal catalogue intent survives reopening SQLite and connection changes
+ok 13 - personal catalogue intent survives reopening SQLite and connection changes
+  ---
+  duration_ms: 10.296006
+  type: 'test'
+  ...
+# Subtest: scope, user, workspace and organization isolate tokens, rows and authorized operations
+ok 14 - scope, user, workspace and organization isolate tokens, rows and authorized operations
+  ---
+  duration_ms: 9.09325
+  type: 'test'
+  ...
+# Subtest: CAS, exact last committed replay, collision and delayed old mutations preserve newer intent
+ok 15 - CAS, exact last committed replay, collision and delayed old mutations preserve newer intent
+  ---
+  duration_ms: 8.464702
+  type: 'test'
+  ...
+# Subtest: same saved intent is a no-op but Reset clears a stale custom intent already falling back
+ok 16 - same saved intent is a no-op but Reset clears a stale custom intent already falling back
+  ---
+  duration_ms: 5.576372
+  type: 'test'
+  ...
+# Subtest: default-only and unrelated routing edits change tokens without invalidating compatible selection
+ok 17 - default-only and unrelated routing edits change tokens without invalidating compatible selection
+  ---
+  duration_ms: 6.882048
+  type: 'test'
+  ...
+# Subtest: catalogue command hook observes model A to B to A between reads and disable to enable
+ok 18 - catalogue command hook observes model A to B to A between reads and disable to enable
+  ---
+  duration_ms: 6.742858
+  type: 'test'
+  ...
+# Subtest: provider A to B to A between reads cannot resurrect a saved option
+ok 19 - provider A to B to A between reads cannot resurrect a saved option
+  ---
+  duration_ms: 6.220827
+  type: 'test'
+  ...
+# Subtest: privacy, provider/model revisions invalidate but failed commands roll back epoch metadata
+ok 20 - privacy, provider/model revisions invalidate but failed commands roll back epoch metadata
+  ---
+  duration_ms: 7.933794
+  type: 'test'
+  ...
+# Subtest: corrupt and old personal data safely fall back without mutating the saved row
+ok 21 - corrupt and old personal data safely fall back without mutating the saved row
+  ---
+  duration_ms: 5.143384
+  type: 'test'
+  ...
+# Subtest: a registry revision change is reconciled lazily without reviving the earlier saved binding
+ok 22 - a registry revision change is reconciled lazily without reviving the earlier saved binding
+  ---
+  duration_ms: 3.972864
+  type: 'test'
+  ...
+# Subtest: passive metadata never decrypts keys; missing credentials and unreviewed speech routes degrade safely
+ok 23 - passive metadata never decrypts keys; missing credentials and unreviewed speech routes degrade safely
+  ---
+  duration_ms: 3.752794
+  type: 'test'
+  ...
+# Subtest: write failure rolls back preference and committed receipt, allowing deliberate exact retry
+ok 24 - write failure rolls back preference and committed receipt, allowing deliberate exact retry
+  ---
+  duration_ms: 4.684462
+  type: 'test'
+  ...
+# Subtest: workspace revocation blocks reads and writes; organization rejoin starts from default
+ok 25 - workspace revocation blocks reads and writes; organization rejoin starts from default
+  ---
+  duration_ms: 4.689238
+  type: 'test'
+  ...
+# Subtest: organization, workspace and user foreign keys cascade preference cleanup
+ok 26 - organization, workspace and user foreign keys cascade preference cleanup
+  ---
+  duration_ms: 10.587021
+  type: 'test'
+  ...
+# Subtest: deliberate Reset repairs malformed JSON in selectable with valid default intent and a replayable receipt
+ok 27 - deliberate Reset repairs malformed JSON in selectable with valid default intent and a replayable receipt
+  ---
+  duration_ms: 6.367324
+  type: 'test'
+  ...
+# Subtest: deliberate Reset repairs old version in selectable with valid default intent and a replayable receipt
+ok 28 - deliberate Reset repairs old version in selectable with valid default intent and a replayable receipt
+  ---
+  duration_ms: 6.467884
+  type: 'test'
+  ...
+# Subtest: deliberate Reset repairs invalid saved label in selectable with valid default intent and a replayable receipt
+ok 29 - deliberate Reset repairs invalid saved label in selectable with valid default intent and a replayable receipt
+  ---
+  duration_ms: 6.990742
+  type: 'test'
+  ...
+# Subtest: deliberate Reset repairs malformed JSON in server-default-only with valid default intent and a replayable receipt
+ok 30 - deliberate Reset repairs malformed JSON in server-default-only with valid default intent and a replayable receipt
+  ---
+  duration_ms: 6.557104
+  type: 'test'
+  ...
+# Subtest: deliberate Reset repairs old version in server-default-only with valid default intent and a replayable receipt
+ok 31 - deliberate Reset repairs old version in server-default-only with valid default intent and a replayable receipt
+  ---
+  duration_ms: 7.068834
+  type: 'test'
+  ...
+# Subtest: deliberate Reset repairs invalid saved label in server-default-only with valid default intent and a replayable receipt
+ok 32 - deliberate Reset repairs invalid saved label in server-default-only with valid default intent and a replayable receipt
+  ---
+  duration_ms: 6.201913
+  type: 'test'
+  ...
+# Subtest: deliberate Reset repairs malformed JSON in speech-unavailable with valid default intent and a replayable receipt
+ok 33 - deliberate Reset repairs malformed JSON in speech-unavailable with valid default intent and a replayable receipt
+  ---
+  duration_ms: 5.509651
+  type: 'test'
+  ...
+# Subtest: deliberate Reset repairs old version in speech-unavailable with valid default intent and a replayable receipt
+ok 34 - deliberate Reset repairs old version in speech-unavailable with valid default intent and a replayable receipt
+  ---
+  duration_ms: 5.625893
+  type: 'test'
+  ...
+# Subtest: deliberate Reset repairs invalid saved label in speech-unavailable with valid default intent and a replayable receipt
+ok 35 - deliberate Reset repairs invalid saved label in speech-unavailable with valid default intent and a replayable receipt
+  ---
+  duration_ms: 6.332459
+  type: 'test'
+  ...
+# Subtest: failed Reset of an unreadable row keeps its corrupt intent and receipt atomically until deliberate exact retry
+ok 36 - failed Reset of an unreadable row keeps its corrupt intent and receipt atomically until deliberate exact retry
+  ---
+  duration_ms: 5.995149
+  type: 'test'
+  ...
+# (node:98728) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: provider discovery preserves capabilities and catalogs beyond 500 models
+ok 37 - provider discovery preserves capabilities and catalogs beyond 500 models
+  ---
+  duration_ms: 17.306824
+  type: 'test'
+  ...
+# Subtest: the policy epoch moves only for catalog edits that can take authority away
+ok 38 - the policy epoch moves only for catalog edits that can take authority away
+  ---
+  duration_ms: 44.747674
+  type: 'test'
+  ...
+# Subtest: model batch import enforces authority, revisions, deduplication and routing fallback
+ok 39 - model batch import enforces authority, revisions, deduplication and routing fallback
+  ---
+  duration_ms: 83.797139
+  type: 'test'
+  ...
+# Subtest: generic service policy, secrets, revisions and discovery
+    # Subtest: write-only encrypted credentials and isolated scopes
+    ok 1 - write-only encrypted credentials and isolated scopes
+      ---
+      duration_ms: 1.056172
+      type: 'test'
+      ...
+    # Subtest: no owner execution bypass; explicit user deny wins
+    ok 2 - no owner execution bypass; explicit user deny wins
+      ---
+      duration_ms: 2.920694
+      type: 'test'
+      ...
+    # Subtest: discovery drafts preserve administrator edits
+    ok 3 - discovery drafts preserve administrator edits
+      ---
+      duration_ms: 13.215264
+      type: 'test'
+      ...
+    # Subtest: OpenAPI mismatch, external refs and expansion limits
+    ok 4 - OpenAPI mismatch, external refs and expansion limits
+      ---
+      duration_ms: 2.93825
+      type: 'test'
+      ...
+    1..4
+ok 40 - generic service policy, secrets, revisions and discovery
+  ---
+  duration_ms: 22.101224
+  type: 'test'
+  ...
+# Subtest: durable execution and approval races
+    # Subtest: one dispatch for concurrent approvals and failed claim cannot overwrite running
+    ok 1 - one dispatch for concurrent approvals and failed claim cannot overwrite running
+      ---
+      duration_ms: 6.78312
+      type: 'test'
+      ...
+    # Subtest: revoke before dispatch prevents I/O; revoke after write records unknown
+    ok 2 - revoke before dispatch prevents I/O; revoke after write records unknown
+      ---
+      duration_ms: 8.851601
+      type: 'test'
+      ...
+    # Subtest: invalid args never dispatch and restart retains unknown write
+    ok 3 - invalid args never dispatch and restart retains unknown write
+      ---
+      duration_ms: 4.607401
+      type: 'test'
+      ...
+    1..3
+ok 41 - durable execution and approval races
+  ---
+  duration_ms: 20.845977
+  type: 'test'
+  ...
+# Subtest: network confinement and MCP negotiation
+    # Subtest: private and special IPv4/IPv6 addresses rejected
+    ok 1 - private and special IPv4/IPv6 addresses rejected
+      ---
+      duration_ms: 1.656371
+      type: 'test'
+      ...
+    # Subtest: explicit local origin, guard dispatch, redirects and output bound
+    ok 2 - explicit local origin, guard dispatch, redirects and output bound
+      ---
+      duration_ms: 46.771908
+      type: 'test'
+      ...
+    # Subtest: MCP initializes, lists tools and ignores read-only privilege hints
+    ok 3 - MCP initializes, lists tools and ignores read-only privilege hints
+      ---
+      duration_ms: 9.962683
+      type: 'test'
+      ...
+    1..3
+ok 42 - network confinement and MCP negotiation
+  ---
+  duration_ms: 58.91474
+  type: 'test'
+  ...
+# Subtest: actual model routing, durable chat card, approval and replay
+ok 43 - actual model routing, durable chat card, approval and replay
+  ---
+  duration_ms: 92.036497
+  type: 'test'
+  ...
+# Subtest: full approval parameters stay bounded and terminal recovery survives removal
+ok 44 - full approval parameters stay bounded and terminal recovery survives removal
+  ---
+  duration_ms: 6.379423
+  type: 'test'
+  ...
+# Subtest: MCP contacts become persisted chat cards; replay never repeats model or service calls
+ok 45 - MCP contacts become persisted chat cards; replay never repeats model or service calls
+  ---
+  duration_ms: 29.319814
+  type: 'test'
+  ...
+# Subtest: OpenAPI expansion bounds repeated large leaf values before building a huge schema
+ok 46 - OpenAPI expansion bounds repeated large leaf values before building a huge schema
+  ---
+  duration_ms: 0.480654
+  type: 'test'
+  ...
+# Subtest: favicon discovery stays on the service origin without credentials and falls back safely
+ok 47 - favicon discovery stays on the service origin without credentials and falls back safely
+  ---
+  duration_ms: 2.489696
+  type: 'test'
+  ...
+# Subtest: favicon previews require admin authority; cached icons still enforce workspace and action visibility
+ok 48 - favicon previews require admin authority; cached icons still enforce workspace and action visibility
+  ---
+  duration_ms: 3.930282
+  type: 'test'
+  ...
+# Subtest: favicon result is discarded when access is revoked in flight
+ok 49 - favicon result is discarded when access is revoked in flight
+  ---
+  duration_ms: 1.692601
+  type: 'test'
+  ...
+# Subtest: running out of time is reported apart from the caller cancelling
+ok 50 - running out of time is reported apart from the caller cancelling
+  ---
+  duration_ms: 109.000589
+  type: 'test'
+  ...
+# Subtest: binary transport preserves bytes, pins allowed local origins and applies the smaller icon bound
+ok 51 - binary transport preserves bytes, pins allowed local origins and applies the smaller icon bound
+  ---
+  duration_ms: 4.496332
+  type: 'test'
+  ...
+# Subtest: favicon batches queue independently from action discovery and cancel queued requests
+# (node:98728) ExperimentalWarning: The MockTimers API is an experimental feature and might change at any time
+ok 52 - favicon batches queue independently from action discovery and cancel queued requests
+  ---
+  duration_ms: 5.698545
+  type: 'test'
+  ...
+# Subtest: favicon scanner recovers after bounded malformed link markup
+ok 53 - favicon scanner recovers after bounded malformed link markup
+  ---
+  duration_ms: 0.662063
+  type: 'test'
+  ...
+# Subtest: Decision mode routes only permitted services, preserves approval and replays without inference
+    # Subtest: confident
+    ok 1 - confident
+      ---
+      duration_ms: 15.057214
+      type: 'test'
+      ...
+    # Subtest: uncertain
+    ok 2 - uncertain
+      ---
+      duration_ms: 7.85503
+      type: 'test'
+      ...
+    # Subtest: fallback
+    ok 3 - fallback
+      ---
+      duration_ms: 8.525612
+      type: 'test'
+      ...
+    # Subtest: invalid
+    ok 4 - invalid
+      ---
+      duration_ms: 5.898291
+      type: 'test'
+      ...
+    # Subtest: revoked
+    ok 5 - revoked
+      ---
+      duration_ms: 5.803681
+      type: 'test'
+      ...
+    # Subtest: disabled
+    ok 6 - disabled
+      ---
+      duration_ms: 7.640581
+      type: 'test'
+      ...
+    1..6
+ok 54 - Decision mode routes only permitted services, preserves approval and replays without inference
+  ---
+  duration_ms: 51.408585
+  type: 'test'
+  ...
+# Subtest: Voice and decision routing validate capability, endpoint, role, scope and references
+ok 55 - Voice and decision routing validate capability, endpoint, role, scope and references
+  ---
+  duration_ms: 5.682224
+  type: 'test'
+  ...
+# Subtest: Jev Decisions is discoverable and importable; router forwarding modalities never enable transcription
+ok 56 - Jev Decisions is discoverable and importable; router forwarding modalities never enable transcription
+  ---
+  duration_ms: 7.269917
+  type: 'test'
+  ...
+# Subtest: STT discovery and routing stay separate from audio-chat interpretation, with legacy defaults
+ok 57 - STT discovery and routing stay separate from audio-chat interpretation, with legacy defaults
+  ---
+  duration_ms: 7.394177
+  type: 'test'
+  ...
+# Subtest: MCP schemas support bounded recursive filters without allowing explosive validation
+ok 58 - MCP schemas support bounded recursive filters without allowing explosive validation
+  ---
+  duration_ms: 49.002084
+  type: 'test'
+  ...
+# Subtest: schema patterns retain constraints with bounded non-backtracking matching
+ok 59 - schema patterns retain constraints with bounded non-backtracking matching
+  ---
+  duration_ms: 94.154805
+  type: 'test'
+  ...
+# Subtest: large object unions preserve alternatives, references and exactly-one semantics
+ok 60 - large object unions preserve alternatives, references and exactly-one semantics
+  ---
+  duration_ms: 33.417671
+  type: 'test'
+  ...
+# Subtest: MCP discovery returns bounded typed rejection details without leaking raw errors
+ok 61 - MCP discovery returns bounded typed rejection details without leaking raw errors
+  ---
+  duration_ms: 1.413734
+  type: 'test'
+  ...
+# Subtest: Twenty discovery hints its record reads by name, without applying them
+ok 62 - Twenty discovery hints its record reads by name, without applying them
+  ---
+  duration_ms: 8.317218
+  type: 'test'
+  ...
+# Subtest: Twenty discovery previews the full catalog, learns only selected schemas, and pins execution
+ok 63 - Twenty discovery previews the full catalog, learns only selected schemas, and pins execution
+  ---
+  duration_ms: 8.801827
+  type: 'test'
+  ...
+# Subtest: Twenty import is atomic, enriched in bounded batches, and preserves existing edits
+ok 64 - Twenty import is atomic, enriched in bounded batches, and preserves existing edits
+  ---
+  duration_ms: 120.133876
+  type: 'test'
+  ...
+# Subtest: Incomplete AI enrichment and revoked metadata discovery leave imports unchanged
+ok 65 - Incomplete AI enrichment and revoked metadata discovery leave imports unchanged
+  ---
+  duration_ms: 15.671304
+  type: 'test'
+  ...
+# Subtest: discovery issues survive controller continuations while valid object unions import disabled
+ok 66 - discovery issues survive controller continuations while valid object unions import disabled
+  ---
+  duration_ms: 21.026633
+  type: 'test'
+  ...
+# Subtest: All 360 selected Twenty actions import through server-sized continuations
+ok 67 - All 360 selected Twenty actions import through server-sized continuations
+  ---
+  duration_ms: 445.994586
+  type: 'test'
+  ...
+# Subtest: A continuation rejects intervening policy changes without losing earlier batches
+ok 68 - A continuation rejects intervening policy changes without losing earlier batches
+  ---
+  duration_ms: 5.886992
+  type: 'test'
+  ...
+# Subtest: speech discovery distinguishes readers from dedicated TTS and protects routing references
+ok 69 - speech discovery distinguishes readers from dedicated TTS and protects routing references
+  ---
+  duration_ms: 4.708323
+  type: 'test'
+  ...
+# Subtest: bulk action edits validate the whole selection and preserve individual overrides
+ok 70 - bulk action edits validate the whole selection and preserve individual overrides
+  ---
+  duration_ms: 5.765818
+  type: 'test'
+  ...
+# Subtest: bulk action patch rejects empty, duplicate and unsupported edits
+ok 71 - bulk action patch rejects empty, duplicate and unsupported edits
+  ---
+  duration_ms: 0.669458
+  type: 'test'
+  ...
+# Subtest: contact follow-up binds exact source values, persists lineage and replays without inference or writes
+ok 72 - contact follow-up binds exact source values, persists lineage and replays without inference or writes
+  ---
+  duration_ms: 22.319286
+  type: 'test'
+  ...
+# Subtest: ambiguous contacts clarify inline; restart and ordinal reply retain original task and displayed order
+ok 73 - ambiguous contacts clarify inline; restart and ordinal reply retain original task and displayed order
+  ---
+  duration_ms: 30.913314
+  type: 'test'
+  ...
+# Subtest: singular pronouns cannot silently select from multi-contact or partial cards
+ok 74 - singular pronouns cannot silently select from multi-contact or partial cards
+  ---
+  duration_ms: 12.263364
+  type: 'test'
+  ...
+# Subtest: newest empty, non-contact, stale, inaccessible and foreign receipts block older context
+ok 75 - newest empty, non-contact, stale, inaccessible and foreign receipts block older context
+  ---
+  duration_ms: 74.498711
+  type: 'test'
+  ...
+# Subtest: source choice is frozen before resolver dispatch across retry with a newer card
+ok 76 - source choice is frozen before resolver dispatch across retry with a newer card
+  ---
+  duration_ms: 12.775938
+  type: 'test'
+  ...
+# Subtest: source revocation during inference or before approval prevents contact dispatch
+ok 77 - source revocation during inference or before approval prevents contact dispatch
+  ---
+  duration_ms: 17.089759
+  type: 'test'
+  ...
+# Subtest: invalid or missing contact bindings and fabricated references never create an operation
+ok 78 - invalid or missing contact bindings and fabricated references never create an operation
+  ---
+  duration_ms: 39.20155
+  type: 'test'
+  ...
+# Subtest: contact expiry during dispatch returns the durable outcome; expiry before dispatch makes no write
+ok 79 - contact expiry during dispatch returns the durable outcome; expiry before dispatch makes no write
+  ---
+  duration_ms: 20.953718
+  type: 'test'
+  ...
+# Subtest: a newer legacy contact card prevents context from an older catalog card
+ok 80 - a newer legacy contact card prevents context from an older catalog card
+  ---
+  duration_ms: 25.69049
+  type: 'test'
+  ...
+# Subtest: internal plugin result binds exact times through both models; external approval and replay remain intact
+ok 81 - internal plugin result binds exact times through both models; external approval and replay remain intact
+  ---
+  duration_ms: 37.842637
+  type: 'test'
+  ...
+# Subtest: per-service worker can calculate dates after routing; pure date questions work without a connected service
+ok 82 - per-service worker can calculate dates after routing; pure date questions work without a connected service
+  ---
+  duration_ms: 26.880924
+  type: 'test'
+  ...
+# Subtest: plugin clock and successful calculation survive interrupted inference, midnight and timezone reconfiguration
+ok 83 - plugin clock and successful calculation survive interrupted inference, midnight and timezone reconfiguration
+  ---
+  duration_ms: 16.602458
+  type: 'test'
+  ...
+# Subtest: a duration without a time and malformed plugin arguments end with a short question and no action
+ok 84 - a duration without a time and malformed plugin arguments end with a short question and no action
+  ---
+  duration_ms: 12.337318
+  type: 'test'
+  ...
+# Subtest: internal loop is bounded across service stages; unknown, disabled and mixed tools cannot dispatch
+ok 85 - internal loop is bounded across service stages; unknown, disabled and mixed tools cannot dispatch
+  ---
+  duration_ms: 19.244295
+  type: 'test'
+  ...
+# Subtest: plugin-to-service flow rechecks revoked access and cancellation after each inference
+ok 86 - plugin-to-service flow rechecks revoked access and cancellation after each inference
+  ---
+  duration_ms: 23.891534
+  type: 'test'
+  ...
+# Subtest: an action cannot forge, interpolate or refer to a missing plugin result field
+ok 87 - an action cannot forge, interpolate or refer to a missing plugin result field
+  ---
+  duration_ms: 37.88983
+  type: 'test'
+  ...
+# Subtest: a calculation first executed after retry still uses the originally pinned clock
+ok 88 - a calculation first executed after retry still uses the originally pinned clock
+  ---
+  duration_ms: 13.973744
+  type: 'test'
+  ...
+# Subtest: progressive decisions chain CRM, date calculation and availability before one approved write
+ok 89 - progressive decisions chain CRM, date calculation and availability before one approved write
+  ---
+  duration_ms: 71.871065
+  type: 'test'
+  ...
+# Subtest: progressive source expiry during successful write preserves the known outcome
+ok 90 - progressive source expiry during successful write preserves the known outcome
+  ---
+  duration_ms: 55.303702
+  type: 'test'
+  ...
+# Subtest: progressive read approval appends the next card once and repeated approval does not duplicate it
+ok 91 - progressive read approval appends the next card once and repeated approval does not duplicate it
+  ---
+  duration_ms: 67.506614
+  type: 'test'
+  ...
+# Subtest: progressive empty catalogs retain the main assistant and pure date plugin
+ok 92 - progressive empty catalogs retain the main assistant and pure date plugin
+  ---
+  duration_ms: 15.053332
+  type: 'test'
+  ...
+# Subtest: progressive CRM routing fallback cannot run historical date calculations
+ok 93 - progressive CRM routing fallback cannot run historical date calculations
+  ---
+  duration_ms: 7.739802
+  type: 'test'
+  ...
+# Subtest: progressive selectors reject a hallucinated date tool without executing it
+ok 94 - progressive selectors reject a hallucinated date tool without executing it
+  ---
+  duration_ms: 6.602549
+  type: 'test'
+  ...
+# Subtest: progressive final conversation and parameter replies do not become pending questions
+ok 95 - progressive final conversation and parameter replies do not become pending questions
+  ---
+  duration_ms: 31.230244
+  type: 'test'
+  ...
+# Subtest: progressive explicit clarification resumes while keeping the original clock
+ok 96 - progressive explicit clarification resumes while keeping the original clock
+  ---
+  duration_ms: 15.548812
+  type: 'test'
+  ...
+# Subtest: progressive ignores legacy falsely paused date answers on a new CRM request
+ok 97 - progressive ignores legacy falsely paused date answers on a new CRM request
+  ---
+  duration_ms: 23.619536
+  type: 'test'
+  ...
+# Subtest: progressive never sends a question about the timezone or UTC offset
+ok 98 - progressive never sends a question about the timezone or UTC offset
+  ---
+  duration_ms: 20.84791
+  type: 'test'
+  ...
+# Subtest: progressive turns use the phone's timezone when it is a real zone, else the server's
+ok 99 - progressive turns use the phone's timezone when it is a real zone, else the server's
+  ---
+  duration_ms: 128.029998
+  type: 'test'
+  ...
+# Subtest: progressive unsure continuation after a result starts fresh, without asking or resending the card
+ok 100 - progressive unsure continuation after a result starts fresh, without asking or resending the card
+  ---
+  duration_ms: 31.091017
+  type: 'test'
+  ...
+# Subtest: progressive terminal routing text retains the CRM card for a contact follow-up
+ok 101 - progressive terminal routing text retains the CRM card for a contact follow-up
+  ---
+  duration_ms: 39.746213
+  type: 'test'
+  ...
+# Subtest: progressive clarification of continuation preserves provenance until resume or new request is chosen
+ok 102 - progressive clarification of continuation preserves provenance until resume or new request is chosen
+  ---
+  duration_ms: 65.974248
+  type: 'test'
+  ...
+# Subtest: progressive result references preserve exact scalars and reject hidden, partial or forged values
+ok 103 - progressive result references preserve exact scalars and reject hidden, partial or forged values
+  ---
+  duration_ms: 0.494817
+  type: 'test'
+  ...
+# Subtest: progressive contact clarification resumes the saved goal and clock without repeating the lookup
+ok 104 - progressive contact clarification resumes the saved goal and clock without repeating the lookup
+  ---
+  duration_ms: 40.079561
+  type: 'test'
+  ...
+# Subtest: progressive unrelated requests after a pause do not continue the previous task
+ok 105 - progressive unrelated requests after a pause do not continue the previous task
+  ---
+  duration_ms: 12.832776
+  type: 'test'
+  ...
+# Subtest: progressive contact clarification cannot release model output after access is revoked
+ok 106 - progressive contact clarification cannot release model output after access is revoked
+  ---
+  duration_ms: 9.266417
+  type: 'test'
+  ...
+# Subtest: progressive completed reads can finish without creating a write
+ok 107 - progressive completed reads can finish without creating a write
+  ---
+  duration_ms: 27.478543
+  type: 'test'
+  ...
+# Subtest: progressive delayed approvals use frozen input while still enforcing current policy
+ok 108 - progressive delayed approvals use frozen input while still enforcing current policy
+  ---
+  duration_ms: 64.330601
+  type: 'test'
+  ...
+# Subtest: progressive binding treats source strings as data rather than recursively evaluating tokens
+ok 109 - progressive binding treats source strings as data rather than recursively evaluating tokens
+  ---
+  duration_ms: 0.245852
+  type: 'test'
+  ...
+# Subtest: progressive fifth read completes with a concise synthesis and no extra external dispatch
+ok 110 - progressive fifth read completes with a concise synthesis and no extra external dispatch
+  ---
+  duration_ms: 45.431644
+  type: 'test'
+  ...
+# Subtest: progressive five-read pause resumes beyond five without replaying completed external work
+ok 111 - progressive five-read pause resumes beyond five without replaying completed external work
+  ---
+  duration_ms: 94.727392
+  type: 'test'
+  ...
+# Subtest: progressive large action catalogs narrow a group before exposing one parameter schema
+ok 112 - progressive large action catalogs narrow a group before exposing one parameter schema
+  ---
+  duration_ms: 25.854412
+  type: 'test'
+  ...
+# Subtest: progressive interrupted fallback reuses its saved decision instead of reclassifying
+ok 113 - progressive interrupted fallback reuses its saved decision instead of reclassifying
+  ---
+  duration_ms: 5.949542
+  type: 'test'
+  ...
+# Subtest: progressive clarification renews exhausted pure plugin slots while keeping the original clock
+ok 114 - progressive clarification renews exhausted pure plugin slots while keeping the original clock
+  ---
+  duration_ms: 36.716107
+  type: 'test'
+  ...
+# Subtest: progressive synthesis exhausting inference saves a bounded answer instead of retrying forever
+ok 115 - progressive synthesis exhausting inference saves a bounded answer instead of retrying forever
+  ---
+  duration_ms: 26.728174
+  type: 'test'
+  ...
+# Subtest: progressive long continuations share a total source-context byte budget
+ok 116 - progressive long continuations share a total source-context byte budget
+  ---
+  duration_ms: 627.452114
+  type: 'test'
+  ...
+# Subtest: progressive maximum action catalogs keep grouped choices within the transport budget
+ok 117 - progressive maximum action catalogs keep grouped choices within the transport budget
+  ---
+  duration_ms: 6982.588296
+  type: 'test'
+  ...
+# Subtest: workspace roles intersect service and action permissions without granting administration
+ok 118 - workspace roles intersect service and action permissions without granting administration
+  ---
+  duration_ms: 10.488198
+  type: 'test'
+  ...
+# Subtest: agent: the model plans a multi-step task with Jev as its tool and finishes after approval
+ok 119 - agent: the model plans a multi-step task with Jev as its tool and finishes after approval
+  ---
+  duration_ms: 61.422509
+  type: 'test'
+  ...
+# Subtest: agent: a question about the timezone is never sent, and an answer continues with earlier results
+ok 120 - agent: a question about the timezone is never sent, and an answer continues with earlier results
+  ---
+  duration_ms: 10.422907
+  type: 'test'
+  ...
+# Subtest: agent: unknown tools are refused and a write the checker rejects is not proposed
+ok 121 - agent: unknown tools are refused and a write the checker rejects is not proposed
+  ---
+  duration_ms: 8.890914
+  type: 'test'
+  ...
+# Subtest: agent: a new session has no prior paused work
+ok 122 - agent: a new session has no prior paused work
+  ---
+  duration_ms: 18.448782
+  type: 'test'
+  ...
+# Subtest: agent: revoked sources and changed epochs invalidate paused work
+ok 123 - agent: revoked sources and changed epochs invalidate paused work
+  ---
+  duration_ms: 14.306598
+  type: 'test'
+  ...
+# Subtest: agent: backwards clock invalidates paused work
+ok 124 - agent: backwards clock invalidates paused work
+  ---
+  duration_ms: 12.22698
+  type: 'test'
+  ...
+# Subtest: agent: an ordinary follow-up receives authorized structured source data
+ok 125 - agent: an ordinary follow-up receives authorized structured source data
+  ---
+  duration_ms: 25.957302
+  type: 'test'
+  ...
+# Subtest: agent: a successful write is not a read dependency
+ok 126 - agent: a successful write is not a read dependency
+  ---
+  duration_ms: 17.91102
+  type: 'test'
+  ...
+# Subtest: agent: an identical rejected write stays rejected
+ok 127 - agent: an identical rejected write stays rejected
+  ---
+  duration_ms: 9.317159
+  type: 'test'
+  ...
+# Subtest: agent: a failed read is not a source dependency
+ok 128 - agent: a failed read is not a source dependency
+  ---
+  duration_ms: 15.132964
+  type: 'test'
+  ...
+# Subtest: agent: current source access and expiry gate continuation even without an epoch change
+ok 129 - agent: current source access and expiry gate continuation even without an epoch change
+  ---
+  duration_ms: 32.120521
+  type: 'test'
+  ...
+# Subtest: agent: interrupted calls recover the persisted plan before and after a receipt without duplicate dispatch
+ok 130 - agent: interrupted calls recover the persisted plan before and after a receipt without duplicate dispatch
+  ---
+  duration_ms: 28.647352
+  type: 'test'
+  ...
+# Subtest: agent: memory search content is transient and forgetting refreshes earlier tool results
+ok 131 - agent: memory search content is transient and forgetting refreshes earlier tool results
+  ---
+  duration_ms: 8.365582
+  type: 'test'
+  ...
+# Subtest: agent: a changed memory snapshot blocks external dispatch and a later approval
+ok 132 - agent: a changed memory snapshot blocks external dispatch and a later approval
+  ---
+  duration_ms: 18.541965
+  type: 'test'
+  ...
+# Subtest: agent: a new topic in the same session drops the paused goal and source facts
+ok 133 - agent: a new topic in the same session drops the paused goal and source facts
+  ---
+  duration_ms: 16.874514
+  type: 'test'
+  ...
+# Subtest: agent: memory mutations skip later batch actions and memory reads keep dispatch validation
+ok 134 - agent: memory mutations skip later batch actions and memory reads keep dispatch validation
+  ---
+  duration_ms: 15.669776
+  type: 'test'
+  ...
+# Subtest: agent: approval validates saved memory expiry and sources in a fresh runtime and rejects missing memory
+ok 135 - agent: approval validates saved memory expiry and sources in a fresh runtime and rejects missing memory
+  ---
+  duration_ms: 25.505999
+  type: 'test'
+  ...
+# Subtest: agent: interrupted batch validates its saved memory snapshot before recovery
+ok 136 - agent: interrupted batch validates its saved memory snapshot before recovery
+  ---
+  duration_ms: 7.825249
+  type: 'test'
+  ...
+# Subtest: agent: checker refresh cannot replace the memory snapshot attached to action arguments
+ok 137 - agent: checker refresh cannot replace the memory snapshot attached to action arguments
+  ---
+  duration_ms: 6.940286
+  type: 'test'
+  ...
+# Subtest: agent: completed approval replay returns its receipt after an unrelated memory change
+ok 138 - agent: completed approval replay returns its receipt after an unrelated memory change
+  ---
+  duration_ms: 11.931602
+  type: 'test'
+  ...
+# Subtest: agent: checker refresh retains expiry and source metadata even when the memory version is unchanged
+ok 139 - agent: checker refresh retains expiry and source metadata even when the memory version is unchanged
+  ---
+  duration_ms: 17.663419
+  type: 'test'
+  ...
+# Subtest: agent: paused work starts fresh when no continuity checker is configured
+ok 140 - agent: paused work starts fresh when no continuity checker is configured
+  ---
+  duration_ms: 9.138352
+  type: 'test'
+  ...
+# Subtest: agent: unfinished pre-upgrade turns revalidate their own receipts and refuse untracked carried context
+ok 141 - agent: unfinished pre-upgrade turns revalidate their own receipts and refuse untracked carried context
+  ---
+  duration_ms: 23.965264
+  type: 'test'
+  ...
+# Subtest: MCP discovery imports in slices with progress and reports read-only labels without applying them
+ok 142 - MCP discovery imports in slices with progress and reports read-only labels without applying them
+  ---
+  duration_ms: 8.7004
+  type: 'test'
+  ...
+# Subtest: the address probe tells an answer, a sign-in request and a failure apart
+ok 143 - the address probe tells an answer, a sign-in request and a failure apart
+  ---
+  duration_ms: 7.417668
+  type: 'test'
+  ...
+1..143
+# tests 218
+# suites 0
+# pass 218
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12713.80787

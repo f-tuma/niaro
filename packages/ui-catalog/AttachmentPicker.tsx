@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, View } from "react-native";
 import Camera from "lucide-react-native/icons/camera";
 import Images from "lucide-react-native/icons/images";
 import File from "lucide-react-native/icons/file-text";
+import BookOpen from "lucide-react-native/icons/book-open";
+import { translate } from "../i18n";
 import CircleCheck from "lucide-react-native/icons/circle-check";
 import { Text } from "../ui";
 import { tokens as t } from "../design-tokens";
@@ -10,6 +12,7 @@ import {
   attachmentChoiceOrder,
   attachmentCopy,
   type AttachmentChoices,
+  type AttachmentAction,
   type AttachmentLanguage,
 } from "./attachment-presentation";
 
@@ -23,22 +26,39 @@ const glyphs = {
 export function AttachmentPicker({
   choices,
   language,
+  references,
 }: {
   choices: AttachmentChoices;
   language: AttachmentLanguage;
+  references?: AttachmentAction;
 }) {
   const copy = attachmentCopy(language);
   return (
     <View style={styles.choices}>
-      {attachmentChoiceOrder.map((id) => {
-        const action = choices[id];
+      {[
+        ...attachmentChoiceOrder.map((id) => ({
+          id,
+          action: choices[id],
+          label: copy[id],
+          Glyph: glyphs[id],
+        })),
+        ...(references
+          ? [
+              {
+                id: "references",
+                action: references,
+                label: translate(language)("composerReferences"),
+                Glyph: BookOpen,
+              },
+            ]
+          : []),
+      ].map(({ id, action, label, Glyph }) => {
         if (!action) return null;
-        const Glyph = glyphs[id];
         return (
           <Pressable
             key={id}
             accessibilityRole="button"
-            accessibilityLabel={copy[id]}
+            accessibilityLabel={label}
             accessibilityState={{ disabled: !!action.disabled }}
             disabled={action.disabled}
             onPress={action.onPress}
@@ -49,7 +69,7 @@ export function AttachmentPicker({
             ]}
           >
             <Glyph size={22} color={t.color.text.secondary} />
-            <Text style={styles.label}>{copy[id]}</Text>
+            <Text style={styles.label}>{label}</Text>
           </Pressable>
         );
       })}
