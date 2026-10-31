@@ -1,0 +1,206 @@
+{
+  "id": "4058f9b1-176f-40d7-9bbf-abf288d91cfb",
+  "ok": true,
+  "result": {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {
+                                "children": [
+                                  {
+                                    "children": [
+                                      {
+                                        "children": [],
+                                        "className": "android.view.View",
+                                        "packageName": "dev.agentclient.demo",
+                                        "clickable": false,
+                                        "enabled": true,
+                                        "focused": false,
+                                        "bounds": {
+                                          "left": 0,
+                                          "top": 0,
+                                          "right": 1080,
+                                          "bottom": 2400
+                                        }
+                                      }
+                                    ],
+                                    "className": "androidx.compose.ui.platform.ComposeView",
+                                    "packageName": "dev.agentclient.demo",
+                                    "clickable": false,
+                                    "enabled": true,
+                                    "focused": false,
+                                    "bounds": {
+                                      "left": 0,
+                                      "top": 0,
+                                      "right": 1080,
+                                      "bottom": 2400
+                                    }
+                                  }
+                                ],
+                                "className": "android.widget.LinearLayout",
+                                "packageName": "dev.agentclient.demo",
+                                "clickable": false,
+                                "enabled": true,
+                                "focused": false,
+                                "bounds": {
+                                  "left": 0,
+                                  "top": 0,
+                                  "right": 1080,
+                                  "bottom": 2400
+                                }
+                              },
+                              {
+                                "children": [
+                                  {
+                                    "children": [
+                                      {
+                                        "children": [],
+                                        "className": "android.view.View",
+                                        "packageName": "dev.agentclient.demo",
+                                        "clickable": false,
+                                        "enabled": true,
+                                        "focused": false,
+                                        "bounds": {
+                                          "left": 0,
+                                          "top": 0,
+                                          "right": 1080,
+                                          "bottom": 2400
+                                        }
+                                      }
+                                    ],
+                                    "className": "android.view.ViewGroup",
+                                    "packageName": "dev.agentclient.demo",
+                                    "clickable": false,
+                                    "enabled": true,
+                                    "focused": false,
+                                    "bounds": {
+                                      "left": 0,
+                                      "top": 0,
+                                      "right": 1080,
+                                      "bottom": 2400
+                                    }
+                                  },
+                                  {
+                                    "children": [],
+                                    "className": "android.widget.TextView",
+                                    "text": "Isolated native QA setup failed. Existing connection was retained.",
+                                    "packageName": "dev.agentclient.demo",
+                                    "clickable": false,
+                                    "enabled": true,
+                                    "focused": false,
+                                    "bounds": {
+                                      "left": 105,
+                                      "top": 105,
+                                      "right": 975,
+                                      "bottom": 199
+                                    }
+                                  }
+                                ],
+                                "className": "android.widget.FrameLayout",
+                                "packageName": "dev.agentclient.demo",
+                                "clickable": false,
+                                "enabled": true,
+                                "focused": false,
+                                "bounds": {
+                                  "left": 0,
+                                  "top": 0,
+                                  "right": 1080,
+                                  "bottom": 2400
+                                }
+                              }
+                            ],
+                            "className": "android.widget.FrameLayout",
+                            "packageName": "dev.agentclient.demo",
+                            "clickable": false,
+                            "enabled": true,
+                            "focused": false,
+                            "bounds": {
+                              "left": 0,
+                              "top": 0,
+                              "right": 1080,
+                              "bottom": 2400
+                            }
+                          }
+                        ],
+                        "className": "android.widget.FrameLayout",
+                        "resourceId": "android:id/content",
+                        "packageName": "dev.agentclient.demo",
+                        "clickable": false,
+                        "enabled": true,
+                        "focused": false,
+                        "bounds": {
+                          "left": 0,
+                          "top": 0,
+                          "right": 1080,
+                          "bottom": 2400
+                        }
+                      }
+                    ],
+                    "className": "android.widget.LinearLayout",
+                    "resourceId": "dev.agentclient.demo:id/action_bar_root",
+                    "packageName": "dev.agentclient.demo",
+                    "clickable": false,
+                    "enabled": true,
+                    "focused": false,
+                    "bounds": {
+                      "left": 0,
+                      "top": 0,
+                      "right": 1080,
+                      "bottom": 2400
+                    }
+                  }
+                ],
+                "className": "android.widget.FrameLayout",
+                "packageName": "dev.agentclient.demo",
+                "clickable": false,
+                "enabled": true,
+                "focused": false,
+                "bounds": {
+                  "left": 0,
+                  "top": 0,
+                  "right": 1080,
+                  "bottom": 2400
+                }
+              }
+            ],
+            "className": "android.widget.LinearLayout",
+            "packageName": "dev.agentclient.demo",
+            "clickable": false,
+            "enabled": true,
+            "focused": false,
+            "bounds": {
+              "left": 0,
+              "top": 0,
+              "right": 1080,
+              "bottom": 2400
+            }
+          }
+        ],
+        "className": "android.widget.FrameLayout",
+        "packageName": "dev.agentclient.demo",
+        "clickable": false,
+        "enabled": true,
+        "focused": false,
+        "bounds": {
+          "left": 0,
+          "top": 0,
+          "right": 1080,
+          "bottom": 2400
+        }
+      }
+    ]
+  },
+  "_meta": {
+    "runtimeId": "bd7ee7c0-b124-48d2-922f-e6e19c538031"
+  }
+}

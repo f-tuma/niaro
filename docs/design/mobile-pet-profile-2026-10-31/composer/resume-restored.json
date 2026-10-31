@@ -1,0 +1,9 @@
+{
+  "at": "2026-10-31T09:26:22.619653+00:00",
+  "size": "Physical size: 1080x2400",
+  "density": "Physical density: 420",
+  "font": "1.0",
+  "rotation": "0",
+  "autorotate": "1",
+  "reverses": "host-11 tcp:8087 tcp:8087\nhost-11 tcp:38683 tcp:38683"
+}

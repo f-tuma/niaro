@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-31T09:36:48.784058+00:00",
+  "ownedPortsListening": {
+    "8894": false,
+    "8895": false,
+    "8896": false
+  },
+  "heartbeatPid": 21836,
+  "heartbeatAlive": false,
+  "orcaBrowserPageClosed": "31fff7b5-3e3e-484c-ac4c-2707348a3c10",
+  "nativeLeaseReturned": true,
+  "rootAcceptedRestorationMessage": "msg_333d93f5fbc8",
+  "productionEdited": false
+}

@@ -1,0 +1,12 @@
+{
+  "size": true,
+  "density": true,
+  "font": true,
+  "rotation": true,
+  "autorotate": true,
+  "reverses": {
+    "baseline": "",
+    "restored": "host-11 tcp:8087 tcp:8087\nhost-11 tcp:38683 tcp:38683",
+    "authorizedDeviation": "Coordinator msg_d83d75492d80 explicitly required normal8087/38683 reverses after restart."
+  }
+}

@@ -1,0 +1,107 @@
+[
+  {
+    "args": [
+      "shell",
+      "wm",
+      "density",
+      "reset"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "shell",
+      "settings",
+      "put",
+      "system",
+      "font_scale",
+      "1.0"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "shell",
+      "settings",
+      "put",
+      "system",
+      "user_rotation",
+      "0"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "shell",
+      "settings",
+      "put",
+      "system",
+      "accelerometer_rotation",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "reverse",
+      "--remove",
+      "tcp:8894"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "reverse",
+      "--remove",
+      "tcp:8896"
+    ],
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "reverse",
+      "tcp:8087",
+      "tcp:8087"
+    ],
+    "exit": 0,
+    "stdout": "8087\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "reverse",
+      "tcp:38683",
+      "tcp:38683"
+    ],
+    "exit": 0,
+    "stdout": "38683\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "shell",
+      "am",
+      "start",
+      "-a",
+      "android.intent.action.VIEW",
+      "-d",
+      "agentclient://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8087",
+      "dev.agentclient.demo"
+    ],
+    "exit": 0,
+    "stdout": "Starting: Intent { act=android.intent.action.VIEW dat=agentclient://expo-development-client/... pkg=dev.agentclient.demo }\n",
+    "stderr": "Warning: Activity not started, intent has been delivered to currently running top-most instance.\n"
+  }
+]

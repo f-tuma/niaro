@@ -1,0 +1,4472 @@
+{
+  "browser": "153.0.8010.12",
+  "errors": [],
+  "renders": [
+    {
+      "name": "390-font1-dark-overview",
+      "url": "http://127.0.0.1:8895/?view=overview&section=style&font=1&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Pracovní\nOsobní\nPaměť\n\nBublina\n\nPráce\nProjekty\nNástroje\nLidé\nStyl\nRytmus",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 45,
+        "y": 237,
+        "width": 300,
+        "height": 300,
+        "top": 237,
+        "right": 345,
+        "bottom": 537,
+        "left": 45
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 330,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 378,
+            "bottom": 96,
+            "left": 330
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 116,
+            "width": 112.65625,
+            "height": 48,
+            "top": 116,
+            "right": 132.65625,
+            "bottom": 164,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 138.65625,
+            "y": 116,
+            "width": 112.671875,
+            "height": 48,
+            "top": 116,
+            "right": 251.328125,
+            "bottom": 164,
+            "left": 138.65625
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 257.328125,
+            "y": 116,
+            "width": 112.671875,
+            "height": 48,
+            "top": 116,
+            "right": 370,
+            "bottom": 164,
+            "left": 257.328125
+          }
+        },
+        {
+          "label": "Oblast poznatků",
+          "rect": {
+            "x": 20,
+            "y": 181,
+            "width": 101,
+            "height": 48,
+            "top": 181,
+            "right": 121,
+            "bottom": 229,
+            "left": 20
+          }
+        },
+        {
+          "label": "Paměť",
+          "rect": {
+            "x": 273.96875,
+            "y": 181,
+            "width": 96.03125,
+            "height": 48,
+            "top": 181,
+            "right": 370,
+            "bottom": 229,
+            "left": 273.96875
+          }
+        },
+        {
+          "label": "Práce",
+          "rect": {
+            "x": 20,
+            "y": 577,
+            "width": 170,
+            "height": 56,
+            "top": 577,
+            "right": 190,
+            "bottom": 633,
+            "left": 20
+          }
+        },
+        {
+          "label": "Projekty",
+          "rect": {
+            "x": 200,
+            "y": 577,
+            "width": 170,
+            "height": 56,
+            "top": 577,
+            "right": 370,
+            "bottom": 633,
+            "left": 200
+          }
+        },
+        {
+          "label": "Nástroje",
+          "rect": {
+            "x": 20,
+            "y": 643,
+            "width": 170,
+            "height": 56,
+            "top": 643,
+            "right": 190,
+            "bottom": 699,
+            "left": 20
+          }
+        },
+        {
+          "label": "Lidé",
+          "rect": {
+            "x": 200,
+            "y": 643,
+            "width": 170,
+            "height": 56,
+            "top": 643,
+            "right": 370,
+            "bottom": 699,
+            "left": 200
+          }
+        },
+        {
+          "label": "Styl",
+          "rect": {
+            "x": 20,
+            "y": 709,
+            "width": 170,
+            "height": 56,
+            "top": 709,
+            "right": 190,
+            "bottom": 765,
+            "left": 20
+          }
+        },
+        {
+          "label": "Rytmus",
+          "rect": {
+            "x": 200,
+            "y": 709,
+            "width": 170,
+            "height": 56,
+            "top": 709,
+            "right": 370,
+            "bottom": 765,
+            "left": 200
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font1-dark-detail",
+      "url": "http://127.0.0.1:8895/?view=detail&section=style&font=1&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVšechny oblasti\nStyl\nPreferuješ stručné shrnutí a další kroky.\nZ chatu\n24. 10.\n\nNaposledy zaznamenáno včera\n\nOpravit\nSmazat\nVyhovují ti jasné seznamy úkolů.",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 110,
+        "y": 177,
+        "width": 170,
+        "height": 170,
+        "top": 177,
+        "right": 280,
+        "bottom": 347,
+        "left": 110
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 330,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 378,
+            "bottom": 96,
+            "left": 330
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 116,
+            "width": 112.65625,
+            "height": 48,
+            "top": 116,
+            "right": 132.65625,
+            "bottom": 164,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 138.65625,
+            "y": 116,
+            "width": 112.671875,
+            "height": 48,
+            "top": 116,
+            "right": 251.328125,
+            "bottom": 164,
+            "left": 138.65625
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 257.328125,
+            "y": 116,
+            "width": 112.671875,
+            "height": 48,
+            "top": 116,
+            "right": 370,
+            "bottom": 164,
+            "left": 257.328125
+          }
+        },
+        {
+          "label": "Všechny oblasti",
+          "rect": {
+            "x": 20,
+            "y": 381.390625,
+            "width": 150.1875,
+            "height": 48,
+            "top": 381.390625,
+            "right": 170.1875,
+            "bottom": 429.390625,
+            "left": 20
+          }
+        },
+        {
+          "label": "Preferuješ stručné shrnutí a další kroky.",
+          "rect": {
+            "x": 20,
+            "y": 505.1875,
+            "width": 350,
+            "height": 48,
+            "top": 505.1875,
+            "right": 370,
+            "bottom": 553.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Z chatu",
+          "rect": {
+            "x": 20,
+            "y": 563.1875,
+            "width": 70,
+            "height": 48,
+            "top": 563.1875,
+            "right": 90,
+            "bottom": 611.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Opravit",
+          "rect": {
+            "x": 20,
+            "y": 647.328125,
+            "width": 170,
+            "height": 48,
+            "top": 647.328125,
+            "right": 190,
+            "bottom": 695.328125,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 200,
+            "y": 647.328125,
+            "width": 170,
+            "height": 48,
+            "top": 647.328125,
+            "right": 370,
+            "bottom": 695.328125,
+            "left": 200
+          }
+        },
+        {
+          "label": "Vyhovují ti jasné seznamy úkolů.",
+          "rect": {
+            "x": 20,
+            "y": 732.328125,
+            "width": 350,
+            "height": 48,
+            "top": 732.328125,
+            "right": 370,
+            "bottom": 780.328125,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font1-dark-appearance",
+      "url": "http://127.0.0.1:8895/?view=appearance&section=style&font=1&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVzhled\nJméno\nBublina\nPohyb peta\nZobrazit v chatu\nProstředí\nMotiv\nTmavý\nPočasí\nVypnuto",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 60,
+        "y": 108,
+        "width": 270,
+        "height": 270,
+        "top": 108,
+        "right": 330,
+        "bottom": 378,
+        "left": 60
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Jméno\nBublina",
+          "rect": {
+            "x": 20,
+            "y": 457,
+            "width": 350,
+            "height": 54,
+            "top": 457,
+            "right": 370,
+            "bottom": 511,
+            "left": 20
+          }
+        },
+        {
+          "label": "Pohyb peta",
+          "rect": {
+            "x": 20,
+            "y": 511,
+            "width": 350,
+            "height": 54,
+            "top": 511,
+            "right": 370,
+            "bottom": 565,
+            "left": 20
+          }
+        },
+        {
+          "label": "Zobrazit v chatu",
+          "rect": {
+            "x": 20,
+            "y": 565,
+            "width": 350,
+            "height": 54,
+            "top": 565,
+            "right": 370,
+            "bottom": 619,
+            "left": 20
+          }
+        },
+        {
+          "label": "Motiv\nTmavý",
+          "rect": {
+            "x": 20,
+            "y": 668,
+            "width": 350,
+            "height": 54,
+            "top": 668,
+            "right": 370,
+            "bottom": 722,
+            "left": 20
+          }
+        },
+        {
+          "label": "Počasí\nVypnuto",
+          "rect": {
+            "x": 20,
+            "y": 722,
+            "width": 350,
+            "height": 54,
+            "top": 722,
+            "right": 370,
+            "bottom": 776,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font1-light-overview",
+      "url": "http://127.0.0.1:8895/?view=overview&section=style&font=1&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Pracovní\nOsobní\nPaměť\n\nBublina\n\nPráce\nProjekty\nNástroje\nLidé\nStyl\nRytmus",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 45,
+        "y": 237,
+        "width": 300,
+        "height": 300,
+        "top": 237,
+        "right": 345,
+        "bottom": 537,
+        "left": 45
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 330,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 378,
+            "bottom": 96,
+            "left": 330
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 116,
+            "width": 112.65625,
+            "height": 48,
+            "top": 116,
+            "right": 132.65625,
+            "bottom": 164,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 138.65625,
+            "y": 116,
+            "width": 112.671875,
+            "height": 48,
+            "top": 116,
+            "right": 251.328125,
+            "bottom": 164,
+            "left": 138.65625
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 257.328125,
+            "y": 116,
+            "width": 112.671875,
+            "height": 48,
+            "top": 116,
+            "right": 370,
+            "bottom": 164,
+            "left": 257.328125
+          }
+        },
+        {
+          "label": "Oblast poznatků",
+          "rect": {
+            "x": 20,
+            "y": 181,
+            "width": 101,
+            "height": 48,
+            "top": 181,
+            "right": 121,
+            "bottom": 229,
+            "left": 20
+          }
+        },
+        {
+          "label": "Paměť",
+          "rect": {
+            "x": 273.96875,
+            "y": 181,
+            "width": 96.03125,
+            "height": 48,
+            "top": 181,
+            "right": 370,
+            "bottom": 229,
+            "left": 273.96875
+          }
+        },
+        {
+          "label": "Práce",
+          "rect": {
+            "x": 20,
+            "y": 577,
+            "width": 170,
+            "height": 56,
+            "top": 577,
+            "right": 190,
+            "bottom": 633,
+            "left": 20
+          }
+        },
+        {
+          "label": "Projekty",
+          "rect": {
+            "x": 200,
+            "y": 577,
+            "width": 170,
+            "height": 56,
+            "top": 577,
+            "right": 370,
+            "bottom": 633,
+            "left": 200
+          }
+        },
+        {
+          "label": "Nástroje",
+          "rect": {
+            "x": 20,
+            "y": 643,
+            "width": 170,
+            "height": 56,
+            "top": 643,
+            "right": 190,
+            "bottom": 699,
+            "left": 20
+          }
+        },
+        {
+          "label": "Lidé",
+          "rect": {
+            "x": 200,
+            "y": 643,
+            "width": 170,
+            "height": 56,
+            "top": 643,
+            "right": 370,
+            "bottom": 699,
+            "left": 200
+          }
+        },
+        {
+          "label": "Styl",
+          "rect": {
+            "x": 20,
+            "y": 709,
+            "width": 170,
+            "height": 56,
+            "top": 709,
+            "right": 190,
+            "bottom": 765,
+            "left": 20
+          }
+        },
+        {
+          "label": "Rytmus",
+          "rect": {
+            "x": 200,
+            "y": 709,
+            "width": 170,
+            "height": 56,
+            "top": 709,
+            "right": 370,
+            "bottom": 765,
+            "left": 200
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font1-light-detail",
+      "url": "http://127.0.0.1:8895/?view=detail&section=style&font=1&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVšechny oblasti\nStyl\nPreferuješ stručné shrnutí a další kroky.\nZ chatu\n24. 10.\n\nNaposledy zaznamenáno včera\n\nOpravit\nSmazat\nVyhovují ti jasné seznamy úkolů.",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 110,
+        "y": 177,
+        "width": 170,
+        "height": 170,
+        "top": 177,
+        "right": 280,
+        "bottom": 347,
+        "left": 110
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 330,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 378,
+            "bottom": 96,
+            "left": 330
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 116,
+            "width": 112.65625,
+            "height": 48,
+            "top": 116,
+            "right": 132.65625,
+            "bottom": 164,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 138.65625,
+            "y": 116,
+            "width": 112.671875,
+            "height": 48,
+            "top": 116,
+            "right": 251.328125,
+            "bottom": 164,
+            "left": 138.65625
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 257.328125,
+            "y": 116,
+            "width": 112.671875,
+            "height": 48,
+            "top": 116,
+            "right": 370,
+            "bottom": 164,
+            "left": 257.328125
+          }
+        },
+        {
+          "label": "Všechny oblasti",
+          "rect": {
+            "x": 20,
+            "y": 381.390625,
+            "width": 150.1875,
+            "height": 48,
+            "top": 381.390625,
+            "right": 170.1875,
+            "bottom": 429.390625,
+            "left": 20
+          }
+        },
+        {
+          "label": "Preferuješ stručné shrnutí a další kroky.",
+          "rect": {
+            "x": 20,
+            "y": 505.1875,
+            "width": 350,
+            "height": 48,
+            "top": 505.1875,
+            "right": 370,
+            "bottom": 553.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Z chatu",
+          "rect": {
+            "x": 20,
+            "y": 563.1875,
+            "width": 70,
+            "height": 48,
+            "top": 563.1875,
+            "right": 90,
+            "bottom": 611.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Opravit",
+          "rect": {
+            "x": 20,
+            "y": 647.328125,
+            "width": 170,
+            "height": 48,
+            "top": 647.328125,
+            "right": 190,
+            "bottom": 695.328125,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 200,
+            "y": 647.328125,
+            "width": 170,
+            "height": 48,
+            "top": 647.328125,
+            "right": 370,
+            "bottom": 695.328125,
+            "left": 200
+          }
+        },
+        {
+          "label": "Vyhovují ti jasné seznamy úkolů.",
+          "rect": {
+            "x": 20,
+            "y": 732.328125,
+            "width": 350,
+            "height": 48,
+            "top": 732.328125,
+            "right": 370,
+            "bottom": 780.328125,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font1-light-appearance",
+      "url": "http://127.0.0.1:8895/?view=appearance&section=style&font=1&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVzhled\nJméno\nBublina\nPohyb peta\nZobrazit v chatu\nProstředí\nMotiv\nSvětlý\nPočasí\nVypnuto",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 60,
+        "y": 108,
+        "width": 270,
+        "height": 270,
+        "top": 108,
+        "right": 330,
+        "bottom": 378,
+        "left": 60
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Jméno\nBublina",
+          "rect": {
+            "x": 20,
+            "y": 457,
+            "width": 350,
+            "height": 54,
+            "top": 457,
+            "right": 370,
+            "bottom": 511,
+            "left": 20
+          }
+        },
+        {
+          "label": "Pohyb peta",
+          "rect": {
+            "x": 20,
+            "y": 511,
+            "width": 350,
+            "height": 54,
+            "top": 511,
+            "right": 370,
+            "bottom": 565,
+            "left": 20
+          }
+        },
+        {
+          "label": "Zobrazit v chatu",
+          "rect": {
+            "x": 20,
+            "y": 565,
+            "width": 350,
+            "height": 54,
+            "top": 565,
+            "right": 370,
+            "bottom": 619,
+            "left": 20
+          }
+        },
+        {
+          "label": "Motiv\nSvětlý",
+          "rect": {
+            "x": 20,
+            "y": 668,
+            "width": 350,
+            "height": 54,
+            "top": 668,
+            "right": 370,
+            "bottom": 722,
+            "left": 20
+          }
+        },
+        {
+          "label": "Počasí\nVypnuto",
+          "rect": {
+            "x": 20,
+            "y": 722,
+            "width": 350,
+            "height": 54,
+            "top": 722,
+            "right": 370,
+            "bottom": 776,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font2-dark-overview",
+      "url": "http://127.0.0.1:8895/?view=overview&section=style&font=2&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Pracovní\nOsobní\nPaměť\n\nBublina\n\nPráce\nProjekty\nNástroje\nLidé\nStyl\nRytmus",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 75,
+        "y": 465.1875,
+        "width": 240,
+        "height": 240,
+        "top": 465.1875,
+        "right": 315,
+        "bottom": 705.1875,
+        "left": 75
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 330,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 378,
+            "bottom": 94,
+            "left": 330
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 126,
+            "width": 350,
+            "height": 67.5,
+            "top": 126,
+            "right": 370,
+            "bottom": 193.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 20,
+            "y": 193.5,
+            "width": 350,
+            "height": 67.5,
+            "top": 193.5,
+            "right": 370,
+            "bottom": 261,
+            "left": 20
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 20,
+            "y": 261,
+            "width": 350,
+            "height": 67.5,
+            "top": 261,
+            "right": 370,
+            "bottom": 328.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Oblast poznatků",
+          "rect": {
+            "x": 20,
+            "y": 337.5,
+            "width": 350,
+            "height": 66,
+            "top": 337.5,
+            "right": 370,
+            "bottom": 403.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Paměť",
+          "rect": {
+            "x": 20,
+            "y": 415.5,
+            "width": 350,
+            "height": 49.6875,
+            "top": 415.5,
+            "right": 370,
+            "bottom": 465.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Práce",
+          "rect": {
+            "x": 20,
+            "y": 773.1875,
+            "width": 350,
+            "height": 73.5,
+            "top": 773.1875,
+            "right": 370,
+            "bottom": 846.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Projekty",
+          "rect": {
+            "x": 20,
+            "y": 856.6875,
+            "width": 350,
+            "height": 73.5,
+            "top": 856.6875,
+            "right": 370,
+            "bottom": 930.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Nástroje",
+          "rect": {
+            "x": 20,
+            "y": 940.1875,
+            "width": 350,
+            "height": 73.5,
+            "top": 940.1875,
+            "right": 370,
+            "bottom": 1013.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Lidé",
+          "rect": {
+            "x": 20,
+            "y": 1023.6875,
+            "width": 350,
+            "height": 73.5,
+            "top": 1023.6875,
+            "right": 370,
+            "bottom": 1097.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Styl",
+          "rect": {
+            "x": 20,
+            "y": 1107.1875,
+            "width": 350,
+            "height": 73.5,
+            "top": 1107.1875,
+            "right": 370,
+            "bottom": 1180.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Rytmus",
+          "rect": {
+            "x": 20,
+            "y": 1190.6875,
+            "width": 350,
+            "height": 73.5,
+            "top": 1190.6875,
+            "right": 370,
+            "bottom": 1264.1875,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font2-dark-detail",
+      "url": "http://127.0.0.1:8895/?view=detail&section=style&font=2&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVšechny oblasti\nStyl\nPreferuješ stručné shrnutí a další kroky.\nZ chatu\n24. 10.\n\nNaposledy zaznamenáno včera\n\nOpravit\nSmazat\nVyhovují ti jasné seznamy úkolů.",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 120,
+        "y": 341.5,
+        "width": 150,
+        "height": 150,
+        "top": 341.5,
+        "right": 270,
+        "bottom": 491.5,
+        "left": 120
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 330,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 378,
+            "bottom": 94,
+            "left": 330
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 126,
+            "width": 350,
+            "height": 67.5,
+            "top": 126,
+            "right": 370,
+            "bottom": 193.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 20,
+            "y": 193.5,
+            "width": 350,
+            "height": 67.5,
+            "top": 193.5,
+            "right": 370,
+            "bottom": 261,
+            "left": 20
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 20,
+            "y": 261,
+            "width": 350,
+            "height": 67.5,
+            "top": 261,
+            "right": 370,
+            "bottom": 328.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Všechny oblasti",
+          "rect": {
+            "x": 20,
+            "y": 548.296875,
+            "width": 259.375,
+            "height": 63.5,
+            "top": 548.296875,
+            "right": 279.375,
+            "bottom": 611.796875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Preferuješ stručné shrnutí a další kroky.",
+          "rect": {
+            "x": 20,
+            "y": 718.390625,
+            "width": 350,
+            "height": 98.59375,
+            "top": 718.390625,
+            "right": 370,
+            "bottom": 816.984375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Z chatu",
+          "rect": {
+            "x": 20,
+            "y": 826.984375,
+            "width": 100,
+            "height": 56.59375,
+            "top": 826.984375,
+            "right": 120,
+            "bottom": 883.578125,
+            "left": 20
+          }
+        },
+        {
+          "label": "Opravit",
+          "rect": {
+            "x": 20,
+            "y": 980.171875,
+            "width": 350,
+            "height": 65.5,
+            "top": 980.171875,
+            "right": 370,
+            "bottom": 1045.671875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 20,
+            "y": 1055.671875,
+            "width": 350,
+            "height": 65.5,
+            "top": 1055.671875,
+            "right": 370,
+            "bottom": 1121.171875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Vyhovují ti jasné seznamy úkolů.",
+          "rect": {
+            "x": 20,
+            "y": 1158.171875,
+            "width": 350,
+            "height": 98.59375,
+            "top": 1158.171875,
+            "right": 370,
+            "bottom": 1256.765625,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font2-dark-appearance",
+      "url": "http://127.0.0.1:8895/?view=appearance&section=style&font=2&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVzhled\nJméno\nBublina\nPohyb peta\nZobrazit v chatu\nProstředí\nMotiv\nTmavý\nPočasí\nVypnuto",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 75,
+        "y": 174,
+        "width": 240,
+        "height": 240,
+        "top": 174,
+        "right": 315,
+        "bottom": 414,
+        "left": 75
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Jméno\nBublina",
+          "rect": {
+            "x": 20,
+            "y": 542,
+            "width": 350,
+            "height": 74.296875,
+            "top": 542,
+            "right": 370,
+            "bottom": 616.296875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Pohyb peta",
+          "rect": {
+            "x": 20,
+            "y": 616.296875,
+            "width": 350,
+            "height": 74.296875,
+            "top": 616.296875,
+            "right": 370,
+            "bottom": 690.59375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Zobrazit v chatu",
+          "rect": {
+            "x": 20,
+            "y": 690.59375,
+            "width": 350,
+            "height": 74.296875,
+            "top": 690.59375,
+            "right": 370,
+            "bottom": 764.890625,
+            "left": 20
+          }
+        },
+        {
+          "label": "Motiv\nTmavý",
+          "rect": {
+            "x": 20,
+            "y": 834.890625,
+            "width": 350,
+            "height": 74.296875,
+            "top": 834.890625,
+            "right": 370,
+            "bottom": 909.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Počasí\nVypnuto",
+          "rect": {
+            "x": 20,
+            "y": 909.1875,
+            "width": 350,
+            "height": 74.296875,
+            "top": 909.1875,
+            "right": 370,
+            "bottom": 983.484375,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font2-light-overview",
+      "url": "http://127.0.0.1:8895/?view=overview&section=style&font=2&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Pracovní\nOsobní\nPaměť\n\nBublina\n\nPráce\nProjekty\nNástroje\nLidé\nStyl\nRytmus",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 75,
+        "y": 465.1875,
+        "width": 240,
+        "height": 240,
+        "top": 465.1875,
+        "right": 315,
+        "bottom": 705.1875,
+        "left": 75
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 330,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 378,
+            "bottom": 94,
+            "left": 330
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 126,
+            "width": 350,
+            "height": 67.5,
+            "top": 126,
+            "right": 370,
+            "bottom": 193.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 20,
+            "y": 193.5,
+            "width": 350,
+            "height": 67.5,
+            "top": 193.5,
+            "right": 370,
+            "bottom": 261,
+            "left": 20
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 20,
+            "y": 261,
+            "width": 350,
+            "height": 67.5,
+            "top": 261,
+            "right": 370,
+            "bottom": 328.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Oblast poznatků",
+          "rect": {
+            "x": 20,
+            "y": 337.5,
+            "width": 350,
+            "height": 66,
+            "top": 337.5,
+            "right": 370,
+            "bottom": 403.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Paměť",
+          "rect": {
+            "x": 20,
+            "y": 415.5,
+            "width": 350,
+            "height": 49.6875,
+            "top": 415.5,
+            "right": 370,
+            "bottom": 465.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Práce",
+          "rect": {
+            "x": 20,
+            "y": 773.1875,
+            "width": 350,
+            "height": 73.5,
+            "top": 773.1875,
+            "right": 370,
+            "bottom": 846.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Projekty",
+          "rect": {
+            "x": 20,
+            "y": 856.6875,
+            "width": 350,
+            "height": 73.5,
+            "top": 856.6875,
+            "right": 370,
+            "bottom": 930.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Nástroje",
+          "rect": {
+            "x": 20,
+            "y": 940.1875,
+            "width": 350,
+            "height": 73.5,
+            "top": 940.1875,
+            "right": 370,
+            "bottom": 1013.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Lidé",
+          "rect": {
+            "x": 20,
+            "y": 1023.6875,
+            "width": 350,
+            "height": 73.5,
+            "top": 1023.6875,
+            "right": 370,
+            "bottom": 1097.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Styl",
+          "rect": {
+            "x": 20,
+            "y": 1107.1875,
+            "width": 350,
+            "height": 73.5,
+            "top": 1107.1875,
+            "right": 370,
+            "bottom": 1180.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Rytmus",
+          "rect": {
+            "x": 20,
+            "y": 1190.6875,
+            "width": 350,
+            "height": 73.5,
+            "top": 1190.6875,
+            "right": 370,
+            "bottom": 1264.1875,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font2-light-detail",
+      "url": "http://127.0.0.1:8895/?view=detail&section=style&font=2&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVšechny oblasti\nStyl\nPreferuješ stručné shrnutí a další kroky.\nZ chatu\n24. 10.\n\nNaposledy zaznamenáno včera\n\nOpravit\nSmazat\nVyhovují ti jasné seznamy úkolů.",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 120,
+        "y": 341.5,
+        "width": 150,
+        "height": 150,
+        "top": 341.5,
+        "right": 270,
+        "bottom": 491.5,
+        "left": 120
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 330,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 378,
+            "bottom": 94,
+            "left": 330
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 126,
+            "width": 350,
+            "height": 67.5,
+            "top": 126,
+            "right": 370,
+            "bottom": 193.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 20,
+            "y": 193.5,
+            "width": 350,
+            "height": 67.5,
+            "top": 193.5,
+            "right": 370,
+            "bottom": 261,
+            "left": 20
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 20,
+            "y": 261,
+            "width": 350,
+            "height": 67.5,
+            "top": 261,
+            "right": 370,
+            "bottom": 328.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Všechny oblasti",
+          "rect": {
+            "x": 20,
+            "y": 548.296875,
+            "width": 259.375,
+            "height": 63.5,
+            "top": 548.296875,
+            "right": 279.375,
+            "bottom": 611.796875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Preferuješ stručné shrnutí a další kroky.",
+          "rect": {
+            "x": 20,
+            "y": 718.390625,
+            "width": 350,
+            "height": 98.59375,
+            "top": 718.390625,
+            "right": 370,
+            "bottom": 816.984375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Z chatu",
+          "rect": {
+            "x": 20,
+            "y": 826.984375,
+            "width": 100,
+            "height": 56.59375,
+            "top": 826.984375,
+            "right": 120,
+            "bottom": 883.578125,
+            "left": 20
+          }
+        },
+        {
+          "label": "Opravit",
+          "rect": {
+            "x": 20,
+            "y": 980.171875,
+            "width": 350,
+            "height": 65.5,
+            "top": 980.171875,
+            "right": 370,
+            "bottom": 1045.671875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 20,
+            "y": 1055.671875,
+            "width": 350,
+            "height": 65.5,
+            "top": 1055.671875,
+            "right": 370,
+            "bottom": 1121.171875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Vyhovují ti jasné seznamy úkolů.",
+          "rect": {
+            "x": 20,
+            "y": 1158.171875,
+            "width": 350,
+            "height": 98.59375,
+            "top": 1158.171875,
+            "right": 370,
+            "bottom": 1256.765625,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "390-font2-light-appearance",
+      "url": "http://127.0.0.1:8895/?view=appearance&section=style&font=2&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVzhled\nJméno\nBublina\nPohyb peta\nZobrazit v chatu\nProstředí\nMotiv\nSvětlý\nPočasí\nVypnuto",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 75,
+        "y": 174,
+        "width": 240,
+        "height": 240,
+        "top": 174,
+        "right": 315,
+        "bottom": 414,
+        "left": 75
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Jméno\nBublina",
+          "rect": {
+            "x": 20,
+            "y": 542,
+            "width": 350,
+            "height": 74.296875,
+            "top": 542,
+            "right": 370,
+            "bottom": 616.296875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Pohyb peta",
+          "rect": {
+            "x": 20,
+            "y": 616.296875,
+            "width": 350,
+            "height": 74.296875,
+            "top": 616.296875,
+            "right": 370,
+            "bottom": 690.59375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Zobrazit v chatu",
+          "rect": {
+            "x": 20,
+            "y": 690.59375,
+            "width": 350,
+            "height": 74.296875,
+            "top": 690.59375,
+            "right": 370,
+            "bottom": 764.890625,
+            "left": 20
+          }
+        },
+        {
+          "label": "Motiv\nSvětlý",
+          "rect": {
+            "x": 20,
+            "y": 834.890625,
+            "width": 350,
+            "height": 74.296875,
+            "top": 834.890625,
+            "right": 370,
+            "bottom": 909.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Počasí\nVypnuto",
+          "rect": {
+            "x": 20,
+            "y": 909.1875,
+            "width": 350,
+            "height": 74.296875,
+            "top": 909.1875,
+            "right": 370,
+            "bottom": 983.484375,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font1-dark-overview",
+      "url": "http://127.0.0.1:8895/?view=overview&section=style&font=1&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Pracovní\nOsobní\nPaměť\n\nBublina\n\nPráce\nProjekty\nNástroje\nLidé\nStyl\nRytmus",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 30,
+        "y": 237,
+        "width": 260,
+        "height": 260,
+        "top": 237,
+        "right": 290,
+        "bottom": 497,
+        "left": 30
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 260,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 308,
+            "bottom": 96,
+            "left": 260
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 116,
+            "width": 89.328125,
+            "height": 48,
+            "top": 116,
+            "right": 109.328125,
+            "bottom": 164,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 115.328125,
+            "y": 116,
+            "width": 89.34375,
+            "height": 48,
+            "top": 116,
+            "right": 204.671875,
+            "bottom": 164,
+            "left": 115.328125
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 210.671875,
+            "y": 116,
+            "width": 89.328125,
+            "height": 48,
+            "top": 116,
+            "right": 300,
+            "bottom": 164,
+            "left": 210.671875
+          }
+        },
+        {
+          "label": "Oblast poznatků",
+          "rect": {
+            "x": 20,
+            "y": 181,
+            "width": 101,
+            "height": 48,
+            "top": 181,
+            "right": 121,
+            "bottom": 229,
+            "left": 20
+          }
+        },
+        {
+          "label": "Paměť",
+          "rect": {
+            "x": 207.96875,
+            "y": 181,
+            "width": 92.03125,
+            "height": 48,
+            "top": 181,
+            "right": 300,
+            "bottom": 229,
+            "left": 207.96875
+          }
+        },
+        {
+          "label": "Práce",
+          "rect": {
+            "x": 20,
+            "y": 537,
+            "width": 136,
+            "height": 56,
+            "top": 537,
+            "right": 156,
+            "bottom": 593,
+            "left": 20
+          }
+        },
+        {
+          "label": "Projekty",
+          "rect": {
+            "x": 164,
+            "y": 537,
+            "width": 136,
+            "height": 56,
+            "top": 537,
+            "right": 300,
+            "bottom": 593,
+            "left": 164
+          }
+        },
+        {
+          "label": "Nástroje",
+          "rect": {
+            "x": 20,
+            "y": 601,
+            "width": 136,
+            "height": 56,
+            "top": 601,
+            "right": 156,
+            "bottom": 657,
+            "left": 20
+          }
+        },
+        {
+          "label": "Lidé",
+          "rect": {
+            "x": 164,
+            "y": 601,
+            "width": 136,
+            "height": 56,
+            "top": 601,
+            "right": 300,
+            "bottom": 657,
+            "left": 164
+          }
+        },
+        {
+          "label": "Styl",
+          "rect": {
+            "x": 20,
+            "y": 665,
+            "width": 136,
+            "height": 56,
+            "top": 665,
+            "right": 156,
+            "bottom": 721,
+            "left": 20
+          }
+        },
+        {
+          "label": "Rytmus",
+          "rect": {
+            "x": 164,
+            "y": 665,
+            "width": 136,
+            "height": 56,
+            "top": 665,
+            "right": 300,
+            "bottom": 721,
+            "left": 164
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font1-dark-detail",
+      "url": "http://127.0.0.1:8895/?view=detail&section=style&font=1&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVšechny oblasti\nStyl\nPreferuješ stručné shrnutí a další kroky.\nZ chatu\n24. 10.\n\nNaposledy zaznamenáno včera\n\nOpravit\nSmazat\nVyhovují ti jasné seznamy úkolů.",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 75,
+        "y": 177,
+        "width": 170,
+        "height": 170,
+        "top": 177,
+        "right": 245,
+        "bottom": 347,
+        "left": 75
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 260,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 308,
+            "bottom": 96,
+            "left": 260
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 116,
+            "width": 89.328125,
+            "height": 48,
+            "top": 116,
+            "right": 109.328125,
+            "bottom": 164,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 115.328125,
+            "y": 116,
+            "width": 89.34375,
+            "height": 48,
+            "top": 116,
+            "right": 204.671875,
+            "bottom": 164,
+            "left": 115.328125
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 210.671875,
+            "y": 116,
+            "width": 89.328125,
+            "height": 48,
+            "top": 116,
+            "right": 300,
+            "bottom": 164,
+            "left": 210.671875
+          }
+        },
+        {
+          "label": "Všechny oblasti",
+          "rect": {
+            "x": 20,
+            "y": 381.390625,
+            "width": 150.1875,
+            "height": 48,
+            "top": 381.390625,
+            "right": 170.1875,
+            "bottom": 429.390625,
+            "left": 20
+          }
+        },
+        {
+          "label": "Preferuješ stručné shrnutí a další kroky.",
+          "rect": {
+            "x": 20,
+            "y": 505.1875,
+            "width": 280,
+            "height": 49.28125,
+            "top": 505.1875,
+            "right": 300,
+            "bottom": 554.46875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Z chatu",
+          "rect": {
+            "x": 20,
+            "y": 564.46875,
+            "width": 70,
+            "height": 48,
+            "top": 564.46875,
+            "right": 90,
+            "bottom": 612.46875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Opravit",
+          "rect": {
+            "x": 20,
+            "y": 648.609375,
+            "width": 135,
+            "height": 48,
+            "top": 648.609375,
+            "right": 155,
+            "bottom": 696.609375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 165,
+            "y": 648.609375,
+            "width": 135,
+            "height": 48,
+            "top": 648.609375,
+            "right": 300,
+            "bottom": 696.609375,
+            "left": 165
+          }
+        },
+        {
+          "label": "Vyhovují ti jasné seznamy úkolů.",
+          "rect": {
+            "x": 20,
+            "y": 733.609375,
+            "width": 280,
+            "height": 49.28125,
+            "top": 733.609375,
+            "right": 300,
+            "bottom": 782.890625,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font1-dark-appearance",
+      "url": "http://127.0.0.1:8895/?view=appearance&section=style&font=1&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVzhled\nJméno\nBublina\nPohyb peta\nZobrazit v chatu\nProstředí\nMotiv\nTmavý\nPočasí\nVypnuto",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 45,
+        "y": 108,
+        "width": 230,
+        "height": 230,
+        "top": 108,
+        "right": 275,
+        "bottom": 338,
+        "left": 45
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Jméno\nBublina",
+          "rect": {
+            "x": 20,
+            "y": 417,
+            "width": 280,
+            "height": 54,
+            "top": 417,
+            "right": 300,
+            "bottom": 471,
+            "left": 20
+          }
+        },
+        {
+          "label": "Pohyb peta",
+          "rect": {
+            "x": 20,
+            "y": 471,
+            "width": 280,
+            "height": 54,
+            "top": 471,
+            "right": 300,
+            "bottom": 525,
+            "left": 20
+          }
+        },
+        {
+          "label": "Zobrazit v chatu",
+          "rect": {
+            "x": 20,
+            "y": 525,
+            "width": 280,
+            "height": 54,
+            "top": 525,
+            "right": 300,
+            "bottom": 579,
+            "left": 20
+          }
+        },
+        {
+          "label": "Motiv\nTmavý",
+          "rect": {
+            "x": 20,
+            "y": 628,
+            "width": 280,
+            "height": 54,
+            "top": 628,
+            "right": 300,
+            "bottom": 682,
+            "left": 20
+          }
+        },
+        {
+          "label": "Počasí\nVypnuto",
+          "rect": {
+            "x": 20,
+            "y": 682,
+            "width": 280,
+            "height": 54,
+            "top": 682,
+            "right": 300,
+            "bottom": 736,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font1-light-overview",
+      "url": "http://127.0.0.1:8895/?view=overview&section=style&font=1&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Pracovní\nOsobní\nPaměť\n\nBublina\n\nPráce\nProjekty\nNástroje\nLidé\nStyl\nRytmus",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 30,
+        "y": 237,
+        "width": 260,
+        "height": 260,
+        "top": 237,
+        "right": 290,
+        "bottom": 497,
+        "left": 30
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 260,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 308,
+            "bottom": 96,
+            "left": 260
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 116,
+            "width": 89.328125,
+            "height": 48,
+            "top": 116,
+            "right": 109.328125,
+            "bottom": 164,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 115.328125,
+            "y": 116,
+            "width": 89.34375,
+            "height": 48,
+            "top": 116,
+            "right": 204.671875,
+            "bottom": 164,
+            "left": 115.328125
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 210.671875,
+            "y": 116,
+            "width": 89.328125,
+            "height": 48,
+            "top": 116,
+            "right": 300,
+            "bottom": 164,
+            "left": 210.671875
+          }
+        },
+        {
+          "label": "Oblast poznatků",
+          "rect": {
+            "x": 20,
+            "y": 181,
+            "width": 101,
+            "height": 48,
+            "top": 181,
+            "right": 121,
+            "bottom": 229,
+            "left": 20
+          }
+        },
+        {
+          "label": "Paměť",
+          "rect": {
+            "x": 207.96875,
+            "y": 181,
+            "width": 92.03125,
+            "height": 48,
+            "top": 181,
+            "right": 300,
+            "bottom": 229,
+            "left": 207.96875
+          }
+        },
+        {
+          "label": "Práce",
+          "rect": {
+            "x": 20,
+            "y": 537,
+            "width": 136,
+            "height": 56,
+            "top": 537,
+            "right": 156,
+            "bottom": 593,
+            "left": 20
+          }
+        },
+        {
+          "label": "Projekty",
+          "rect": {
+            "x": 164,
+            "y": 537,
+            "width": 136,
+            "height": 56,
+            "top": 537,
+            "right": 300,
+            "bottom": 593,
+            "left": 164
+          }
+        },
+        {
+          "label": "Nástroje",
+          "rect": {
+            "x": 20,
+            "y": 601,
+            "width": 136,
+            "height": 56,
+            "top": 601,
+            "right": 156,
+            "bottom": 657,
+            "left": 20
+          }
+        },
+        {
+          "label": "Lidé",
+          "rect": {
+            "x": 164,
+            "y": 601,
+            "width": 136,
+            "height": 56,
+            "top": 601,
+            "right": 300,
+            "bottom": 657,
+            "left": 164
+          }
+        },
+        {
+          "label": "Styl",
+          "rect": {
+            "x": 20,
+            "y": 665,
+            "width": 136,
+            "height": 56,
+            "top": 665,
+            "right": 156,
+            "bottom": 721,
+            "left": 20
+          }
+        },
+        {
+          "label": "Rytmus",
+          "rect": {
+            "x": 164,
+            "y": 665,
+            "width": 136,
+            "height": 56,
+            "top": 665,
+            "right": 300,
+            "bottom": 721,
+            "left": 164
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font1-light-detail",
+      "url": "http://127.0.0.1:8895/?view=detail&section=style&font=1&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVšechny oblasti\nStyl\nPreferuješ stručné shrnutí a další kroky.\nZ chatu\n24. 10.\n\nNaposledy zaznamenáno včera\n\nOpravit\nSmazat\nVyhovují ti jasné seznamy úkolů.",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 75,
+        "y": 177,
+        "width": 170,
+        "height": 170,
+        "top": 177,
+        "right": 245,
+        "bottom": 347,
+        "left": 75
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 260,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 308,
+            "bottom": 96,
+            "left": 260
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 116,
+            "width": 89.328125,
+            "height": 48,
+            "top": 116,
+            "right": 109.328125,
+            "bottom": 164,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 115.328125,
+            "y": 116,
+            "width": 89.34375,
+            "height": 48,
+            "top": 116,
+            "right": 204.671875,
+            "bottom": 164,
+            "left": 115.328125
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 210.671875,
+            "y": 116,
+            "width": 89.328125,
+            "height": 48,
+            "top": 116,
+            "right": 300,
+            "bottom": 164,
+            "left": 210.671875
+          }
+        },
+        {
+          "label": "Všechny oblasti",
+          "rect": {
+            "x": 20,
+            "y": 381.390625,
+            "width": 150.1875,
+            "height": 48,
+            "top": 381.390625,
+            "right": 170.1875,
+            "bottom": 429.390625,
+            "left": 20
+          }
+        },
+        {
+          "label": "Preferuješ stručné shrnutí a další kroky.",
+          "rect": {
+            "x": 20,
+            "y": 505.1875,
+            "width": 280,
+            "height": 49.28125,
+            "top": 505.1875,
+            "right": 300,
+            "bottom": 554.46875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Z chatu",
+          "rect": {
+            "x": 20,
+            "y": 564.46875,
+            "width": 70,
+            "height": 48,
+            "top": 564.46875,
+            "right": 90,
+            "bottom": 612.46875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Opravit",
+          "rect": {
+            "x": 20,
+            "y": 648.609375,
+            "width": 135,
+            "height": 48,
+            "top": 648.609375,
+            "right": 155,
+            "bottom": 696.609375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 165,
+            "y": 648.609375,
+            "width": 135,
+            "height": 48,
+            "top": 648.609375,
+            "right": 300,
+            "bottom": 696.609375,
+            "left": 165
+          }
+        },
+        {
+          "label": "Vyhovují ti jasné seznamy úkolů.",
+          "rect": {
+            "x": 20,
+            "y": 733.609375,
+            "width": 280,
+            "height": 49.28125,
+            "top": 733.609375,
+            "right": 300,
+            "bottom": 782.890625,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font1-light-appearance",
+      "url": "http://127.0.0.1:8895/?view=appearance&section=style&font=1&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVzhled\nJméno\nBublina\nPohyb peta\nZobrazit v chatu\nProstředí\nMotiv\nSvětlý\nPočasí\nVypnuto",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 45,
+        "y": 108,
+        "width": 230,
+        "height": 230,
+        "top": 108,
+        "right": 275,
+        "bottom": 338,
+        "left": 45
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Jméno\nBublina",
+          "rect": {
+            "x": 20,
+            "y": 417,
+            "width": 280,
+            "height": 54,
+            "top": 417,
+            "right": 300,
+            "bottom": 471,
+            "left": 20
+          }
+        },
+        {
+          "label": "Pohyb peta",
+          "rect": {
+            "x": 20,
+            "y": 471,
+            "width": 280,
+            "height": 54,
+            "top": 471,
+            "right": 300,
+            "bottom": 525,
+            "left": 20
+          }
+        },
+        {
+          "label": "Zobrazit v chatu",
+          "rect": {
+            "x": 20,
+            "y": 525,
+            "width": 280,
+            "height": 54,
+            "top": 525,
+            "right": 300,
+            "bottom": 579,
+            "left": 20
+          }
+        },
+        {
+          "label": "Motiv\nSvětlý",
+          "rect": {
+            "x": 20,
+            "y": 628,
+            "width": 280,
+            "height": 54,
+            "top": 628,
+            "right": 300,
+            "bottom": 682,
+            "left": 20
+          }
+        },
+        {
+          "label": "Počasí\nVypnuto",
+          "rect": {
+            "x": 20,
+            "y": 682,
+            "width": 280,
+            "height": 54,
+            "top": 682,
+            "right": 300,
+            "bottom": 736,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font2-dark-overview",
+      "url": "http://127.0.0.1:8895/?view=overview&section=style&font=2&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Pracovní\nOsobní\nPaměť\n\nBublina\n\nPráce\nProjekty\nNástroje\nLidé\nStyl\nRytmus",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 40,
+        "y": 461.1875,
+        "width": 240,
+        "height": 240,
+        "top": 461.1875,
+        "right": 280,
+        "bottom": 701.1875,
+        "left": 40
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 260,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 308,
+            "bottom": 94,
+            "left": 260
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 126,
+            "width": 280,
+            "height": 67.5,
+            "top": 126,
+            "right": 300,
+            "bottom": 193.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 20,
+            "y": 193.5,
+            "width": 280,
+            "height": 67.5,
+            "top": 193.5,
+            "right": 300,
+            "bottom": 261,
+            "left": 20
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 20,
+            "y": 261,
+            "width": 280,
+            "height": 67.5,
+            "top": 261,
+            "right": 300,
+            "bottom": 328.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Oblast poznatků",
+          "rect": {
+            "x": 20,
+            "y": 337.5,
+            "width": 280,
+            "height": 66,
+            "top": 337.5,
+            "right": 300,
+            "bottom": 403.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Paměť",
+          "rect": {
+            "x": 20,
+            "y": 411.5,
+            "width": 280,
+            "height": 49.6875,
+            "top": 411.5,
+            "right": 300,
+            "bottom": 461.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Práce",
+          "rect": {
+            "x": 20,
+            "y": 769.1875,
+            "width": 280,
+            "height": 69.5,
+            "top": 769.1875,
+            "right": 300,
+            "bottom": 838.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Projekty",
+          "rect": {
+            "x": 20,
+            "y": 846.6875,
+            "width": 280,
+            "height": 69.5,
+            "top": 846.6875,
+            "right": 300,
+            "bottom": 916.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Nástroje",
+          "rect": {
+            "x": 20,
+            "y": 924.1875,
+            "width": 280,
+            "height": 69.5,
+            "top": 924.1875,
+            "right": 300,
+            "bottom": 993.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Lidé",
+          "rect": {
+            "x": 20,
+            "y": 1001.6875,
+            "width": 280,
+            "height": 69.5,
+            "top": 1001.6875,
+            "right": 300,
+            "bottom": 1071.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Styl",
+          "rect": {
+            "x": 20,
+            "y": 1079.1875,
+            "width": 280,
+            "height": 69.5,
+            "top": 1079.1875,
+            "right": 300,
+            "bottom": 1148.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Rytmus",
+          "rect": {
+            "x": 20,
+            "y": 1156.6875,
+            "width": 280,
+            "height": 69.5,
+            "top": 1156.6875,
+            "right": 300,
+            "bottom": 1226.1875,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font2-dark-detail",
+      "url": "http://127.0.0.1:8895/?view=detail&section=style&font=2&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVšechny oblasti\nStyl\nPreferuješ stručné shrnutí a další kroky.\nZ chatu\n24. 10.\n\nNaposledy zaznamenáno včera\n\nOpravit\nSmazat\nVyhovují ti jasné seznamy úkolů.",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 85,
+        "y": 341.5,
+        "width": 150,
+        "height": 150,
+        "top": 341.5,
+        "right": 235,
+        "bottom": 491.5,
+        "left": 85
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 260,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 308,
+            "bottom": 94,
+            "left": 260
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 126,
+            "width": 280,
+            "height": 67.5,
+            "top": 126,
+            "right": 300,
+            "bottom": 193.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 20,
+            "y": 193.5,
+            "width": 280,
+            "height": 67.5,
+            "top": 193.5,
+            "right": 300,
+            "bottom": 261,
+            "left": 20
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 20,
+            "y": 261,
+            "width": 280,
+            "height": 67.5,
+            "top": 261,
+            "right": 300,
+            "bottom": 328.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Všechny oblasti",
+          "rect": {
+            "x": 20,
+            "y": 548.296875,
+            "width": 259.375,
+            "height": 63.5,
+            "top": 548.296875,
+            "right": 279.375,
+            "bottom": 611.796875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Preferuješ stručné shrnutí a další kroky.",
+          "rect": {
+            "x": 20,
+            "y": 718.390625,
+            "width": 280,
+            "height": 147.890625,
+            "top": 718.390625,
+            "right": 300,
+            "bottom": 866.28125,
+            "left": 20
+          }
+        },
+        {
+          "label": "Z chatu",
+          "rect": {
+            "x": 20,
+            "y": 876.28125,
+            "width": 100,
+            "height": 56.59375,
+            "top": 876.28125,
+            "right": 120,
+            "bottom": 932.875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Opravit",
+          "rect": {
+            "x": 20,
+            "y": 1029.46875,
+            "width": 280,
+            "height": 65.5,
+            "top": 1029.46875,
+            "right": 300,
+            "bottom": 1094.96875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 20,
+            "y": 1104.96875,
+            "width": 280,
+            "height": 65.5,
+            "top": 1104.96875,
+            "right": 300,
+            "bottom": 1170.46875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Vyhovují ti jasné seznamy úkolů.",
+          "rect": {
+            "x": 20,
+            "y": 1207.46875,
+            "width": 280,
+            "height": 147.890625,
+            "top": 1207.46875,
+            "right": 300,
+            "bottom": 1355.359375,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font2-dark-appearance",
+      "url": "http://127.0.0.1:8895/?view=appearance&section=style&font=2&theme=dark",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVzhled\nJméno\nBublina\nPohyb peta\nZobrazit v chatu\nProstředí\nMotiv\nTmavý\nPočasí\nVypnuto",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 45,
+        "y": 174,
+        "width": 230,
+        "height": 230,
+        "top": 174,
+        "right": 275,
+        "bottom": 404,
+        "left": 45
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Jméno\nBublina",
+          "rect": {
+            "x": 20,
+            "y": 532,
+            "width": 280,
+            "height": 74.296875,
+            "top": 532,
+            "right": 300,
+            "bottom": 606.296875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Pohyb peta",
+          "rect": {
+            "x": 20,
+            "y": 606.296875,
+            "width": 280,
+            "height": 74.296875,
+            "top": 606.296875,
+            "right": 300,
+            "bottom": 680.59375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Zobrazit v chatu",
+          "rect": {
+            "x": 20,
+            "y": 680.59375,
+            "width": 280,
+            "height": 123.59375,
+            "top": 680.59375,
+            "right": 300,
+            "bottom": 804.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Motiv\nTmavý",
+          "rect": {
+            "x": 20,
+            "y": 874.1875,
+            "width": 280,
+            "height": 74.296875,
+            "top": 874.1875,
+            "right": 300,
+            "bottom": 948.484375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Počasí\nVypnuto",
+          "rect": {
+            "x": 20,
+            "y": 948.484375,
+            "width": 280,
+            "height": 74.296875,
+            "top": 948.484375,
+            "right": 300,
+            "bottom": 1022.78125,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font2-light-overview",
+      "url": "http://127.0.0.1:8895/?view=overview&section=style&font=2&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Pracovní\nOsobní\nPaměť\n\nBublina\n\nPráce\nProjekty\nNástroje\nLidé\nStyl\nRytmus",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 40,
+        "y": 461.1875,
+        "width": 240,
+        "height": 240,
+        "top": 461.1875,
+        "right": 280,
+        "bottom": 701.1875,
+        "left": 40
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 260,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 308,
+            "bottom": 94,
+            "left": 260
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 126,
+            "width": 280,
+            "height": 67.5,
+            "top": 126,
+            "right": 300,
+            "bottom": 193.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 20,
+            "y": 193.5,
+            "width": 280,
+            "height": 67.5,
+            "top": 193.5,
+            "right": 300,
+            "bottom": 261,
+            "left": 20
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 20,
+            "y": 261,
+            "width": 280,
+            "height": 67.5,
+            "top": 261,
+            "right": 300,
+            "bottom": 328.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Oblast poznatků",
+          "rect": {
+            "x": 20,
+            "y": 337.5,
+            "width": 280,
+            "height": 66,
+            "top": 337.5,
+            "right": 300,
+            "bottom": 403.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Paměť",
+          "rect": {
+            "x": 20,
+            "y": 411.5,
+            "width": 280,
+            "height": 49.6875,
+            "top": 411.5,
+            "right": 300,
+            "bottom": 461.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Práce",
+          "rect": {
+            "x": 20,
+            "y": 769.1875,
+            "width": 280,
+            "height": 69.5,
+            "top": 769.1875,
+            "right": 300,
+            "bottom": 838.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Projekty",
+          "rect": {
+            "x": 20,
+            "y": 846.6875,
+            "width": 280,
+            "height": 69.5,
+            "top": 846.6875,
+            "right": 300,
+            "bottom": 916.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Nástroje",
+          "rect": {
+            "x": 20,
+            "y": 924.1875,
+            "width": 280,
+            "height": 69.5,
+            "top": 924.1875,
+            "right": 300,
+            "bottom": 993.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Lidé",
+          "rect": {
+            "x": 20,
+            "y": 1001.6875,
+            "width": 280,
+            "height": 69.5,
+            "top": 1001.6875,
+            "right": 300,
+            "bottom": 1071.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Styl",
+          "rect": {
+            "x": 20,
+            "y": 1079.1875,
+            "width": 280,
+            "height": 69.5,
+            "top": 1079.1875,
+            "right": 300,
+            "bottom": 1148.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Rytmus",
+          "rect": {
+            "x": 20,
+            "y": 1156.6875,
+            "width": 280,
+            "height": 69.5,
+            "top": 1156.6875,
+            "right": 300,
+            "bottom": 1226.1875,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font2-light-detail",
+      "url": "http://127.0.0.1:8895/?view=detail&section=style&font=2&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVšechny oblasti\nStyl\nPreferuješ stručné shrnutí a další kroky.\nZ chatu\n24. 10.\n\nNaposledy zaznamenáno včera\n\nOpravit\nSmazat\nVyhovují ti jasné seznamy úkolů.",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 85,
+        "y": 341.5,
+        "width": 150,
+        "height": 150,
+        "top": 341.5,
+        "right": 235,
+        "bottom": 491.5,
+        "left": 85
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 260,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 308,
+            "bottom": 94,
+            "left": 260
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 126,
+            "width": 280,
+            "height": 67.5,
+            "top": 126,
+            "right": 300,
+            "bottom": 193.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 20,
+            "y": 193.5,
+            "width": 280,
+            "height": 67.5,
+            "top": 193.5,
+            "right": 300,
+            "bottom": 261,
+            "left": 20
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 20,
+            "y": 261,
+            "width": 280,
+            "height": 67.5,
+            "top": 261,
+            "right": 300,
+            "bottom": 328.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Všechny oblasti",
+          "rect": {
+            "x": 20,
+            "y": 548.296875,
+            "width": 259.375,
+            "height": 63.5,
+            "top": 548.296875,
+            "right": 279.375,
+            "bottom": 611.796875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Preferuješ stručné shrnutí a další kroky.",
+          "rect": {
+            "x": 20,
+            "y": 718.390625,
+            "width": 280,
+            "height": 147.890625,
+            "top": 718.390625,
+            "right": 300,
+            "bottom": 866.28125,
+            "left": 20
+          }
+        },
+        {
+          "label": "Z chatu",
+          "rect": {
+            "x": 20,
+            "y": 876.28125,
+            "width": 100,
+            "height": 56.59375,
+            "top": 876.28125,
+            "right": 120,
+            "bottom": 932.875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Opravit",
+          "rect": {
+            "x": 20,
+            "y": 1029.46875,
+            "width": 280,
+            "height": 65.5,
+            "top": 1029.46875,
+            "right": 300,
+            "bottom": 1094.96875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 20,
+            "y": 1104.96875,
+            "width": 280,
+            "height": 65.5,
+            "top": 1104.96875,
+            "right": 300,
+            "bottom": 1170.46875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Vyhovují ti jasné seznamy úkolů.",
+          "rect": {
+            "x": 20,
+            "y": 1207.46875,
+            "width": 280,
+            "height": 147.890625,
+            "top": 1207.46875,
+            "right": 300,
+            "bottom": 1355.359375,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "320-font2-light-appearance",
+      "url": "http://127.0.0.1:8895/?view=appearance&section=style&font=2&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 320,
+        "height": 800
+      },
+      "overflow": false,
+      "content": "Bublina\n\nVzhled\nJméno\nBublina\nPohyb peta\nZobrazit v chatu\nProstředí\nMotiv\nSvětlý\nPočasí\nVypnuto",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 45,
+        "y": 174,
+        "width": 230,
+        "height": 230,
+        "top": 174,
+        "right": 275,
+        "bottom": 404,
+        "left": 45
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Jméno\nBublina",
+          "rect": {
+            "x": 20,
+            "y": 532,
+            "width": 280,
+            "height": 74.296875,
+            "top": 532,
+            "right": 300,
+            "bottom": 606.296875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Pohyb peta",
+          "rect": {
+            "x": 20,
+            "y": 606.296875,
+            "width": 280,
+            "height": 74.296875,
+            "top": 606.296875,
+            "right": 300,
+            "bottom": 680.59375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Zobrazit v chatu",
+          "rect": {
+            "x": 20,
+            "y": 680.59375,
+            "width": 280,
+            "height": 123.59375,
+            "top": 680.59375,
+            "right": 300,
+            "bottom": 804.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Motiv\nSvětlý",
+          "rect": {
+            "x": 20,
+            "y": 874.1875,
+            "width": 280,
+            "height": 74.296875,
+            "top": 874.1875,
+            "right": 300,
+            "bottom": 948.484375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Počasí\nVypnuto",
+          "rect": {
+            "x": 20,
+            "y": 948.484375,
+            "width": 280,
+            "height": 74.296875,
+            "top": 948.484375,
+            "right": 300,
+            "bottom": 1022.78125,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "desktop-contained",
+      "url": "http://127.0.0.1:8895/",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "overflow": false,
+      "content": "Pracovní\nOsobní\nPaměť\n\nBublina\n\nPráce\nProjekty\nNástroje\nLidé\nStyl\nRytmus",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 490,
+        "y": 237,
+        "width": 300,
+        "height": 300,
+        "top": 237,
+        "right": 790,
+        "bottom": 537,
+        "left": 490
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 392,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 440,
+            "bottom": 96,
+            "left": 392
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 840,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 888,
+            "bottom": 96,
+            "left": 840
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 400,
+            "y": 116,
+            "width": 156,
+            "height": 48,
+            "top": 116,
+            "right": 556,
+            "bottom": 164,
+            "left": 400
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 562,
+            "y": 116,
+            "width": 156,
+            "height": 48,
+            "top": 116,
+            "right": 718,
+            "bottom": 164,
+            "left": 562
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 724,
+            "y": 116,
+            "width": 156,
+            "height": 48,
+            "top": 116,
+            "right": 880,
+            "bottom": 164,
+            "left": 724
+          }
+        },
+        {
+          "label": "Oblast poznatků",
+          "rect": {
+            "x": 400,
+            "y": 181,
+            "width": 101,
+            "height": 48,
+            "top": 181,
+            "right": 501,
+            "bottom": 229,
+            "left": 400
+          }
+        },
+        {
+          "label": "Paměť",
+          "rect": {
+            "x": 783.96875,
+            "y": 181,
+            "width": 96.03125,
+            "height": 48,
+            "top": 181,
+            "right": 880,
+            "bottom": 229,
+            "left": 783.96875
+          }
+        },
+        {
+          "label": "Práce",
+          "rect": {
+            "x": 400,
+            "y": 577,
+            "width": 235,
+            "height": 56,
+            "top": 577,
+            "right": 635,
+            "bottom": 633,
+            "left": 400
+          }
+        },
+        {
+          "label": "Projekty",
+          "rect": {
+            "x": 645,
+            "y": 577,
+            "width": 235,
+            "height": 56,
+            "top": 577,
+            "right": 880,
+            "bottom": 633,
+            "left": 645
+          }
+        },
+        {
+          "label": "Nástroje",
+          "rect": {
+            "x": 400,
+            "y": 643,
+            "width": 235,
+            "height": 56,
+            "top": 643,
+            "right": 635,
+            "bottom": 699,
+            "left": 400
+          }
+        },
+        {
+          "label": "Lidé",
+          "rect": {
+            "x": 645,
+            "y": 643,
+            "width": 235,
+            "height": 56,
+            "top": 643,
+            "right": 880,
+            "bottom": 699,
+            "left": 645
+          }
+        },
+        {
+          "label": "Styl",
+          "rect": {
+            "x": 400,
+            "y": 709,
+            "width": 235,
+            "height": 56,
+            "top": 709,
+            "right": 635,
+            "bottom": 765,
+            "left": 400
+          }
+        },
+        {
+          "label": "Rytmus",
+          "rect": {
+            "x": 645,
+            "y": 709,
+            "width": 235,
+            "height": 56,
+            "top": 709,
+            "right": 880,
+            "bottom": 765,
+            "left": 645
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "corrected-saved",
+      "url": "http://127.0.0.1:8895/?view=library",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Bublina\n\nUložené\n\nStručné odpovědi se seznamem kroků.\n\nPřidáno tebou\n\nUpravit\nSmazat\n\nOdpovídej mi česky.\n\nPřidáno tebou\n\nUpravit\nSmazat\n\nPracovní týden začíná v pondělí.\n\nZe služby\n\nUpravit\nSmazat",
+      "assets": [
+        {
+          "src": "assets/pet-dark.png",
+          "loaded": true
+        }
+      ],
+      "font": "16px",
+      "pet": {
+        "x": 110,
+        "y": 177,
+        "width": 170,
+        "height": 170,
+        "top": 177,
+        "right": 280,
+        "bottom": 347,
+        "left": 110
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 60,
+            "bottom": 96,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 330,
+            "y": 48,
+            "width": 48,
+            "height": 48,
+            "top": 48,
+            "right": 378,
+            "bottom": 96,
+            "left": 330
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 116,
+            "width": 112.65625,
+            "height": 48,
+            "top": 116,
+            "right": 132.65625,
+            "bottom": 164,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 138.65625,
+            "y": 116,
+            "width": 112.671875,
+            "height": 48,
+            "top": 116,
+            "right": 251.328125,
+            "bottom": 164,
+            "left": 138.65625
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 257.328125,
+            "y": 116,
+            "width": 112.671875,
+            "height": 48,
+            "top": 116,
+            "right": 370,
+            "bottom": 164,
+            "left": 257.328125
+          }
+        },
+        {
+          "label": "Správa paměti",
+          "rect": {
+            "x": 322,
+            "y": 377.390625,
+            "width": 48,
+            "height": 48,
+            "top": 377.390625,
+            "right": 370,
+            "bottom": 425.390625,
+            "left": 322
+          }
+        },
+        {
+          "label": "Upravit",
+          "rect": {
+            "x": 20,
+            "y": 505.875,
+            "width": 170,
+            "height": 48,
+            "top": 505.875,
+            "right": 190,
+            "bottom": 553.875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 200,
+            "y": 505.875,
+            "width": 170,
+            "height": 48,
+            "top": 505.875,
+            "right": 370,
+            "bottom": 553.875,
+            "left": 200
+          }
+        },
+        {
+          "label": "Upravit",
+          "rect": {
+            "x": 20,
+            "y": 653.359375,
+            "width": 170,
+            "height": 48,
+            "top": 653.359375,
+            "right": 190,
+            "bottom": 701.359375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 200,
+            "y": 653.359375,
+            "width": 170,
+            "height": 48,
+            "top": 653.359375,
+            "right": 370,
+            "bottom": 701.359375,
+            "left": 200
+          }
+        },
+        {
+          "label": "Upravit",
+          "rect": {
+            "x": 20,
+            "y": 800.84375,
+            "width": 170,
+            "height": 48,
+            "top": 800.84375,
+            "right": 190,
+            "bottom": 848.84375,
+            "left": 20
+          }
+        },
+        {
+          "label": "Smazat",
+          "rect": {
+            "x": 200,
+            "y": 800.84375,
+            "width": 170,
+            "height": 48,
+            "top": 800.84375,
+            "right": 370,
+            "bottom": 848.84375,
+            "left": 200
+          }
+        }
+      ],
+      "clipped": []
+    },
+    {
+      "name": "reduced-motion-large",
+      "url": "http://127.0.0.1:8895/?font=2&theme=light",
+      "title": "Niaro · Ty a Niaro — interaktivní návrh",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "overflow": false,
+      "content": "Pracovní\nOsobní\nPaměť\n\nBublina\n\nPráce\nProjekty\nNástroje\nLidé\nStyl\nRytmus",
+      "assets": [
+        {
+          "src": "assets/pet-light.png",
+          "loaded": true
+        }
+      ],
+      "font": "32px",
+      "pet": {
+        "x": 75,
+        "y": 465.1875,
+        "width": 240,
+        "height": 240,
+        "top": 465.1875,
+        "right": 315,
+        "bottom": 705.1875,
+        "left": 75
+      },
+      "controls": [
+        {
+          "label": "Zpět",
+          "rect": {
+            "x": 12,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 60,
+            "bottom": 94,
+            "left": 12
+          }
+        },
+        {
+          "label": "Vzhled a prostředí",
+          "rect": {
+            "x": 330,
+            "y": 46,
+            "width": 48,
+            "height": 48,
+            "top": 46,
+            "right": 378,
+            "bottom": 94,
+            "left": 330
+          }
+        },
+        {
+          "label": "Poznatky",
+          "rect": {
+            "x": 20,
+            "y": 126,
+            "width": 350,
+            "height": 67.5,
+            "top": 126,
+            "right": 370,
+            "bottom": 193.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Uložené",
+          "rect": {
+            "x": 20,
+            "y": 193.5,
+            "width": 350,
+            "height": 67.5,
+            "top": 193.5,
+            "right": 370,
+            "bottom": 261,
+            "left": 20
+          }
+        },
+        {
+          "label": "O tobě",
+          "rect": {
+            "x": 20,
+            "y": 261,
+            "width": 350,
+            "height": 67.5,
+            "top": 261,
+            "right": 370,
+            "bottom": 328.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Oblast poznatků",
+          "rect": {
+            "x": 20,
+            "y": 337.5,
+            "width": 350,
+            "height": 66,
+            "top": 337.5,
+            "right": 370,
+            "bottom": 403.5,
+            "left": 20
+          }
+        },
+        {
+          "label": "Paměť",
+          "rect": {
+            "x": 20,
+            "y": 415.5,
+            "width": 350,
+            "height": 49.6875,
+            "top": 415.5,
+            "right": 370,
+            "bottom": 465.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Práce",
+          "rect": {
+            "x": 20,
+            "y": 773.1875,
+            "width": 350,
+            "height": 73.5,
+            "top": 773.1875,
+            "right": 370,
+            "bottom": 846.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Projekty",
+          "rect": {
+            "x": 20,
+            "y": 856.6875,
+            "width": 350,
+            "height": 73.5,
+            "top": 856.6875,
+            "right": 370,
+            "bottom": 930.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Nástroje",
+          "rect": {
+            "x": 20,
+            "y": 940.1875,
+            "width": 350,
+            "height": 73.5,
+            "top": 940.1875,
+            "right": 370,
+            "bottom": 1013.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Lidé",
+          "rect": {
+            "x": 20,
+            "y": 1023.6875,
+            "width": 350,
+            "height": 73.5,
+            "top": 1023.6875,
+            "right": 370,
+            "bottom": 1097.1875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Styl",
+          "rect": {
+            "x": 20,
+            "y": 1107.1875,
+            "width": 350,
+            "height": 73.5,
+            "top": 1107.1875,
+            "right": 370,
+            "bottom": 1180.6875,
+            "left": 20
+          }
+        },
+        {
+          "label": "Rytmus",
+          "rect": {
+            "x": 20,
+            "y": 1190.6875,
+            "width": 350,
+            "height": 73.5,
+            "top": 1190.6875,
+            "right": 370,
+            "bottom": 1264.1875,
+            "left": 20
+          }
+        }
+      ],
+      "clipped": []
+    }
+  ],
+  "interactions": [
+    "Library > profile > keyboard Style > detail heading > All sections > opener focus",
+    "Correction cancel leaves original; restores opener focus",
+    "Source kind/date modal; Escape restores opener",
+    "Correction moves to Saved as user assertion; status announced",
+    "Delete cancel retains; explicit delete removes",
+    "Removed source has no stale link",
+    "OptOut and plugin-off retain inspect/delete; omit revise",
+    "Personal scope empty; Work restores observations",
+    "About you changes local position/department",
+    "Appearance local name/motion/theme; weather truthfully discloses proposal and does not request location",
+    "Erase all explicit confirmation empties local records"
+  ],
+  "externalRequests": [],
+  "passed": true
+}

@@ -1,0 +1,46 @@
+[
+  {
+    "case": "normal-cs",
+    "blank": true,
+    "multiline": true,
+    "typedFilterAboveComposer": true,
+    "attachmentSynthetic": true,
+    "selectedChipRemove": true,
+    "paperclipPickKeyboard": true,
+    "cancelKeyboardRetained": true,
+    "commands": []
+  },
+  {
+    "case": "normal-en",
+    "blank": true,
+    "multiline": true,
+    "typedFilterAboveComposer": true,
+    "attachmentSynthetic": true,
+    "selectedChipRemove": true,
+    "paperclipPickKeyboard": true,
+    "cancelKeyboardRetained": true,
+    "commands": []
+  },
+  {
+    "case": "resume-320-cs",
+    "blank": true,
+    "multiline": true,
+    "typedFilterAboveComposer": true,
+    "attachmentSynthetic": true,
+    "selectedChipRemove": true,
+    "paperclipPickKeyboard": true,
+    "cancelKeyboardRetained": true,
+    "commands": []
+  },
+  {
+    "case": "resume-320-en",
+    "blank": true,
+    "multiline": true,
+    "typedFilterAboveComposer": true,
+    "attachmentSynthetic": true,
+    "selectedChipRemove": true,
+    "paperclipPickKeyboard": true,
+    "cancelKeyboardRetained": true,
+    "commands": []
+  }
+]

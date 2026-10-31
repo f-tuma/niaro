@@ -1,0 +1,17 @@
+# Resumed mobile UI delivery
+
+A is complete as a bounded independent composer review on the five frozen author pins, with both remaining320dp/font2 native language cases, optical/control geometry review and explicit synthetic-send metadata. B is complete as a reviewable centered Pet/profile design and interactive prototype using the three preserved concepts and exact canonical assets. No production, archive, Git/index, account/APK, dependency or canonical-plan modifications were made; publication and acceptance remain root-owned.
+
+Start with `gallery.html`, `composer-review.md`, `design.md`, `fidelity-ledger.md` and `qa.md`. The self-contained `publication/` directory is allowlisted and fingerprinted; `mobile-ui-review-bundle.tar.gz` is its transport copy. Root may publish only those files after review, without copying the frozen source/harness/caches.
+
+Composer result: four native cases total (two preserved normal CS/EN plus two new320/font2 CS/EN); no autosend. One explicit synthetic message carries only the selected TEST-review reference. Normal row center moves from-6px to0, removing the @ action recovers48dp, and all actions remain44dp subject to subpixel raster rounding. No-toolbar narrow capture proves the apparent Gboard overlap was harness height. Placeholder native box is1px below action center; ink center is5.5px below frame center, recorded without claiming user optical approval. Existing46-test evidence is preserved on identical source bytes.
+
+Prototype result:27 final layout captures, eleven primary interaction flows and extended keyboard/dialog/viewport-resize checks pass with no relevant console/page errors or external requests. Scratch fixes address edit-cancel/updated-record focus, dialog naming/focus containment, theme keyboard behavior, large-text spacing, long names and overview rhythm. Exact853×1844 concept/render comparisons are included; deliberate native/type/exact-asset differences are logged rather than represented as pixel-identical AI reproduction.
+
+Browser route: connector absent; actual Orca page navigation/DOM worked but screenshot timed out with no drawn frame. Explicitly authorized fallback used existing Playwright and installed Chromium1243, no installation. Static browser behavior is not a production-native profile or real backend integration test. C2 engine/performance and already accepted broad suites were not repeated.
+
+Native restoration: own8894/8896 services/reverses stopped; all five fresh display/rotation values restored exactly. Root authorized normal8087/38683 reverses as a deliberate change from the post-restart empty baseline. The normal entry retained an existing connection and displayed its guard failure; root accepted that honest restoration handoff in msg_333d93f5fbc8, owns the returned native lease and supplies final visible-App proof separately. This worker did not bypass the guard or touch saved credentials.
+
+Root's next checkpoint: inspect the composer no-@/centering evidence and three actual profile renders, decide any precise optical/design revision, publish the allowlisted gallery if desired, reconcile NIAR-243/246/254/255 capability/API decisions, and run production acceptance only during its separately owned integration. No aesthetic approval or production feature completion is claimed.
+
+Gallery packaging QA:1280/390/320 widths, working embedded Style navigation, all20 links returned200, all images loaded, no overflow or page/console errors (`browser/gallery-results.json`).

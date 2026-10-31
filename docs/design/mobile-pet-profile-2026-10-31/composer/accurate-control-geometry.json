@@ -1,0 +1,857 @@
+[
+  {
+    "name": "before-native",
+    "scale": 2.625,
+    "frame": {
+      "widthDp": 371.429,
+      "heightDp": 62.095,
+      "centerY": 2066.5,
+      "left": 53,
+      "top": 1985,
+      "right": 1028,
+      "bottom": 2148
+    },
+    "row": {
+      "widthDp": 357.333,
+      "heightDp": 43.81,
+      "centerY": 2060.5,
+      "left": 71,
+      "top": 2003,
+      "right": 1009,
+      "bottom": 2118
+    },
+    "actions": [
+      {
+        "label": "P\u0159idat kontext",
+        "widthDp": 43.81,
+        "heightDp": 43.81,
+        "centerY": 2060.5,
+        "left": 71,
+        "top": 2003,
+        "right": 186,
+        "bottom": 2118
+      },
+      {
+        "label": "Odkazy",
+        "widthDp": 43.81,
+        "heightDp": 43.81,
+        "centerY": 2060.5,
+        "left": 197,
+        "top": 2003,
+        "right": 312,
+        "bottom": 2118
+      },
+      {
+        "label": "Nastaven\u00ed hlasu",
+        "widthDp": 43.81,
+        "heightDp": 43.81,
+        "centerY": 2060.5,
+        "left": 894,
+        "top": 2003,
+        "right": 1009,
+        "bottom": 2118
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Napi\u0161 zpr\u00e1vu\u2026",
+        "widthDp": 214.095,
+        "heightDp": 44.571,
+        "centerY": 2061.5,
+        "left": 323,
+        "top": 2003,
+        "right": 885,
+        "bottom": 2120
+      }
+    ],
+    "rowFrameCenterOffsetPx": -6.0,
+    "placeholderVisibleInkBox": [
+      3,
+      42,
+      339,
+      84
+    ],
+    "placeholderInkCenterY": 2066.0
+  },
+  {
+    "name": "after-native",
+    "scale": 2.625,
+    "frame": {
+      "widthDp": 371.429,
+      "heightDp": 62.095,
+      "centerY": 2066.5,
+      "left": 53,
+      "top": 1985,
+      "right": 1028,
+      "bottom": 2148
+    },
+    "row": {
+      "widthDp": 357.333,
+      "heightDp": 43.81,
+      "centerY": 2066.5,
+      "left": 71,
+      "top": 2009,
+      "right": 1009,
+      "bottom": 2124
+    },
+    "actions": [
+      {
+        "label": "P\u0159idat kontext",
+        "widthDp": 43.81,
+        "heightDp": 43.81,
+        "centerY": 2066.5,
+        "left": 71,
+        "top": 2009,
+        "right": 186,
+        "bottom": 2124
+      },
+      {
+        "label": "Nastaven\u00ed hlasu",
+        "widthDp": 43.81,
+        "heightDp": 43.81,
+        "centerY": 2066.5,
+        "left": 894,
+        "top": 2009,
+        "right": 1009,
+        "bottom": 2124
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Napi\u0161 zpr\u00e1vu\u2026",
+        "widthDp": 262.095,
+        "heightDp": 44.571,
+        "centerY": 2067.5,
+        "left": 197,
+        "top": 2009,
+        "right": 885,
+        "bottom": 2126
+      }
+    ],
+    "rowFrameCenterOffsetPx": 0.0,
+    "placeholderVisibleInkBox": [
+      3,
+      42,
+      339,
+      84
+    ],
+    "placeholderInkCenterY": 2072.0
+  },
+  {
+    "name": "normal-cs-blank",
+    "scale": 2.625,
+    "frame": {
+      "widthDp": 371.429,
+      "heightDp": 62.095,
+      "centerY": 2066.5,
+      "left": 53,
+      "top": 1985,
+      "right": 1028,
+      "bottom": 2148
+    },
+    "row": {
+      "widthDp": 357.333,
+      "heightDp": 43.81,
+      "centerY": 2066.5,
+      "left": 71,
+      "top": 2009,
+      "right": 1009,
+      "bottom": 2124
+    },
+    "actions": [
+      {
+        "label": "P\u0159idat kontext",
+        "widthDp": 43.81,
+        "heightDp": 43.81,
+        "centerY": 2066.5,
+        "left": 71,
+        "top": 2009,
+        "right": 186,
+        "bottom": 2124
+      },
+      {
+        "label": "Nastaven\u00ed hlasu",
+        "widthDp": 43.81,
+        "heightDp": 43.81,
+        "centerY": 2066.5,
+        "left": 894,
+        "top": 2009,
+        "right": 1009,
+        "bottom": 2124
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Napi\u0161 zpr\u00e1vu\u2026",
+        "widthDp": 262.095,
+        "heightDp": 44.571,
+        "centerY": 2067.5,
+        "left": 197,
+        "top": 2009,
+        "right": 885,
+        "bottom": 2126
+      }
+    ],
+    "rowFrameCenterOffsetPx": 0.0
+  },
+  {
+    "name": "normal-en-blank",
+    "scale": 2.625,
+    "frame": {
+      "widthDp": 371.429,
+      "heightDp": 62.095,
+      "centerY": 2066.5,
+      "left": 53,
+      "top": 1985,
+      "right": 1028,
+      "bottom": 2148
+    },
+    "row": {
+      "widthDp": 357.333,
+      "heightDp": 43.81,
+      "centerY": 2066.5,
+      "left": 71,
+      "top": 2009,
+      "right": 1009,
+      "bottom": 2124
+    },
+    "actions": [
+      {
+        "label": "Add context",
+        "widthDp": 43.81,
+        "heightDp": 43.81,
+        "centerY": 2066.5,
+        "left": 71,
+        "top": 2009,
+        "right": 186,
+        "bottom": 2124
+      },
+      {
+        "label": "Voice settings",
+        "widthDp": 43.81,
+        "heightDp": 43.81,
+        "centerY": 2066.5,
+        "left": 894,
+        "top": 2009,
+        "right": 1009,
+        "bottom": 2124
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Type a message\u2026",
+        "widthDp": 262.095,
+        "heightDp": 44.571,
+        "centerY": 2067.5,
+        "left": 197,
+        "top": 2009,
+        "right": 885,
+        "bottom": 2126
+      }
+    ],
+    "rowFrameCenterOffsetPx": 0.0
+  },
+  {
+    "name": "resume-320-cs-blank",
+    "scale": 3.375,
+    "frame": {
+      "widthDp": 280.0,
+      "heightDp": 130.074,
+      "centerY": 1831.5,
+      "left": 68,
+      "top": 1612,
+      "right": 1013,
+      "bottom": 2051
+    },
+    "row": {
+      "widthDp": 266.074,
+      "heightDp": 115.852,
+      "centerY": 1831.5,
+      "left": 92,
+      "top": 1636,
+      "right": 990,
+      "bottom": 2027
+    },
+    "actions": [
+      {
+        "label": "P\u0159idat kontext",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1953.0,
+        "left": 92,
+        "top": 1879,
+        "right": 241,
+        "bottom": 2027
+      },
+      {
+        "label": "Nastaven\u00ed hlasu",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1953.0,
+        "left": 841,
+        "top": 1879,
+        "right": 990,
+        "bottom": 2027
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Napi\u0161 zpr\u00e1vu\u2026",
+        "widthDp": 266.074,
+        "heightDp": 68.444,
+        "centerY": 1751.5,
+        "left": 92,
+        "top": 1636,
+        "right": 990,
+        "bottom": 1867
+      }
+    ],
+    "rowFrameCenterOffsetPx": 0.0
+  },
+  {
+    "name": "resume-320-en-blank",
+    "scale": 3.375,
+    "frame": {
+      "widthDp": 280.0,
+      "heightDp": 130.074,
+      "centerY": 1831.5,
+      "left": 68,
+      "top": 1612,
+      "right": 1013,
+      "bottom": 2051
+    },
+    "row": {
+      "widthDp": 266.074,
+      "heightDp": 115.852,
+      "centerY": 1831.5,
+      "left": 92,
+      "top": 1636,
+      "right": 990,
+      "bottom": 2027
+    },
+    "actions": [
+      {
+        "label": "Add context",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1953.0,
+        "left": 92,
+        "top": 1879,
+        "right": 241,
+        "bottom": 2027
+      },
+      {
+        "label": "Voice settings",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1953.0,
+        "left": 841,
+        "top": 1879,
+        "right": 990,
+        "bottom": 2027
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Type a message\u2026",
+        "widthDp": 266.074,
+        "heightDp": 68.444,
+        "centerY": 1751.5,
+        "left": 92,
+        "top": 1636,
+        "right": 990,
+        "bottom": 1867
+      }
+    ],
+    "rowFrameCenterOffsetPx": 0.0
+  },
+  {
+    "name": "resume-320-cs-multiline",
+    "scale": 3.375,
+    "frame": {
+      "widthDp": 280.0,
+      "heightDp": 190.222,
+      "centerY": 1731.0,
+      "left": 68,
+      "top": 1410,
+      "right": 1013,
+      "bottom": 2052
+    },
+    "row": {
+      "widthDp": 266.074,
+      "heightDp": 176.0,
+      "centerY": 1731.0,
+      "left": 92,
+      "top": 1434,
+      "right": 990,
+      "bottom": 2028
+    },
+    "actions": [
+      {
+        "label": "P\u0159idat kontext",
+        "widthDp": 44.148,
+        "heightDp": 44.148,
+        "centerY": 1954.5,
+        "left": 92,
+        "top": 1880,
+        "right": 241,
+        "bottom": 2029
+      },
+      {
+        "label": "Nastaven\u00ed hlasu",
+        "widthDp": 44.148,
+        "heightDp": 44.148,
+        "centerY": 1954.5,
+        "left": 679,
+        "top": 1880,
+        "right": 828,
+        "bottom": 2029
+      },
+      {
+        "label": "Odeslat",
+        "widthDp": 44.148,
+        "heightDp": 44.148,
+        "centerY": 1954.5,
+        "left": 841,
+        "top": 1880,
+        "right": 990,
+        "bottom": 2029
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Napi\u0161 zpr\u00e1vu\u2026",
+        "widthDp": 266.074,
+        "heightDp": 128.0,
+        "centerY": 1650.0,
+        "left": 92,
+        "top": 1434,
+        "right": 990,
+        "bottom": 1866
+      }
+    ],
+    "rowFrameCenterOffsetPx": 0.0
+  },
+  {
+    "name": "resume-320-en-multiline",
+    "scale": 3.375,
+    "frame": {
+      "widthDp": 280.0,
+      "heightDp": 190.222,
+      "centerY": 1731.0,
+      "left": 68,
+      "top": 1410,
+      "right": 1013,
+      "bottom": 2052
+    },
+    "row": {
+      "widthDp": 266.074,
+      "heightDp": 176.0,
+      "centerY": 1731.0,
+      "left": 92,
+      "top": 1434,
+      "right": 990,
+      "bottom": 2028
+    },
+    "actions": [
+      {
+        "label": "Add context",
+        "widthDp": 44.148,
+        "heightDp": 44.148,
+        "centerY": 1954.5,
+        "left": 92,
+        "top": 1880,
+        "right": 241,
+        "bottom": 2029
+      },
+      {
+        "label": "Voice settings",
+        "widthDp": 44.148,
+        "heightDp": 44.148,
+        "centerY": 1954.5,
+        "left": 679,
+        "top": 1880,
+        "right": 828,
+        "bottom": 2029
+      },
+      {
+        "label": "Send",
+        "widthDp": 44.148,
+        "heightDp": 44.148,
+        "centerY": 1954.5,
+        "left": 841,
+        "top": 1880,
+        "right": 990,
+        "bottom": 2029
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Type a message\u2026",
+        "widthDp": 266.074,
+        "heightDp": 128.0,
+        "centerY": 1650.0,
+        "left": 92,
+        "top": 1434,
+        "right": 990,
+        "bottom": 1866
+      }
+    ],
+    "rowFrameCenterOffsetPx": 0.0
+  },
+  {
+    "name": "resume-320-cs-typed-filter-attachment",
+    "scale": 3.375,
+    "frame": {
+      "widthDp": 280.0,
+      "heightDp": 129.778,
+      "centerY": 1362.0,
+      "left": 68,
+      "top": 1143,
+      "right": 1013,
+      "bottom": 1581
+    },
+    "row": {
+      "widthDp": 266.074,
+      "heightDp": 116.148,
+      "centerY": 1363.0,
+      "left": 92,
+      "top": 1167,
+      "right": 990,
+      "bottom": 1559
+    },
+    "actions": [
+      {
+        "label": "P\u0159idat kontext",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1484.0,
+        "left": 92,
+        "top": 1410,
+        "right": 241,
+        "bottom": 1558
+      },
+      {
+        "label": "Hlasov\u00fd vstup",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1484.0,
+        "left": 679,
+        "top": 1410,
+        "right": 828,
+        "bottom": 1558
+      },
+      {
+        "label": "Odeslat",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1484.0,
+        "left": 841,
+        "top": 1410,
+        "right": 990,
+        "bottom": 1558
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Napi\u0161 zpr\u00e1vu\u2026",
+        "widthDp": 266.074,
+        "heightDp": 68.148,
+        "centerY": 1282.0,
+        "left": 92,
+        "top": 1167,
+        "right": 990,
+        "bottom": 1397
+      }
+    ],
+    "rowFrameCenterOffsetPx": 1.0
+  },
+  {
+    "name": "resume-320-en-typed-filter-attachment",
+    "scale": 3.375,
+    "frame": {
+      "widthDp": 280.0,
+      "heightDp": 129.778,
+      "centerY": 1362.0,
+      "left": 68,
+      "top": 1143,
+      "right": 1013,
+      "bottom": 1581
+    },
+    "row": {
+      "widthDp": 266.074,
+      "heightDp": 116.148,
+      "centerY": 1363.0,
+      "left": 92,
+      "top": 1167,
+      "right": 990,
+      "bottom": 1559
+    },
+    "actions": [
+      {
+        "label": "Add context",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1484.0,
+        "left": 92,
+        "top": 1410,
+        "right": 241,
+        "bottom": 1558
+      },
+      {
+        "label": "Voice input",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1484.0,
+        "left": 679,
+        "top": 1410,
+        "right": 828,
+        "bottom": 1558
+      },
+      {
+        "label": "Send",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1484.0,
+        "left": 841,
+        "top": 1410,
+        "right": 990,
+        "bottom": 1558
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Type a message\u2026",
+        "widthDp": 266.074,
+        "heightDp": 68.148,
+        "centerY": 1282.0,
+        "left": 92,
+        "top": 1167,
+        "right": 990,
+        "bottom": 1397
+      }
+    ],
+    "rowFrameCenterOffsetPx": 1.0
+  },
+  {
+    "name": "resume-320-cs-selected-attachment",
+    "scale": 3.375,
+    "frame": {
+      "widthDp": 280.0,
+      "heightDp": 177.778,
+      "centerY": 1118.0,
+      "left": 68,
+      "top": 818,
+      "right": 1013,
+      "bottom": 1418
+    },
+    "row": {
+      "widthDp": 266.074,
+      "heightDp": 116.148,
+      "centerY": 1200.0,
+      "left": 92,
+      "top": 1004,
+      "right": 990,
+      "bottom": 1396
+    },
+    "actions": [
+      {
+        "label": "Odebrat odkaz Review",
+        "widthDp": 138.37,
+        "heightDp": 44.148,
+        "centerY": 916.5,
+        "left": 92,
+        "top": 842,
+        "right": 559,
+        "bottom": 991
+      },
+      {
+        "label": "P\u0159idat kontext",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1321.0,
+        "left": 92,
+        "top": 1247,
+        "right": 241,
+        "bottom": 1395
+      },
+      {
+        "label": "Hlasov\u00fd vstup",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1321.0,
+        "left": 679,
+        "top": 1247,
+        "right": 828,
+        "bottom": 1395
+      },
+      {
+        "label": "Odeslat",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1321.0,
+        "left": 841,
+        "top": 1247,
+        "right": 990,
+        "bottom": 1395
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Napi\u0161 zpr\u00e1vu\u2026",
+        "widthDp": 266.074,
+        "heightDp": 68.148,
+        "centerY": 1119.0,
+        "left": 92,
+        "top": 1004,
+        "right": 990,
+        "bottom": 1234
+      }
+    ],
+    "rowFrameCenterOffsetPx": 82.0
+  },
+  {
+    "name": "resume-320-en-selected-attachment",
+    "scale": 3.375,
+    "frame": {
+      "widthDp": 280.0,
+      "heightDp": 177.778,
+      "centerY": 1118.0,
+      "left": 68,
+      "top": 818,
+      "right": 1013,
+      "bottom": 1418
+    },
+    "row": {
+      "widthDp": 266.074,
+      "heightDp": 116.148,
+      "centerY": 1200.0,
+      "left": 92,
+      "top": 1004,
+      "right": 990,
+      "bottom": 1396
+    },
+    "actions": [
+      {
+        "label": "Remove reference Review",
+        "widthDp": 138.37,
+        "heightDp": 44.148,
+        "centerY": 916.5,
+        "left": 92,
+        "top": 842,
+        "right": 559,
+        "bottom": 991
+      },
+      {
+        "label": "Add context",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1321.0,
+        "left": 92,
+        "top": 1247,
+        "right": 241,
+        "bottom": 1395
+      },
+      {
+        "label": "Voice input",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1321.0,
+        "left": 679,
+        "top": 1247,
+        "right": 828,
+        "bottom": 1395
+      },
+      {
+        "label": "Send",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1321.0,
+        "left": 841,
+        "top": 1247,
+        "right": 990,
+        "bottom": 1395
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Type a message\u2026",
+        "widthDp": 266.074,
+        "heightDp": 68.148,
+        "centerY": 1119.0,
+        "left": 92,
+        "top": 1004,
+        "right": 990,
+        "bottom": 1234
+      }
+    ],
+    "rowFrameCenterOffsetPx": 82.0
+  },
+  {
+    "name": "resume-toolbar-hidden-typed-filter",
+    "scale": 3.375,
+    "frame": {
+      "widthDp": 280.0,
+      "heightDp": 130.074,
+      "centerY": 1185.5,
+      "left": 68,
+      "top": 966,
+      "right": 1013,
+      "bottom": 1405
+    },
+    "row": {
+      "widthDp": 266.074,
+      "heightDp": 115.852,
+      "centerY": 1185.5,
+      "left": 92,
+      "top": 990,
+      "right": 990,
+      "bottom": 1381
+    },
+    "actions": [
+      {
+        "label": "P\u0159idat kontext",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1307.0,
+        "left": 92,
+        "top": 1233,
+        "right": 241,
+        "bottom": 1381
+      },
+      {
+        "label": "Hlasov\u00fd vstup",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1307.0,
+        "left": 679,
+        "top": 1233,
+        "right": 828,
+        "bottom": 1381
+      },
+      {
+        "label": "Odeslat",
+        "widthDp": 44.148,
+        "heightDp": 43.852,
+        "centerY": 1307.0,
+        "left": 841,
+        "top": 1233,
+        "right": 990,
+        "bottom": 1381
+      }
+    ],
+    "inputs": [
+      {
+        "label": "Napi\u0161 zpr\u00e1vu\u2026",
+        "widthDp": 266.074,
+        "heightDp": 68.444,
+        "centerY": 1105.5,
+        "left": 92,
+        "top": 990,
+        "right": 990,
+        "bottom": 1221
+      }
+    ],
+    "rowFrameCenterOffsetPx": 0.0
+  }
+]

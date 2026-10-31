@@ -1,0 +1,342 @@
+{
+  "README.md": {
+    "sha256": "bb01c3cb6cdf334e435f902f7dc16c528cf8466aa79bfa619174c24529cba903",
+    "symlink": null
+  },
+  "REPORT.md": {
+    "sha256": "141f42d862590db801c9fcf5dcf74b5918ee7abea19d83eb20249ce8f679d38b",
+    "symlink": null
+  },
+  "browser/final/320-font1-dark-appearance.png": {
+    "sha256": "d20a641a54419483f6d1be32554dec390f70bcf0e44c5b05d417dc9dd6a6c779",
+    "symlink": null
+  },
+  "browser/final/320-font1-dark-detail.png": {
+    "sha256": "f6f848622856acf682fc803471c2786045732b51a85c30e53259bf9c9c799143",
+    "symlink": null
+  },
+  "browser/final/320-font1-dark-overview.png": {
+    "sha256": "38ec9435e2867cd1d3ccda828a01670ee4e2c1821ed3685c3d5af25d7b7307f6",
+    "symlink": null
+  },
+  "browser/final/320-font1-light-appearance.png": {
+    "sha256": "9c795584484afd056dfc1872c966f864db84d5160ab0a334b8e4cdfaacca9fce",
+    "symlink": null
+  },
+  "browser/final/320-font1-light-detail.png": {
+    "sha256": "56d301fe5da0a772398302f31793c021d1770fc4e1628cbcb5dc68670e716dff",
+    "symlink": null
+  },
+  "browser/final/320-font1-light-overview.png": {
+    "sha256": "11a7498dd5c117e1391cb5bb8c434a6e9a6580f14c83694820e642c809713fca",
+    "symlink": null
+  },
+  "browser/final/320-font2-dark-appearance.png": {
+    "sha256": "992f9038fcc349088359ba123fa0d9ec4bdcf6779bb9d97eddc259748d8a5532",
+    "symlink": null
+  },
+  "browser/final/320-font2-dark-detail.png": {
+    "sha256": "2e6d817aa3fcda730d68e7d21df747f0035ffa58450aa6f2a8aba5c93679b683",
+    "symlink": null
+  },
+  "browser/final/320-font2-dark-overview.png": {
+    "sha256": "1d36722ca1d000d1bbeee91e9bc6e5bda3aa8a74a7c83c0ffe97ca0055318ec2",
+    "symlink": null
+  },
+  "browser/final/320-font2-editor-resized.png": {
+    "sha256": "7c28e6015340b58c71164d8c9cecb5b723143643e854e5b458b6bf786d62b280",
+    "symlink": null
+  },
+  "browser/final/320-font2-light-appearance.png": {
+    "sha256": "5b90704a0ef104f6c2608da281dcf54b14cf80865c8a51ab545a792374572b24",
+    "symlink": null
+  },
+  "browser/final/320-font2-light-detail.png": {
+    "sha256": "da6c60d688c7dcb193597fdc62af1f5388f96777f014436660742b9d73e06841",
+    "symlink": null
+  },
+  "browser/final/320-font2-light-overview.png": {
+    "sha256": "637eb72a6a471c3903839112e98fc352d4af5454899141ec7962352aa72194ce",
+    "symlink": null
+  },
+  "browser/final/320-font2-long-name.png": {
+    "sha256": "460aa6c0057b2c44b432930d11f98f13249ce5c2c7da7de668df0e25dcf9a7cd",
+    "symlink": null
+  },
+  "browser/final/390-font1-dark-appearance.png": {
+    "sha256": "b7f061ec4cac8f7abcf25f4a5ff0fd0c05ab4fe9158263238206a958e30f56c2",
+    "symlink": null
+  },
+  "browser/final/390-font1-dark-detail.png": {
+    "sha256": "259447ab0dad8479fe701b7b50c0326921ad11ae49098d35c490c863ec571ab1",
+    "symlink": null
+  },
+  "browser/final/390-font1-dark-overview.png": {
+    "sha256": "97eb5b40255364d01392acf5ba6f9ba3158fb7c3637683860e8d9a2b2b2a8992",
+    "symlink": null
+  },
+  "browser/final/390-font1-light-appearance.png": {
+    "sha256": "31cf13e995c6cc217ba49dd74fd8b5dc782f8d68ade0b2cfd12e5848e1e19c18",
+    "symlink": null
+  },
+  "browser/final/390-font1-light-detail.png": {
+    "sha256": "9a9fc7dc6ff2cbed0fa5094e70072ef6e969a6e23aa849f72fbafb7a67d57c61",
+    "symlink": null
+  },
+  "browser/final/390-font1-light-overview.png": {
+    "sha256": "bc51b18a186f98f54a3f594a4dfba165b9fd880100493d9dd8bf25bfd9823ecc",
+    "symlink": null
+  },
+  "browser/final/390-font2-dark-appearance.png": {
+    "sha256": "18dc8f67d6dcb479593eaebb10fbab9ee6676f5e71e6e2f883834f7624073005",
+    "symlink": null
+  },
+  "browser/final/390-font2-dark-detail.png": {
+    "sha256": "15511535c64281975cbbd2b44df9e2a1661fb9ee751257e21cbbb31b5f012ac9",
+    "symlink": null
+  },
+  "browser/final/390-font2-dark-overview.png": {
+    "sha256": "c94845d9358006be6747852b662defd32f40bdedc1df454a7e5521e123bd9a2b",
+    "symlink": null
+  },
+  "browser/final/390-font2-light-appearance.png": {
+    "sha256": "ed099f22de934057ba1a120663f04dbd3283d85ad109059c02c9ef6b21919c5e",
+    "symlink": null
+  },
+  "browser/final/390-font2-light-detail.png": {
+    "sha256": "7f9d48ea1bf9dad95681194d6266f23540b14598893ad8a7fc00f57a480a03fe",
+    "symlink": null
+  },
+  "browser/final/390-font2-light-overview.png": {
+    "sha256": "40951f61a8702c1993598cccc5133108b1eb41667d2eb9edaa000f67a9fc09d9",
+    "symlink": null
+  },
+  "browser/final/concept-scale-appearance.png": {
+    "sha256": "ace6da36cb552c9f60df7b6a8b4c130bd3cbc46a8209934577877dc2d5ae5470",
+    "symlink": null
+  },
+  "browser/final/concept-scale-detail.png": {
+    "sha256": "22565beca38c316ccefa0f2f9002988cc2666e1ed547e6aa592a58238c2e3821",
+    "symlink": null
+  },
+  "browser/final/concept-scale-overview.png": {
+    "sha256": "b11f825ff4a50efb1282ba1e89582a392b92d08bed5728c8138cbdfe2beee7b1",
+    "symlink": null
+  },
+  "browser/final/corrected-saved.png": {
+    "sha256": "9673d3e10a6a712c123856230fe710f25f203dd97f8f5f3c6d4c84fff1490353",
+    "symlink": null
+  },
+  "browser/final/desktop-contained.png": {
+    "sha256": "7042f5fcbd65e44d9f3b8a6cc937ff020f8e72a07ccb0ad165ac3f25e644ab42",
+    "symlink": null
+  },
+  "browser/final/extended-results.json": {
+    "sha256": "2e926cca0b96bfa85609e1bfa15ca657fbdb064510e19d82e97bda3d237126d4",
+    "symlink": null
+  },
+  "browser/final/reduced-motion-large.png": {
+    "sha256": "40951f61a8702c1993598cccc5133108b1eb41667d2eb9edaa000f67a9fc09d9",
+    "symlink": null
+  },
+  "browser/final/results.json": {
+    "sha256": "79e088c73795bc844051d9aa9fe4e5c28dad2654b6a907c9031034a5bf39c291",
+    "symlink": null
+  },
+  "browser/gallery-1280.png": {
+    "sha256": "d365718848791c472f339af0dbe3a59f01eb562bd113d260dac296bce5e6b9e9",
+    "symlink": null
+  },
+  "browser/gallery-320.png": {
+    "sha256": "87f0dc9cd7f41eeb32fe336ea39979c8a328db0132845e9e6374733d70008a74",
+    "symlink": null
+  },
+  "browser/gallery-390.png": {
+    "sha256": "e0654eb53bbcaef78d3eb462b7c5d8d1541883fa5e4205fce2b121ea149d4390",
+    "symlink": null
+  },
+  "browser/gallery-results.json": {
+    "sha256": "f293225ce648bb9ad85dbe5c320e742611a9e94c7f70886c4b2243d2c7d2c6e4",
+    "symlink": null
+  },
+  "browser/initial-shot-response.json": {
+    "sha256": "f6471c5882a6b0169d8391ad3a2146df1f15f6739f700855f412c101d70e4935",
+    "symlink": null
+  },
+  "cleanup.json": {
+    "sha256": "3f11afa38d586686e9a691e4c040611ac0229a84fbd0022209eba5d6ad4ff38b",
+    "symlink": null
+  },
+  "composer/accurate-control-geometry.json": {
+    "sha256": "f133de2d4b101e05df6a664cdc02815d599e7fd8adada0bbfe619ffbdd0dc308",
+    "symlink": null
+  },
+  "composer/after-native.png": {
+    "sha256": "badace705bb79e87c7d2988d1f11e2ba16972a39f410a8a95bf43bc203911c8f",
+    "symlink": null
+  },
+  "composer/before-native.png": {
+    "sha256": "3d4fb18eeb44c6d932c827d1e6a3329ef9a313a1e72c4541cff9ef76a340cb3b",
+    "symlink": null
+  },
+  "composer/explicit-send-result.json": {
+    "sha256": "db034a98c59c28a516d4edd95ac758ed140a34da227806ba0d6e8c27888ab9bc",
+    "symlink": null
+  },
+  "composer/independent-composer-tests.log": {
+    "sha256": "dc24a2836eb11825035c1e193878663bf6e96798cd8798ef8ef81f689330973a",
+    "symlink": null
+  },
+  "composer/native-matrix.json": {
+    "sha256": "125418a5b5b8a6dc705a151ca73ec26a72ba8f7b1d28926989d20eea5a7b4a95",
+    "symlink": null
+  },
+  "composer/resume-320-cs-blank.png": {
+    "sha256": "9b555cd176cb2e48dc04c6295c000a0dd4f98d5c287a4905d354928931348124",
+    "symlink": null
+  },
+  "composer/resume-320-en-cancel-retained.png": {
+    "sha256": "f9d7f9216eac6e154c924fe10d3e79337ab1b1e06150e1a459ed65ca2f46a2c9",
+    "symlink": null
+  },
+  "composer/resume-320-en-multiline.png": {
+    "sha256": "c44bb762dd13b2b9847152234efcc6861f2b4fbee1207180956895c1e77ff7e1",
+    "symlink": null
+  },
+  "composer/resume-320-en-selected-attachment.png": {
+    "sha256": "9df53d8e45eadf06ac2ab5093d711479fc9e0c30ce2c8f0e48f3b2d513ce62ec",
+    "symlink": null
+  },
+  "composer/resume-baseline.json": {
+    "sha256": "de97595eb5d895d09c9b1a64d703a36ecd6fef242f9a3447918e4af3456a847c",
+    "symlink": null
+  },
+  "composer/resume-final-native-ports.json": {
+    "sha256": "c0f976aeaeadc373f9262dd2694df836e353a736e52d4a8081ac0b1a886e3a9a",
+    "symlink": null
+  },
+  "composer/resume-native-narrow.log": {
+    "sha256": "5804d41ab0e7a28d95a0ce6eb0efacf4490d3eaac7a50e4337dc04dce54b3cc7",
+    "symlink": null
+  },
+  "composer/resume-restoration-actions.json": {
+    "sha256": "b8ad5d5aa5c59583ce483a49950dd18648ee02b5736af9d7f84751715f8ded22",
+    "symlink": null
+  },
+  "composer/resume-restoration-comparison.json": {
+    "sha256": "a9ca4248d44ad1bf65126e1be7edaf1d377a3ce6ebef3fc1b5b90469b88fae90",
+    "symlink": null
+  },
+  "composer/resume-restored-normal.json": {
+    "sha256": "4b88ea03b21f370bc28f613049e77dd4c2c7a58c8ddd6d25d3544417dc336857",
+    "symlink": null
+  },
+  "composer/resume-restored-normal.png": {
+    "sha256": "727a43ff386baa37a5f31187a79d687c1baec440e05e15eed159d8521e7cd53a",
+    "symlink": null
+  },
+  "composer/resume-restored.json": {
+    "sha256": "0d4686c4d2c7fe0b1537d6f22f65fb24034fdcf2668801be34808cd3ef9646fc",
+    "symlink": null
+  },
+  "composer/resume-source-verification.json": {
+    "sha256": "6570324e92414d81d74743a56470ba9cdb89872e36234e3c70c6aedbe0500a99",
+    "symlink": null
+  },
+  "composer/resume-toolbar-hidden-typed-filter.json": {
+    "sha256": "4bdc528dea3e2d24b176f006cd98a5a2e6db487b64c3abe6b50e3b9946e4a68c",
+    "symlink": null
+  },
+  "composer/resume-toolbar-hidden-typed-filter.png": {
+    "sha256": "34cc65dbb87f22716ea7b2db8cd463e1d1d060c11e4f11a5595a144e69229646",
+    "symlink": null
+  },
+  "composer-review.md": {
+    "sha256": "e1f336ad4bdf84fac87ca400db248bd02cbddda43f50ee755c9d68dcbb70f444",
+    "symlink": null
+  },
+  "concepts/01-overview-dark.png": {
+    "sha256": "17bae7586befdbaffb8fcecd5a32b7e356d59c730ac190adc8153e23e2cf1c05",
+    "symlink": null
+  },
+  "concepts/02-memory-dark.png": {
+    "sha256": "6a88a9b6fa67e419e9008362aa66e6e9e34c9ea94cf3de5401c5c17303c39a81",
+    "symlink": null
+  },
+  "concepts/03-appearance-light.png": {
+    "sha256": "cbdbd8386b89419e2a3ba1996b926f428c33cd19a50ca8fca4b30a05562374e8",
+    "symlink": null
+  },
+  "design-inventory.md": {
+    "sha256": "4cf6c501feee611ccad132f8c23a7a88ff6af03c02af4a98a0b330b73b3fe169",
+    "symlink": null
+  },
+  "design.md": {
+    "sha256": "bebca9538896f9fa90746a0b5acb64db06fe782cbddaab8a0b134de516789501",
+    "symlink": null
+  },
+  "fidelity-ledger.md": {
+    "sha256": "b1b2f0b2fb03fe9336edcb37adeb8f85a5f890485a3ccf1d227e246a4c9929b3",
+    "symlink": null
+  },
+  "final-five-pins.json": {
+    "sha256": "ca67189f09a0f23b3adaa6c560786d09305b76f3f8a00b1760625b5ef94d2c5d",
+    "symlink": null
+  },
+  "fresh-five-pins.json": {
+    "sha256": "df288e668554fb9ef5cb65b51c518a4e0fd3373180e38adabd076de3101ff96d",
+    "symlink": null
+  },
+  "gallery.html": {
+    "sha256": "a7ac46dd9dbd4edb7226fbc6e2128ef2a5ad31c4547aaa5e1d96bdc200cf59cb",
+    "symlink": null
+  },
+  "prompts.json": {
+    "sha256": "7781030c30cc51b8fb645cbdbf6e28000bd52a01da864379038c53016bbe5ac6",
+    "symlink": null
+  },
+  "prototype/app.js": {
+    "sha256": "bd2c8c7b1539aa6c40548e81e81f626329c793ea09e63d1e568571dd8660ba2f",
+    "symlink": null
+  },
+  "prototype/assets/Manrope-LICENSE.txt": {
+    "sha256": "d826ab6583b12c26807d8716a545bdbbb672df04f48608a364ba9efdbe501c30",
+    "symlink": null
+  },
+  "prototype/assets/logo.svg": {
+    "sha256": "a69b903289f019c1e1ceba77713eb8aa7bce719b6de3a3f1f8ff456d1c3913b8",
+    "symlink": "../../../../../assets/brand/source/logo.svg"
+  },
+  "prototype/assets/manrope.woff2": {
+    "sha256": "a30ddcd349703aff7464c34bef3fffdff405ee50c113440d7c8693c02d210972",
+    "symlink": "../../../web-pet-profile-2026-10-30/references/manrope.woff2"
+  },
+  "prototype/assets/pet-dark.png": {
+    "sha256": "0adc4a005ee7db61b107280c458b558cf12d61980bae168f03ef47beed19e8ca",
+    "symlink": "../../../web-pet-profile-2026-10-30/references/pet-dark.png"
+  },
+  "prototype/assets/pet-light.png": {
+    "sha256": "b23c3845c308135c2f209f07fbe6cf4b6e3d1b085dfa93e5ce5e2742ddb22c06",
+    "symlink": "../../../web-pet-profile-2026-10-30/references/pet-light.png"
+  },
+  "prototype/assets/pet-nav-icon.svg": {
+    "sha256": "6ca6f35bb269557d49a798b0e807f2751258f8d239f975858c2bce09a6e7e9ca",
+    "symlink": "../../../web-pet-profile-2026-10-30/references/pet-nav-icon.svg"
+  },
+  "prototype/index.html": {
+    "sha256": "fc451cdc9a4796e3747490bf3355b10ee6081740e564fed38c8908b278764268",
+    "symlink": null
+  },
+  "prototype/style.css": {
+    "sha256": "5a3f79d058161d7ed185c53fd770eca433565d369121c3ee5a9db16da1c105cc",
+    "symlink": null
+  },
+  "qa.md": {
+    "sha256": "3fa43cd35eef7583b6b2b701f0e1d0c59ebbc06c4343eea9b7a33701d8250658",
+    "symlink": null
+  },
+  "source-and-asset-hashes.json": {
+    "sha256": "7a20fe716f18efcc212ba969ce83c9da3e81a92b38fe2e29e85633331483b236",
+    "symlink": null
+  }
+}

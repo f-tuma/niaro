@@ -1,0 +1,37 @@
+[
+  {
+    "path": "apps/mobile/App.tsx",
+    "expected": "adc9b50e4c7e6ed9784b96513e0dff90dbf8ede84e1eb1f0b1431365f7f1a5f1",
+    "frozen": "adc9b50e4c7e6ed9784b96513e0dff90dbf8ede84e1eb1f0b1431365f7f1a5f1",
+    "main": "adc9b50e4c7e6ed9784b96513e0dff90dbf8ede84e1eb1f0b1431365f7f1a5f1",
+    "match": true
+  },
+  {
+    "path": "apps/mobile/ScreenChrome.tsx",
+    "expected": "84169effa5e6c464aa834aab9fdc200da860f50a4795e09c412be439a48596e7",
+    "frozen": "84169effa5e6c464aa834aab9fdc200da860f50a4795e09c412be439a48596e7",
+    "main": "84169effa5e6c464aa834aab9fdc200da860f50a4795e09c412be439a48596e7",
+    "match": true
+  },
+  {
+    "path": "packages/ui-catalog/AttachmentPicker.tsx",
+    "expected": "75553e0c2e85b34ef49c1ddef0d4e3080ccddf18c7322220b7006139916d6400",
+    "frozen": "75553e0c2e85b34ef49c1ddef0d4e3080ccddf18c7322220b7006139916d6400",
+    "main": "75553e0c2e85b34ef49c1ddef0d4e3080ccddf18c7322220b7006139916d6400",
+    "match": true
+  },
+  {
+    "path": "tests/conversation-history-mobile.test.tsx",
+    "expected": "9422163e01d806f13eec262c0fabe479e4fdb27d49b5ded499892cc406b9fc02",
+    "frozen": "9422163e01d806f13eec262c0fabe479e4fdb27d49b5ded499892cc406b9fc02",
+    "main": "9422163e01d806f13eec262c0fabe479e4fdb27d49b5ded499892cc406b9fc02",
+    "match": true
+  },
+  {
+    "path": "tests/mobile-mentions.test.tsx",
+    "expected": "9bc51a3fd443cb69b3804d87895f8f9291a3ced52d362a7320bef95bf5a51b38",
+    "frozen": "9bc51a3fd443cb69b3804d87895f8f9291a3ced52d362a7320bef95bf5a51b38",
+    "main": "9bc51a3fd443cb69b3804d87895f8f9291a3ced52d362a7320bef95bf5a51b38",
+    "match": true
+  }
+]

@@ -1,0 +1,1229 @@
+{
+  "children": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "children": [
+                            {
+                              "children": [
+                                {
+                                  "children": [
+                                    {
+                                      "children": [],
+                                      "className": "android.view.View",
+                                      "packageName": "dev.agentclient.demo",
+                                      "clickable": false,
+                                      "enabled": true,
+                                      "focused": false,
+                                      "bounds": {
+                                        "left": 0,
+                                        "top": 0,
+                                        "right": 1080,
+                                        "bottom": 2400
+                                      }
+                                    }
+                                  ],
+                                  "className": "androidx.compose.ui.platform.ComposeView",
+                                  "packageName": "dev.agentclient.demo",
+                                  "clickable": false,
+                                  "enabled": true,
+                                  "focused": false,
+                                  "bounds": {
+                                    "left": 0,
+                                    "top": 0,
+                                    "right": 1080,
+                                    "bottom": 2400
+                                  }
+                                }
+                              ],
+                              "className": "android.widget.LinearLayout",
+                              "packageName": "dev.agentclient.demo",
+                              "clickable": false,
+                              "enabled": true,
+                              "focused": false,
+                              "bounds": {
+                                "left": 0,
+                                "top": 0,
+                                "right": 1080,
+                                "bottom": 2400
+                              }
+                            },
+                            {
+                              "children": [
+                                {
+                                  "children": [
+                                    {
+                                      "children": [],
+                                      "className": "android.view.View",
+                                      "packageName": "dev.agentclient.demo",
+                                      "clickable": false,
+                                      "enabled": true,
+                                      "focused": false,
+                                      "bounds": {
+                                        "left": 0,
+                                        "top": 0,
+                                        "right": 1080,
+                                        "bottom": 2400
+                                      }
+                                    }
+                                  ],
+                                  "className": "android.view.ViewGroup",
+                                  "packageName": "dev.agentclient.demo",
+                                  "clickable": false,
+                                  "enabled": true,
+                                  "focused": false,
+                                  "bounds": {
+                                    "left": 0,
+                                    "top": 0,
+                                    "right": 1080,
+                                    "bottom": 2400
+                                  }
+                                },
+                                {
+                                  "children": [
+                                    {
+                                      "children": [
+                                        {
+                                          "children": [],
+                                          "className": "android.view.ViewGroup",
+                                          "resourceId": "screen-header",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": false,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 0,
+                                            "top": 81,
+                                            "right": 1080,
+                                            "bottom": 297
+                                          }
+                                        },
+                                        {
+                                          "children": [
+                                            {
+                                              "children": [
+                                                {
+                                                  "children": [],
+                                                  "className": "com.horcrux.svg.SvgView",
+                                                  "packageName": "dev.agentclient.demo",
+                                                  "clickable": false,
+                                                  "enabled": true,
+                                                  "focused": false,
+                                                  "bounds": {
+                                                    "left": 78,
+                                                    "top": 152,
+                                                    "right": 152,
+                                                    "bottom": 227
+                                                  }
+                                                }
+                                              ],
+                                              "className": "android.view.ViewGroup",
+                                              "packageName": "dev.agentclient.demo",
+                                              "clickable": false,
+                                              "enabled": true,
+                                              "focused": false,
+                                              "bounds": {
+                                                "left": 78,
+                                                "top": 152,
+                                                "right": 152,
+                                                "bottom": 227
+                                              }
+                                            }
+                                          ],
+                                          "className": "android.widget.Button",
+                                          "contentDesc": "Menu",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": true,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 41,
+                                            "top": 115,
+                                            "right": 189,
+                                            "bottom": 264
+                                          }
+                                        },
+                                        {
+                                          "children": [],
+                                          "className": "android.view.View",
+                                          "text": "Niaro",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": false,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 203,
+                                            "top": 126,
+                                            "right": 878,
+                                            "bottom": 252
+                                          }
+                                        },
+                                        {
+                                          "children": [
+                                            {
+                                              "children": [
+                                                {
+                                                  "children": [
+                                                    {
+                                                      "children": [
+                                                        {
+                                                          "children": [],
+                                                          "className": "com.horcrux.svg.PathView",
+                                                          "packageName": "dev.agentclient.demo",
+                                                          "clickable": false,
+                                                          "enabled": true,
+                                                          "focused": false,
+                                                          "bounds": {
+                                                            "left": 937,
+                                                            "top": 161,
+                                                            "right": 993,
+                                                            "bottom": 217
+                                                          }
+                                                        },
+                                                        {
+                                                          "children": [],
+                                                          "className": "com.horcrux.svg.PathView",
+                                                          "packageName": "dev.agentclient.demo",
+                                                          "clickable": false,
+                                                          "enabled": true,
+                                                          "focused": false,
+                                                          "bounds": {
+                                                            "left": 952,
+                                                            "top": 155,
+                                                            "right": 998,
+                                                            "bottom": 202
+                                                          }
+                                                        }
+                                                      ],
+                                                      "className": "com.horcrux.svg.GroupView",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 937,
+                                                        "top": 155,
+                                                        "right": 999,
+                                                        "bottom": 217
+                                                      }
+                                                    }
+                                                  ],
+                                                  "className": "com.horcrux.svg.SvgView",
+                                                  "packageName": "dev.agentclient.demo",
+                                                  "clickable": false,
+                                                  "enabled": true,
+                                                  "focused": false,
+                                                  "bounds": {
+                                                    "left": 928,
+                                                    "top": 152,
+                                                    "right": 1002,
+                                                    "bottom": 227
+                                                  }
+                                                }
+                                              ],
+                                              "className": "android.view.ViewGroup",
+                                              "packageName": "dev.agentclient.demo",
+                                              "clickable": false,
+                                              "enabled": true,
+                                              "focused": false,
+                                              "bounds": {
+                                                "left": 928,
+                                                "top": 152,
+                                                "right": 1002,
+                                                "bottom": 227
+                                              }
+                                            }
+                                          ],
+                                          "className": "android.widget.Button",
+                                          "contentDesc": "Nov\u00fd chat",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": true,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 891,
+                                            "top": 115,
+                                            "right": 1040,
+                                            "bottom": 264
+                                          }
+                                        },
+                                        {
+                                          "children": [
+                                            {
+                                              "children": [
+                                                {
+                                                  "children": [
+                                                    {
+                                                      "children": [
+                                                        {
+                                                          "children": [],
+                                                          "className": "android.view.ViewGroup",
+                                                          "packageName": "dev.agentclient.demo",
+                                                          "clickable": false,
+                                                          "enabled": true,
+                                                          "focused": false,
+                                                          "bounds": {
+                                                            "left": 0,
+                                                            "top": 0,
+                                                            "right": 0,
+                                                            "bottom": 0
+                                                          }
+                                                        }
+                                                      ],
+                                                      "className": "android.view.ViewGroup",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 0,
+                                                        "top": 0,
+                                                        "right": 0,
+                                                        "bottom": 0
+                                                      }
+                                                    },
+                                                    {
+                                                      "children": [],
+                                                      "className": "com.horcrux.svg.RectView",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 0,
+                                                        "top": 285,
+                                                        "right": 1080,
+                                                        "bottom": 366
+                                                      }
+                                                    }
+                                                  ],
+                                                  "className": "com.horcrux.svg.GroupView",
+                                                  "packageName": "dev.agentclient.demo",
+                                                  "clickable": false,
+                                                  "enabled": true,
+                                                  "focused": false,
+                                                  "bounds": {
+                                                    "left": 0,
+                                                    "top": 285,
+                                                    "right": 1080,
+                                                    "bottom": 366
+                                                  }
+                                                }
+                                              ],
+                                              "className": "com.horcrux.svg.SvgView",
+                                              "packageName": "dev.agentclient.demo",
+                                              "clickable": false,
+                                              "enabled": true,
+                                              "focused": false,
+                                              "bounds": {
+                                                "left": 0,
+                                                "top": 285,
+                                                "right": 1080,
+                                                "bottom": 366
+                                              }
+                                            }
+                                          ],
+                                          "className": "android.view.ViewGroup",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": false,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 0,
+                                            "top": 285,
+                                            "right": 1080,
+                                            "bottom": 366
+                                          }
+                                        },
+                                        {
+                                          "children": [
+                                            {
+                                              "children": [
+                                                {
+                                                  "children": [
+                                                    {
+                                                      "children": [
+                                                        {
+                                                          "children": [],
+                                                          "className": "android.view.ViewGroup",
+                                                          "resourceId": "home-screen",
+                                                          "packageName": "dev.agentclient.demo",
+                                                          "clickable": false,
+                                                          "enabled": true,
+                                                          "focused": false,
+                                                          "bounds": {
+                                                            "left": 68,
+                                                            "top": 324,
+                                                            "right": 1013,
+                                                            "bottom": 319
+                                                          }
+                                                        }
+                                                      ],
+                                                      "className": "android.view.ViewGroup",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 68,
+                                                        "top": 324,
+                                                        "right": 1013,
+                                                        "bottom": 319
+                                                      }
+                                                    }
+                                                  ],
+                                                  "className": "android.view.ViewGroup",
+                                                  "packageName": "dev.agentclient.demo",
+                                                  "clickable": false,
+                                                  "enabled": true,
+                                                  "focused": false,
+                                                  "bounds": {
+                                                    "left": 0,
+                                                    "top": 297,
+                                                    "right": 1080,
+                                                    "bottom": 319
+                                                  }
+                                                }
+                                              ],
+                                              "className": "android.widget.ScrollView",
+                                              "resourceId": "screen-scroll",
+                                              "packageName": "dev.agentclient.demo",
+                                              "clickable": false,
+                                              "enabled": true,
+                                              "focused": false,
+                                              "bounds": {
+                                                "left": 0,
+                                                "top": 297,
+                                                "right": 1080,
+                                                "bottom": 319
+                                              }
+                                            }
+                                          ],
+                                          "className": "android.view.ViewGroup",
+                                          "resourceId": "screen-transition",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": false,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 0,
+                                            "top": 297,
+                                            "right": 1080,
+                                            "bottom": 319
+                                          }
+                                        },
+                                        {
+                                          "children": [],
+                                          "className": "android.view.ViewGroup",
+                                          "resourceId": "screen-footer",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": false,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 0,
+                                            "top": 319,
+                                            "right": 1080,
+                                            "bottom": 1432
+                                          }
+                                        },
+                                        {
+                                          "children": [
+                                            {
+                                              "children": [
+                                                {
+                                                  "children": [
+                                                    {
+                                                      "children": [
+                                                        {
+                                                          "children": [
+                                                            {
+                                                              "children": [
+                                                                {
+                                                                  "children": [
+                                                                    {
+                                                                      "children": [],
+                                                                      "className": "com.horcrux.svg.PathView",
+                                                                      "packageName": "dev.agentclient.demo",
+                                                                      "clickable": false,
+                                                                      "enabled": true,
+                                                                      "focused": false,
+                                                                      "bounds": {
+                                                                        "left": 134,
+                                                                        "top": 452,
+                                                                        "right": 184,
+                                                                        "bottom": 514
+                                                                      }
+                                                                    },
+                                                                    {
+                                                                      "children": [],
+                                                                      "className": "com.horcrux.svg.PathView",
+                                                                      "packageName": "dev.agentclient.demo",
+                                                                      "clickable": false,
+                                                                      "enabled": true,
+                                                                      "focused": false,
+                                                                      "bounds": {
+                                                                        "left": 165,
+                                                                        "top": 452,
+                                                                        "right": 184,
+                                                                        "bottom": 471
+                                                                      }
+                                                                    },
+                                                                    {
+                                                                      "children": [],
+                                                                      "className": "com.horcrux.svg.PathView",
+                                                                      "packageName": "dev.agentclient.demo",
+                                                                      "clickable": false,
+                                                                      "enabled": true,
+                                                                      "focused": false,
+                                                                      "bounds": {
+                                                                        "left": 146,
+                                                                        "top": 474,
+                                                                        "right": 153,
+                                                                        "bottom": 474
+                                                                      }
+                                                                    },
+                                                                    {
+                                                                      "children": [],
+                                                                      "className": "com.horcrux.svg.PathView",
+                                                                      "packageName": "dev.agentclient.demo",
+                                                                      "clickable": false,
+                                                                      "enabled": true,
+                                                                      "focused": false,
+                                                                      "bounds": {
+                                                                        "left": 146,
+                                                                        "top": 486,
+                                                                        "right": 171,
+                                                                        "bottom": 486
+                                                                      }
+                                                                    },
+                                                                    {
+                                                                      "children": [],
+                                                                      "className": "com.horcrux.svg.PathView",
+                                                                      "packageName": "dev.agentclient.demo",
+                                                                      "clickable": false,
+                                                                      "enabled": true,
+                                                                      "focused": false,
+                                                                      "bounds": {
+                                                                        "left": 146,
+                                                                        "top": 498,
+                                                                        "right": 171,
+                                                                        "bottom": 498
+                                                                      }
+                                                                    }
+                                                                  ],
+                                                                  "className": "com.horcrux.svg.GroupView",
+                                                                  "packageName": "dev.agentclient.demo",
+                                                                  "clickable": false,
+                                                                  "enabled": true,
+                                                                  "focused": false,
+                                                                  "bounds": {
+                                                                    "left": 134,
+                                                                    "top": 452,
+                                                                    "right": 184,
+                                                                    "bottom": 514
+                                                                  }
+                                                                }
+                                                              ],
+                                                              "className": "com.horcrux.svg.SvgView",
+                                                              "packageName": "dev.agentclient.demo",
+                                                              "clickable": false,
+                                                              "enabled": true,
+                                                              "focused": false,
+                                                              "bounds": {
+                                                                "left": 122,
+                                                                "top": 446,
+                                                                "right": 196,
+                                                                "bottom": 521
+                                                              }
+                                                            }
+                                                          ],
+                                                          "className": "android.view.ViewGroup",
+                                                          "packageName": "dev.agentclient.demo",
+                                                          "clickable": false,
+                                                          "enabled": true,
+                                                          "focused": false,
+                                                          "bounds": {
+                                                            "left": 105,
+                                                            "top": 422,
+                                                            "right": 213,
+                                                            "bottom": 543
+                                                          }
+                                                        },
+                                                        {
+                                                          "children": [],
+                                                          "className": "android.widget.TextView",
+                                                          "text": "TEST-notes.txt",
+                                                          "packageName": "dev.agentclient.demo",
+                                                          "clickable": false,
+                                                          "enabled": true,
+                                                          "focused": false,
+                                                          "bounds": {
+                                                            "left": 247,
+                                                            "top": 376,
+                                                            "right": 787,
+                                                            "bottom": 478
+                                                          }
+                                                        },
+                                                        {
+                                                          "children": [],
+                                                          "className": "android.widget.TextView",
+                                                          "text": "Nahr\u00e1no",
+                                                          "packageName": "dev.agentclient.demo",
+                                                          "clickable": false,
+                                                          "enabled": true,
+                                                          "focused": false,
+                                                          "bounds": {
+                                                            "left": 247,
+                                                            "top": 488,
+                                                            "right": 787,
+                                                            "bottom": 590
+                                                          }
+                                                        }
+                                                      ],
+                                                      "className": "android.view.ViewGroup",
+                                                      "contentDesc": "TEST-notes.txt, Nahr\u00e1no",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 71,
+                                                        "top": 342,
+                                                        "right": 820,
+                                                        "bottom": 623
+                                                      }
+                                                    },
+                                                    {
+                                                      "children": [
+                                                        {
+                                                          "children": [
+                                                            {
+                                                              "children": [
+                                                                {
+                                                                  "children": [],
+                                                                  "className": "com.horcrux.svg.PathView",
+                                                                  "packageName": "dev.agentclient.demo",
+                                                                  "clickable": false,
+                                                                  "enabled": true,
+                                                                  "focused": false,
+                                                                  "bounds": {
+                                                                    "left": 886,
+                                                                    "top": 468,
+                                                                    "right": 917,
+                                                                    "bottom": 499
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "children": [],
+                                                                  "className": "com.horcrux.svg.PathView",
+                                                                  "packageName": "dev.agentclient.demo",
+                                                                  "clickable": false,
+                                                                  "enabled": true,
+                                                                  "focused": false,
+                                                                  "bounds": {
+                                                                    "left": 886,
+                                                                    "top": 468,
+                                                                    "right": 917,
+                                                                    "bottom": 499
+                                                                  }
+                                                                }
+                                                              ],
+                                                              "className": "com.horcrux.svg.GroupView",
+                                                              "packageName": "dev.agentclient.demo",
+                                                              "clickable": false,
+                                                              "enabled": true,
+                                                              "focused": false,
+                                                              "bounds": {
+                                                                "left": 886,
+                                                                "top": 468,
+                                                                "right": 917,
+                                                                "bottom": 499
+                                                              }
+                                                            }
+                                                          ],
+                                                          "className": "com.horcrux.svg.SvgView",
+                                                          "packageName": "dev.agentclient.demo",
+                                                          "clickable": false,
+                                                          "enabled": true,
+                                                          "focused": false,
+                                                          "bounds": {
+                                                            "left": 871,
+                                                            "top": 453,
+                                                            "right": 932,
+                                                            "bottom": 514
+                                                          }
+                                                        }
+                                                      ],
+                                                      "className": "android.widget.Button",
+                                                      "contentDesc": "Odebrat: TEST-notes.txt",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": true,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 820,
+                                                        "top": 402,
+                                                        "right": 982,
+                                                        "bottom": 564
+                                                      }
+                                                    }
+                                                  ],
+                                                  "className": "android.view.ViewGroup",
+                                                  "resourceId": "attachment-TEST-file",
+                                                  "packageName": "dev.agentclient.demo",
+                                                  "clickable": false,
+                                                  "enabled": true,
+                                                  "focused": false,
+                                                  "bounds": {
+                                                    "left": 68,
+                                                    "top": 339,
+                                                    "right": 986,
+                                                    "bottom": 628
+                                                  }
+                                                }
+                                              ],
+                                              "className": "android.view.ViewGroup",
+                                              "packageName": "dev.agentclient.demo",
+                                              "clickable": false,
+                                              "enabled": true,
+                                              "focused": false,
+                                              "bounds": {
+                                                "left": 68,
+                                                "top": 339,
+                                                "right": 986,
+                                                "bottom": 641
+                                              }
+                                            }
+                                          ],
+                                          "className": "android.widget.AbsListView",
+                                          "contentDesc": "P\u0159\u00edlohy",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": false,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 68,
+                                            "top": 339,
+                                            "right": 1013,
+                                            "bottom": 641
+                                          }
+                                        },
+                                        {
+                                          "children": [
+                                            {
+                                              "children": [
+                                                {
+                                                  "children": [
+                                                    {
+                                                      "children": [
+                                                        {
+                                                          "children": [
+                                                            {
+                                                              "children": [],
+                                                              "className": "com.horcrux.svg.PathView",
+                                                              "packageName": "dev.agentclient.demo",
+                                                              "clickable": false,
+                                                              "enabled": true,
+                                                              "focused": false,
+                                                              "bounds": {
+                                                                "left": 119,
+                                                                "top": 771,
+                                                                "right": 173,
+                                                                "bottom": 835
+                                                              }
+                                                            }
+                                                          ],
+                                                          "className": "com.horcrux.svg.GroupView",
+                                                          "packageName": "dev.agentclient.demo",
+                                                          "clickable": false,
+                                                          "enabled": true,
+                                                          "focused": false,
+                                                          "bounds": {
+                                                            "left": 119,
+                                                            "top": 771,
+                                                            "right": 173,
+                                                            "bottom": 835
+                                                          }
+                                                        }
+                                                      ],
+                                                      "className": "com.horcrux.svg.SvgView",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 109,
+                                                        "top": 766,
+                                                        "right": 183,
+                                                        "bottom": 840
+                                                      }
+                                                    },
+                                                    {
+                                                      "children": [],
+                                                      "className": "android.widget.TextView",
+                                                      "text": "Review",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 210,
+                                                        "top": 682,
+                                                        "right": 973,
+                                                        "bottom": 804
+                                                      }
+                                                    },
+                                                    {
+                                                      "children": [],
+                                                      "className": "android.widget.TextView",
+                                                      "text": "TEST review process",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 210,
+                                                        "top": 804,
+                                                        "right": 973,
+                                                        "bottom": 926
+                                                      }
+                                                    }
+                                                  ],
+                                                  "className": "android.widget.Button",
+                                                  "contentDesc": "Review, Proces",
+                                                  "packageName": "dev.agentclient.demo",
+                                                  "clickable": true,
+                                                  "enabled": true,
+                                                  "focused": false,
+                                                  "bounds": {
+                                                    "left": 68,
+                                                    "top": 641,
+                                                    "right": 1013,
+                                                    "bottom": 966
+                                                  }
+                                                }
+                                              ],
+                                              "className": "android.view.ViewGroup",
+                                              "packageName": "dev.agentclient.demo",
+                                              "clickable": false,
+                                              "enabled": true,
+                                              "focused": false,
+                                              "bounds": {
+                                                "left": 68,
+                                                "top": 641,
+                                                "right": 1013,
+                                                "bottom": 966
+                                              }
+                                            }
+                                          ],
+                                          "className": "android.widget.ScrollView",
+                                          "contentDesc": "Odkazy",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": false,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 68,
+                                            "top": 641,
+                                            "right": 1013,
+                                            "bottom": 966
+                                          }
+                                        },
+                                        {
+                                          "children": [],
+                                          "className": "android.view.ViewGroup",
+                                          "resourceId": "message-composer",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": false,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 68,
+                                            "top": 966,
+                                            "right": 1013,
+                                            "bottom": 1405
+                                          }
+                                        },
+                                        {
+                                          "children": [],
+                                          "className": "android.view.ViewGroup",
+                                          "resourceId": "composer-input-row",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": false,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 92,
+                                            "top": 990,
+                                            "right": 990,
+                                            "bottom": 1381
+                                          }
+                                        },
+                                        {
+                                          "children": [],
+                                          "className": "android.widget.EditText",
+                                          "text": "@Re",
+                                          "contentDesc": "Napi\u0161 zpr\u00e1vu\u2026",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": true,
+                                          "enabled": true,
+                                          "focused": true,
+                                          "bounds": {
+                                            "left": 92,
+                                            "top": 990,
+                                            "right": 990,
+                                            "bottom": 1221
+                                          }
+                                        },
+                                        {
+                                          "children": [
+                                            {
+                                              "children": [
+                                                {
+                                                  "children": [
+                                                    {
+                                                      "children": [],
+                                                      "className": "com.horcrux.svg.PathView",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 131,
+                                                        "top": 1271,
+                                                        "right": 197,
+                                                        "bottom": 1344
+                                                      }
+                                                    }
+                                                  ],
+                                                  "className": "com.horcrux.svg.GroupView",
+                                                  "packageName": "dev.agentclient.demo",
+                                                  "clickable": false,
+                                                  "enabled": true,
+                                                  "focused": false,
+                                                  "bounds": {
+                                                    "left": 131,
+                                                    "top": 1271,
+                                                    "right": 197,
+                                                    "bottom": 1344
+                                                  }
+                                                }
+                                              ],
+                                              "className": "com.horcrux.svg.SvgView",
+                                              "packageName": "dev.agentclient.demo",
+                                              "clickable": false,
+                                              "enabled": true,
+                                              "focused": false,
+                                              "bounds": {
+                                                "left": 129,
+                                                "top": 1270,
+                                                "right": 204,
+                                                "bottom": 1344
+                                              }
+                                            }
+                                          ],
+                                          "className": "android.widget.Button",
+                                          "contentDesc": "P\u0159idat kontext",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": true,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 92,
+                                            "top": 1233,
+                                            "right": 241,
+                                            "bottom": 1381
+                                          }
+                                        },
+                                        {
+                                          "children": [
+                                            {
+                                              "children": [
+                                                {
+                                                  "children": [
+                                                    {
+                                                      "children": [],
+                                                      "className": "com.horcrux.svg.PathView",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 731,
+                                                        "top": 1300,
+                                                        "right": 775,
+                                                        "bottom": 1328
+                                                      }
+                                                    },
+                                                    {
+                                                      "children": [],
+                                                      "className": "com.horcrux.svg.RectView",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 743,
+                                                        "top": 1276,
+                                                        "right": 762,
+                                                        "bottom": 1317
+                                                      }
+                                                    },
+                                                    {
+                                                      "children": [],
+                                                      "className": "com.horcrux.svg.PathView",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 753,
+                                                        "top": 1328,
+                                                        "right": 753,
+                                                        "bottom": 1338
+                                                      }
+                                                    }
+                                                  ],
+                                                  "className": "com.horcrux.svg.GroupView",
+                                                  "packageName": "dev.agentclient.demo",
+                                                  "clickable": false,
+                                                  "enabled": true,
+                                                  "focused": false,
+                                                  "bounds": {
+                                                    "left": 731,
+                                                    "top": 1276,
+                                                    "right": 775,
+                                                    "bottom": 1329
+                                                  }
+                                                }
+                                              ],
+                                              "className": "com.horcrux.svg.SvgView",
+                                              "packageName": "dev.agentclient.demo",
+                                              "clickable": false,
+                                              "enabled": true,
+                                              "focused": false,
+                                              "bounds": {
+                                                "left": 716,
+                                                "top": 1270,
+                                                "right": 790,
+                                                "bottom": 1344
+                                              }
+                                            }
+                                          ],
+                                          "className": "android.widget.Button",
+                                          "contentDesc": "Hlasov\u00fd vstup",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": true,
+                                          "enabled": false,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 679,
+                                            "top": 1233,
+                                            "right": 828,
+                                            "bottom": 1381
+                                          }
+                                        },
+                                        {
+                                          "children": [
+                                            {
+                                              "children": [
+                                                {
+                                                  "children": [
+                                                    {
+                                                      "children": [],
+                                                      "className": "com.horcrux.svg.PathView",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 893,
+                                                        "top": 1285,
+                                                        "right": 937,
+                                                        "bottom": 1307
+                                                      }
+                                                    },
+                                                    {
+                                                      "children": [],
+                                                      "className": "com.horcrux.svg.PathView",
+                                                      "packageName": "dev.agentclient.demo",
+                                                      "clickable": false,
+                                                      "enabled": true,
+                                                      "focused": false,
+                                                      "bounds": {
+                                                        "left": 915,
+                                                        "top": 1285,
+                                                        "right": 915,
+                                                        "bottom": 1329
+                                                      }
+                                                    }
+                                                  ],
+                                                  "className": "com.horcrux.svg.GroupView",
+                                                  "packageName": "dev.agentclient.demo",
+                                                  "clickable": false,
+                                                  "enabled": true,
+                                                  "focused": false,
+                                                  "bounds": {
+                                                    "left": 893,
+                                                    "top": 1285,
+                                                    "right": 937,
+                                                    "bottom": 1307
+                                                  }
+                                                }
+                                              ],
+                                              "className": "com.horcrux.svg.SvgView",
+                                              "packageName": "dev.agentclient.demo",
+                                              "clickable": false,
+                                              "enabled": true,
+                                              "focused": false,
+                                              "bounds": {
+                                                "left": 878,
+                                                "top": 1270,
+                                                "right": 952,
+                                                "bottom": 1344
+                                              }
+                                            }
+                                          ],
+                                          "className": "android.widget.Button",
+                                          "contentDesc": "Odeslat",
+                                          "packageName": "dev.agentclient.demo",
+                                          "clickable": true,
+                                          "enabled": true,
+                                          "focused": false,
+                                          "bounds": {
+                                            "left": 841,
+                                            "top": 1233,
+                                            "right": 990,
+                                            "bottom": 1381
+                                          }
+                                        }
+                                      ],
+                                      "className": "android.view.ViewGroup",
+                                      "packageName": "dev.agentclient.demo",
+                                      "clickable": false,
+                                      "enabled": true,
+                                      "focused": false,
+                                      "bounds": {
+                                        "left": 0,
+                                        "top": 0,
+                                        "right": 1080,
+                                        "bottom": 2400
+                                      }
+                                    }
+                                  ],
+                                  "className": "android.view.ViewGroup",
+                                  "packageName": "dev.agentclient.demo",
+                                  "clickable": false,
+                                  "enabled": true,
+                                  "focused": false,
+                                  "bounds": {
+                                    "left": 0,
+                                    "top": 0,
+                                    "right": 1080,
+                                    "bottom": 2400
+                                  }
+                                }
+                              ],
+                              "className": "android.widget.FrameLayout",
+                              "packageName": "dev.agentclient.demo",
+                              "clickable": false,
+                              "enabled": true,
+                              "focused": false,
+                              "bounds": {
+                                "left": 0,
+                                "top": 0,
+                                "right": 1080,
+                                "bottom": 2400
+                              }
+                            }
+                          ],
+                          "className": "android.widget.FrameLayout",
+                          "packageName": "dev.agentclient.demo",
+                          "clickable": false,
+                          "enabled": true,
+                          "focused": false,
+                          "bounds": {
+                            "left": 0,
+                            "top": 0,
+                            "right": 1080,
+                            "bottom": 2400
+                          }
+                        }
+                      ],
+                      "className": "android.widget.FrameLayout",
+                      "resourceId": "android:id/content",
+                      "packageName": "dev.agentclient.demo",
+                      "clickable": false,
+                      "enabled": true,
+                      "focused": false,
+                      "bounds": {
+                        "left": 0,
+                        "top": 0,
+                        "right": 1080,
+                        "bottom": 2400
+                      }
+                    }
+                  ],
+                  "className": "android.widget.LinearLayout",
+                  "resourceId": "dev.agentclient.demo:id/action_bar_root",
+                  "packageName": "dev.agentclient.demo",
+                  "clickable": false,
+                  "enabled": true,
+                  "focused": false,
+                  "bounds": {
+                    "left": 0,
+                    "top": 0,
+                    "right": 1080,
+                    "bottom": 2400
+                  }
+                }
+              ],
+              "className": "android.widget.FrameLayout",
+              "packageName": "dev.agentclient.demo",
+              "clickable": false,
+              "enabled": true,
+              "focused": false,
+              "bounds": {
+                "left": 0,
+                "top": 0,
+                "right": 1080,
+                "bottom": 2400
+              }
+            }
+          ],
+          "className": "android.widget.LinearLayout",
+          "packageName": "dev.agentclient.demo",
+          "clickable": false,
+          "enabled": true,
+          "focused": false,
+          "bounds": {
+            "left": 0,
+            "top": 0,
+            "right": 1080,
+            "bottom": 2400
+          }
+        }
+      ],
+      "className": "android.widget.FrameLayout",
+      "packageName": "dev.agentclient.demo",
+      "clickable": false,
+      "enabled": true,
+      "focused": false,
+      "bounds": {
+        "left": 0,
+        "top": 0,
+        "right": 1080,
+        "bottom": 2400
+      }
+    }
+  ]
+}

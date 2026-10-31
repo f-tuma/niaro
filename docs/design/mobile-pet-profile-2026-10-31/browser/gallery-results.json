@@ -1,0 +1,102 @@
+{
+  "errors": [],
+  "renders": [
+    {
+      "width": 1280,
+      "overflow": false,
+      "images": true
+    },
+    {
+      "width": 390,
+      "overflow": false,
+      "images": true
+    },
+    {
+      "width": 320,
+      "overflow": false,
+      "images": true
+    }
+  ],
+  "links": [
+    {
+      "url": "http://127.0.0.1:8895/prototype/index.html",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/prototype/index.html?theme=light",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/prototype/index.html?font=2",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/prototype/index.html?plugin=off",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/prototype/index.html?view=library",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/concepts/01-overview-dark.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/browser/final/concept-scale-overview.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/concepts/02-memory-dark.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/browser/final/concept-scale-detail.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/concepts/03-appearance-light.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/browser/final/concept-scale-appearance.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/browser/final/320-font1-dark-overview.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/browser/final/320-font2-dark-overview.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/browser/final/320-font2-light-detail.png",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/design.md",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/fidelity-ledger.md",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/qa.md",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/composer-review.md",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/browser/final/results.json",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8895/source-and-asset-hashes.json",
+      "status": 200
+    }
+  ]
+}

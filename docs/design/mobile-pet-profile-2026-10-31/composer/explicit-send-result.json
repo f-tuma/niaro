@@ -1,0 +1,23 @@
+{
+  "beforeCommands": [],
+  "afterCommands": [
+    {
+      "commandId": "080ea9ea-daf8-4283-8164-759a841f85a3",
+      "idempotencyKey": "080ea9ea-daf8-4283-8164-759a841f85a3",
+      "type": "message.send",
+      "conversationId": "conversation-1",
+      "text": "Synthetic @Review  payload",
+      "language": "en",
+      "timeZone": "Europe/Prague",
+      "mentions": [
+        {
+          "kind": "process",
+          "id": "TEST-review"
+        }
+      ],
+      "session": "new"
+    }
+  ],
+  "passed": true,
+  "syntheticOnly": true
+}

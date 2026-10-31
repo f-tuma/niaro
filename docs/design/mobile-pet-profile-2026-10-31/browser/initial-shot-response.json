@@ -1,0 +1,11 @@
+{
+  "id": "c5185280-0d3c-4b87-9210-debcf7eb31fa",
+  "ok": false,
+  "error": {
+    "code": "browser_error",
+    "message": "CDP error (Page.captureScreenshot): Screenshot timed out — the browser page did not draw a frame."
+  },
+  "_meta": {
+    "runtimeId": "bd7ee7c0-b124-48d2-922f-e6e19c538031"
+  }
+}

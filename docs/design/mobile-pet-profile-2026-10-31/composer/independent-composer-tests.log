@@ -1,0 +1,9 @@
+PASS ui source/tests/conversation-history-mobile.test.tsx (16.285 s)
+PASS ui source/tests/mobile-mentions.test.tsx
+PASS ui source/tests/detail-sheet.test.tsx
+
+Test Suites: 3 passed, 3 total
+Tests:       46 passed, 46 total
+Snapshots:   0 total
+Time:        16.918 s
+Ran all test suites.

@@ -1,0 +1,19 @@
+{
+  "checks": [
+    "320/font2 textarea retains Unicode text and submit after 430px viewport resize; corrected row focus",
+    "Native dialog contains Tab focus; Escape closes",
+    "Theme Enter and ArrowRight update palette and roving focus"
+  ],
+  "errors": [],
+  "layout": {
+    "overflow": false,
+    "clipped": []
+  },
+  "conceptScale": {
+    "logical": [
+      390,
+      843
+    ],
+    "dpr": 2.187179487179487
+  }
+}
