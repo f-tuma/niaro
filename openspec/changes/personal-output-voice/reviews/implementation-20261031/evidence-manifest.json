@@ -18,6 +18,7 @@
     "checks/root-final-checks/voice-jest.log": "d8e0102c2ec817bce777059aee868615d9038a3bc0e46a5af1ffa8a0f8f40b42",
     "final-source-review.md": "e73541292715324a87d294f703931cd36702fa3472b0634765636f17f17bdb9a",
     "original-source-subject.json": "c044c4f4bbb43e21b8030dbd44873594fc833d5714226dd8ddc57bc7c23248a2",
+    "publication.json": "8f8f50361c2a192c9abbfb7bb8b7bca1943e30a1fe095d0dff895ccfa29885dd",
     "repair-closure-commands.jsonl": "693504390e22176d1954d3b450c01bb7e7599a13c6a4a68c90bba4c71e1721d6",
     "screenshots/native-cs-320-font2-fallback.png": "a22b61a90ffd0911f69bd1b21bdb440eb24e8c580dcea1b8792dd53faa13fa39",
     "screenshots/native-cs-normal-default-only.png": "783198ce723d62bac0d9a3dae72cbef1ce0da8ae16ce5b4bce3e57e3c55ac27e",
@@ -31,7 +32,7 @@
     "ui-original.md": "81eb9715597d794b9223dfc51619f49c24b340119f29ddf8c5bef813fd71ab0b",
     "ui-repair-author.md": "4e500f96c963b0b24729bbbd294fc56cffb45becd4038c045ee542d6c102e850",
     "ui-source-review.md": "8f88ec58ded395d554aa04333ec2a7f8489671e160c35eaaccf1434ee657a631",
-    "verification.md": "2e03905d2621a316d4b2068488da85b72ae319f73d08df605a46d52d72bec05d",
+    "verification.md": "f1a49e644e13b816561490f794e9d2a72c6681a14e418cb27e55c6802b7bf5ff",
     "visual-repair-author.md": "feba9be7f6f14ffdc70c20e7cbbf70e89269d16d7ee6c3bb2da2bca84589c4a8",
     "visual-repair-closure.md": "b7455534bba92b021f2d36cee9c3e864fa716701a7d1f952483ae2b30071f54f",
     "visual-repair.patch": "0b67ec0b21d24240756a680cdb5a4a078f18779169889a99925e5c5ed91fe9aa"

@@ -38,3 +38,7 @@ The reports retain original scratch paths as historical provenance; accompanying
 Tasks are reconciled to observed implementation; six Node suites replace the original planned five after adding real ClientSession→HTTP→store coverage. The design records the settings-only current-authorization guard, which restores the already accepted catalogue-conflict/replay contract while leaving general speech policy guards intact. Proposal/design status changes record execution rather than new product intent. Full-check inheritance and unverified provider/native boundaries remain explicit.
 
 Final UI delivery: `ui-final.md` verifies both findings closed on repaired pins. Bundle SHA-256 is74f3bdcfddb2dcca109b9d5265f245a14dbfa88b4127d41345cd6dbb0c980018 (10,025,280bytes,32 allowlisted screenshots); independently verified before durable copy. Native lease is returned and QA services are closed.
+
+## Development preview publication
+
+Accepted commit `dfa8fc69e8de7f0fbd1a487ab67458173f2806f0` was pushed to `f-tuma/niaro-pet-mobile-followup`. The existing dev service at https://aa.f-tuma.dev/ now uses its exact reviewed runtime source and separately built admin assets. Previous process exit was positively verified before replacement; existing environment/profile/data and hostname/port are retained. `publication.json` records local and public HTTP200 and a byte-identical public `/admin/app.js` match to the isolated build. This is development-preview publication, not production deployment or a real-user/audio test.

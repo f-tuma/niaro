@@ -1,0 +1,23 @@
+{
+  "commit": "dfa8fc69e8de7f0fbd1a487ab67458173f2806f0",
+  "url": "https://aa.f-tuma.dev/",
+  "oldProcessExited": true,
+  "checks": {
+    "http://127.0.0.1:8793/": {
+      "status": 200,
+      "bytes": 6543
+    },
+    "https://aa.f-tuma.dev/": {
+      "status": 200,
+      "bytes": 7657
+    },
+    "https://aa.f-tuma.dev/admin/app.js": {
+      "status": 200,
+      "sha256": "a42cea9bd915e56e964569492f318fc3cc006f9605327d9adee1abf03136cef3",
+      "matchesBuiltCandidate": true
+    }
+  },
+  "scripts": [
+    "/admin/app.js"
+  ]
+}
