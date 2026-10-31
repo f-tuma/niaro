@@ -36,6 +36,8 @@ export const AuditAction = z.enum([
   "workspace.role_changed",
   "workspace.ai_changed",
   "workspace.plugins_changed",
+  "pet.changed",
+  "pet.position_changed",
   "memory.changed",
   "memory.preference_changed",
   "calendar.created",

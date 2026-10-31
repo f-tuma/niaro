@@ -1,3 +1,4 @@
+import { PetPage, PetMemoryPage } from "./pet-page";
 import {
   createRootRoute,
   createRoute,
@@ -114,6 +115,17 @@ const account = createRoute({
   component: AccountPage,
 });
 
+const pet = createRoute({
+  getParentRoute: () => root,
+  path: "/pet",
+  component: PetPage,
+});
+const petMemory = createRoute({
+  getParentRoute: () => root,
+  path: "/me/memory",
+  component: PetMemoryPage,
+});
+
 /** The web app's pages; the console keeps its own router under /admin. */
 export const appRouter = createRouter({
   routeTree: root.addChildren([
@@ -131,6 +143,8 @@ export const appRouter = createRouter({
     connection,
     search,
     account,
+    pet,
+    petMemory,
   ]),
   basepath: "/",
 });

@@ -62,6 +62,8 @@ export const en = {
   auditAIChanged: "Models & voice changed",
   auditPluginsChanged: "Built-in tools changed",
   auditMemoryChanged: "Memory changed",
+  auditPetChanged: "Pet appearance changed",
+  auditPetPositionChanged: "Personal position changed",
   auditMemoryPreference: "Memory preference changed",
 
   audit: "Audit",
@@ -456,6 +458,8 @@ export const cs: typeof en = {
   auditAIChanged: "Změna modelů a hlasu",
   auditPluginsChanged: "Změna vestavěných nástrojů",
   auditMemoryChanged: "Změna paměti",
+  auditPetChanged: "Vzhled peta změněn",
+  auditPetPositionChanged: "Osobní pozice změněna",
   auditMemoryPreference: "Změna nastavení osobní paměti",
 
   audit: "Audit",

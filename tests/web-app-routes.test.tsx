@@ -27,6 +27,7 @@ const mockPage = (name: string) => () => {
   const React = jest.requireActual<typeof import("react")>("react");
   return React.createElement("section", { "data-page": name });
 };
+jest.mock("../apps/server-admin/web/app/pet-page", () => ({PetPage:mockPage("pet"),PetMemoryPage:mockPage("pet-memory")}));
 jest.mock("../apps/server-admin/web/app/hub-page", () => ({
   HubPage: mockPage("dashboard"),
 }));

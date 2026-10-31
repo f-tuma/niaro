@@ -2006,3 +2006,186 @@ test("observation stage admission enforces 20 per owner and 80 globally before n
     f.db.close();
   }
 });
+
+test("private pet pages browse beyond 200, bind filters/actor/generation and preserve history", async () => {
+  const f = fixture();
+  try {
+    for (let i = 0; i < 205; i++)
+      await f.remember(f.alice, { content: `TEST page item ${i}` });
+    const first = await f.store.privatePage(f.alice, { limit: 100 });
+    assert.equal(first.items.length, 100);
+    assert(first.nextCursor);
+    const second = await f.store.privatePage(f.alice, {
+      limit: 100,
+      cursor: first.nextCursor,
+    });
+    const third = await f.store.privatePage(f.alice, {
+      limit: 100,
+      cursor: second.nextCursor!,
+    });
+    assert.equal(third.items.length, 5);
+    assert.equal(third.nextCursor, null);
+    assert.equal(
+      new Set(
+        [...first.items, ...second.items, ...third.items].map((x) => x.id),
+      ).size,
+      205,
+    );
+    await assert.rejects(
+      f.store.privatePage(f.bob, { limit: 100, cursor: first.nextCursor }),
+      error(409, "memory_context_changed"),
+    );
+    await assert.rejects(
+      f.store.privatePage(f.alice, {
+        origin: "observed",
+        limit: 100,
+        cursor: first.nextCursor,
+      }),
+      error(409, "memory_context_changed"),
+    );
+    const old = first.items[0]!;
+    await f.store.revise(f.alice, {
+      requestId: "pet-page-revise",
+      id: old.id,
+      revision: old.revision,
+      content: "TEST corrected",
+      source: { type: "user_note" },
+      explicitIntent: true,
+      settings: f.settings,
+    });
+    await assert.rejects(
+      f.store.privatePage(f.alice, { limit: 100, cursor: first.nextCursor }),
+      error(409, "memory_context_changed"),
+    );
+    const history = await f.store.privatePage(f.alice, {
+      history: true,
+      limit: 100,
+    });
+    assert(history.nextCursor);
+    await f.store.forgetAll(f.alice, { requestId: "pet-erase" });
+    assert.deepEqual(
+      (await f.store.privatePage(f.alice, { history: true })).items,
+      [],
+    );
+  } finally {
+    await f.store.close();
+    f.db.close();
+  }
+});
+
+test("pet paging filters observations before pages and refuses expired readable generations", async () => {
+  const f = fixture();
+  const source = {
+    type: "chat" as const,
+    sourceId: randomUUID(),
+    messageId: "TEST-pet-page-source",
+    at: new Date(f.now()).toISOString(),
+    digest: "a".repeat(64),
+  };
+  try {
+    for (let i = 0; i < 205; i++)
+      await f.remember(f.alice, { content: `TEST explicit ${i}` });
+    for (let batch = 0; batch < 2; batch++)
+      await f.store.observe(
+        f.alice,
+        {
+          batchId: randomUUID(),
+          expectedVersion: f.store.version(f.alice),
+          deadline: f.now() + 120000,
+          settings: f.settings,
+          add: Array.from({ length: 12 }, (_, i) => ({
+            statement: `Works on TEST project ${batch * 12 + i}`,
+            section: i % 2 ? ("projects" as const) : ("work" as const),
+            personal: false,
+            sources: [source],
+          })),
+          refresh: [],
+          update: [],
+        },
+        { observationSourceAccess: () => true },
+      );
+    const query = {
+      origin: "observed" as const,
+      section: "projects" as const,
+      personal: "work" as const,
+      limit: 5,
+    };
+    const first = await f.store.privatePage(f.alice, query);
+    assert.equal(first.items.length, 5);
+    assert(
+      first.items.every(
+        (x) => x.source?.type === "observed" && x.source.section === "projects",
+      ),
+    );
+    assert(first.nextCursor);
+    await assert.rejects(
+      f.store.privatePage(
+        f.alice,
+        { ...query, cursor: first.nextCursor },
+        {
+          observationSourceView: () => ({
+            removed: false,
+            href: "/chat/TEST-pet-page-source",
+          }),
+        },
+      ),
+      error(409, "memory_context_changed"),
+    );
+    const second = await f.store.privatePage(f.alice, {
+      ...query,
+      cursor: first.nextCursor,
+    });
+    const third = await f.store.privatePage(f.alice, {
+      ...query,
+      cursor: second.nextCursor!,
+    });
+    assert.equal(third.items.length, 2);
+    assert.equal(third.nextCursor, null);
+    assert.equal(
+      (await f.store.privatePage(f.alice, { personal: "personal" })).items
+        .length,
+      0,
+    );
+    assert.equal(
+      (await f.store.privateSnapshot(f.alice, { privateOnly: true })).items
+        .length,
+      229,
+    );
+    f.advance(366 * 86400000);
+    await assert.rejects(
+      f.store.privatePage(f.alice, { ...query, cursor: first.nextCursor }),
+      error(409, "memory_context_changed"),
+    );
+  } finally {
+    await f.store.close();
+    f.db.close();
+  }
+});
+
+test("pet pages bound UTF8 payload without losing oversized-page records", async () => {
+  const f = fixture();
+  try {
+    for (let i = 0; i < 100; i++)
+      await f.remember(f.alice, { content: `TEST ${i} ${"界".repeat(3900)}` });
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+    do {
+      const page = await f.store.privatePage(f.alice, {
+        limit: 100,
+        ...(cursor ? { cursor } : {}),
+      });
+      assert(Buffer.byteLength(JSON.stringify(page.items), "utf8") <= 650000);
+      assert(page.items.length > 0);
+      assert(page.items.length < 100);
+      for (const item of page.items) {
+        assert(!seen.has(item.id));
+        seen.add(item.id);
+      }
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    assert.equal(seen.size, 100);
+  } finally {
+    await f.store.close();
+    f.db.close();
+  }
+});

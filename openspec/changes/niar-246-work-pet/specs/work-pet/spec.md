@@ -11,7 +11,17 @@ The web app SHALL have a **Pet** / **Mazlíček** area at `/pet`, the last entry
 #### Scenario: First open
 
 - **WHEN** a member opens Pet for the first time in a workspace
-- **THEN** they see a new pet with a default name, form and colour and an empty profile with a hint how it learns
+- **THEN** they see a new pet with a default name, form and colour and an empty profile without persistent growth/helper prose
+
+#### Scenario: Mobile entry
+
+- **WHEN** the paired person opens Ty a Niaro from Library or the existing drawer
+- **THEN** the app shows the same owner/workspace profile and private memory with its normal back/header controls, without another root navigation tab
+
+#### Scenario: Web without chat
+
+- **WHEN** a signed-in person opens `/pet` or `/me/memory` while chat is unavailable
+- **THEN** their personal pages remain usable through authenticated cookie access without creating a model runtime or requiring a paired chat session
 
 ### Requirement: Owner-only pet
 
@@ -333,3 +343,31 @@ The system SHALL offer `GET /admin/api/identity/pet?organizationId=…&workspace
 
 - **WHEN** a client repeats a `personalize` with the same `requestId`
 - **THEN** the recorded result is returned and the revision advances once
+
+### Requirement: Centered companion views
+
+Mobile and web SHALL present Observed, Saved and About you around the same existing pet. Six named section controls and work/personal filters SHALL apply only to Observed. Saved records SHALL retain their actual trust/status. The clean pet view SHALL contain no growth scores, persistent erasure controls or invented facts.
+
+#### Scenario: Correct observation
+
+- **WHEN** the owner corrects an observation through the real revise command
+- **THEN** it becomes an explicit Saved record and remains visible/focusable there without an old observed-section filter hiding it
+
+#### Scenario: Complete private browsing
+
+- **WHEN** readable private records exceed one page
+- **THEN** a bounded continuation reads the same actor/workspace/filter/version generation without omitting records or combining changed snapshots; history remains reachable
+
+### Requirement: Companion display preferences
+
+Owners SHALL persist animation and chat-visibility preferences with their own profile. Hiding chat pets SHALL leave the profile page available. Animation-off and reduced motion SHALL retain a still accessible pet and cease repeating animation. Profile settings SHALL NOT change memory learning or access roles.
+
+#### Scenario: Hide from chat
+
+- **WHEN** the owner disables Show in chat
+- **THEN** new-chat and conversation pet placements disappear without remounting or clearing the text composer, attachments or references; the profile pet remains available
+
+#### Scenario: Position is data
+
+- **WHEN** an owner edits job title or department in About you
+- **THEN** the owner-confirmed values persist for the same person/workspace and do not grant any organization/workspace permission

@@ -24,6 +24,8 @@ export type PetMotion = {
   touch: number;
   sleep: number;
   interaction?: PetInteraction;
+  appearance?: PetAppearance;
+  appearanceTransition?: { from: PetAppearance; progress: number };
 };
 export type PetInteraction = {
   pressed: boolean;
@@ -76,6 +78,78 @@ export function strokePet(
   interaction.targetY = dy / length;
 }
 
+/** Established silhouettes from the accepted pet study. Cookie remains the default. */
+export const PET_SHAPES = {
+  circle: [0, 0, 0, 1, 1],
+  pill: [0, 0, 0, 1.22, 0.84],
+  cookie: [9, 0.075, 0, 1, 1],
+  sunny: [8, 0.11, 0, 1, 1],
+  flower: [6, 0.13, Math.PI / 2, 1, 1],
+  clover: [4, 0.16, Math.PI / 4, 1, 1],
+  burst: [12, 0.055, 0, 1, 1],
+  pebble: [3, 0.06, Math.PI / 2, 1.08, 0.96],
+} as const;
+export type PetAppearance = {
+  shape?: keyof typeof PET_SHAPES;
+  tint?: readonly number[];
+  counts?: readonly number[];
+};
+export function petShape(appearance?: PetAppearance) {
+  const [n, a, rot, sx, sy] = PET_SHAPES[appearance?.shape ?? "cookie"];
+  return { n, a, rot, sx, sy, lip: 1 + n * a };
+}
+export function setPetAppearance(
+  motion: PetMotion,
+  appearance: PetAppearance | undefined,
+  reduced = false,
+) {
+  const before = motion.appearance;
+  if (
+    (before?.shape ?? "cookie") !== (appearance?.shape ?? "cookie") &&
+    !reduced
+  )
+    motion.appearanceTransition = { from: before ?? {}, progress: 0 };
+  else if (reduced) motion.appearanceTransition = undefined;
+  motion.appearance = appearance;
+}
+export function petGeometry(motion?: PetMotion) {
+  const a = petShape(motion?.appearanceTransition?.from ?? motion?.appearance),
+    b = petShape(motion?.appearance);
+  const progress = motion?.appearanceTransition?.progress ?? 1;
+  const mix = progress * progress * (3 - 2 * progress);
+  const sx = a.sx + (b.sx - a.sx) * mix,
+    sy = a.sy + (b.sy - a.sy) * mix;
+  return { a, b, mix, sx, sy, lip: Math.max(a.lip, b.lip) };
+}
+function geometryRadius(
+  sh: ReturnType<typeof petGeometry>,
+  angle: number,
+  smoothing = 1,
+) {
+  return (
+    PET_RADIUS *
+    (1 +
+      smoothing *
+        ((1 - sh.mix) * sh.a.a * Math.cos(sh.a.n * angle + sh.a.rot) +
+          sh.mix * sh.b.a * Math.cos(sh.b.n * angle + sh.b.rot)))
+  );
+}
+export function petBodyPath(
+  appearance?: PetAppearance,
+  geometry?: ReturnType<typeof petGeometry>,
+) {
+  const sh = petShape(appearance),
+    scale = 240 / (3.2 * PET_FOV);
+  return (
+    Array.from({ length: 97 }, (_, i) => {
+      const angle = (i / 96) * 2 * Math.PI;
+      const r = geometry
+        ? geometryRadius(geometry, angle)
+        : PET_RADIUS * (1 + sh.a * Math.cos(sh.n * angle + sh.rot));
+      return `${i ? "L" : "M"}${240 + r * Math.cos(angle) * (geometry?.sx ?? sh.sx) * scale} ${240 - r * Math.sin(angle) * (geometry?.sy ?? sh.sy) * scale}`;
+    }).join(" ") + "Z"
+  );
+}
 export const PET_RADIUS = 0.7;
 export const PET_FOV = 0.37;
 // Fixed appearance from the approved study; these are not a user profile.
@@ -103,6 +177,13 @@ export function advancePetMotion(
 ) {
   const step = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0;
   motion.time += step;
+  if (motion.appearanceTransition) {
+    motion.appearanceTransition.progress = reduced
+      ? 1
+      : Math.min(1, motion.appearanceTransition.progress + step / 0.32);
+    if (motion.appearanceTransition.progress === 1)
+      motion.appearanceTransition = undefined;
+  }
   const follow = 1 - Math.exp(-step / 0.16);
   motion.level +=
     ((state === "listening" ? clamp(level) : 0) - motion.level) * follow;
@@ -201,6 +282,8 @@ export function petFrame(
   const age = emblem ? p!.now - emblem.at : -1;
   const sign = emblem && age >= 0 ? PET_SIGNS[emblem.name] : undefined;
   const frame = {
+    appearance: motion.appearance,
+    geometry: petGeometry(motion),
     time,
     bodySleep,
     sleep,
@@ -296,6 +379,8 @@ export function petFrame(
 export type PetFrame = ReturnType<typeof petFrame>;
 
 type PetPose = {
+  appearance?: PetAppearance;
+  geometry?: ReturnType<typeof petGeometry>;
   leanX: number;
   leanY: number;
   stretch: number;
@@ -332,15 +417,28 @@ export function petToUv(v: PetPose, point: readonly number[]) {
 /** Verbatim prototype signAt geometry: projected upper-right crown, arc clamp, temple drop. */
 export function petSignAnchor(v: PetPose, kind: number, age: number) {
   const camS = 3.2 * PET_FOV;
+  const shape =
+    v.geometry ??
+    petGeometry({
+      time: 2,
+      level: 0,
+      touch: 0,
+      sleep: 0,
+      appearance: v.appearance,
+    });
   if (kind === 5) {
     const u = Math.max(0, Math.min(1, (age - 0.15) / 1.1)),
       th = 0.55 - 0.1 * u * u,
-      r = PET_RADIUS * (1 + 0.075 * Math.cos(9 * th));
-    const q = petToUv(v, [r * Math.cos(th), r * Math.sin(th), 0]);
+      r = geometryRadius(shape, th);
+    const q = petToUv(v, [
+      r * Math.cos(th) * shape.sx,
+      r * Math.sin(th) * shape.sy,
+      0,
+    ]);
     return [q[0] + 0.026 * Math.cos(th), q[1] + 0.026 * Math.sin(th)] as const;
   }
-  let ex = (0.52 * PET_RADIUS) / camS + 0.1 + 0.05 * v.leanX,
-    ey = petToUv(v, [0, PET_RADIUS, 0])[1] + 0.1 + 0.03 * v.leanY;
+  let ex = (0.52 * PET_RADIUS * shape.sx) / camS + 0.1 + 0.05 * v.leanX,
+    ey = petToUv(v, [0, PET_RADIUS * shape.sy, 0])[1] + 0.1 + 0.03 * v.leanY;
   if (ey > 0.772) {
     const cy = v.bob / camS,
       rr = Math.hypot(ex, ey - cy);
@@ -531,12 +629,13 @@ export function petContactPoint(
     hit = false;
   for (let i = 0; i < 80; i++) {
     q = local(t);
-    const L = Math.hypot(q[0]!, q[1]!),
-      a = Math.atan2(q[1]!, q[0]!);
+    const sh = petGeometry(motion);
+    const L = Math.hypot(q[0]! / sh.sx, q[1]! / sh.sy),
+      a = Math.atan2(q[1]! / sh.sy, q[0]! / sh.sx);
     const f = Math.max(0, Math.min(1, (L - 0.05) / 0.3));
     const smooth = f * f * (3 - 2 * f);
     const d2 =
-      (L - PET_RADIUS * (1 + 0.075 * Math.cos(9 * a) * smooth)) / 1.675;
+      ((L - geometryRadius(sh, a, smooth)) * Math.min(sh.sx, sh.sy)) / sh.lip;
     const d = Math.hypot(Math.max(d2 + 0.42, 0), q[2]! * 1.15) - 0.42;
     if (d < 0.001) {
       hit = true;
@@ -636,7 +735,7 @@ export function petRenderSize(size: number, pixelRatio: number) {
     ? Math.max(16, Math.min(480, size))
     : 156;
   const density = Number.isFinite(pixelRatio) ? Math.max(1, pixelRatio) : 1;
-  const pixels = Math.round(Math.min(480, logical * Math.min(2, density)));
+  const pixels = Math.round(Math.min(480, logical * Math.min(1.5, density)));
   return { logical, pixels, surface: pixels / density };
 }
 

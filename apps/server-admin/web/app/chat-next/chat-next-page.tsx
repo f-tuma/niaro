@@ -1,3 +1,5 @@
+import { WebPetView } from "../pet-view";
+import { usePetProfile, profileAppearance } from "../pet-memory";
 import {
   useWebAttachments,
   WebAttachmentMenu,
@@ -1195,6 +1197,7 @@ export function ChatNextConversation({
           data-testid="chat-next"
           className="flex min-h-0 flex-1 flex-col"
         >
+          {!showHome && <ChatPet compact />}
           <h1 className="sr-only">{title || copy.newChat}</h1>
           <ThreadPrimitive.Viewport
             data-chat-scroller
@@ -1559,6 +1562,7 @@ function Welcome({ onSuggestion }: { onSuggestion: (text: string) => void }) {
   const { copy } = useChatCopy();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 py-12 text-center">
+      <ChatPet />
       <p className="text-2xl font-semibold tracking-tight">{copy.greeting}</p>
       <div className="flex flex-wrap justify-center gap-2">
         {copy.suggestions.map((suggestion) => (
@@ -2256,5 +2260,34 @@ function AnswerRecovery({
         void session.discardProcessAnswerAttempt(attempt.command.commandId)
       }
     />
+  );
+}
+
+function ChatPet({ compact = false }: { compact?: boolean }) {
+  const profile = usePetProfile();
+  const appearance = useMemo(
+    () => (profile.data ? profileAppearance(profile.data) : undefined),
+    [profile.data],
+  );
+  if (!profile.data?.settings.showInChat) return null;
+  const pet = (
+    <WebPetView
+      size={compact ? 44 : 220}
+      label={profile.data.settings.name}
+      appearance={appearance}
+      animate={!compact && profile.data.settings.animate}
+      interactive={!compact}
+    />
+  );
+  return compact ? (
+    <Link
+      to="/pet"
+      aria-label={profile.data.settings.name}
+      className="ml-auto mr-4"
+    >
+      {pet}
+    </Link>
+  ) : (
+    pet
   );
 }

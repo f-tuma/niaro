@@ -1,3 +1,4 @@
+import { petHttp } from "./pet-http";
 import { AttachmentCleanup } from "../server-attachments/cleanup";
 import {
   AttachmentAdmission,
@@ -8,7 +9,8 @@ import {
   AttachmentError,
   type AttachmentConfiguration,
 } from "../server-attachments/schema";
-import { AttachmentProfileRequired ,
+import {
+  AttachmentProfileRequired,
   messageDelivery,
   messageForClient,
   snapshotForMessageDelivery,
@@ -303,6 +305,7 @@ export type FixtureServerOptions = {
         | "attachHubRunner"
         | "attachProfileSources"
         | "hubOpen"
+        | "mobilePet"
         | "mobileSkills"
         | "mobileMentions"
         | "mobileProcessProposal"
@@ -809,7 +812,7 @@ export function createFixtureServer(
       }
     }
     const match =
-      /^\/v1\/([A-Za-z0-9-]+)\/(server|snapshot|events|meetings(?:\/[A-Fa-f0-9-]{36}(?:\/(?:blocks|seal|process|record|audio))?)?|human-tasks(?:\/[A-Za-z0-9%:._-]{1,480})?|conversations(?:\/messages)?|commands(?:\/interrupt)?|activity|auth\/pair|auth\/session|auth\/refresh|services\/(?:start|status|cancel)|process-design(?:\/(?:capabilities|start|update|acknowledge|accept|turns(?:\/list)?|sessions\/list|drafts\/list))?|processes(?:\/(?:input|runs|output(?:\/capabilities)?|commands(?:\/interrupt)?))?|hub(?:\/open)?|skills|mentions|search|process-proposals|voice|voice\/transcriptions|voice\/speech|voice\/output-settings|attachments(?:\/(?:capabilities|[a-f0-9-]{36}\/original))?|attachment-drafts(?:\/[a-f0-9-]{36}(?:\/(?:uploads|references|remove|items\/[a-f0-9-]{36}\/remove))?)?|attachment-uploads\/[a-f0-9-]{36}(?:\/bytes)?|attachment-ingestions\/[a-f0-9-]{36}(?:\/retry-local)?)$/.exec(
+      /^\/v1\/([A-Za-z0-9-]+)\/(server|snapshot|events|meetings(?:\/[A-Fa-f0-9-]{36}(?:\/(?:blocks|seal|process|record|audio))?)?|human-tasks(?:\/[A-Za-z0-9%:._-]{1,480})?|conversations(?:\/messages)?|commands(?:\/interrupt)?|activity|auth\/pair|auth\/session|auth\/refresh|services\/(?:start|status|cancel)|process-design(?:\/(?:capabilities|start|update|acknowledge|accept|turns(?:\/list)?|sessions\/list|drafts\/list))?|processes(?:\/(?:input|runs|output(?:\/capabilities)?|commands(?:\/interrupt)?))?|hub(?:\/open)?|pet(?:\/memory)?|skills|mentions|search|process-proposals|voice|voice\/transcriptions|voice\/speech|voice\/output-settings|attachments(?:\/(?:capabilities|[a-f0-9-]{36}\/original))?|attachment-drafts(?:\/[a-f0-9-]{36}(?:\/(?:uploads|references|remove|items\/[a-f0-9-]{36}\/remove))?)?|attachment-uploads\/[a-f0-9-]{36}(?:\/bytes)?|attachment-ingestions\/[a-f0-9-]{36}(?:\/retry-local)?)$/.exec(
         url.pathname,
       );
     if (!match) return respond(404, { error: "not_found" });
@@ -1005,6 +1008,21 @@ export function createFixtureServer(
             language,
           );
         return respond(200, result.view);
+      }
+      if (route === "pet" || route === "pet/memory") {
+        const result = await petHttp(
+          req,
+          route,
+          workspace,
+          auth.serverId,
+          accountWorkspace,
+          identity?.mobilePet
+            ? { mobilePet: identity.mobilePet.bind(identity) }
+            : undefined,
+          url.searchParams,
+          () => body(req, 32768),
+        );
+        return respond(result.status, result.value);
       }
       // Skills the person can use, a chat proposal's state and saving it.
       if (route === "skills") {

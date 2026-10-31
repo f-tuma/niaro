@@ -75,6 +75,7 @@ import Archive from "lucide-react-native/icons/archive";
 import AtSign from "lucide-react-native/icons/at-sign";
 import Paperclip from "lucide-react-native/icons/paperclip";
 import BookOpen from "lucide-react-native/icons/book-open";
+import PawPrint from "lucide-react-native/icons/paw-print";
 import Briefcase from "lucide-react-native/icons/briefcase";
 import ArchiveRestore from "lucide-react-native/icons/archive-restore";
 import { tokens as t } from "../design-tokens";
@@ -503,6 +504,7 @@ const icons = {
   at: AtSign,
   library: BookOpen,
   briefcase: Briefcase,
+  paw: PawPrint,
   mail: Mail,
   phone: Phone,
   close: X,

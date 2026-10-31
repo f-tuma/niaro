@@ -33,7 +33,7 @@ grouping and icons carry meaning; text is the last resort.
 | Empty state                | `Empty` with one sentence and one CTA                                                                                                                                  |
 | Chat composer              | `@` and attachments left, voice and send right; Enter sends, Shift+Enter breaks a line                                                                                 |
 | Widget (overview)          | header: icon, title, status line; right: refresh, expand, `…` menu; the body is the tool; "Ask" lives in the menu and on items, not as a strip                         |
-| Sidebar (app)              | Overview, New chat, Search, Tasks, Meetings, Processes, Skills, Connections; then chats; the footer is the account menu (Administration for admins, Account, Sign out) |
+| Sidebar (app)              | Overview, New chat, Search, Tasks, Meetings, Processes, Skills, Connections, Pet (PawPrint); then chats; the footer is the account menu (Administration for admins, Account, Sign out) |
 | Sidebar (admin)            | workspace context once at the top; Services, AI, Processes, People, Settings groups; "Back to app" at the bottom                                                       |
 
 Rules that follow from the table:

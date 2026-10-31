@@ -17,6 +17,7 @@ import {
   Monitor,
   Moon,
   PlugZap,
+  PawPrint,
   RefreshCw,
   Search,
   Settings2,
@@ -210,6 +211,21 @@ function Layout() {
                       {item.to === "/meetings" && <MeetingRecordingBadge />}
                     </SidebarMenuItem>
                   ))}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={path === "/pet"}
+                      tooltip="Pet"
+                    >
+                      <Link
+                        to="/pet"
+                        aria-current={path === "/pet" ? "page" : undefined}
+                      >
+                        <PawPrint aria-hidden />
+                        <span>Pet</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -231,7 +247,10 @@ function Layout() {
           className="flex min-h-0 flex-1 flex-col outline-none"
         >
           {/* The account page works without chat, e.g. to free a device slot. */}
-          {session || path === "/me" ? (
+          {session ||
+          path === "/me" ||
+          path === "/pet" ||
+          path === "/me/memory" ? (
             <Outlet />
           ) : sessionError ? (
             <div className="p-4 md:p-8">

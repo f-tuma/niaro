@@ -1,0 +1,238 @@
+{
+  "base": "aff4af0d3c8592e4b1c2ec65f1ac0bec5986b091",
+  "sourceFiles": {
+    "packages/protocol/work-pet.ts": "c7f630b4642d173d7e042800847b6a7c7c863b4784ead197a44e4cb09526cb6b",
+    "packages/protocol/audit.ts": "2d6501130e744389828f1f6adaa5e53a02c485fb4442c0359f0ef1963127d62c",
+    "packages/client-core/session.ts": "aa64b8821399e2edef1a2159294fb318403c05cb32998c4f005e483aaac7fc4f",
+    "apps/server-identity/work-pet.ts": "5583dea2518b7b4a235c45d4880d914ec8ae39aebb4f7378f73be3d6f11bcbdf",
+    "apps/server-identity/service.ts": "ece84459f067f59123d1763f1e75d5d2ec55ce18d4ed31ad5113aa2a15e5f9fc",
+    "apps/server-identity/memory.ts": "2ef063e7d4c1b43855601baa4ac6b0ef401cc6b3216735dee4e36817a2a2e00d",
+    "apps/fixture-server/pet-http.ts": "4b9991da90c99b450c2d932176b5f207245e57b091e052c3b2af2fed90ac12b8",
+    "apps/fixture-server/http.ts": "176e78eabfce7074dce0fe608bb2ee6bb189ce7dab08206778ec4bc9b67e67a9",
+    "tests/work-pet.node.ts": "2065e446eda452bcf2530e4343019228683e12b66589462c4ef15bf3cad2aafa",
+    "tests/work-pet-http.node.ts": "a818460cd557f5cfa14c644053dce82ddaa5cc2a68d0d3589f38a7307d4aedd7",
+    "tests/helpers/pet-profile-http.ts": "abff12f258269744edeaa5f112869cc57f482bc635ce01e1697dd855e99c2df0",
+    "tests/pet-profile-client.test.ts": "1a93b292b341759e1202fc0d1baa7666b18830d7d5dab0ca490a7127125f011e",
+    "tests/memory.node.ts": "8a6a208f5f1d585c8f66a9cfd25966ebc0c8ed16aa31e6435be39e6ebed2d6eb",
+    "package.json": "c5707e0d3a7cf5ed71ed18fbdca372dbbb8e145fdadc5e86725ad77aca0a4581",
+    "apps/mobile/App.tsx": "789069e999b0bd1766b2c16ccafb37d528135cbcece2af7a55e214973ae1599f",
+    "apps/mobile/ChatHistory.tsx": "b59648c3c9204142111172b44930603958898046d001bc890dec674aee1ba209",
+    "apps/mobile/CompanionLibrary.tsx": "81be677931ea7b8e8f31bb27f561bce2db49aea01e2aa6ddf9fb97d1f21c27d5",
+    "apps/mobile/ScreenChrome.tsx": "279c4873b917e18b6165770540a7c2c39eda39df92c0e39cce9afbeb31b8ea1e",
+    "apps/mobile/PetProfile.tsx": "b4583c2f978882517bc0206e9424f57a20f6141a48aec9361c2c2534db59886a",
+    "apps/mobile/pet-profile-copy.ts": "4919d321c263cd61e0c476c182c03699b528d11b9f09d68295c92fc7c7637fb1",
+    "apps/mobile/pet-profile-model.ts": "a4f9e685530403be1bd582455c4221f6c3b83b48c2bffecdc8f3bd085704f61d",
+    "apps/server-admin/web/app/chat-next/chat-next-page.tsx": "1770c42e5a8d6e984e0b1e55d35525d0aae1129dbada73cd55d61e76db41114f",
+    "apps/server-admin/web/app/router.tsx": "703ebc9b822f5af6d5f94df0241708087c7cae2eddf296b6602f10e367c21f3a",
+    "apps/server-admin/web/app/shell.tsx": "a51601cb0b6cd6217a63263d5aca66c051e63fab55b554f8b251a84f1abc908a",
+    "apps/server-admin/web/app/pet-copy.ts": "4919d321c263cd61e0c476c182c03699b528d11b9f09d68295c92fc7c7637fb1",
+    "apps/server-admin/web/app/pet-memory.tsx": "c637227ab8499cc1b2537f9cde4f3d6b391a9e4cd2be1bf685b8d58e708bc977",
+    "apps/server-admin/web/app/pet-page.css": "3ef5ee42f23fbc65d1d143685d9f29e8abf7e410a80b6d09e3ccc103bca6ccae",
+    "apps/server-admin/web/app/pet-page.tsx": "c6081b520f2afd3fb183044a0a9965f5374e93edcbce6fd71ef245d288f7eb81",
+    "apps/server-admin/web/app/pet-view.tsx": "eff0b21f6e13532bce979fde5d8856cf06ab9e99f7acf11ddac7691eeaec919c",
+    "apps/server-admin/web/audit-page.tsx": "7a86d95d36eaa89f5ea198b802bcc4dd9d930af1d78d974c3df4f2f2adb6f7d9",
+    "apps/server-admin/web/i18n.ts": "70401cc36d8b898806296236f70b261ef1acfa3a301dbc5ef75b099a27f1d3b9",
+    "apps/server-admin/web/style.css": "ed898213bc0865bd578bca6c9931578bb0c13bd9306a4f9177571ce530bd6882",
+    "packages/ui/PetFallback.tsx": "0e3cdb3573840558d6a2d48263e3b13cdec638d374f1aa20f9d6301ff711e219",
+    "packages/ui/PetView.tsx": "086eade1d0ab742e67848bf9afd213b1af84163d7d55ee4df160c428f07b91f4",
+    "packages/ui/pet-motion.ts": "f37f5fd12ef4626da116240a17ab3531ad400097481513496c4e34cb2e95bec3",
+    "packages/ui/pet-shader.ts": "c695b1d9b7081c6c7a3a5c1d209a267219e6645b42a026805f31201ca8ecc20d",
+    "packages/ui/pet-fallback-drawing.tsx": "600916c5d397b9af3d22b5eb66c2197b26bc3a28d507d927e42435609a612eb2",
+    "tests/pet-motion.test.ts": "c8be36912d8daca45f643bc352e739879fad1406de4e123ca7f6e22c71782b21",
+    "tests/web-app-routes.test.tsx": "8faa31332709bccd632980939ac496299193e11ec55c8b8b05defa543f687850",
+    "tests/pet-profile-mobile.test.tsx": "42b67fae29a12dad72ef395e950987e201bc8ea33db0389b0610ae4a12f73739",
+    "tests/web-pet-page.test.tsx": "8253267df6bbb9d21164c6fd48e505d4af749c6af271f40ec76d62521e990038",
+    "tests/web-pet-view.test.tsx": "482bf70eed3ff62fdf4db2e7bdc8e3242a53b90cf2e22108a2bb7938ddb76125",
+    "tests/pet-view.test.tsx": "c0449c1c2004bee0a99ceb6aa08e7d22293a61c9ff774d8675e407d838b25915",
+    "packages/ui/index.tsx": "c660b3402598edd8d341601e9c1a6de4e0558cfecc464d4780c8274b9eb6ece3",
+    "apps/shared/pet-appearance.ts": "63ea8fe2a4a49314771fe719a399cac0c5db76b00b852439391779efb10f9360",
+    "tests/web-chat-next.test.tsx": "141f99a10408d3605ce8d7a794f38808f0aea89957357df05535d43f06041785",
+    "tests/web-chat-composer.test.tsx": "6803a9416c80ec43b6a1b33a9d39e1619cf6c609993e266264bb65a48a77e999",
+    "apps/server-admin/http.ts": "bac53b8c9a25b536754259d179635c26f2650f4effa38b3a4204f10064fa5996",
+    "tests/server-admin.test.ts": "1b59938d034b330d1109cb9193496ca5e7e998a910cb6fe70a3f23a51e07d706"
+  },
+  "contextFiles": {
+    "openspec/changes/niar-246-work-pet/proposal.md": "6e11f8f9020c0cdf9947cf073ef9c70a40b07edfdaa162ec5c0982538878deb0",
+    "openspec/changes/niar-246-work-pet/design.md": "44fba17248484292ed1e1798833e81293462ff877c34bd5bd0053f3ec5743172",
+    "openspec/changes/niar-246-work-pet/tasks.md": "f914a93f86c29744aca45f88dab705cd755ef1f2ddc926150b4293c4b2c6f0c1",
+    "openspec/changes/niar-246-work-pet/specs/work-pet/spec.md": "56e51b685cbad0d186b5f890a699625b095f4edb6c86aef15cc04754105a7710",
+    "openspec/changes/niar-246-work-pet/specs/memory/spec.md": "ae389fba6890194da26506744e151af03dc960ede49c79b0b35dcd6e200ab09f",
+    "docs/ui-system.md": "1c60042b68b63ce08cbcef06e487cc761b0610a2870574b3c9f776736080f2b9"
+  },
+  "reviewedReleaseSubjectSHA256": "9ce64d183ff751b919d6ae3d39d459e435b8257224389465fb5c97a2e191b7e6",
+  "checks": {
+    "jest": {
+      "argv": [
+        "node_modules/.bin/jest",
+        "--runInBand",
+        "--cacheDirectory",
+        "/tmp/niaro-pet-pages-20261031/release-checks/jest-cache",
+        "--modulePathIgnorePatterns",
+        "<rootDir>/.servers/",
+        "--runTestsByPath",
+        "tests/pet-profile-mobile.test.tsx",
+        "tests/web-pet-page.test.tsx",
+        "tests/web-pet-view.test.tsx",
+        "tests/pet-profile-client.test.ts",
+        "tests/pet-motion.test.ts",
+        "tests/pet-shader.test.ts",
+        "tests/pet-view.test.tsx",
+        "tests/pet-touch.test.tsx",
+        "tests/pet-lifecycle.test.tsx",
+        "tests/pet-interaction.test.ts",
+        "tests/web-app-routes.test.tsx",
+        "tests/web-chat-next.test.tsx",
+        "tests/web-chat-composer.test.tsx",
+        "tests/conversation-history-mobile.test.tsx",
+        "tests/mobile-mentions.test.tsx",
+        "tests/voice-composer.test.tsx",
+        "tests/output-voice-client.test.ts",
+        "tests/output-voice-mobile.test.tsx",
+        "tests/output-voice-web.test.tsx",
+        "tests/server-admin.test.ts"
+      ],
+      "cwd": "/home/flamendrin/workspace/niaro",
+      "started": "2026-10-31T12:05:41.789373+00:00",
+      "seconds": 39.92015965599967,
+      "exit": 0,
+      "subject": "release-subject.json"
+    },
+    "types": {
+      "argv": [
+        "node_modules/.bin/tsc",
+        "--noEmit",
+        "--incremental",
+        "false"
+      ],
+      "cwd": "/home/flamendrin/workspace/niaro",
+      "started": "2026-10-31T12:06:21.710036+00:00",
+      "seconds": 29.52829884499988,
+      "exit": 0,
+      "subject": "release-subject.json"
+    },
+    "boundaries": {
+      "argv": [
+        "node",
+        "scripts/check-boundaries.mjs"
+      ],
+      "cwd": "/home/flamendrin/workspace/niaro",
+      "started": "2026-10-31T12:06:22.856999+00:00",
+      "seconds": 0.725002773999222,
+      "exit": 0,
+      "subject": "release-subject.json"
+    },
+    "admin-build": {
+      "argv": [
+        "npm",
+        "run",
+        "admin:build"
+      ],
+      "cwd": "/tmp/niaro-pet-pages-20261031/runtime-preview",
+      "started": "2026-10-31T12:06:21.710317+00:00",
+      "seconds": 1.1464841889992385,
+      "exit": 0,
+      "subject": "release-subject.json"
+    },
+    "node": {
+      "argv": [
+        "node",
+        "--import",
+        "tsx",
+        "--test",
+        "--test-concurrency=2",
+        "tests/work-pet.node.ts",
+        "tests/work-pet-http.node.ts",
+        "tests/memory.node.ts",
+        "tests/memory-http.node.ts",
+        "tests/memory-runtime.node.ts",
+        "tests/saved-memory-native.node.ts",
+        "tests/output-voice-http.node.ts",
+        "tests/output-voice-dispatch.node.ts"
+      ],
+      "started": "2026-10-31T11:29:19.413148+00:00",
+      "seconds": 30.50113807100024,
+      "exit": 0,
+      "subject": "node-subject.json"
+    },
+    "full-check": {
+      "argv": [
+        "npm",
+        "run",
+        "check"
+      ],
+      "cwd": "/home/flamendrin/workspace/niaro",
+      "started": "2026-10-31T11:55:42.961453+00:00",
+      "seconds": 76.02756360899912,
+      "exit": 1,
+      "subject": "final-subject.json"
+    }
+  },
+  "reviewReports": {
+    "review/combined-final-review.md": "4c1b5ab282ffdf138f65a879d7a06c17d3f2cdeed67c87dbf929e108c3af91d2",
+    "delta-review/report.md": "67cdce569ed268357c67eed2623d493d061826d02013e785bc8d2b956a674aad"
+  },
+  "publicVerification": {
+    "expectedJS": "68c96b2396a5f30bd79840731110d129290e052269fa1ee5166b7a0734e90278",
+    "checks": [
+      {
+        "origin": "http://127.0.0.1:8793",
+        "path": "/pet",
+        "status": 200,
+        "type": "text/html; charset=utf-8"
+      },
+      {
+        "origin": "http://127.0.0.1:8793",
+        "path": "/me/memory",
+        "status": 200,
+        "type": "text/html; charset=utf-8"
+      },
+      {
+        "origin": "http://127.0.0.1:8793",
+        "path": "/pet/not-a-route",
+        "status": 404,
+        "type": "application/json"
+      },
+      {
+        "origin": "http://127.0.0.1:8793",
+        "path": "/admin/app.js",
+        "status": 200,
+        "type": "text/javascript; charset=utf-8",
+        "sha256": "68c96b2396a5f30bd79840731110d129290e052269fa1ee5166b7a0734e90278",
+        "matchesBuild": true
+      },
+      {
+        "origin": "https://aa.f-tuma.dev",
+        "path": "/pet",
+        "status": 200,
+        "type": "text/html; charset=utf-8"
+      },
+      {
+        "origin": "https://aa.f-tuma.dev",
+        "path": "/me/memory",
+        "status": 200,
+        "type": "text/html; charset=utf-8"
+      },
+      {
+        "origin": "https://aa.f-tuma.dev",
+        "path": "/pet/not-a-route",
+        "status": 404,
+        "type": "application/json"
+      },
+      {
+        "origin": "https://aa.f-tuma.dev",
+        "path": "/admin/app.js",
+        "status": 200,
+        "type": "text/javascript; charset=utf-8",
+        "sha256": "68c96b2396a5f30bd79840731110d129290e052269fa1ee5166b7a0734e90278",
+        "matchesBuild": true
+      }
+    ]
+  },
+  "durableEvidence": "/home/flamendrin/.codex/artifacts/niaro-pet-pages-20261031/delivery-final",
+  "notes": [
+    "Final source49 has no weather or Graph activation.",
+    "Node155 subject backend14 remains unchanged.",
+    "Full check stopped at three inherited historical attachment QA import errors.",
+    "Task5.1 and5.3 checkboxes updated after source review; source bytes unchanged."
+  ]
+}

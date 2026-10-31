@@ -73,6 +73,13 @@ jest.mock("@tanstack/react-router", () => {
     useRouterState: () => "/",
   };
 });
+// These isolated chat/composer tests have no owner-profile transport. Model a
+// pending profile at its hook boundary; profile/owner rendering is tested in
+// web-pet-page.test.tsx, rather than adding fake account data to these fixtures.
+jest.mock("../apps/server-admin/web/app/pet-memory", () => ({
+  ...jest.requireActual("../apps/server-admin/web/app/pet-memory"),
+  usePetProfile: () => ({ data: undefined }),
+}));
 // Generated charts draw with recharts, which Jest cannot parse.
 jest.mock("../apps/server-admin/web/app/generative-ui/charts", () => ({}));
 jest.mock("../apps/server-admin/web/app/context", () => ({

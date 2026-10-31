@@ -1,3 +1,4 @@
+import type { PetAppearance } from "../../packages/ui/pet-motion";
 import type { HomePetBounds } from "./home-pet-visibility";
 import React, {
   useState,
@@ -601,6 +602,9 @@ export function Home({
   onConnect,
   compact = false,
   petVisible = true,
+  showPet = true,
+  petAppearance,
+  petAnimate = true,
   petOccupied = false,
   onPetBounds,
   petState = busy ? "working" : meetingRecording ? "listening" : "idle",
@@ -627,6 +631,9 @@ export function Home({
   onConnect: () => void;
   compact?: boolean;
   petVisible?: boolean;
+  showPet?: boolean;
+  petAppearance?: PetAppearance;
+  petAnimate?: boolean;
   petOccupied?: boolean;
   onPetBounds?: (bounds: HomePetBounds | null) => void;
   petState?: PetState;
@@ -783,19 +790,23 @@ export function Home({
           onLayout={onStageLayout}
           style={chrome.stage}
         >
-          <View testID="home-pet-bounds" onLayout={onPetLayout}>
-            <PetView
-              visible={petVisible}
-              occupied={petOccupied}
-              testID="home-pet"
-              label={companionCopy(language).petTouch}
-              interactive
-              disabled={busy || meetingRecording}
-              state={petState}
-              size={220}
-              level={level}
-            />
-          </View>
+          {showPet && (
+            <View testID="home-pet-bounds" onLayout={onPetLayout}>
+              <PetView
+                visible={petVisible}
+                occupied={petOccupied}
+                appearance={petAppearance}
+                animate={petAnimate}
+                testID="home-pet"
+                label={companionCopy(language).petTouch}
+                interactive
+                disabled={busy || meetingRecording}
+                state={petState}
+                size={220}
+                level={level}
+              />
+            </View>
+          )}
           <View style={chrome.headline}>
             <Text
               role="screenTitle"

@@ -1,3 +1,4 @@
+import { petCopy } from "./pet-profile-copy";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -41,7 +42,7 @@ import { MenuItem } from "./ScreenChrome";
 import { companionCopy } from "./companion-copy";
 import { OpenWorkNotice, type OpenWorkRefusal } from "./OpenWorkNotice";
 
-export type MenuTarget = "processes" | "search" | "tasks" | "library";
+export type MenuTarget = "processes" | "search" | "tasks" | "library" | "pet";
 
 type DrawerProps = {
   session: ClientSession | null;
@@ -449,6 +450,13 @@ function OpenChatHistory({
                     label={companionCopy(language).work}
                     onPress={() => go("tasks")}
                   />
+                  {session && (
+                    <MenuItem
+                      icon="paw"
+                      label={petCopy(language).title}
+                      onPress={() => go("pet")}
+                    />
+                  )}
                   <MenuItem
                     icon="library"
                     label={companionCopy(language).library}

@@ -1,6 +1,11 @@
 import React from "react";
 import { act, render, screen } from "@testing-library/react-native";
+import { PetFallback } from "../packages/ui/PetFallback";
 import { PetView } from "../packages/ui/PetView";
+jest.mock("../packages/ui/motion", () => ({
+  ...jest.requireActual("../packages/ui/motion"),
+  useReducedMotion: () => false,
+}));
 jest.mock("../packages/ui/gl-surface", () => ({ supportedGLView: () => null }));
 
 test("the no-GL companion keeps its label and only invokes the explicit action on press", () => {
@@ -30,4 +35,12 @@ test("decorative companion exposes an image and has no implied microphone action
     screen.getByRole("image", { name: "Niaro is preparing the answer" }),
   ).toBeTruthy();
   expect(screen.queryByRole("button")).toBeNull();
+});
+
+test("native no-GL appearance replacement uses final geometry immediately", () => {
+  const { rerender } = render(<PetView appearance={{ shape: "circle" }} />);
+  rerender(<PetView appearance={{ shape: "flower" }} />);
+  const fallback = screen.UNSAFE_getByType(PetFallback);
+  expect(fallback.props.geometry.mix).toBe(1);
+  expect(fallback.props.geometry.a.n).toBe(6);
 });

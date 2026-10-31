@@ -1,4 +1,14 @@
-import { purgeNativeAttachmentGeneration , closeNativeCatalogRuntime } from "./mastra-runtime";
+import { WorkPetStore, automaticPetShape, petLook } from "./work-pet";
+import {
+  PetProfileSchema,
+  PetMemoryPageSchema,
+  PetMemoryQuerySchema,
+  PetMemoryCommandSchema,
+} from "../../packages/protocol/work-pet";
+import {
+  purgeNativeAttachmentGeneration,
+  closeNativeCatalogRuntime,
+} from "./mastra-runtime";
 import { budgetedInferenceTransport } from "./inference-budget";
 import { clientAddress } from "./client-address";
 import { outputVoiceCatalogue } from "../server-integrations/speech-voices";
@@ -640,6 +650,7 @@ export class IdentityService {
   private serviceFlows: ServiceMobileFlows;
   private plugins: WorkspacePluginStore;
   private memory: MemoryStore;
+  private pet: WorkPetStore;
   private profileCursor: ProfileCursorStore;
   private profileLearner?: ProfileLearner;
   private profileSources?: Pick<
@@ -800,6 +811,18 @@ export class IdentityService {
       db,
       memorySecret ?? "NIARO TEST in-memory profile key",
     );
+    this.pet = new WorkPetStore(db, (actor, position) => {
+      this.audit.append({
+        organizationId: actor.organizationId,
+        workspaceId: actor.workspaceId,
+        actorId: actor.userId,
+        source: "console",
+        action: position ? "pet.position_changed" : "pet.changed",
+        targetId: null,
+        outcome: "succeeded",
+        details: {},
+      });
+    });
     this.memory = new MemoryStore(db, {
       secret: memorySecret,
       run: (fn) => this.serial(async () => fn()),
@@ -2371,6 +2394,224 @@ export class IdentityService {
       } satisfies SkillActor,
     };
   }
+  /** Private account profile and memory. Native payload I/O runs outside the identity queue. */
+  async mobilePet(
+    header: string | undefined,
+    workspaceId: string,
+    serverId: string,
+    memory: boolean,
+    query: URLSearchParams,
+    payload: unknown,
+  ) {
+    const prepared = await this.serial(async () =>
+      this.appActor(header, workspaceId, serverId),
+    );
+    const actor: MemoryActor = {
+      organizationId: prepared.actor.organizationId,
+      workspaceId: prepared.actor.workspaceId,
+      userId: prepared.actor.userId,
+      canManageShared: false,
+    };
+    const check = () => {
+      const current = this.appActor(header, workspaceId, serverId);
+      if (JSON.stringify(current) !== JSON.stringify(prepared))
+        throw new IdentityError(403, "identity_forbidden");
+    };
+    return this.petRequest(
+      actor,
+      prepared.actor.role,
+      check,
+      memory,
+      query,
+      payload,
+    );
+  }
+  private async petRequest(
+    actor: MemoryActor,
+    role: string,
+    identityCheck: () => void,
+    memory: boolean,
+    params: URLSearchParams,
+    payload: unknown,
+  ) {
+    const prepared = await this.serial(async () => {
+      identityCheck();
+      return {
+        plugin: this.plugins.read(actor.workspaceId),
+        policy: this.connections.policyVersion(actor.organizationId),
+      };
+    });
+    const check = () => {
+      identityCheck();
+      if (
+        this.closing ||
+        prepared.plugin.revision !==
+          this.plugins.read(actor.workspaceId).revision ||
+        prepared.policy !== this.connections.policyVersion(actor.organizationId)
+      )
+        throw new IdentityError(409, "memory_context_changed");
+    };
+    const commit = {
+      check,
+      run: <T>(fn: () => T) =>
+        this.serial(async () => {
+          check();
+          return fn();
+        }),
+    };
+    const enabled = prepared.plugin.settings.enabled.includes("memory");
+    const settings = MemorySettingsSchema.parse(
+      prepared.plugin.settings.memory ?? {},
+    );
+    const options = {
+      run: commit.run,
+      settings,
+      privateOnly: true,
+      observationSourceView: (
+        source: import("../../packages/protocol/memory").ObservationSource,
+        a: MemoryActor,
+      ) => this.observationSourceView(source, a),
+      sourceAccess: (
+        source: import("../../packages/protocol/memory").MemorySource,
+        a: MemoryActor,
+      ) =>
+        this.memorySourceAccess(
+          source,
+          a,
+          role as "owner" | "admin" | "member",
+        ),
+    };
+    const keys = [...params.keys()];
+    if (
+      new Set(keys).size !== keys.length ||
+      (payload !== undefined && keys.length) ||
+      (!memory && keys.length)
+    )
+      throw new IdentityError(400, "identity_invalid_input");
+    const scope = {
+      profile: "work-pet/1" as const,
+      organizationId: actor.organizationId,
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+    };
+    if (!memory) {
+      if (payload !== undefined)
+        await commit.run(() => this.pet.save(actor, payload));
+      const snapshot = await this.memory.privateSnapshot(actor, options);
+      return commit.run(() => {
+        if (snapshot.version !== this.memory.version(actor))
+          throw new IdentityError(409, "memory_context_changed");
+        return PetProfileSchema.parse({
+          ...scope,
+          ...this.pet.read(actor),
+          automaticShape: automaticPetShape(snapshot.items),
+          look: petLook(snapshot.items),
+        });
+      });
+    }
+    const raw = Object.fromEntries(params);
+    if (
+      raw.history !== undefined &&
+      raw.history !== "true" &&
+      raw.history !== "false"
+    )
+      throw new IdentityError(400, "identity_invalid_input");
+    const query = PetMemoryQuerySchema.parse({
+      ...raw,
+      ...(raw.history === undefined ? {} : { history: raw.history === "true" }),
+      ...(raw.limit === undefined ? {} : { limit: Number(raw.limit) }),
+    });
+    if (payload !== undefined) {
+      const command = PetMemoryCommandSchema.parse(payload);
+      const source = { type: "user_note" as const };
+      if (
+        !enabled &&
+        (command.type === "remember" || command.type === "revise")
+      )
+        throw new IdentityError(403, "plugin_unavailable");
+      if (command.type === "remember")
+        await this.memory.remember(
+          actor,
+          {
+            requestId: command.requestId,
+            content: command.content,
+            kind: command.kind,
+            scope: "private",
+            source,
+            explicitIntent: true,
+            settings,
+          },
+          commit,
+        );
+      else if (command.type === "revise")
+        await this.memory.revise(
+          actor,
+          {
+            requestId: command.requestId,
+            id: command.id,
+            revision: command.revision,
+            content: command.content,
+            source,
+            explicitIntent: true,
+            settings,
+          },
+          undefined,
+          undefined,
+          commit,
+        );
+      else if (command.type === "forget")
+        await this.memory.forget(
+          actor,
+          {
+            requestId: command.requestId,
+            id: command.id,
+            revision: command.revision,
+          },
+          commit,
+        );
+      else if (command.type === "forgetAll")
+        await this.memory.forgetAll(
+          actor,
+          { requestId: command.requestId },
+          commit,
+        );
+      else if (command.type === "personalThings")
+        await this.memory.setPersonalThings(
+          actor,
+          { requestId: command.requestId, value: command.value },
+          commit,
+        );
+      else if (command.type === "classify")
+        await this.memory.classify(
+          actor,
+          {
+            requestId: command.requestId,
+            id: command.id,
+            revision: command.revision,
+            personal: command.personal,
+          },
+          commit,
+        );
+      else
+        await commit.run(() =>
+          this.memory.setOptOut(actor, {
+            requestId: command.requestId,
+            optOut: command.optOut,
+          }),
+        );
+    }
+    const page = await this.memory.privatePage(actor, query, options);
+    return commit.run(() => {
+      if (page.version !== this.memory.version(actor))
+        throw new IdentityError(409, "memory_context_changed");
+      return PetMemoryPageSchema.parse({
+        ...scope,
+        ...page,
+        enabled,
+        ...this.memory.readPreferences(actor),
+      });
+    });
+  }
   /**
    * Skills over the app API: `GET` lists the person's usable skills, `GET
    * ?id=` reads one, `GET ?proposalId=` reads a chat proposal's state and
@@ -2610,6 +2851,11 @@ export class IdentityService {
               check();
               if (this.plugins.read(workspaceId).revision !== settings.revision)
                 throw new IdentityError(409, "process_memory_changed");
+            },
+            confirmedPosition: () => {
+              check();
+              const { jobTitle, department } = this.pet.read(memoryActor).settings;
+              return { jobTitle, department };
             },
             sourceAccess: (source, actor) =>
               this.memorySourceAccess(source, actor, check().role),
@@ -3363,6 +3609,11 @@ export class IdentityService {
               check: () => {
                 check();
               },
+              confirmedPosition: () => {
+                check();
+                const { jobTitle, department } = this.pet.read(memoryActor).settings;
+                return { jobTitle, department };
+              },
               sourceAccess: (source, actor) =>
                 this.memorySourceAccess(source, actor, check().role),
               mutate: (fn) =>
@@ -3539,7 +3790,10 @@ export class IdentityService {
                 const policyVersion = this.connections.policyVersion(orgId);
                 check(policyVersion);
                 signal.throwIfAborted();
-                const speech = this.catalog.store.resolveSpeech(orgId, workspaceId);
+                const speech = this.catalog.store.resolveSpeech(
+                  orgId,
+                  workspaceId,
+                );
                 const route = this.catalog.store.speechVoiceRoute(
                   orgId,
                   workspaceId,
@@ -3583,7 +3837,8 @@ export class IdentityService {
                 if (
                   !route ||
                   current.identity !== pin.identity ||
-                  current.snapshot.catalogueRevision !== pin.catalogueRevision ||
+                  current.snapshot.catalogueRevision !==
+                    pin.catalogueRevision ||
                   (choice.kind === "catalogue"
                     ? !catalogue.options.some(
                         (option) =>
@@ -5141,6 +5396,89 @@ export class IdentityService {
         if (error instanceof z.ZodError)
           return respond(400, { error: "identity_invalid_input" });
         return respond(500, { error: "skill_unavailable" });
+      }
+    }
+    if (
+      url.pathname === "/admin/api/identity/pet" ||
+      url.pathname === "/admin/api/identity/pet/memory"
+    ) {
+      try {
+        if (isOperator())
+          throw new IdentityError(403, "identity_account_required");
+        if (req.method !== "GET" && req.method !== "POST")
+          return respond(405, { error: "method_not_allowed" });
+        const raw = Object.fromEntries(url.searchParams);
+        const keys = [...url.searchParams.keys()];
+        if (new Set(keys).size !== keys.length)
+          throw new IdentityError(400, "identity_invalid_input");
+        if (raw.profile !== "work-pet/1")
+          return respond(406, { error: "pet_unsupported" });
+        const target = WorkspaceTarget.parse({
+          organizationId: raw.organizationId,
+          workspaceId: raw.workspaceId,
+        });
+        const prepared = await this.serial(async () => ({
+          actor: await this.workspaceActor(req, target),
+          session: await this.getSession(req),
+        }));
+        const a = prepared.actor;
+        const actor: MemoryActor = {
+          ...target,
+          userId: a.userId,
+          canManageShared: false,
+        };
+        const check = () => {
+          if (
+            this.closing ||
+            !prepared.session ||
+            prepared.session.session.expiresAt.getTime() <= Date.now()
+          )
+            throw new IdentityError(401, "identity_unauthorized");
+          const member = this.db
+            .prepare(
+              'SELECT role FROM member WHERE id=? AND "userId"=? AND "organizationId"=?',
+            )
+            .get(a.id, a.userId, target.organizationId);
+          const session = this.db
+            .prepare('SELECT id,"expiresAt" FROM session WHERE id=?')
+            .get(prepared.session.session.id);
+          if (
+            !session ||
+            !Number.isFinite(Date.parse(String(session.expiresAt))) ||
+            Date.parse(String(session.expiresAt)) <= Date.now() ||
+            !member ||
+            member.role !== a.role ||
+            (a.role === "member" &&
+              !this.db
+                .prepare(
+                  "SELECT 1 FROM agent_workspace_member WHERE workspace_id=? AND member_id=?",
+                )
+                .get(target.workspaceId, a.id))
+          )
+            throw new IdentityError(403, "identity_forbidden");
+        };
+        const params = new URLSearchParams(url.searchParams);
+        params.delete("organizationId");
+        params.delete("workspaceId");
+        params.delete("profile");
+        const command = req.method === "POST" ? payload : undefined;
+        return respond(
+          200,
+          await this.petRequest(
+            actor,
+            a.role,
+            check,
+            url.pathname.endsWith("/memory"),
+            params,
+            command,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof IdentityError)
+          return respond(error.status, { error: error.code });
+        if (error instanceof z.ZodError)
+          return respond(400, { error: "identity_invalid_input" });
+        return respond(500, { error: "pet_unavailable" });
       }
     }
     // Native payload I/O must allow independent identity revocation to run.

@@ -1,3 +1,15 @@
+import {
+  PetProfileSchema,
+  SavePetProfileSchema,
+  PetMemoryPageSchema,
+  PetMemoryQuerySchema,
+  PetMemoryCommandSchema,
+  type PetProfile,
+  type SavePetProfile,
+  type PetMemoryQuery,
+  type PetMemoryPage,
+  type PetMemoryCommand,
+} from "../protocol/work-pet";
 import { AttachmentRuntime } from "./attachments";
 import { AttachmentTransport } from "./attachment-transport";
 import { parseMeetingRecord, parseServerValue } from "./forward-compatible";
@@ -1308,6 +1320,103 @@ export class ClientSession {
     )
       throw new Error("invalid_payload");
     return directory;
+  }
+  private async petRequest(
+    path: string,
+    payload: unknown,
+    signal?: AbortSignal,
+  ) {
+    // The account sidecar authenticates directly; do not construct a chat session.
+    const { response, value } = await this.json(
+      path,
+      {
+        signal,
+        ...(payload === undefined
+          ? {}
+          : {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            }),
+      },
+      15000,
+      700000,
+      700000,
+      true,
+    );
+    const code = (value as { error?: unknown } | null)?.error;
+    if (response.status === 406 && code === "pet_unsupported") return undefined;
+    if (!response.ok)
+      throw new Error(
+        typeof code === "string" &&
+        /^(pet|memory|identity|plugin)_[a-z_]+$/.test(code)
+          ? code
+          : "pet_failed",
+      );
+    return value;
+  }
+  private checkPetScope(value: { userId: string; workspaceId: string }) {
+    if (
+      value.userId !== this.credential.scope.userId ||
+      value.workspaceId !== this.credential.scope.workspaceId
+    )
+      throw new Error("invalid_payload");
+  }
+  async petProfile(signal?: AbortSignal): Promise<PetProfile | null> {
+    const value = await this.petRequest("pet", undefined, signal);
+    if (value === undefined) return null;
+    const result = PetProfileSchema.parse(value);
+    this.checkPetScope(result);
+    return result;
+  }
+  async savePetProfile(
+    update: SavePetProfile,
+    signal?: AbortSignal,
+  ): Promise<PetProfile | null> {
+    const value = await this.petRequest(
+      "pet",
+      SavePetProfileSchema.parse(update),
+      signal,
+    );
+    if (value === undefined) return null;
+    const result = PetProfileSchema.parse(value);
+    this.checkPetScope(result);
+    return result;
+  }
+  async petMemory(
+    query: PetMemoryQuery = {},
+    signal?: AbortSignal,
+  ): Promise<PetMemoryPage | null> {
+    const parsed = PetMemoryQuerySchema.parse(query);
+    const params = Object.entries(parsed)
+      .map(
+        ([key, value]) =>
+          `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`,
+      )
+      .join("&");
+    const value = await this.petRequest(
+      `pet/memory${params ? `?${params}` : ""}`,
+      undefined,
+      signal,
+    );
+    if (value === undefined) return null;
+    const result = PetMemoryPageSchema.parse(value);
+    this.checkPetScope(result);
+    return result;
+  }
+  async savePetMemory(
+    command: PetMemoryCommand,
+    signal?: AbortSignal,
+  ): Promise<PetMemoryPage | null> {
+    const value = await this.petRequest(
+      "pet/memory",
+      PetMemoryCommandSchema.parse(command),
+      signal,
+    );
+    if (value === undefined) return null;
+    const result = PetMemoryPageSchema.parse(value);
+    this.checkPetScope(result);
+    return result;
   }
   private async skillRequest(path: string, init?: RequestInit) {
     if (!this.authorized) await this.authorize();

@@ -16,7 +16,7 @@ import type { ServerConfig } from "../reference-server/config";
 
 /** Web app pages served with the same shell as the console. */
 export const APP_ROUTE =
-  /^\/(?:|chat(?:\/[A-Za-z0-9_-]+)?|tasks|meetings(?:\/[A-Za-z0-9_-]+)?|processes(?:\/[A-Za-z0-9_-]+)?|skills(?:\/[A-Za-z0-9_-]+)?|connections(?:\/[A-Za-z0-9_-]+)?|search|me)\/?$/;
+  /^\/(?:|chat(?:\/[A-Za-z0-9_-]+)?|tasks|meetings(?:\/[A-Za-z0-9_-]+)?|processes(?:\/[A-Za-z0-9_-]+)?|skills(?:\/[A-Za-z0-9_-]+)?|connections(?:\/[A-Za-z0-9_-]+)?|search|pet|me(?:\/memory)?)\/?$/;
 /** Public account pages: sign-in, invitation and password reset. */
 export const ACCOUNT_ROUTE = /^\/account\/(?:login|invite|reset)$/;
 

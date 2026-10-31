@@ -1,3 +1,6 @@
+import { PetProfile } from "./PetProfile";
+import { useNativePetProfile, nativePetAppearance } from "./pet-profile-model";
+import { petCopy } from "./pet-profile-copy";
 import {
   useMobileComposerMentions,
   MobileMentionSuggestions,
@@ -7,7 +10,10 @@ import {
 import type { MessageMention } from "../../packages/protocol/mentions";
 import { VoiceServiceCard } from "../../packages/ui-catalog/VoiceServiceCard";
 import type { VoiceCapabilities } from "../../packages/protocol/voice";
-import { useHomePetVisibility } from "./home-pet-visibility";
+import {
+  useHomePetVisibility,
+  type HomePetBounds,
+} from "./home-pet-visibility";
 import {
   useMobileAttachments,
   MobileAttachmentDraft,
@@ -327,6 +333,37 @@ export function Workspace({
   const tr = translate(language);
   const scroll = useRef<ScrollView>(null);
   const homePetVisibility = useHomePetVisibility();
+  const profilePetVisibility = useHomePetVisibility();
+  const { onBounds: publishProfileBounds } = profilePetVisibility;
+  const profileContentTop = useRef(0);
+  const profilePetBounds = useRef<HomePetBounds | null>(null);
+  const onProfilePetBounds = useCallback(
+    (bounds: HomePetBounds | null) => {
+      profilePetBounds.current = bounds;
+      publishProfileBounds(
+        bounds
+          ? { ...bounds, top: profileContentTop.current + bounds.top }
+          : null,
+      );
+    },
+    [publishProfileBounds],
+  );
+  const petProfile = useNativePetProfile(session);
+  const [petScreenOwner, setPetScreenOwner] = useState<ClientSession | null>(
+    null,
+  );
+  const petOpen = !!session && petScreenOwner === session;
+  const setPetOpen = useCallback(
+    (open: boolean) => setPetScreenOwner(open ? session : null),
+    [session],
+  );
+  const [petAppearanceOpen, setPetAppearanceOpen] = useState(false);
+  const petLook = useMemo(
+    () =>
+      petProfile.profile ? nativePetAppearance(petProfile.profile) : undefined,
+    [petProfile.profile],
+  );
+
   const composerInput = useRef<TextInput>(null);
   const focusWork = useRef<string | undefined>(undefined);
   const [draft, setDraftState] = useState("");
@@ -509,6 +546,8 @@ export function Workspace({
         else if (processOpen && selectedProcessRunId)
           setSelectedProcessRunId(null);
         else if (processOpen) setProcessOpen(false);
+        else if (petOpen && petAppearanceOpen) setPetAppearanceOpen(false);
+        else if (petOpen) setPetOpen(false);
         else if (meetingOpen) setMeetingId(null);
         else if (section === "meetings" || section === "more")
           setSection("library");
@@ -522,6 +561,9 @@ export function Workspace({
     processOpen,
     processDesignerOpen,
     selectedProcessRunId,
+    petOpen,
+    petAppearanceOpen,
+    setPetOpen,
     section,
     setSection,
     meetingOpen,
@@ -1969,6 +2011,7 @@ export function Workspace({
     void next.start();
   };
   const changeSection = (next: Section) => {
+    setPetOpen(false);
     speech.player.stop();
     focusWork.current = undefined;
     closeVoice();
@@ -2075,8 +2118,16 @@ export function Workspace({
               }
               subtitle={statusLine}
               emblem={
-                hasConversation && !voice ? (
+                hasConversation &&
+                !voice &&
+                petProfile.profile?.settings.showInChat !== false ? (
                   <PetView
+                    appearance={petLook}
+                    animate={false}
+                    onPress={() => {
+                      changeSection("library");
+                      setPetOpen(true);
+                    }}
                     occupied={petOccupied}
                     visible={
                       !historyOpen &&
@@ -2113,28 +2164,43 @@ export function Workspace({
             <TopBar
               // Tabs are peers; only an open meeting record has a way back.
               leading={
-                meetingOpen || section === "meetings" || section === "more" ? (
+                petOpen ||
+                meetingOpen ||
+                section === "meetings" ||
+                section === "more" ? (
                   <IconButton
                     icon="back"
                     label={tr("back")}
                     onPress={() =>
-                      meetingOpen
-                        ? setMeetingId(null)
-                        : changeSection("library")
+                      petOpen
+                        ? petAppearanceOpen
+                          ? setPetAppearanceOpen(false)
+                          : setPetOpen(false)
+                        : meetingOpen
+                          ? setMeetingId(null)
+                          : changeSection("library")
                     }
                   />
                 ) : undefined
               }
               title={
-                section === "library"
-                  ? companionCopy(language).library
-                  : section === "tasks"
-                    ? companionCopy(language).work
-                    : tr(section === "more" ? "settingsTitle" : section)
+                petOpen
+                  ? petCopy(language).title
+                  : section === "library"
+                    ? companionCopy(language).library
+                    : section === "tasks"
+                      ? companionCopy(language).work
+                      : tr(section === "more" ? "settingsTitle" : section)
               }
               subtitle={statusLine}
               trailing={
-                session && section === "tasks" ? (
+                petOpen ? (
+                  <IconButton
+                    icon="settings"
+                    label={petCopy(language).appearance}
+                    onPress={() => setPetAppearanceOpen(true)}
+                  />
+                ) : session && section === "tasks" ? (
                   <IconButton
                     icon="refresh"
                     label={tr("refresh")}
@@ -2166,9 +2232,10 @@ export function Workspace({
           <ScrollView
             testID="screen-scroll"
             ref={scroll}
-            onLayout={(event) =>
-              homePetVisibility.onViewport(event.nativeEvent.layout.height)
-            }
+            onLayout={(event) => {
+              homePetVisibility.onViewport(event.nativeEvent.layout.height);
+              profilePetVisibility.onViewport(event.nativeEvent.layout.height);
+            }}
             style={styles.flex}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === "web" ? "none" : "on-drag"}
@@ -2184,6 +2251,10 @@ export function Workspace({
               const { layoutMeasurement, contentOffset, contentSize } =
                 event.nativeEvent;
               homePetVisibility.onScroll(
+                contentOffset.y,
+                layoutMeasurement.height,
+              );
+              profilePetVisibility.onScroll(
                 contentOffset.y,
                 layoutMeasurement.height,
               );
@@ -2455,6 +2526,10 @@ export function Workspace({
             ) : null}
             <Entrance
               key={section}
+              onLayout={(event) => {
+                profileContentTop.current = event.nativeEvent.layout.y;
+                onProfilePetBounds(profilePetBounds.current);
+              }}
               style={[
                 styles.section,
                 section === "chat" &&
@@ -2462,10 +2537,36 @@ export function Workspace({
                   !busy && { flexGrow: 1 },
               ]}
             >
-              {section === "library" ? (
+              {petOpen && session ? (
+                <PetProfile
+                  key={session.identityKey}
+                  session={session}
+                  language={language}
+                  profile={petProfile.profile}
+                  profileError={petProfile.error}
+                  petVisible={profilePetVisibility.visible}
+                  onPetBounds={onProfilePetBounds}
+                  onSave={petProfile.save}
+                  onRefresh={petProfile.read}
+                  appearance={petAppearanceOpen}
+                  onAppearance={setPetAppearanceOpen}
+                  onOpenSource={(href) => {
+                    const [kind, id] = href.slice(1).split("/");
+                    if (!id) return;
+                    if (kind === "chat") {
+                      changeSection("chat");
+                      switchConversation(id);
+                    } else if (kind === "meetings") {
+                      changeSection("meetings");
+                      setMeetingId(id);
+                    }
+                  }}
+                />
+              ) : section === "library" ? (
                 <CompanionLibrary
                   language={language}
                   connected={!!session}
+                  onPet={() => setPetOpen(true)}
                   onMeetings={() => changeSection("meetings")}
                   onHistory={openMenu}
                   onProcesses={() => openProcesses()}
@@ -2509,6 +2610,9 @@ export function Workspace({
                 <Home
                   language={language}
                   paired={!!session}
+                  showPet={petProfile.profile?.settings.showInChat !== false}
+                  petAppearance={petLook}
+                  petAnimate={petProfile.profile?.settings.animate ?? true}
                   connected={online}
                   busy={busy}
                   count={count}
@@ -2912,7 +3016,10 @@ export function Workspace({
         }}
         onNavigate={(target) => {
           setHistoryOpen(false);
-          if (target === "search") setSearchOpen(true);
+          if (target === "pet") {
+            changeSection("library");
+            setPetOpen(true);
+          } else if (target === "search") setSearchOpen(true);
           else if (target === "tasks" || target === "library")
             changeSection(target);
           else openProcesses();

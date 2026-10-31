@@ -1,3 +1,4 @@
+import { petCopy } from "./pet-profile-copy";
 import React from "react";
 import { View } from "react-native";
 import type { Language } from "../../packages/protocol";
@@ -13,6 +14,7 @@ export function CompanionLibrary({
   onHistory,
   onProcesses,
   onSettings,
+  onPet,
 }: {
   language: Language;
   connected: boolean;
@@ -20,11 +22,20 @@ export function CompanionLibrary({
   onHistory: () => void;
   onProcesses: () => void;
   onSettings: () => void;
+  onPet?: () => void;
 }) {
   const tr = translate(language);
   return (
     <View testID="companion-library" style={{ gap: t.spacing.section }}>
       <Group>
+        {onPet && (
+          <ListRow
+            label={petCopy(language).title}
+            leading={<IconTile icon="paw" size={38} />}
+            onPress={onPet}
+            disabled={!connected}
+          />
+        )}
         <ListRow
           label={tr("meetings")}
           leading={<IconTile icon="calendar" size={38} />}

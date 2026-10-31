@@ -1,4 +1,9 @@
-import { createHash, randomUUID } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import {
@@ -18,6 +23,10 @@ import {
   type MemorySettings,
   type MemorySource,
 } from "../../packages/protocol/memory";
+import {
+  PetMemoryQuerySchema,
+  type PetMemoryQuery,
+} from "../../packages/protocol/work-pet";
 import { IdentityId } from "../../packages/protocol/identity";
 import { IdentityError } from "./error";
 import { pathToFileURL } from "node:url";
@@ -494,6 +503,14 @@ export class MemoryStore {
     });
   }
   async listWithTotal(raw: MemoryActor, options: MemoryReadOptions = {}) {
+    const snapshot = await this.privateSnapshot(raw, options);
+    return {
+      items: snapshot.items.slice(0, 200),
+      total: snapshot.items.length,
+    };
+  }
+  /** Complete, source-checked snapshot, also used for automatic appearance. */
+  async privateSnapshot(raw: MemoryActor, options: MemoryReadOptions = {}) {
     const capture = await this.gate(options, () => ({
       actor: this.actor(raw),
       version: this.version(raw),
@@ -505,7 +522,7 @@ export class MemoryStore {
     };
     let after = "",
       items: MemoryItem[] = [];
-    const count: Pick<MemoryItem, "expiresAt" | "source">[] = [];
+
     for (;;) {
       const rows = await this.gate(options, () => {
         check();
@@ -534,20 +551,10 @@ export class MemoryStore {
             this.readable(item, capture.actor, options, this.now()),
           )
           .map((item) => this.sourceView(item, capture.actor, options));
-        count.push(
-          ...visible.map((item) => ({
-            expiresAt: item.expiresAt,
-            source:
-              item.source?.type === "verified_operation" ? item.source : null,
-          })),
+        items = [...items, ...visible].sort(
+          (a, b) =>
+            b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
         );
-        items = [...items, ...visible]
-          .sort(
-            (a, b) =>
-              b.updatedAt.localeCompare(a.updatedAt) ||
-              a.id.localeCompare(b.id),
-          )
-          .slice(0, 200);
       });
       after = rows.at(-1)!.id;
       if (rows.length < 256) break;
@@ -556,15 +563,102 @@ export class MemoryStore {
       check();
       const now = this.now();
       return {
-        items: items.filter((item) =>
-          this.readable(item, capture.actor, options, now),
-        ),
-        total: count.filter((item) =>
-          this.readable(item, capture.actor, options, now),
-        ).length,
+        items: items
+          .filter((item) => this.readable(item, capture.actor, options, now))
+          .map((item) => this.sourceView(item, capture.actor, options)),
+        version: capture.version,
       };
     });
   }
+  /** Filter before paging; the authenticated opaque cursor binds the entire readable generation. */
+  async privatePage(
+    raw: MemoryActor,
+    input: PetMemoryQuery = {},
+    options: MemoryReadOptions = {},
+  ) {
+    const query = PetMemoryQuerySchema.parse(input);
+    const { cursor, ...filters } = query;
+    const normalized = {
+      origin: filters.origin ?? null,
+      section: filters.section ?? null,
+      personal: filters.personal ?? null,
+      history: filters.history ?? false,
+      limit: filters.limit ?? 50,
+    };
+    const actor = this.actor(raw);
+    const snapshot = await this.privateSnapshot(actor, {
+      ...options,
+      privateOnly: true,
+    });
+    const items = snapshot.items.filter(
+      (item) =>
+        (normalized.history || item.status !== "superseded") &&
+        (!normalized.origin || item.origin === normalized.origin) &&
+        (!normalized.section ||
+          (item.source?.type === "observed" &&
+            item.source.section === normalized.section)) &&
+        (!normalized.personal ||
+          (item.source?.type === "observed" &&
+            item.source.personal === (normalized.personal === "personal"))),
+    );
+    const generation = this.fingerprint([
+      actor.organizationId,
+      actor.workspaceId,
+      actor.userId,
+      normalized,
+      snapshot.version,
+      snapshot.items,
+    ]);
+    const sign = (value: string) =>
+      createHmac("sha256", this.options.secret ?? this.cursorSecret)
+        .update("pet-memory/1:" + value)
+        .digest("base64url");
+    let offset = 0;
+    if (cursor) {
+      const [encoded, signature] = cursor.split(".");
+      const expected = sign(encoded!);
+      if (
+        !signature ||
+        signature.length !== expected.length ||
+        !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+      )
+        throw new IdentityError(409, "memory_context_changed");
+      try {
+        const value = JSON.parse(
+          Buffer.from(encoded!, "base64url").toString("utf8"),
+        );
+        if (
+          value.generation !== generation ||
+          !Number.isSafeInteger(value.offset) ||
+          value.offset < 1 ||
+          value.offset >= items.length
+        )
+          throw Error();
+        offset = value.offset;
+      } catch {
+        throw new IdentityError(409, "memory_context_changed");
+      }
+    }
+    const page: MemoryItem[] = [];
+    let bytes = 2;
+    for (const item of items.slice(offset, offset + normalized.limit)) {
+      const size = Buffer.byteLength(JSON.stringify(item), "utf8") + 1;
+      if (bytes + size > 650000) break;
+      bytes += size;
+      page.push(item);
+    }
+    const nextOffset = offset + page.length;
+    const encoded = Buffer.from(
+      JSON.stringify({ generation, offset: nextOffset }),
+    ).toString("base64url");
+    return {
+      version: snapshot.version,
+      items: page,
+      nextCursor:
+        nextOffset < items.length ? `${encoded}.${sign(encoded)}` : null,
+    };
+  }
+  private cursorSecret = randomUUID();
   private actor(raw: MemoryActor) {
     const actor = actorSchema.parse(raw);
     if (

@@ -39,7 +39,7 @@ See proposal.md for the motivation and specs/ for the required behavior. Today:
 - Embeddings or semantic search over observations.
 - Learning from service content.
 - A generic background job system.
-- A new native profile page. Existing mobile pet clock/weather controls are the bounded exception; profile/growth/memory/page work remains separate.
+- Native weather/provider integration remains a separate checkpoint. The owner explicitly requested the centered Pet/profile screens in both mobile and web on 31 October; that page delivery now belongs to the bounded UI checkpoint below, before weather.
 - Reverse geocoding, cross-device phone activation, new production shapes, minigames or personal-output-voice work.
 
 ## Decisions
@@ -157,6 +157,8 @@ A genuinely received late completion can be checkpointed as positive response ev
 **Controlled production oracles.** Use the actual learner/cursor/profile adapter plus the real budget transport, never a budget-refusal stub alone. Inject dispatched 504 and post-dispatch exception; kill/reopen after dispatch before result/stage; kill after received checkpoint before publication; advance beyond 120-second deadline, 180-second lease and repeated one-/six-hour backoffs; add dirty input and relocate sources; return a non-cooperative response late. Assert one provider dispatch for unresolved work, unchanged source progress/profile, unchanged original root and unknown hold, and no stale publication. At actual `start()` inspect a second SQLite connection to prove both markers committed; force checkpoint transaction failure and prove network never starts. Separately test known unpaid refusal retry, valid result with missing usage committing under the original held reservation without a repeated call, first known invalid response plus one same-root repair, replay of received checkpoint without inference, privacy erasure/cache expiry preserving paid binding/no new charge, and late callbacks failing the privacy generation. Also run a no-hook default-caller regression on the same real ledger after injected profile hook failures: ordinary observe/unpriced admission, priced clamp/usage and normal dispatch/accounting remain unchanged, with no leaked SQLite transaction. Keep the existing inference-budget suite green. State the measured/live limits separately; this is a profile-specific checkpoint over existing owners, not a new agent engine or ledger reconciliation implementation.
 
 ### D4. Pet data and API
+
+**Current page delivery (owner instruction, 31 October).** Implement the centered mobile and web compositions in `docs/design/mobile-pet-profile-2026-10-31/design.md` and `docs/design/web-pet-profile-2026-10-30/design.md`: actual shared renderer, six named sections, Observed/Saved/About you, owner appearance and position, concise copy and no minigames/progress/growth prose on the clean view. Mobile enters through Library and the existing drawer; web `/pet` and `/me/memory` work without a chat session. Reuse private MemoryStore records and provenance; add authenticated paired profile/private-memory methods and equivalent cookie routes, with scope/version-bound private pagination before claiming complete browsing. Persist animate/show-in-chat preferences with profile settings; new-chat and small conversation pets use those settings without remounting the composer. Microsoft suggestions and native weather remain later checkpoints and are not mocked. Root records exact contract/checks and remaining tasks after source integration; stale task checkboxes do not imply existing observation code is absent.
 
 **Table.** A new `agent_pet (organization_id, workspace_id, user_id, name, colour, shape, job_title, department, position_revision, revision, created_at, updated_at)`, where `shape` is `auto` or a pinned shape key. Its key is the person in the workspace, and the row is created lazily on the first GET.
 
@@ -521,7 +523,7 @@ Mobile tests inject storage/native/time/session ports: retained Keychain with mi
 
 ### D7. Navigation
 
-The Pet entry goes at the end of the sidebar's work entries: after Connections and before the chat list, with a `PawPrint` icon. `docs/ui-system.md` L36 and `tests/web-app-routes.test.tsx` are updated in the same task.
+The Pet entry goes at the end of the sidebar's work entries: after Connections and before the chat list, with the standard `PawPrint` icon (owner correction, 31 October). `docs/ui-system.md` L36 and `tests/web-app-routes.test.tsx` are updated in the same task.
 
 The pet page works without a chat session, like `/me`, so the profile stays manageable when chat is down. This extends NIAR-243's no-session exception to `/pet`.
 

@@ -6,6 +6,9 @@ import {
   releasePet,
   petFrame,
   petRenderSize,
+  petContactPoint,
+  setPetAppearance,
+  petGeometry,
   type PetMotion,
 } from "../packages/ui/pet-motion";
 
@@ -47,11 +50,11 @@ test("reduced motion is an identical still frame regardless of input or elapsed 
   ).toBe(1);
 });
 
-test("render budget caps density at 2 and physical pixels at 480", () => {
+test("render budget caps density at 1.5 and physical pixels at 480", () => {
   expect(petRenderSize(156, 3)).toEqual({
     logical: 156,
-    pixels: 312,
-    surface: 104,
+    pixels: 234,
+    surface: 78,
   });
   expect(petRenderSize(400, 3)).toEqual({
     logical: 400,
@@ -98,4 +101,36 @@ test("stable vsync divider carries original30/20/15 cadence and never queues cat
   expect(petCadenceDue(c, time)).toBe(true);
   expect(petCadenceDue(c, time)).toBe(false);
   expect(petCadenceDue(c, time + 1)).toBe(false);
+});
+
+test("appearance silhouette bounds and contact follow the established pill rather than cookie", () => {
+  const base = { time: 2, level: 0, touch: 0, sleep: 0 };
+  const pill = { ...base, appearance: { shape: "pill" as const } };
+  const circle = { ...base, appearance: { shape: "circle" as const } };
+  expect(petContactPoint(120, 240, 480, pill)).not.toBeNull();
+  expect(petContactPoint(240, 80, 480, pill)).toBeNull();
+  expect(petContactPoint(240, 240, 480, circle)).not.toBeNull();
+});
+
+test("appearance morph is bounded, shares contact geometry and keeps the ink clock", () => {
+  const motion: PetMotion = {
+    time: 17,
+    level: 0,
+    touch: 0,
+    sleep: 0,
+    appearance: { shape: "cookie" },
+  };
+  setPetAppearance(motion, { shape: "pill" });
+  expect(petGeometry(motion).mix).toBe(0);
+  advancePetMotion(motion, 0.1, "idle", 0);
+  expect(petGeometry(motion).mix).toBeGreaterThan(0);
+  expect(petGeometry(motion).mix).toBeLessThan(1);
+  expect(petContactPoint(240, 240, 480, motion)).not.toBeNull();
+  for (let i = 0; i < 3; i++) advancePetMotion(motion, 0.1, "idle", 0);
+  expect(petGeometry(motion).mix).toBe(1);
+  expect(petGeometry(motion).b.sx).toBe(1.22);
+  expect(motion.time).toBeCloseTo(17.4);
+  setPetAppearance(motion, { shape: "flower" }, true);
+  expect(motion.appearanceTransition).toBeUndefined();
+  expect(motion.time).toBeCloseTo(17.4);
 });

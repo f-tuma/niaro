@@ -94,6 +94,8 @@ export const auditActions: Record<AuditEntry["action"], keyof Copy> = {
   "workspace.ai_changed": "auditAIChanged",
   "workspace.plugins_changed": "auditPluginsChanged",
   "memory.changed": "auditMemoryChanged",
+  "pet.changed": "auditPetChanged",
+  "pet.position_changed": "auditPetPositionChanged",
   "memory.preference_changed": "auditMemoryPreference",
   "calendar.created": "auditCalendarCreated",
   "calendar.configured": "auditCalendarConfigured",

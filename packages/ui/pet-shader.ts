@@ -1,3 +1,4 @@
+import { petGeometry } from "./pet-motion";
 // Approved Niaro water renderer, extracted from the 2026-10-30 pet study (external halo removed).
 // Only the platform lifecycle and uniform adapter are new. No DOM or profile state.
 import { petNoise } from "./pet-interaction";
@@ -795,6 +796,12 @@ export function createPetShader(gl: WebGLRenderingContext, background: string) {
         if (!program) return;
         gl.useProgram(program);
         backdrop(backgroundColor);
+        const sh = petGeometry(motion);
+        four("uShapeA", sh.a.n, sh.a.a, Math.cos(sh.a.rot), Math.sin(sh.a.rot));
+        four("uShapeB", sh.b.n, sh.b.a, Math.cos(sh.b.rot), Math.sin(sh.b.rot));
+        four("uShapeK", sh.sx, sh.sy, Math.min(sh.sx, sh.sy) / sh.lip, sh.lip);
+        one("uMorph", sh.mix);
+        three("uTintL", linear(motion.appearance?.tint ?? [0.74, 0.7, 0.98]));
         const frame = petFrame(motion, state, reduced, gl.drawingBufferWidth);
         const time = frame.time;
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
@@ -877,7 +884,7 @@ export function createPetShader(gl: WebGLRenderingContext, background: string) {
           (0.42 + Math.max(0, -frame.dent)) / 1.15,
           0,
         );
-        PET_COUNTS.forEach((count, i) => {
+        (motion.appearance?.counts ?? PET_COUNTS).forEach((count, i) => {
           const size = count
             ? Math.min(0.36, 0.17 + 0.05 * Math.sqrt(count)) * (0.7 / 0.8)
             : 0;

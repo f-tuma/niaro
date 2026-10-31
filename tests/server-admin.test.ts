@@ -232,6 +232,25 @@ test("same-server admin protects inventory, rejects cross-origin writes, revokes
     expect(shell.headers["content-security-policy"]).not.toContain(
       "unsafe-inline",
     );
+    // Direct loads and refreshes use the actual same-server shell allowlist.
+    for (const route of ["/pet", "/pet/", "/me/memory", "/me/memory/"]) {
+      const page = await http(`${origin}${route}`);
+      expect({ route, status: page.status }).toEqual({ route, status: 200 });
+      expect(page.body).toContain("Admin shell");
+      expect(page.headers["content-security-policy"]).toContain(
+        "frame-ancestors 'none'",
+      );
+    }
+    for (const route of [
+      "/pet/unknown",
+      "/pet-extra",
+      "/me/memory/unknown",
+      "/me/memory-extra",
+    ]) {
+      const page = await http(`${origin}${route}`);
+      expect({ route, status: page.status }).toEqual({ route, status: 404 });
+      expect(page.body).not.toContain("Admin shell");
+    }
     const nextShell = await http(`${origin}/admin/`);
     expect(nextShell.body).not.toBe(shell.body);
     for (const route of [

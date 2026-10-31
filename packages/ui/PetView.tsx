@@ -1,3 +1,21 @@
+import {
+  type PetAppearance,
+  createPetCadence,
+  petCadenceDue,
+  advancePetMotion,
+  createPetInteraction,
+  petFrame,
+  resetPetInteraction,
+  pressPet,
+  movePet,
+  releasePet,
+  petContactPoint,
+  setPetAppearance,
+  petGeometry,
+  petRenderSize,
+  type PetMotion,
+  type PetState,
+} from "./pet-motion";
 import React, {
   memo,
   useCallback,
@@ -21,21 +39,6 @@ import { tokens as t } from "../design-tokens";
 import { GLBoundary, supportedGLView } from "./gl-surface";
 import { useReducedMotion } from "./motion";
 import { createPetShader } from "./pet-shader";
-import {
-  createPetCadence,
-  petCadenceDue,
-  advancePetMotion,
-  createPetInteraction,
-  petFrame,
-  resetPetInteraction,
-  pressPet,
-  movePet,
-  releasePet,
-  petContactPoint,
-  petRenderSize,
-  type PetMotion,
-  type PetState,
-} from "./pet-motion";
 import { PetFallback } from "./PetFallback";
 import {
   focusPetPlay,
@@ -50,6 +53,8 @@ import {
 
 export type PetViewProps = {
   size?: number;
+  appearance?: PetAppearance;
+  animate?: boolean;
   background?: string;
   state?: PetState;
   /** Actual microphone envelope, 0–1; never drives colour or time. */
@@ -70,6 +75,8 @@ export type { PetState } from "./pet-motion";
 /** A single companion, with no recording, backend, or profile side effects. */
 export const PetView = memo(function PetView({
   size = 156,
+  appearance,
+  animate = true,
   background = t.color.background,
   state = "idle",
   level,
@@ -81,7 +88,8 @@ export const PetView = memo(function PetView({
   occupied = false,
   visible: ownerVisible = true,
 }: PetViewProps) {
-  const reduced = useReducedMotion();
+  const systemReduced = useReducedMotion();
+  const reduced = systemReduced || !animate;
   const [Surface] = useState(supportedGLView);
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
@@ -99,6 +107,7 @@ export const PetView = memo(function PetView({
     face: PetFace;
     sign: PetSignName | null;
     stir: boolean;
+    geometry?: ReturnType<typeof petGeometry>;
   }>({ face: PET_FACES.neutral, sign: null, stir: false });
   const semantic = useRef("");
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
@@ -137,6 +146,7 @@ export const PetView = memo(function PetView({
     stop: () => void;
   } | null>(null);
   useLayoutEffect(() => {
+    setPetAppearance(motion.current, appearance, reduced || !Surface || failed);
     latest.current.enabled = enabled;
     latest.current.ownerVisible = ownerVisible;
     gesture.current = null;
@@ -148,7 +158,18 @@ export const PetView = memo(function PetView({
     latest.current.reduced = reduced;
     latest.current.background = background;
     control.current?.wake();
-  }, [state, reduced, size, background, enabled, occupied, ownerVisible]);
+  }, [
+    state,
+    reduced,
+    size,
+    background,
+    enabled,
+    occupied,
+    ownerVisible,
+    appearance,
+    Surface,
+    failed,
+  ]);
   useEffect(() => {
     latest.current.level = 0;
     if (!level) return;
@@ -229,6 +250,7 @@ export const PetView = memo(function PetView({
     fallbackTilt.setValue(0);
     fallbackPose.current = { stretch: 0, tilt: 0 };
     if (!alive.current) return;
+    setPetAppearance(motion.current, motion.current.appearance, true);
     syncFallback();
     setFailed(true);
   }, [fallbackScale, fallbackTilt]);
@@ -290,6 +312,8 @@ export const PetView = memo(function PetView({
         const dt = last ? (now - last) / 1000 : 0;
         last = now;
         try {
+          if (!renderer || latest.current.reduced)
+            setPetAppearance(motion.current, motion.current.appearance, true);
           advancePetMotion(
             motion.current,
             latest.current.reduced ? 0 : dt,
@@ -395,13 +419,14 @@ export const PetView = memo(function PetView({
     if (!alive.current) return;
     const play = motion.current.interaction!.play;
     const sign = play.sign && play.now >= play.sign.at ? play.sign.name : null;
-    const key = `${latest.current.state}:${play.faceName}:${play.target.wink}:${play.pressed}:${play.hug}:${sign}`;
+    const key = `${motion.current.appearance?.shape}:${motion.current.appearanceTransition?.progress}:${latest.current.state}:${play.faceName}:${play.target.wink}:${play.pressed}:${play.hug}:${sign}`;
     if (key !== semantic.current) {
       semantic.current = key;
       setExpression({
         face: { ...play.target },
         sign,
         stir: play.faceName === "stir",
+        geometry: petGeometry(motion.current),
       });
     }
   }
@@ -551,6 +576,8 @@ export const PetView = memo(function PetView({
       }}
     >
       <PetFallback
+        appearance={appearance}
+        geometry={expression.geometry}
         size={dimensions.logical}
         resting={state === "resting" && !expression.stir}
         pleased={expression.face.low > 0.5}
