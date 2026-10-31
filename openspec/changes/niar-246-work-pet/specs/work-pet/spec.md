@@ -70,7 +70,7 @@ The animated pet SHALL render at most 30 frames per second on a canvas of at mos
 
 ### Requirement: Expressions
 
-The pet SHALL express emotion through eyes, mouth and blush. Actual work/listening/speaking and supplied rest state SHALL take priority over touch, bounded idle and clock/weather mood. Night SHALL NOT create authoritative sleep. Idle SHALL pause while occupied, hidden, inactive or under reduced motion.
+The pet SHALL preserve all twelve existing PetFace channels (open, lid, low, tilt, love, wink, smile, mouth, blush, wave, asym and roll) and express emotion through its existing face renderer. Actual work/listening/speaking and supplied rest state SHALL take priority over touch, bounded idle and clock/weather mood. Night SHALL NOT create authoritative sleep. Idle SHALL pause while occupied, hidden, inactive or under reduced motion.
 
 #### Scenario: Rainy day
 
@@ -183,6 +183,17 @@ Device weather SHALL require deliberate local Device opt-in and foreground OS co
 - **WHEN** an acquisition resolves after its8s deadline, or retained position reaches30m
 - **THEN** expired position cannot enter application state or transport; weather remains neutral until a current permitted acquisition succeeds
 
+#### Scenario: Reinstall with retained secure storage
+
+- **WHEN** iOS retains old Keychain opt-in but the app's installation cache marker is absent or replaced
+- **THEN** old opt-in cannot activate Device; a new verified installation marker starts inactive until deliberate local activation
+- **AND** marker or secure enable/disable storage failure blocks native acquisition and remains visibly unresolved
+
+#### Scenario: Cache eviction or restored installation
+
+- **WHEN** the OS evicts the installation marker or a restored installation lacks its matching device-only secure record
+- **THEN** Device stays inactive; cold launch with an intact verified marker and matching secure opt-in may instead resume after no-prompt current permission checks
+
 ### Requirement: Submitted city lookup
 
 City lookup SHALL require an explicit submitted city-name search through an authenticated configured server adapter, followed by deliberate result selection. It SHALL be bounded, cached, identified, attributed and switchable, with application-wide admission. It SHALL NOT autocomplete, reverse geocode, infer from memories/IP, accept exact addresses or activate a public provider without informed operator setup.
@@ -197,9 +208,21 @@ City lookup SHALL require an explicit submitted city-name search through an auth
 - **WHEN** the operator has not deliberately configured the city adapter or shared admission is unavailable
 - **THEN** no external request occurs and the settings show concise unavailable state with Off/local clock still usable
 
+#### Scenario: JSONv2 settlement projection
+
+- **WHEN** configured lookup returns JSONv2 candidates
+- **THEN** the server requests addressdetails=1 and applies the fixed category/type/addresstype/rank, country, label and deduplication rules in design.md D6c C3.5
+- **AND** missing-country, house/road/POI and malformed candidates never become selectable City preferences
+
 ### Requirement: Weather freshness
 
 Weather fetches SHALL remain server-only and disabled until identified operator setup. Shared cache/deduplication SHALL enforce at least30m between cell attempts and provider Expires/conditional validation. A failed refresh MAY retain eligible same-source weather only until2h after accepted200/304 revalidation; Device also requires current<=30m position. Invalid responses SHALL NOT renew validity.
+
+#### Scenario: Deterministic forecast read contract
+
+- **WHEN** the server processes any 200/304 weather read
+- **THEN** The deterministic period/symbol/timestamp projection and gate-preserving cache rules in design.md D6c SHALL govern all 200/304 reads.
+- **AND** MET alone SHALL use the bounded 304/HTTPS allowlisted redirect/gzip/deflate transport path, with authority checked at each actual hop and bounded encoded/decoded bodies; unrelated callers retain their existing strict transport defaults.
 
 #### Scenario: Provider expiry exceeds display limit
 
@@ -216,6 +239,17 @@ Weather fetches SHALL remain server-only and disabled until identified operator 
 - **WHEN** people in different workspaces submit public city searches together
 - **THEN** the one existing identity owner shares a single dispatcher enforcing at most1request/sec, restart honors persisted gates/cooldown, and unsupported independent-owner public topology cannot claim shared admission
 
+#### Scenario: Conditional forecast through production transport
+
+- **WHEN** the bounded MET path receives valid compressed 200 data or a bodyless conditional 304 through a permitted redirect chain
+- **THEN** actual production transport enforces hop, DNS, time, encoded/decoded byte and authority limits before the fixed decoder accepts/reselects current intervals
+- **AND** an unsafe redirect, malformed compressed stream, interval gap or invalid 304 cannot renew validation
+
+#### Scenario: Full cache retains live provider gates
+
+- **WHEN** all 2,000 anonymous cell/query entries have live attempt gates or in-flight work
+- **THEN** a new key is refused without outbound traffic; payload expiry never removes a live gate to admit it
+
 ### Requirement: Weather sidecar compatibility
 
 The system SHALL negotiate weather through separate strict scoped `pet-weather/1` capability/current/city routes, leaving existing strict ServerInfo/speech contracts unchanged. Owner commands SHALL be revision/generation checked and idempotent. Unsupported404/406, malformed/foreign responses and unknown mutation outcomes SHALL never produce fake weather, implicit permission or an automatic replacement write.
@@ -229,6 +263,17 @@ The system SHALL negotiate weather through separate strict scoped `pet-weather/1
 
 - **WHEN** a recorded source/City command is retried after another preference was accepted
 - **THEN** a still-matching last receipt returns current snapshot without reapplying; an older retry after a newer command conflicts on its old revision and cannot restore clearedCity
+
+#### Scenario: Saved City is independent of active source
+
+- **WHEN** the person selects Device or Off with a saved City
+- **THEN** preference.city still exposes only that saved City's bounded summary/attribution, while active City is null
+- **AND** clear of inactive saved City increments revision without changing Device generation/local opt-in; clear of active City selects Off with a new generation
+
+#### Scenario: Exact sidecar unions
+
+- **WHEN** a client receives capability, current, search or error data
+- **THEN** it validates the complete strict unions, registered attribution, bounded IDs/timestamps and scope from design.md D6c C3.1 before displaying it; malformed or foreign data clears weather without changing preference
 
 ### Requirement: Growth stages
 

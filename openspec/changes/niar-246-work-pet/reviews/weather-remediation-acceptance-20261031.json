@@ -1,0 +1,50 @@
+{
+  "acceptedAt": "2026-10-31T10:39:52.758886+00:00",
+  "approval": "User: přijmout vše; four complete linked candidates and all22 PROPOSE FIX annotations",
+  "change": "niar-246-work-pet",
+  "before": {
+    "openspec/changes/niar-246-work-pet/design.md": "81c2cd46fecd3363fa6e64f75738a0e4e653d83071dc9fc63f40058f71b2966c",
+    "openspec/changes/niar-246-work-pet/proposal.md": "5cd886d2d0b26c4b53d839e22a11777e90f18719e4e662b8065048e6503d55f4",
+    "openspec/changes/niar-246-work-pet/tasks.md": "3290ec251249bc8798b8a274183973b33d921df33e546b4ae14f29c5e5e2050a",
+    "openspec/changes/niar-246-work-pet/specs/work-pet/spec.md": "c38933ae6f16a4e5bb009b76d18f6871017fd69e5e51b748b5e54d096a94853c",
+    "openspec/changes/niar-246-work-pet/specs/memory/spec.md": "ae389fba6890194da26506744e151af03dc960ede49c79b0b35dcd6e200ab09f"
+  },
+  "applied": {
+    "openspec/changes/niar-246-work-pet/design.md": "0d735b5c1971b7e54ab0321dba091bcf81e6b643f20a246c502ff00aae4f8c0f",
+    "openspec/changes/niar-246-work-pet/proposal.md": "56fe4c19e4740b7ba182a20ee1a81c6c9ff881b1af8c7326947aeb6c8c3b2dd2",
+    "openspec/changes/niar-246-work-pet/tasks.md": "173edd7ad98d0f37a9c6fa2406e5570305b5c378af7c508a86154fec39f8a774",
+    "openspec/changes/niar-246-work-pet/specs/work-pet/spec.md": "cee3373ba4923268c742d04bd13799b4bacf62b0ad040ef881b6f569414c63c9"
+  },
+  "memoryUnchanged": "ae389fba6890194da26506744e151af03dc960ede49c79b0b35dcd6e200ab09f",
+  "acceptedTextFixes": 22,
+  "remainingTextFixes": 0,
+  "independentClosure": "not run; no automatic next review round",
+  "sourceImplementation": false,
+  "checkedTasks": 0,
+  "totalTasks": 23,
+  "structuralValidation": {
+    "argv": [
+      "spec",
+      "openspec",
+      "--project",
+      "/home/flamendrin/workspace/niaro",
+      "--",
+      "validate",
+      "niar-246-work-pet",
+      "--strict"
+    ],
+    "exit": 0,
+    "meaning": "Structure valid; not independent readiness closure"
+  },
+  "approvedCandidateHashes": {
+    "openspec/changes/niar-246-work-pet/design.md": "0d735b5c1971b7e54ab0321dba091bcf81e6b643f20a246c502ff00aae4f8c0f",
+    "openspec/changes/niar-246-work-pet/proposal.md": "56fe4c19e4740b7ba182a20ee1a81c6c9ff881b1af8c7326947aeb6c8c3b2dd2",
+    "openspec/changes/niar-246-work-pet/tasks.md": "173edd7ad98d0f37a9c6fa2406e5570305b5c378af7c508a86154fec39f8a774",
+    "openspec/changes/niar-246-work-pet/specs/work-pet/spec.md": "af69ad87eb7e8025482cf12f4aa11d2f843c5dbc25d7dd18293f7de151f0fb13"
+  },
+  "validationOnlyAdjustment": {
+    "file": "openspec/changes/niar-246-work-pet/specs/work-pet/spec.md",
+    "reason": "Strict validator500-character ADDED requirement description limit",
+    "change": "Moved two existing normative sentences into an explicit 200/304-read scenario, preserving their text/meaning. No product-intent change."
+  }
+}
