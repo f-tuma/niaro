@@ -7,7 +7,6 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import {
-  Archive,
   AudioLines,
   LayoutDashboard,
   Check,
@@ -418,12 +417,6 @@ function UserMenu() {
               <Link to="/me">
                 <UserRound aria-hidden="true" />
                 {copy.accountSettings}
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to="/me" hash="archived-chats">
-                <Archive aria-hidden="true" />
-                {copy.archivedChats}
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />

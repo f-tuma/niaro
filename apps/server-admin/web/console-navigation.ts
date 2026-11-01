@@ -13,7 +13,6 @@ import {
   Server,
   Settings2,
   ShieldCheck,
-  Sparkles,
   Users,
   Workflow,
   type LucideIcon,
@@ -22,7 +21,6 @@ import {
 export type NavKey =
   | "overview"
   | "processes"
-  | "skills"
   | "services"
   | "plugins"
   | "routing"
@@ -69,7 +67,6 @@ export const navigation: NavGroup[] = [
       { to: "/providers", key: "providers", icon: Cpu },
       { to: "/routing", key: "routing", icon: GitBranch },
       { to: "/usage", key: "usage", icon: Gauge },
-      { to: "/skills", key: "skills", icon: Sparkles },
     ],
   },
   {

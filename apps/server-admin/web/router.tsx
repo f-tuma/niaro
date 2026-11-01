@@ -30,7 +30,6 @@ import { Settings } from "./pages";
 import { ProcessDesignPage, designSearchSchema } from "./process-design-page";
 import { WorkspaceProcessesPage } from "./workspace-processes-page";
 import { ProcessConsolePage } from "./process-console-page";
-import { SkillAdminPage, SkillsAdminPage } from "./skills-page";
 import {
   addServiceSearchSchema,
   serviceDetailSearchSchema,
@@ -106,8 +105,7 @@ export const router = createRouter({
       validateSearch: (search) => designSearchSchema.parse(search),
       component: ProcessDesignPage,
     }),
-    page("/skills", SkillsAdminPage),
-    page("/skills/$skillId", SkillAdminPage),
+    // Company skills are managed in the app's Skills page.
     page("/plugins", PluginsPage),
     page("/plugins/$pluginId", PluginsPage),
     page("/plugins/$pluginId/files", PluginFilesPage),

@@ -1790,7 +1790,6 @@ test("the admin sidebar groups pages as Services, AI, Processes, People and Sett
     "/providers",
     "/routing",
     "/usage",
-    "/skills",
     "/processes",
     "/loops",
     "/people",
