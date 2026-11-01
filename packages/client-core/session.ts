@@ -3114,9 +3114,7 @@ export class ClientSession {
     await this.refresh();
     if (poll && !this.stopped && !this.invalid) {
       clearInterval(this.timer);
-      this.timer = setInterval(() => {
-        void this.sync();
-      }, 1000);
+      this.timer = setInterval(() => this.tick(), 1000);
     }
   }
   stop() {
@@ -3386,9 +3384,13 @@ export class ClientSession {
       });
     }
   }
-  async sync() {
-    if (this.polling || this.stopped || this.invalid || this.paused) return;
-    // A hidden browser tab waits; it syncs when the person looks again.
+  /**
+   * The automatic poll: skipped while the app is in the background or the
+   * tab is hidden, and spaced out while offline. An explicit sync() always
+   * runs.
+   */
+  private tick() {
+    if (this.paused) return;
     if (
       typeof document !== "undefined" &&
       document.visibilityState === "hidden"
@@ -3396,6 +3398,10 @@ export class ClientSession {
       return;
     if (this.state.status !== "online" && Date.now() < this.offlineRetryAt)
       return;
+    void this.sync();
+  }
+  async sync() {
+    if (this.polling || this.stopped || this.invalid) return;
     this.polling = true;
     let httpStatus: number | undefined;
     let received: unknown;

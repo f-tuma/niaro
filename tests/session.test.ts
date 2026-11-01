@@ -623,9 +623,11 @@ test("a quiet poll neither wakes subscribers nor rewrites storage; a paused app 
     expect(listener).not.toHaveBeenCalled();
     expect(s.getSnapshot()).toBe(before);
     expect(write).not.toHaveBeenCalled();
+    // The automatic poll pauses in the background; coming back syncs.
     const calls = request.mock.calls.length;
     s.setActive(false);
-    await s.sync();
+    (s as unknown as { tick(): void }).tick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(request.mock.calls.length).toBe(calls);
     s.setActive(true);
     await new Promise((resolve) => setTimeout(resolve, 0));
