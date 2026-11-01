@@ -21,7 +21,8 @@ import type { ConversationSummary, Language } from "../../packages/protocol";
 import type { ChatSearchResult } from "../../packages/protocol/chat-search";
 import { translate } from "../../packages/i18n";
 import { tokens as t } from "../../packages/design-tokens";
-import { Button, Notice, Row, Segmented, Text } from "../../packages/ui";
+import { Button, Notice, Row, Text } from "../../packages/ui";
+import { Tabs } from "../../packages/ui/Tabs";
 import { EmptyState, IconButton } from "./ScreenChrome";
 import { useCompanionTypography } from "../../packages/ui/typography";
 
@@ -269,26 +270,22 @@ export function ChatSearchScreen({
             />
           ) : null}
         </Row>
-        <ScrollView
-          horizontal
-          keyboardShouldPersistTaps="handled"
-          style={{ flexGrow: 0, flexShrink: 0 }}
-          contentContainerStyle={{
-            minWidth: "100%",
+        <View
+          style={{
             paddingHorizontal: t.spacing.screenGutter,
             paddingBottom: 8,
           }}
         >
-          <Segmented
-            accessibilityLabel={c.filters}
+          <Tabs
+            testID="chat-search-filters"
             options={CHAT_SEARCH_FILTERS.map((value) => ({
-              value,
+              id: value,
               label: c.filter[value],
             }))}
             value={filter}
             onChange={setFilter}
           />
-        </ScrollView>
+        </View>
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: 24 }}

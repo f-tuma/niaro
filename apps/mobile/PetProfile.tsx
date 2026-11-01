@@ -1,6 +1,7 @@
 import { PET_PALETTE } from "../shared/pet-appearance";
 import React, {
   useCallback,
+  useContext,
   useEffectEvent,
   useEffect,
   useMemo,
@@ -18,6 +19,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { randomUUID } from "expo-crypto";
+import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 import type { ClientSession } from "../../packages/client-core/session";
 import type { Language } from "../../packages/protocol";
 import {
@@ -37,19 +39,19 @@ import {
   Icon,
   ListRow,
   Notice,
-  Segmented,
   Text,
   Toggle,
   type IconName,
 } from "../../packages/ui";
 import { Entrance, useReducedMotion } from "../../packages/ui/motion";
+import { Tabs } from "../../packages/ui/Tabs";
 import type { HomePetBounds } from "./home-pet-visibility";
 import { PetView } from "../../packages/ui/PetView";
 import { PetFallback } from "../../packages/ui/PetFallback";
 import { tokens as t } from "../../packages/design-tokens";
 import { petCopy, petFormat } from "./pet-profile-copy";
 import { nativePetAppearance } from "./pet-profile-model";
-import { DetailSheet, IconButton } from "./ScreenChrome";
+import { DetailSheet, IconButton, chrome } from "./ScreenChrome";
 
 const sections = [
   "work",
@@ -135,9 +137,7 @@ export function PetTopBarActions({
           <Icon
             name="history"
             size={22}
-            color={
-              screen.history ? t.color.action.link : t.color.text.primary
-            }
+            color={screen.history ? t.color.action.link : t.color.text.primary}
           />
         </Pressable>
       ) : null}
@@ -162,6 +162,18 @@ const deviceKeys = [
   ["about", "person"],
   ["appearance", "palette"],
 ] as const satisfies readonly (readonly [string, IconName])[];
+/**
+ * The page ends where the screen's scroll content does: above the content's
+ * bottom padding and the tab bar the app keeps under every root screen.
+ */
+const belowPage =
+  Number(chrome.content.paddingBottom ?? 0) +
+  Number(chrome.nav.paddingTop ?? 0) +
+  Number(chrome.nav.paddingBottom ?? 0) +
+  Number(chrome.navItem.minHeight ?? 0) +
+  StyleSheet.hairlineWidth;
+const PET_MIN = 180,
+  PET_MAX = 280;
 const latest = (items: MemoryItem[], key: "seenAt" | "createdAt") =>
   items.reduce<string | null>((best, item) => {
     const value = item[key];
@@ -206,10 +218,15 @@ export function PetProfile({
   const [manageOwn, setManageOwn] = useState(false);
   const manage = manageControlled ?? manageOwn;
   const setManage = onManage ?? setManageOwn;
-  const { width, fontScale } = useWindowDimensions();
+  const { width, height: windowHeight, fontScale } = useWindowDimensions();
+  const insets = useContext(SafeAreaInsetsContext);
   const reduced = useReducedMotion();
   const compact = fontScale >= 1.5 || width < 360;
-  const petSize = Math.min(220, width - 72) / Math.max(1, fontScale);
+  // The pet grows with the room the stage leaves it, within the brief's clamp.
+  const petMax = Math.min(PET_MAX, width - 72) / Math.max(1, fontScale);
+  const petMin = Math.min(PET_MIN / Math.max(1, fontScale), petMax);
+  const [petSize, setPetSize] = useState(Math.round(petMax));
+  const [fill, setFill] = useState(0);
   const c = petCopy(language),
     f = petFormat(language);
   const { view, history } = screen;
@@ -232,21 +249,41 @@ export function PetProfile({
     opener = useRef<Section | "saved" | null>(null),
     wells = useRef<Partial<Record<Section | "saved", View | null>>>({}),
     heading = useRef<View | null>(null);
+  const root = useRef<View | null>(null);
   const profileY = useRef(0),
-    shellY = useRef(0),
-    screenY = useRef(0),
+    stageY = useRef(0),
+    bodyY = useRef(0),
     petBounds = useRef<{ y: number; height: number } | null>(null);
   const publishBounds = useCallback(() => {
     if (petBounds.current)
       onPetBounds?.({
         top:
           profileY.current +
-          shellY.current +
-          screenY.current +
+          stageY.current +
+          bodyY.current +
           petBounds.current.y,
         height: petBounds.current.height,
       });
   }, [onPetBounds]);
+  // The overview fills the scroll viewport: the page's own top in the window
+  // and the safe bottom edge bound the height the stage and tiles share.
+  const bottomInset = insets?.bottom ?? 0;
+  const measureFill = useCallback(() => {
+    root.current?.measureInWindow?.((_x, y) => {
+      if (!Number.isFinite(y)) return;
+      const next = Math.max(
+        0,
+        Math.floor(windowHeight - y - bottomInset - belowPage),
+      );
+      setFill((current) => (current === next ? current : next));
+    });
+  }, [windowHeight, bottomInset]);
+  useEffect(() => {
+    measureFill();
+    // The screen entrance still slides the page when the first layout lands.
+    const timer = setTimeout(measureFill, t.motion.stateTransition + 50);
+    return () => clearTimeout(timer);
+  }, [measureFill]);
   const sheetOpen = appearance || about || manage;
   useEffect(() => {
     if (sheetOpen || view.kind !== "overview") onPetBounds?.(null);
@@ -405,9 +442,8 @@ export function PetProfile({
   const about_line = [profile?.settings.jobTitle, profile?.settings.department]
     .filter((value) => !!value?.trim())
     .join(" · ");
-  const columns =
-    !compact && rowWidth >= 6 * 48 + 5 * t.spacing.sm ? 6 : 3;
-  const wellWidth = rowWidth
+  const columns = compact ? 2 : 3;
+  const tileWidth = rowWidth
     ? Math.floor((rowWidth - (columns - 1) * t.spacing.sm) / columns)
     : undefined;
   const savedRef = useCallback((node: View | null) => {
@@ -415,7 +451,9 @@ export function PetProfile({
   }, []);
   const open = (next: Section | "saved") => {
     opener.current = next;
-    screen.setView(next === "saved" ? { kind: "saved" } : { kind: "section", section: next });
+    screen.setView(
+      next === "saved" ? { kind: "saved" } : { kind: "section", section: next },
+    );
   };
   const issueBlock = issue ? (
     <View style={styles.issue}>
@@ -482,17 +520,11 @@ export function PetProfile({
       <PetFallback size={size} resting />
     );
   const overview = (
-    <View
-      style={styles.shell}
-      onLayout={(event) => {
-        shellY.current = event.nativeEvent.layout.y;
-        publishBounds();
-      }}
-    >
+    <View style={[styles.page, fill > 0 && { minHeight: fill }]}>
       <View
-        style={styles.screen}
+        style={styles.stage}
         onLayout={(event) => {
-          screenY.current = event.nativeEvent.layout.y;
+          stageY.current = event.nativeEvent.layout.y;
           publishBounds();
         }}
       >
@@ -503,35 +535,46 @@ export function PetProfile({
           </View>
         )}
         <View
-          testID="profile-pet-bounds"
+          style={styles.stageBody}
           onLayout={(event) => {
-            petBounds.current = event.nativeEvent.layout;
+            bodyY.current = event.nativeEvent.layout.y;
             publishBounds();
           }}
         >
-          {pet(petSize, true, petVisible)}
+          <View
+            testID="profile-pet-bounds"
+            style={[styles.petBox, { minHeight: petMin, maxHeight: petMax }]}
+            onLayout={(event) => {
+              petBounds.current = event.nativeEvent.layout;
+              publishBounds();
+              const next = Math.round(event.nativeEvent.layout.height);
+              if (next > 0) setPetSize(next);
+            }}
+          >
+            {pet(petSize, true, petVisible)}
+          </View>
+          {profile ? (
+            <Text role="title" style={styles.centerText}>
+              {profile.settings.name}
+            </Text>
+          ) : null}
+          {about_line ? (
+            <Text role="meta" tone="secondary" style={styles.centerText}>
+              {about_line}
+            </Text>
+          ) : null}
+          <Text tone="secondary" style={styles.centerText}>
+            {statusLine}
+          </Text>
+          {profile ? null : profileError || profile === null ? (
+            <Button
+              label={c.retry}
+              variant="secondary"
+              size="small"
+              onPress={() => void onRefresh()}
+            />
+          ) : null}
         </View>
-        {profile ? (
-          <Text role="title" style={styles.centerText}>
-            {profile.settings.name}
-          </Text>
-        ) : null}
-        {about_line ? (
-          <Text role="meta" tone="secondary" style={styles.centerText}>
-            {about_line}
-          </Text>
-        ) : null}
-        <Text tone="secondary" style={styles.centerText}>
-          {statusLine}
-        </Text>
-        {profile ? null : profileError || profile === null ? (
-          <Button
-            label={c.retry}
-            variant="secondary"
-            size="small"
-            onPress={() => void onRefresh()}
-          />
-        ) : null}
       </View>
       {compact && (
         <View style={styles.lightRow}>
@@ -543,7 +586,7 @@ export function PetProfile({
       <View
         accessibilityRole="list"
         accessibilityLabel={c.observed}
-        style={styles.wells}
+        style={styles.tiles}
         onLayout={(event) => {
           const next = Math.round(event.nativeEvent.layout.width);
           if (next !== rowWidth) setRowWidth(next);
@@ -564,19 +607,21 @@ export function PetProfile({
               disabled={!profile}
               onPress={() => open(key)}
               style={({ pressed }) => [
-                styles.well,
-                compact && styles.wellStacked,
-                wellWidth ? { width: wellWidth } : null,
+                styles.tile,
+                tileWidth ? { width: tileWidth } : null,
                 pressed && { backgroundColor: t.color.fillPressed },
                 !profile && { opacity: 0.5 },
               ]}
             >
-              <Icon name={sectionIcon[key]} size={20} />
-              {count > 0 ? (
-                <Text role="overline" tone="secondary" style={styles.count}>
-                  {count}
-                </Text>
-              ) : null}
+              <View style={styles.tileTop}>
+                <Icon name={sectionIcon[key]} size={22} />
+                {count > 0 ? (
+                  <Text role="meta" tone="secondary" style={styles.count}>
+                    {count}
+                  </Text>
+                ) : null}
+              </View>
+              <Text role="label">{c[key]}</Text>
             </Pressable>
           );
         })}
@@ -599,7 +644,8 @@ export function PetProfile({
             }
             style={({ pressed }) => [
               styles.key,
-              compact && { width: "100%" },
+              // Equal widths so the keys line up with the tile grid above.
+              compact ? { width: "100%" } : { flexBasis: 0 },
               pressed && { backgroundColor: t.color.fillPressed },
               key !== "saved" && !profile && { opacity: 0.5 },
             ]}
@@ -751,30 +797,28 @@ export function PetProfile({
   };
   const nested = (
     <View style={{ gap: t.spacing.lg }}>
-      <View style={[styles.shell, styles.shellCompact]}>
-        <View style={[styles.screen, styles.screenCompact]}>
-          <View style={styles.stripPet}>{pet(56, false)}</View>
-          <View
-            ref={heading}
-            accessible
-            accessibilityRole="header"
-            style={{ flex: 1, minWidth: 0, gap: 2 }}
-          >
-            <Text role="rowTitle">{profile?.settings.name ?? c.title}</Text>
-            {stripMeta ? (
-              <Text role="meta" tone="secondary">
-                {stripMeta}
-              </Text>
-            ) : null}
-          </View>
+      <View style={styles.strip}>
+        <View style={styles.stripPet}>{pet(56, false)}</View>
+        <View
+          ref={heading}
+          accessible
+          accessibilityRole="header"
+          style={{ flex: 1, minWidth: 0, gap: 2 }}
+        >
+          <Text role="rowTitle">{profile?.settings.name ?? c.title}</Text>
+          {stripMeta ? (
+            <Text role="meta" tone="secondary">
+              {stripMeta}
+            </Text>
+          ) : null}
         </View>
       </View>
       {view.kind === "section" ? (
-        <Segmented
-          accessibilityLabel={c.observed}
+        <Tabs
+          testID="pet-scope"
           options={[
-            { value: "work", label: c.workScope },
-            { value: "personal", label: c.personal },
+            { id: "work", label: c.workScope },
+            { id: "personal", label: c.personal },
           ]}
           value={personal}
           onChange={setPersonal}
@@ -866,11 +910,13 @@ export function PetProfile({
     profile && settings ? nativePetAppearance({ ...profile, settings }) : look;
   return (
     <View
+      ref={root}
       style={styles.root}
       testID="pet-profile"
       onLayout={(event) => {
         profileY.current = event.nativeEvent.layout.y;
         publishBounds();
+        measureFill();
       }}
     >
       {motion ? (
@@ -1159,40 +1205,26 @@ export function PetProfile({
 }
 const styles = StyleSheet.create({
   root: { gap: t.spacing.md },
-  shell: {
-    backgroundColor: t.color.surface,
-    borderWidth: 1,
-    borderColor: t.color.border,
-    borderRadius: t.radius.sheet,
-    padding: t.spacing.lg,
-    gap: t.spacing.md,
-  },
-  shellCompact: { padding: 10 },
-  screen: {
-    backgroundColor: t.color.background,
-    borderWidth: 1,
-    borderColor: t.color.hairline,
-    borderRadius: t.radius.group,
-    padding: t.spacing.lg,
-    alignItems: "center",
-    gap: t.spacing.xs,
-  },
-  screenCompact: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: t.spacing.md,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  stripPet: { width: 56, height: 56 },
+  page: { gap: t.spacing.md },
+  stage: { flex: 1, gap: t.spacing.xs },
   light: {
-    position: "absolute",
-    top: t.spacing.md,
-    right: t.spacing.md,
+    alignSelf: "flex-end",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    zIndex: 1,
+  },
+  stageBody: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: t.spacing.xs,
+  },
+  petBox: {
+    flex: 1,
+    aspectRatio: 1,
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
   },
   lightRow: {
     flexDirection: "row",
@@ -1201,27 +1233,34 @@ const styles = StyleSheet.create({
     minHeight: t.control.minHeight,
   },
   centerText: { textAlign: "center" },
-  wells: { flexDirection: "row", flexWrap: "wrap", gap: t.spacing.sm },
-  well: {
-    minWidth: 48,
-    minHeight: 48,
-    borderRadius: t.radius.control,
-    backgroundColor: t.color.fill,
+  strip: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingHorizontal: 10,
+    gap: t.spacing.md,
+    paddingBottom: t.spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: t.color.border,
   },
-  wellStacked: {
-    flexDirection: "column",
-    gap: 2,
-    paddingVertical: 6,
-    minHeight: 56,
+  stripPet: { width: 56, height: 56 },
+  tiles: { flexDirection: "row", flexWrap: "wrap", gap: t.spacing.sm },
+  tile: {
+    minHeight: 72,
+    borderRadius: t.radius.card,
+    backgroundColor: t.color.fill,
+    padding: t.spacing.md,
+    gap: 6,
+    justifyContent: "center",
+  },
+  tileTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: t.spacing.sm,
   },
   count: { fontVariant: ["tabular-nums"] },
   keys: { flexDirection: "row", flexWrap: "wrap", gap: t.spacing.sm },
   key: {
+    flexGrow: 1,
     minHeight: 48,
     paddingHorizontal: 14,
     borderRadius: t.radius.control,
@@ -1229,6 +1268,7 @@ const styles = StyleSheet.create({
     borderColor: t.color.border,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: t.spacing.sm,
   },
   iconButton: {

@@ -212,13 +212,18 @@ test("the screen counts work observations from look[].count and an icon toggles 
     "Style · 1 observation",
     "Rhythm · 0 observations",
   ]);
+  // A tile is icon, count (only above zero) and label.
   expect(
-    toolbar
-      .findAllByType("button")
-      .map((b) => (b.children.length > 1 ? b.children[1] : null))
-      .map((c) =>
-        c && typeof c !== "string" ? Number(c.children.join("")) : null,
-      ),
+    toolbar.findAllByType("button").map((b) => {
+      const count = b.children.find(
+        (c) =>
+          typeof c !== "string" &&
+          String(c.props.className).includes("tabular-nums"),
+      );
+      return count && typeof count !== "string"
+        ? Number(count.children.join(""))
+        : null;
+    }),
   ).toEqual([5, 3, 2, 1, 1, null]);
   const focus = jest.fn();
   const work = labelled(view, "Work · 5 observations");

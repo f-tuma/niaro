@@ -391,7 +391,7 @@ test("a section opens as a nested screen and the back path restores focus to its
   expect(await screen.findByText("Leads weekly planning")).toBeTruthy();
   expect(screen.getByText(/5 observations · last today/)).toBeTruthy();
   expect(screen.getByText("Observation · last today")).toBeTruthy();
-  expect(screen.getByRole("radio", { name: "Personal" })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Personal" })).toBeTruthy();
   await waitFor(() => expect(focus).toHaveBeenCalledTimes(1));
   focus.mockClear();
   act(() => {

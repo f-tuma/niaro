@@ -104,12 +104,15 @@ export function setPetAppearance(
   reduced = false,
 ) {
   const before = motion.appearance;
+  // Only a change of the pet itself morphs; the first appearance (a fresh
+  // mount, a screen that opens with a known pet) is drawn in its final shape.
   if (
-    (before?.shape ?? "cookie") !== (appearance?.shape ?? "cookie") &&
+    before &&
+    (before.shape ?? "cookie") !== (appearance?.shape ?? "cookie") &&
     !reduced
   )
-    motion.appearanceTransition = { from: before ?? {}, progress: 0 };
-  else if (reduced) motion.appearanceTransition = undefined;
+    motion.appearanceTransition = { from: before, progress: 0 };
+  else if (reduced || !before) motion.appearanceTransition = undefined;
   motion.appearance = appearance;
 }
 export function petGeometry(motion?: PetMotion) {

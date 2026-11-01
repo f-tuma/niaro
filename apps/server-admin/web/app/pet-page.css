@@ -1,31 +1,36 @@
-/* The pet "device": widths the brief fixes in px, so they live in variables. */
+/* The pet page: widths the brief fixes in px live in variables; the grid and
+ * the viewport-height math are what utilities cannot express. */
 .pet-layout {
-  --pet-shell-width: 480px;
-  --pet-dock-width: 360px;
-  --pet-detail-width: 640px;
+  --pet-rail-width: 320px;
+  --pet-detail-width: 720px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 1.5rem;
+  gap: 2rem;
 }
-.pet-shell-slot {
-  width: 100%;
-  max-width: var(--pet-shell-width);
-  transition: max-width 220ms ease;
-}
-@media (min-width: 768px) {
-  .pet-layout[data-open="true"] {
+@media (min-width: 1024px) {
+  /* Overview: two columns filling the content width and the height under the
+   * header (MenuPage `fill` keeps the page at the window's height). */
+  .pet-layout {
+    flex: 1 1 auto;
     display: grid;
-    grid-template-columns: var(--pet-dock-width) minmax(
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 440px);
+    align-items: center;
+    justify-content: center;
+    column-gap: 4rem;
+    width: 100%;
+    max-width: 1160px;
+    margin-inline: auto;
+  }
+  /* A section or the saved list open: a sticky rail and the status screen at
+   * a readable width, aligned left. */
+  .pet-layout[data-open="true"] {
+    grid-template-columns: var(--pet-rail-width) minmax(
         0,
         var(--pet-detail-width)
       );
     justify-content: start;
     align-items: start;
     gap: 2.5rem;
-  }
-  .pet-layout[data-open="true"] .pet-shell-slot {
-    max-width: var(--pet-dock-width);
   }
 }
 .pet-swatch {
@@ -40,15 +45,11 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pet-shell-slot,
   .pet-fade {
-    transition: none;
     animation: none;
   }
 }
-.pet-page[data-still="true"] .pet-shell-slot,
 .pet-page[data-still="true"] .pet-fade,
 [data-still="true"].pet-fade {
-  transition: none;
   animation: none;
 }

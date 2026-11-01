@@ -124,7 +124,7 @@ test("the mobile search lists recent chats, searches as one types and opens the 
     readOnly: true,
   });
 
-  fireEvent.press(screen.getByRole("radio", { name: "Odpovědi" }));
+  fireEvent.press(screen.getByRole("tab", { name: "Odpovědi" }));
   await act(flush);
   expect(searchConversations).toHaveBeenLastCalledWith("schuzka", {
     includeArchived: true,

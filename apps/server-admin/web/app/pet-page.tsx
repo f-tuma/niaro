@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -106,8 +107,8 @@ const icons = [
 const isSection = (view: View): view is Section =>
   (sections as readonly string[]).includes(view);
 
-/** The web layout folds to the mobile one under the `md` breakpoint. */
-const narrowQuery = "(max-width: 767px)";
+/** The web layout folds to the one-column one under the `lg` breakpoint. */
+const narrowQuery = "(max-width: 1023px)";
 const canMatch = () =>
   typeof window !== "undefined" && typeof window.matchMedia === "function";
 function subscribeNarrow(callback: () => void) {
@@ -179,6 +180,18 @@ function PetPageOwner({ manager }: { manager: boolean }) {
   });
   const detail = useRef<HTMLHeadingElement>(null),
     opener = useRef<HTMLButtonElement | null>(null);
+  // The overview pet is sized to its column: 300–480 px, measured from the
+  // stage's width, so a wide window gets a bigger pet with no empty sides.
+  const [stageSize, setStageSize] = useState(280);
+  const stage = useCallback((node: HTMLDivElement | null) => {
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? 0;
+      setStageSize(Math.max(300, Math.min(480, Math.round(width * 0.8))));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -267,7 +280,7 @@ function PetPageOwner({ manager }: { manager: boolean }) {
           : copy.statusKnows(total);
   const open = view !== "overview";
   const compact = manager || (open && narrow);
-  const petSize = compact ? 56 : open ? 160 : narrow ? 220 : 280;
+  const petSize = compact ? 56 : open ? 160 : narrow ? 220 : stageSize;
 
   function openSheet(kind: "about" | "appearance") {
     setDraft(profile.data?.settings);
@@ -380,8 +393,21 @@ function PetPageOwner({ manager }: { manager: boolean }) {
         .filter(Boolean)
         .join(" · ")
     : "";
+  const retry = profile.isError && !profile.data && (
+    <Button
+      variant="outline"
+      size="sm"
+      className="data-[stage=true]:mt-2"
+      data-stage={!compact}
+      onClick={() => void profile.refetch()}
+    >
+      {copy.retry}
+    </Button>
+  );
+  // The pet lives directly on the page: a strip when a section is open on a
+  // narrow window or on the memory page, otherwise the stage.
   const screen = compact ? (
-    <div className="flex items-center gap-3 rounded-3xl bg-background px-3 py-2 text-left ring-1 ring-border ring-inset">
+    <div className="flex items-center gap-3 border-b border-border pb-3 text-left">
       <span className="shrink-0">{pet}</span>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-base font-semibold">
@@ -391,116 +417,124 @@ function PetPageOwner({ manager }: { manager: boolean }) {
           {statusLine}
         </span>
       </div>
-      {profile.isError && !profile.data && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void profile.refetch()}
-        >
-          {copy.retry}
-        </Button>
-      )}
+      {retry}
       {memorySwitch}
     </div>
   ) : (
-    <div className="relative flex flex-col items-center gap-1 rounded-3xl bg-background px-4 pt-5 pb-4 text-center ring-1 ring-border ring-inset">
-      <span className="absolute top-3 right-3">{memorySwitch}</span>
+    <div
+      ref={open ? undefined : stage}
+      data-open={open}
+      className="relative flex flex-1 flex-col items-center justify-center gap-1 px-4 pt-6 pb-4 text-center data-[open=true]:flex-none data-[open=true]:pt-2"
+    >
+      {open && <span className="absolute top-0 right-0">{memorySwitch}</span>}
       {pet}
-      <h2 className="mt-2 max-w-full text-xl font-semibold break-words">
+      <h2
+        data-open={open}
+        className="mt-3 max-w-full text-2xl font-semibold break-words data-[open=true]:mt-1 data-[open=true]:text-xl"
+      >
         {profile.data?.settings.name}
       </h2>
-      {about && <p className="text-md text-muted-foreground">{about}</p>}
-      <p className="text-md">{statusLine}</p>
-      {profile.isError && !profile.data && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-2"
-          onClick={() => void profile.refetch()}
-        >
-          {copy.retry}
-        </Button>
+      {about && !open && (
+        <p className="text-md text-muted-foreground">{about}</p>
       )}
+      <p className="text-md">{statusLine}</p>
+      {retry}
     </div>
   );
-  const shell = (
+  const live = (
     <div
-      data-compact={compact}
-      className="flex w-full flex-col gap-3 rounded-4xl border bg-card p-4 data-[compact=true]:p-3"
+      role="status"
+      aria-live="polite"
+      className="text-sm text-muted-foreground empty:hidden"
     >
-      {screen}
-      {!manager && (
-        <>
-          <div
-            role="toolbar"
-            aria-label={copy.sections}
-            data-dock={open && !compact}
-            className="grid grid-cols-6 gap-2 data-[dock=true]:grid-cols-3"
-            onKeyDown={rove}
-          >
-            {sections.map((value, i) => {
-              const Icon = icons[i]!;
-              const pressed = section === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  title={copy[value]}
-                  aria-label={`${copy[value]} · ${copy.countLabel(counts[i]!)}`}
-                  aria-pressed={pressed}
-                  disabled={!profile.data}
-                  tabIndex={(section ? pressed : i === 0) ? 0 : -1}
-                  onClick={(e) => {
-                    opener.current = e.currentTarget;
-                    toggleView(value);
-                  }}
-                  className="flex h-12 min-w-12 items-center justify-center gap-1.5 rounded-xl border border-transparent bg-secondary px-2.5 text-foreground transition-colors duration-100 outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-pressed:border-primary aria-pressed:bg-accent aria-pressed:text-primary"
-                >
-                  <Icon className="size-4.5" aria-hidden="true" />
-                  {counts[i]! > 0 && (
-                    <span
-                      aria-hidden="true"
-                      className="text-xs font-semibold text-muted-foreground tabular-nums"
-                    >
-                      {counts[i]}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Toggle
-              variant="outline"
-              size="lg"
-              pressed={view === "saved"}
-              onPressedChange={() => toggleView("saved")}
-              onClick={(e) => {
-                opener.current = e.currentTarget;
-              }}
-            >
-              <Bookmark data-icon="inline-start" aria-hidden="true" />
-              {copy.saved}
-            </Toggle>
-            <Button
-              variant="outline"
-              size="lg"
-              disabled={!profile.data}
-              onClick={() => openSheet("about")}
-            >
-              <UserRound data-icon="inline-start" aria-hidden="true" />
-              {copy.about}
-            </Button>
-          </div>
-        </>
+      {status}
+    </div>
+  );
+  // The six section tiles fill their column; the keys row sits under them.
+  const dock = open && !compact;
+  const controls = !manager && (
+    <div
+      data-dock={dock}
+      className="flex flex-1 flex-col justify-center gap-3 data-[dock=true]:flex-none"
+    >
+      {!dock && (
+        <div className="mb-1 flex items-center justify-between gap-3 px-1">
+          <span className="text-md text-muted-foreground">{copy.memory}</span>
+          {memorySwitch}
+        </div>
       )}
       <div
-        role="status"
-        aria-live="polite"
-        className="text-sm text-muted-foreground empty:-mt-3"
+        role="toolbar"
+        aria-label={copy.sections}
+        data-dock={dock}
+        className="grid grid-cols-2 gap-2.5 data-[dock=true]:gap-2"
+        onKeyDown={rove}
       >
-        {status}
+        {sections.map((value, i) => {
+          const Icon = icons[i]!;
+          const pressed = section === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              title={copy[value]}
+              aria-label={`${copy[value]} · ${copy.countLabel(counts[i]!)}`}
+              aria-pressed={pressed}
+              disabled={!profile.data}
+              tabIndex={(section ? pressed : i === 0) ? 0 : -1}
+              onClick={(e) => {
+                opener.current = e.currentTarget;
+                toggleView(value);
+              }}
+              data-dock={dock}
+              className="flex min-h-14 items-center gap-3 rounded-xl border border-transparent bg-secondary px-4 py-3 text-left text-foreground transition-colors duration-100 outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-pressed:border-primary aria-pressed:bg-accent aria-pressed:text-primary data-[dock=true]:min-h-11 data-[dock=true]:px-3 data-[dock=true]:py-2"
+            >
+              <Icon className="size-5 shrink-0" aria-hidden="true" />
+              <span
+                aria-hidden="true"
+                className="min-w-0 flex-1 truncate text-base font-medium data-[dock=true]:text-sm"
+                data-dock={dock}
+              >
+                {copy[value]}
+              </span>
+              {counts[i]! > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="text-sm font-semibold text-muted-foreground tabular-nums"
+                >
+                  {counts[i]}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
+      <div className="grid grid-cols-2 gap-2.5 data-[dock=true]:gap-2" data-dock={dock}>
+        <Toggle
+          variant="outline"
+          size="lg"
+          className="w-full"
+          pressed={view === "saved"}
+          onPressedChange={() => toggleView("saved")}
+          onClick={(e) => {
+            opener.current = e.currentTarget;
+          }}
+        >
+          <Bookmark data-icon="inline-start" aria-hidden="true" />
+          {copy.saved}
+        </Toggle>
+        <Button
+          variant="outline"
+          size="lg"
+          className="w-full"
+          disabled={!profile.data}
+          onClick={() => openSheet("about")}
+        >
+          <UserRound data-icon="inline-start" aria-hidden="true" />
+          {copy.about}
+        </Button>
+      </div>
+      {live}
     </div>
   );
 
@@ -1008,7 +1042,10 @@ function PetPageOwner({ manager }: { manager: boolean }) {
           back={{ to: "/pet", label: copy.title }}
         />
         <div data-still={!animate} className="pet-page flex flex-col gap-8">
-          {shell}
+          <div className="flex flex-col gap-3">
+            {screen}
+            {live}
+          </div>
           {list}
           <SettingRows>
             <SettingRow label={copy.personalKeep} htmlFor="pet-personal">
@@ -1051,7 +1088,7 @@ function PetPageOwner({ manager }: { manager: boolean }) {
     );
 
   return (
-    <MenuPage wide={open}>
+    <MenuPage wide fill>
       <PageHeader
         title={copy.title}
         actions={
@@ -1077,15 +1114,23 @@ function PetPageOwner({ manager }: { manager: boolean }) {
         data-still={!animate}
         className="pet-page pet-layout"
       >
-        <div
-          className="pet-shell-slot md:data-[open=true]:sticky md:data-[open=true]:top-4"
-          data-open={open}
-        >
-          {shell}
-          {!open && !sheet && conflictAlert && (
-            <div className="mt-4">{conflictAlert}</div>
-          )}
-        </div>
+        {open ? (
+          <div
+            data-compact={compact}
+            className="flex flex-col gap-4 data-[compact=false]:lg:sticky data-[compact=false]:lg:top-4"
+          >
+            {screen}
+            {controls}
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-4">
+              {screen}
+              {!sheet && conflictAlert}
+            </div>
+            {controls}
+          </>
+        )}
         {open && list}
       </div>
       {sheetPanel}
