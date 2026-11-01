@@ -764,7 +764,7 @@ test.each([
       fireEvent.press(panel.getByRole("button", { name: en.meetings }));
       expect(screen.getByTestId("meeting-library")).toBeTruthy();
       expect(
-        screen.getByRole("tab", { name: "Library" }).props.accessibilityState
+        screen.getByRole("tab", { name: "Meetings" }).props.accessibilityState
           .selected,
       ).toBe(true);
       expect(captureSubscription).toHaveBeenCalledTimes(1);

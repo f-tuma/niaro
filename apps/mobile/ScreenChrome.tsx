@@ -388,10 +388,11 @@ export function TopBar({
 }
 const destinations = [
   { id: "chat", icon: "chat" },
+  { id: "meetings", icon: "calendar" },
   { id: "tasks", icon: "briefcase" },
   { id: "library", icon: "library" },
 ] as const;
-/** Three destinations; meetings and settings remain inside Library. */
+/** Four destinations; settings and the pet remain inside Library. */
 export function Navigation({
   section,
   onChange,
@@ -413,14 +414,15 @@ export function Navigation({
     >
       {destinations.map((destination) => {
         const selected =
-          destination.id ===
-          (section === "meetings" || section === "more" ? "library" : section);
+          destination.id === (section === "more" ? "library" : section);
         const label =
           destination.id === "chat"
             ? tr("chat")
-            : companionCopy(language)[
-                destination.id === "tasks" ? "work" : "library"
-              ];
+            : destination.id === "meetings"
+              ? tr("meetings")
+              : companionCopy(language)[
+                  destination.id === "tasks" ? "work" : "library"
+                ];
         const waiting = destination.id === "tasks" ? count : 0;
         return (
           <MotionPressable

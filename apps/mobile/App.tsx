@@ -580,8 +580,7 @@ export function Workspace({
           setPetOpen(false);
           if (returnTo) leaveTo("library");
         } else if (meetingOpen) setMeetingId(null);
-        else if (section === "meetings" || section === "more")
-          leaveTo("library");
+        else if (section === "more") leaveTo("library");
         else setSection("chat");
         return true;
       },
@@ -2195,10 +2194,7 @@ export function Workspace({
             <TopBar
               // Tabs are peers; only an open meeting record has a way back.
               leading={
-                petOpen ||
-                meetingOpen ||
-                section === "meetings" ||
-                section === "more" ? (
+                petOpen || meetingOpen || section === "more" ? (
                   <IconButton
                     icon="back"
                     label={tr("back")}
@@ -2599,7 +2595,6 @@ export function Workspace({
                   language={language}
                   connected={!!session}
                   onPet={() => setPetOpen(true)}
-                  onMeetings={() => changeSection("meetings")}
                   onProcesses={() => openProcesses()}
                   onSettings={() => changeSection("more")}
                 />
@@ -2675,10 +2670,7 @@ export function Workspace({
                   // Recording needs the native app; on web the shortcut would dead-end.
                   onRecord={
                     session && Platform.OS !== "web"
-                      ? () => {
-                          changeSection("meetings");
-                          setReturnTo("chat");
-                        }
+                      ? () => changeSection("meetings")
                       : undefined
                   }
                   onTasks={() => changeSection("tasks")}

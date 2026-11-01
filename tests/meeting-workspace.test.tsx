@@ -244,7 +244,7 @@ test("Workspace navigation retains the recorder; changing the authenticated conn
   expect(b.session.readMeetings).toHaveBeenCalled();
   ui.unmount();
 });
-test("an open meeting record is its own screen: Back returns to the list; tabs lead elsewhere", async () => {
+test("an open meeting record is its own screen: Back returns to the list; the Meetings tab is its root", async () => {
   const coordinator = new AudioSessionCoordinator();
   const a = fixture("TEST-RECORD", coordinator);
   const meeting = {
@@ -288,9 +288,12 @@ test("an open meeting record is its own screen: Back returns to the list; tabs l
   expect(setSection).not.toHaveBeenCalled();
   expect(screen.queryByTestId("meeting-detail")).toBeNull();
   expect(screen.getByTestId(`meeting-${meeting.id}`)).toBeTruthy();
-  // Meetings is nested in Library; Back returns there, while Chat remains one tap away.
-  fireEvent.press(screen.getByRole("button", { name: "Back" }));
-  expect(setSection).toHaveBeenCalledWith("library");
+  // Meetings is a tab of its own: its list has no Back, Chat is one tap away.
+  expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  expect(
+    screen.getByRole("tab", { name: "Meetings" }).props.accessibilityState
+      .selected,
+  ).toBe(true);
   fireEvent.press(screen.getByRole("tab", { name: "Chat" }));
   expect(setSection).toHaveBeenCalledWith("chat");
 });

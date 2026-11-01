@@ -28,7 +28,6 @@ test("Library opens the real profile without adding a root destination", () => {
       language="en"
       connected
       onPet={open}
-      onMeetings={() => {}}
       onProcesses={() => {}}
       onSettings={() => {}}
     />,

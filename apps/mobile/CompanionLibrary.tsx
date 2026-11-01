@@ -10,14 +10,12 @@ import { Group, IconTile, ListRow, Text } from "../../packages/ui";
 export function CompanionLibrary({
   language,
   connected,
-  onMeetings,
   onProcesses,
   onSettings,
   onPet,
 }: {
   language: Language;
   connected: boolean;
-  onMeetings: () => void;
   onProcesses: () => void;
   onSettings: () => void;
   onPet?: () => void;
@@ -34,11 +32,6 @@ export function CompanionLibrary({
             disabled={!connected}
           />
         )}
-        <ListRow
-          label={tr("meetings")}
-          leading={<IconTile icon="calendar" size={38} />}
-          onPress={onMeetings}
-        />
         <ListRow
           label={tr("processesTitle")}
           leading={<IconTile icon="bolt" size={38} />}
