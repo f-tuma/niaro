@@ -31,6 +31,8 @@ export const InferenceBudgetPolicySchema = CatalogTarget.extend({
 export const InferenceBudgetCommandSchema = InferenceBudgetPolicySchema;
 export const InferenceBudgetUsageSchema = z.strictObject({
   inputTokens: count.nullable(),
+  /** The part of the input the provider served from its prompt cache. */
+  cachedInputTokens: count.nullable().optional(),
   outputTokens: count.nullable(),
   costMicros: count.nullable(),
   costSource: z.enum(["provider", "tariff", "unknown"]),

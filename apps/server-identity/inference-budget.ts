@@ -141,6 +141,14 @@ export function inferenceUsage(
     inputTokens = null;
     outputTokens = null;
   }
+  const details =
+    (kind === "decision"
+      ? fields.input_tokens_details
+      : fields.prompt_tokens_details) ?? null;
+  const cachedInputTokens =
+    inputTokens !== null && details && typeof details === "object"
+      ? safeCount((details as Record<string, unknown>).cached_tokens)
+      : null;
   const reported = usdMicros(fields.cost);
   // An explicit malformed price is not silently replaced with a tariff.
   const cost =
@@ -151,6 +159,12 @@ export function inferenceUsage(
         : null;
   return {
     inputTokens,
+    cachedInputTokens:
+      cachedInputTokens !== null &&
+      inputTokens !== null &&
+      cachedInputTokens <= inputTokens
+        ? cachedInputTokens
+        : null,
     outputTokens,
     costMicros: cost,
     costSource:
@@ -168,6 +182,18 @@ export class InferenceBudgetStore {
       CREATE INDEX IF NOT EXISTS agent_inference_attempt_run ON agent_inference_attempt(run_id);
       CREATE TRIGGER IF NOT EXISTS agent_inference_run_immutable BEFORE UPDATE ON agent_inference_run BEGIN SELECT RAISE(ABORT,'inference_run_immutable'); END;
     `);
+    // Cached input shows whether prompt caching works (tokens served at a
+    // fraction of the price); older databases gain the column.
+    if (
+      !(
+        db.prepare("PRAGMA table_info(agent_inference_attempt)").all() as {
+          name: string;
+        }[]
+      ).some((column) => column.name === "cached_input_tokens")
+    )
+      db.exec(
+        "ALTER TABLE agent_inference_attempt ADD COLUMN cached_input_tokens INTEGER",
+      );
     // The identity process lock excludes a previous live owner.
     db.exec(
       "UPDATE agent_inference_attempt SET status='unknown' WHERE status='dispatched'; UPDATE agent_inference_attempt SET status='cancelled' WHERE status='reserved';",
@@ -494,11 +520,12 @@ export class InferenceBudgetStore {
         usage.costMicros > Number(row.reserved_cost));
     this.db
       .prepare(
-        "UPDATE agent_inference_attempt SET status=?,input_tokens=?,output_tokens=?,cost_micros=?,cost_source=?,overrun=? WHERE id=? AND status='dispatched'",
+        "UPDATE agent_inference_attempt SET status=?,input_tokens=?,cached_input_tokens=?,output_tokens=?,cost_micros=?,cost_source=?,overrun=? WHERE id=? AND status='dispatched'",
       )
       .run(
         known ? "settled" : "unknown",
         usage.inputTokens,
+        usage.cachedInputTokens ?? null,
         usage.outputTokens,
         usage.costMicros,
         usage.costSource,

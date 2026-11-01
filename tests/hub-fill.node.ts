@@ -258,10 +258,25 @@ test("a recipe is replayed without the agent, and offered as a hint when it hold
       ["/v1/contacts?name=Jane"],
     );
     assert.deepEqual(second.recipe, first.recipe);
-    // A recipe with a date is a hint: the agent adjusts it to now and may
+    assert.equal(typeof first.recipe.at, "number");
+    // A dated recipe made the same day still means the same: replayed.
+    calls = 0;
+    const today = await fill({
+      recipe: {
+        ...first.recipe,
+        calls: first.recipe.calls.map((call) => ({
+          ...call,
+          input: { name: "2026-10-16" },
+        })),
+      },
+    }).result;
+    assert.equal(today.mode, "replay");
+    assert.equal(calls, 1);
+    // From an earlier day it is a hint: the agent adjusts it to now and may
     // call its action right away, without discovery.
     const dated = {
       ...first.recipe,
+      at: first.recipe.at! - 2 * 86_400_000,
       calls: first.recipe.calls.map((call) => ({
         ...call,
         input: { name: "2026-10-16" },

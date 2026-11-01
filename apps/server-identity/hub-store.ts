@@ -76,6 +76,8 @@ export type HubStoredWidget = {
     calls: HubRecipeCall[];
     services: string[];
     open?: HubOpenRecipe;
+    /** When the agent made these reads (epoch ms): dated reads replay that day. */
+    at?: number;
   } | null;
   /** A refresh was asked for; it runs on the next open. */
   requested: boolean;
@@ -169,6 +171,10 @@ function storedWidget(raw: unknown): HubStoredWidget | null {
             services: value.recipe.services,
             ...(openRecipe(value.recipe.open)
               ? { open: value.recipe.open as HubOpenRecipe }
+              : {}),
+            ...(typeof value.recipe.at === "number" &&
+            Number.isFinite(value.recipe.at)
+              ? { at: value.recipe.at }
               : {}),
           }
         : null,

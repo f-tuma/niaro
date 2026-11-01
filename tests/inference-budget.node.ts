@@ -32,10 +32,54 @@ function fixture() {
 }
 const known = {
   inputTokens: 10,
+  cachedInputTokens: null,
   outputTokens: 5,
   costMicros: 20,
   costSource: "provider" as const,
 };
+
+test("usage records the cached part of the input, for model and decision calls", () => {
+  assert.equal(
+    inferenceUsage(
+      {
+        usage: {
+          prompt_tokens: 2000,
+          completion_tokens: 5,
+          prompt_tokens_details: { cached_tokens: 1536 },
+        },
+      },
+      "model",
+    ).cachedInputTokens,
+    1536,
+  );
+  assert.equal(
+    inferenceUsage(
+      {
+        usage: {
+          input_tokens: 2000,
+          output_tokens: 5,
+          input_tokens_details: { cached_tokens: 1024 },
+        },
+      },
+      "decision",
+    ).cachedInputTokens,
+    1024,
+  );
+  // More cached than sent is not a real count.
+  assert.equal(
+    inferenceUsage(
+      {
+        usage: {
+          prompt_tokens: 10,
+          completion_tokens: 5,
+          prompt_tokens_details: { cached_tokens: 11 },
+        },
+      },
+      "model",
+    ).cachedInputTokens,
+    null,
+  );
+});
 
 test("usage retains provider costs, explicit free tariffs and missing/invalid usage", () => {
   assert.deepEqual(

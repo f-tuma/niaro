@@ -228,6 +228,12 @@ export type NativeAgentSession = {
   prepareModel(): Promise<{
     selected: NiaroModelSelection;
     instructions: string;
+    /**
+     * What changes per turn or step (time, goal, receipts, memory). It is sent
+     * after the conversation so tools, instructions and history stay one
+     * stable, cacheable prefix.
+     */
+    context?: string;
     /** Explicit domain provenance; unmarked legacy context is treated as private. */
     privateContext?: boolean;
   }>;
@@ -1285,6 +1291,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
         }),
       ]),
     );
+    let stepContext: string | undefined;
     const authority = {
       id: "niaro-step-authority",
       async processInputStep({ messages, stepNumber }) {
@@ -1296,6 +1303,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
           const prepared =
             firstStep && !input.resume ? initial : await session.prepareModel();
           firstStep = false;
+          stepContext = prepared.context;
           privateContext ||= prepared.privateContext !== false;
           // 1.74's processor type expects normalized streaming models; the runtime normalizes raw V4 models.
           const answerOnly =
@@ -1321,8 +1329,15 @@ export function createNativeAgentRuntime(storageUrl: string) {
         }
       },
       processLLMRequest({ prompt, messageList }) {
+        const projected = projectProviderHistory(
+          prompt,
+          messageList,
+          promptInputs,
+        );
         return {
-          prompt: projectProviderHistory(prompt, messageList, promptInputs),
+          prompt: stepContext
+            ? [...projected, { role: "system" as const, content: stepContext }]
+            : projected,
         };
       },
     } satisfies Processor;

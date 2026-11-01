@@ -602,7 +602,9 @@ test("workspace plugins: authenticated configuration controls actual runtime and
           "2026-09-29T13:00:00.000Z",
         );
         assert(
-          requests[before]!.messages[0]!.content!.includes("Europe/London"),
+          requests[before]!.messages.findLast(
+            (message) => message.role === "system",
+          )!.content!.includes("Europe/London"),
         );
         await save({ enabled: [], timeZone: "Asia/Tokyo" });
         assert.equal((await run())!.reply, "Plugin disabled");
