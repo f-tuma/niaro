@@ -83,7 +83,7 @@ import {
   type TranscriptBlock,
 } from "./meeting-transcript-view";
 import { MeetingProcessSheet } from "./meeting-process";
-import { UNSAVED_DRAFT, draftKey, saveDraft } from "./chat-store";
+import { UNSAVED_DRAFT, addToNewChat, draftKey } from "./chat-store";
 import {
   meetingDay,
   meetingMarkdown,
@@ -416,11 +416,11 @@ export function MeetingDetail({
 
   const ask = () => {
     const name = meeting.title.slice(0, 120);
-    saveDraft(draftKey(session.identityKey, UNSAVED_DRAFT), {
-      text: copy.askPrefix(name, meetingDay(meeting, language)),
-      revision: 0,
-      mentions: [{ kind: "meeting", id: meeting.id, name }],
-    });
+    addToNewChat(
+      draftKey(session.identityKey, UNSAVED_DRAFT),
+      copy.askPrefix(name, meetingDay(meeting, language)),
+      [{ kind: "meeting", id: meeting.id, name }],
+    );
     void navigate({ to: "/chat" });
   };
   const transcriptText = async () =>

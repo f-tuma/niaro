@@ -804,6 +804,8 @@ export function Workspace({
     (id: string) => {
       invalidateAnswerCallbacks();
       if (id !== conversationRef.current) {
+        // A failure belongs to the chat it happened in.
+        setReplyError(null);
         drafts.current.set(conversationRef.current, {
           text: draftRef.current,
           context: contextRef.current,
@@ -1052,6 +1054,8 @@ export function Workspace({
     if (!session) return;
     void session.start();
     const subscription = AppState.addEventListener("change", (next) => {
+      // No polling in the background; coming back syncs at once.
+      session.setActive?.(next === "active");
       if (next === "active") {
         chatResumed();
         void session.refresh();
@@ -1073,6 +1077,8 @@ export function Workspace({
     draftOwnerRevision = draftRevision.current,
     options: { withoutProcess?: true; mentions?: MessageMention[] } = {},
   ) => {
+    // A new attempt replaces the previous failure; a new one is set below.
+    setReplyError(null);
     const attachmentEntries = session?.attachments?.getSnapshot().entries ?? [];
     const attachmentReady = !!session?.attachments?.ready;
     if (
@@ -2583,7 +2589,11 @@ export function Workspace({
                     if (!id) return;
                     if (kind === "chat") {
                       changeSection("chat");
-                      switchConversation(id);
+                      // Open it like the history does, with its messages read.
+                      void session.readConversation(id).then(
+                        (page) => openHistoryConversation(page.conversation),
+                        () => switchConversation(id),
+                      );
                     } else if (kind === "meetings") {
                       changeSection("meetings");
                       setMeetingId(id);

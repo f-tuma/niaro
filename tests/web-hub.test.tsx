@@ -77,7 +77,12 @@ jest.mock("@tanstack/react-router", () => {
 // Generated charts draw with recharts, which Jest cannot parse.
 jest.mock("../apps/server-admin/web/app/generative-ui/charts", () => ({}));
 jest.mock("../apps/server-admin/web/app/context", () => ({
-  useApp: () => ({ language: "cs" }),
+  useApp: () => ({
+    language: "cs",
+    session: null,
+    identity: { user: { id: "user-1" } },
+    workspace: { organizationId: "org-1", workspaceId: "workspace-1" },
+  }),
   useAppSession: () => {
     throw new Error("Pass the session directly");
   },

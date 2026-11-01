@@ -593,3 +593,44 @@ test("lost approval receipt retries the same operation after reconnect, never st
   expect(reopened.getSnapshot().pending).toBeNull();
   reopened.stop();
 });
+
+test("a quiet poll neither wakes subscribers nor rewrites storage; a paused app does not poll", async () => {
+  const e = new FixtureEngine();
+  const storage = memory();
+  const write = jest.spyOn(storage, "setItem");
+  const request = jest.fn(async (url: RequestInfo | URL) =>
+    response(
+      String(url).includes("events?")
+        ? e.events(e.snapshot().cursor)
+        : e.snapshot(),
+    ),
+  ) as unknown as jest.MockedFunction<typeof fetch>;
+  const s = new ClientSession(
+    "https://fixture/v1/a",
+    storage,
+    credential(),
+    authenticated(request),
+  );
+  try {
+    await s.start(false);
+    await s.sync();
+    const before = s.getSnapshot();
+    const listener = jest.fn();
+    s.subscribe(listener);
+    write.mockClear();
+    await s.sync();
+    await s.sync();
+    expect(listener).not.toHaveBeenCalled();
+    expect(s.getSnapshot()).toBe(before);
+    expect(write).not.toHaveBeenCalled();
+    const calls = request.mock.calls.length;
+    s.setActive(false);
+    await s.sync();
+    expect(request.mock.calls.length).toBe(calls);
+    s.setActive(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(request.mock.calls.length).toBeGreaterThan(calls);
+  } finally {
+    s.stop();
+  }
+});

@@ -102,6 +102,7 @@ import {
   draftKey,
   readDraft,
   saveDraft,
+  addToNewChat,
   appendDraftQuestion,
 } from "./chat-store";
 import { handOffComposerPicker } from "./task-handoff";
@@ -240,11 +241,7 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
 
   /** A new chat with this text ready to send. */
   const ask = (text: string) => {
-    if (text.trim())
-      saveDraft(draftKey(session.identityKey, UNSAVED_DRAFT), {
-        text: text.trim(),
-        revision: 0,
-      });
+    addToNewChat(draftKey(session.identityKey, UNSAVED_DRAFT), text);
     void navigate({ to: "/chat" });
   };
   /** The header's box: its text joins what the person had already written
@@ -261,10 +258,10 @@ export function HubDashboardView({ session }: { session: ClientSession }) {
   };
   /** A new chat that starts with the widget as context; the person finishes it. */
   const askAbout = (name: string, detail = "") => {
-    saveDraft(draftKey(session.identityKey, UNSAVED_DRAFT), {
-      text: copy.askAbout(name, detail),
-      revision: 0,
-    });
+    addToNewChat(
+      draftKey(session.identityKey, UNSAVED_DRAFT),
+      copy.askAbout(name, detail),
+    );
     void navigate({ to: "/chat" });
   };
 

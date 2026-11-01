@@ -458,6 +458,11 @@ export class ClientSession {
   readonly attachments: AttachmentRuntime;
   private selectedConversationId = "conversation-1";
   private polling = false;
+  /** Set while the app is in the background: no polling, a sync on return. */
+  private paused = false;
+  /** Offline retries back off instead of a full refresh every second. */
+  private offlineFailures = 0;
+  private offlineRetryAt = 0;
   private submitting: CommandFlight | null = null;
   private commandFlight: CommandFlight | null = null;
   private commandRejection: string | null = null;
@@ -1741,6 +1746,9 @@ export class ClientSession {
     );
     for (const conversation of room ? recent.slice(-Math.min(40, room)) : [])
       keep.add(conversation.id);
+    const ids = Object.keys(store.conversations);
+    // Nothing to drop: keep the same store, so nothing re-renders for it.
+    if (ids.every((id) => keep.has(id))) return store;
     return {
       ...store,
       conversations: Object.fromEntries(
@@ -1793,8 +1801,32 @@ export class ClientSession {
             ...(pending.notice ? { notice: pending.notice } : {}),
           })
       : null;
+    // An update that changes nothing must not wake every subscriber.
+    const keys = new Set([...Object.keys(this.state), ...Object.keys(next)]);
+    let changed = false;
+    for (const key of keys)
+      if (
+        next[key as keyof SessionState] !==
+        this.state[key as keyof SessionState]
+      ) {
+        changed = true;
+        break;
+      }
+    if (!changed) return;
     this.state = next;
     for (const f of this.listeners) f();
+  }
+  /**
+   * The app went to the background (false) or came back (true). Polling
+   * pauses meanwhile; coming back syncs at once.
+   */
+  setActive(active: boolean) {
+    if (this.paused === !active) return;
+    this.paused = !active;
+    if (active) {
+      this.offlineRetryAt = 0;
+      void this.sync();
+    }
   }
   private storageError() {
     if (
@@ -3355,7 +3387,15 @@ export class ClientSession {
     }
   }
   async sync() {
-    if (this.polling || this.stopped || this.invalid) return;
+    if (this.polling || this.stopped || this.invalid || this.paused) return;
+    // A hidden browser tab waits; it syncs when the person looks again.
+    if (
+      typeof document !== "undefined" &&
+      document.visibilityState === "hidden"
+    )
+      return;
+    if (this.state.status !== "online" && Date.now() < this.offlineRetryAt)
+      return;
     this.polling = true;
     let httpStatus: number | undefined;
     let received: unknown;
@@ -3366,6 +3406,10 @@ export class ClientSession {
         this.state.answerRecoveryBlocked
       ) {
         await this.refresh();
+        if (this.state.status === "online") this.offlineFailures = 0;
+        else
+          this.offlineRetryAt =
+            Date.now() + Math.min(30_000, 1000 * 2 ** ++this.offlineFailures);
         return;
       }
       const { response, value } = await this.json(
@@ -3391,6 +3435,7 @@ export class ClientSession {
         await this.refresh();
         return;
       }
+      const unchanged = store === this.state.store;
       toSnapshot(store); // Validate cross-entity references after the complete event batch.
       const cacheOwner = this.commandFlight;
       // Publish before awaiting local storage so a concurrent snapshot merge
@@ -3407,6 +3452,8 @@ export class ClientSession {
       });
       await this.syncRetrySources(store).catch(() => {});
       await this.retireConsumedAnswers(store);
+      // A quiet tick has nothing new to store.
+      if (unchanged) return;
       await this.save().catch(() => {
         if (this.commandFlight === cacheOwner) this.storageError();
       });

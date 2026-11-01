@@ -22,6 +22,8 @@ jest.mock("../apps/server-admin/web/app/context", () => ({
   useApp: () => ({
     language: "cs",
     identity: { user: { id: "user-1", name: "Anna", email: "a@example.test" } },
+    workspace: { organizationId: "org-1", workspaceId: "workspace-1" },
+    session: null,
     signOut: mockSignOut,
   }),
   useAppSession: () => ({ identityKey: "identity-1" }),

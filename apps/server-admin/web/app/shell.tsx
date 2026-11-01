@@ -1,3 +1,4 @@
+import { petCopy } from "./pet-copy";
 import { useEffect } from "react";
 import {
   Link,
@@ -112,9 +113,11 @@ export function AppShell() {
 
 function Layout() {
   const copy = useAppCopy();
-  const { session, sessionError, reconnect } = useApp();
+  const { session, sessionError, reconnect, language } = useApp();
+  const petTitle = petCopy(language).title;
   const { setOpenMobile } = useSidebar();
   const path = useRouterState({ select: (state) => state.location.pathname });
+  const petPath = path === "/pet" || path === "/me/memory";
   useEffect(() => setOpenMobile(false), [path, setOpenMobile]);
   // As in ChatGPT: Ctrl/Cmd+K searches chats, Ctrl/Cmd+Shift+O starts a
   // new chat, from anywhere in the app.
@@ -214,15 +217,15 @@ function Layout() {
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       asChild
-                      isActive={path === "/pet"}
-                      tooltip="Pet"
+                      isActive={petPath}
+                      tooltip={petTitle}
                     >
                       <Link
                         to="/pet"
-                        aria-current={path === "/pet" ? "page" : undefined}
+                        aria-current={petPath ? "page" : undefined}
                       >
                         <PawPrint aria-hidden />
-                        <span>Pet</span>
+                        <span>{petTitle}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -292,6 +295,7 @@ function WorkspaceSwitcher() {
   const { workspace, workspaces, selectWorkspace } = useApp();
   const { isMobile } = useSidebar();
   const edits = useProcessEditsGuard();
+  const navigate = useNavigate();
   const label = (
     <>
       <EntityIcon size="sm">{initials(workspace.name)}</EntityIcon>
@@ -335,10 +339,18 @@ function WorkspaceSwitcher() {
                 <DropdownMenuItem
                   key={value.workspaceId}
                   onSelect={() =>
-                    edits.request(() => selectWorkspace(value.workspaceId), {
-                      organizationId: workspace.organizationId,
-                      workspaceId: workspace.workspaceId,
-                    })
+                    edits.request(
+                      () => {
+                        // A detail page belongs to the old workspace.
+                        if (value.workspaceId !== workspace.workspaceId)
+                          void navigate({ to: "/" });
+                        selectWorkspace(value.workspaceId);
+                      },
+                      {
+                        organizationId: workspace.organizationId,
+                        workspaceId: workspace.workspaceId,
+                      },
+                    )
                   }
                 >
                   <EntityIcon size="sm">{initials(value.name)}</EntityIcon>

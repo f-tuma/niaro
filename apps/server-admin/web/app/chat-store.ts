@@ -15,6 +15,8 @@ export type ChatDraft = {
   task?: HumanTaskReference;
   /** Tags already picked for the text, e.g. a meeting from "Ask". */
   mentions?: MentionDirectory["items"][number][];
+  /** What the last "Ask" put here; untouched, the next "Ask" replaces it. */
+  asked?: { text: string; mentions: string[] };
 };
 const drafts = new Map<string, ChatDraft>();
 /** The new chat at "/chat" has no id worth remembering until its first message. */
@@ -41,6 +43,47 @@ export const chatHistoryKey = (identityKey: string) =>
 export const archivedChatsKey = (identityKey: string) =>
   [...chatHistoryKey(identityKey), "archived"] as const;
 
+/**
+ * Puts a question into the new chat's draft without losing what the person
+ * already wrote there (text, context, task, mentions). A question that would
+ * overflow the draft leaves it untouched; returns whether it was added.
+ */
+export function addToNewChat(
+  key: string,
+  text: string,
+  mentions: NonNullable<ChatDraft["mentions"]> = [],
+) {
+  const question = text.trimStart();
+  if (!question.trim()) return false;
+  let saved = readDraft(key);
+  // An earlier "Ask" the person has not touched gives way to this one.
+  if (saved?.asked && saved.text === saved.asked.text) {
+    const asked = new Set(saved.asked.mentions);
+    saved = {
+      ...saved,
+      text: "",
+      mentions: saved.mentions?.filter((m) => !asked.has(`${m.kind}:${m.id}`)),
+    };
+  }
+  const before = saved?.text.trimEnd();
+  const next = before ? `${before}\n\n${question}` : question;
+  if (next.length > MAX_MESSAGE_LENGTH) return false;
+  const known = new Set(
+    (saved?.mentions ?? []).map((m) => `${m.kind}:${m.id}`),
+  );
+  const added = mentions.filter((m) => !known.has(`${m.kind}:${m.id}`));
+  saveDraft(key, {
+    ...saved,
+    text: next,
+    revision: saved?.revision ?? 0,
+    mentions: [...(saved?.mentions ?? []), ...added],
+    asked: {
+      text: next,
+      mentions: added.map((m) => `${m.kind}:${m.id}`),
+    },
+  });
+  return true;
+}
 /** Atomic Hub handoff: preserves context/task/mentions and both drafts on overflow. */
 export function appendDraftQuestion(
   saved: ChatDraft | undefined,
