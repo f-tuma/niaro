@@ -450,6 +450,9 @@ export async function designHttpFixture(
     providerId,
     modelId,
     request,
+    /** The signed-in browser's cookie header, for raw requests (streams). */
+    cookie: (role: Role) =>
+      [...(cookies.get(role) ?? [])].map(([k, v]) => `${k}=${v}`).join("; "),
     loginOperator: () => request("operator", "api/login", { key }),
     record,
     catalog,

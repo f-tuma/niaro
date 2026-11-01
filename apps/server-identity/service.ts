@@ -703,6 +703,9 @@ export class IdentityService {
   private hubPrefetching = new Set<string>();
   private executingUsers = new Set<string>();
   private closing = false;
+  /** Open pet event streams, per person and workspace. */
+  private petWatchers = new Map<string, Set<() => void>>();
+  private petStreams = new Set<ServerResponse>();
   private meetings: MeetingStore;
   private meetingProcessor: MeetingProcessor;
   private meetingSweep?: ReturnType<typeof setInterval>;
@@ -2417,7 +2420,7 @@ export class IdentityService {
       if (JSON.stringify(current) !== JSON.stringify(prepared))
         throw new IdentityError(403, "identity_forbidden");
     };
-    return this.petRequest(
+    const result = await this.petRequest(
       actor,
       prepared.actor.role,
       check,
@@ -2425,6 +2428,79 @@ export class IdentityService {
       query,
       payload,
     );
+    if (payload !== undefined) this.petChanged(actor);
+    return result;
+  }
+  /** The paired app follows changes to its person's pet made elsewhere. */
+  async mobilePetEvents(
+    header: string | undefined,
+    workspaceId: string,
+    serverId: string,
+    req: IncomingMessage,
+    res: ServerResponse,
+  ) {
+    const prepared = await this.serial(async () =>
+      this.appActor(header, workspaceId, serverId),
+    );
+    this.streamPet(req, res, prepared.actor, () => {
+      const current = this.appActor(header, workspaceId, serverId);
+      if (JSON.stringify(current) !== JSON.stringify(prepared))
+        throw new IdentityError(403, "identity_forbidden");
+    });
+  }
+  private petKey(actor: {
+    organizationId: string;
+    workspaceId: string;
+    userId: string;
+  }) {
+    return `${actor.organizationId}\n${actor.workspaceId}\n${actor.userId}`;
+  }
+  private petChanged(actor: MemoryActor) {
+    for (const notify of this.petWatchers.get(this.petKey(actor)) ?? [])
+      notify();
+  }
+  /**
+   * Server-sent events for one person's pet: `pet` whenever a save lands, a
+   * comment every 25 s to keep proxies open. Access is checked again on each
+   * beat, so a revoked device or ended session drops the stream.
+   */
+  private streamPet(
+    req: IncomingMessage,
+    res: ServerResponse,
+    actor: { organizationId: string; workspaceId: string; userId: string },
+    check: () => void,
+  ) {
+    if (this.closing) throw new IdentityError(503, "identity_unavailable");
+    const key = this.petKey(actor);
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-store",
+      "X-Accel-Buffering": "no",
+      Connection: "keep-alive",
+    });
+    res.write('retry: 5000\nevent: ready\ndata: {"type":"ready"}\n\n');
+    const send = () => res.write('event: pet\ndata: {"type":"pet"}\n\n');
+    const watchers = this.petWatchers.get(key) ?? new Set();
+    this.petWatchers.set(key, watchers);
+    watchers.add(send);
+    this.petStreams.add(res);
+    const beat = setInterval(() => {
+      try {
+        check();
+        res.write(": beat\n\n");
+      } catch {
+        res.end();
+      }
+    }, 25_000);
+    const close = () => {
+      clearInterval(beat);
+      watchers.delete(send);
+      if (!watchers.size && this.petWatchers.get(key) === watchers)
+        this.petWatchers.delete(key);
+      this.petStreams.delete(res);
+    };
+    req.on("close", close);
+    res.on("close", close);
   }
   private async petRequest(
     actor: MemoryActor,
@@ -4404,6 +4480,7 @@ export class IdentityService {
   }
   async close() {
     this.closing = true;
+    for (const stream of this.petStreams) stream.end();
     await this.profileLearner?.close();
     await this.hubScheduler.stop();
     await this.mcpTaskRunner?.close();
@@ -5400,7 +5477,8 @@ export class IdentityService {
     }
     if (
       url.pathname === "/admin/api/identity/pet" ||
-      url.pathname === "/admin/api/identity/pet/memory"
+      url.pathname === "/admin/api/identity/pet/memory" ||
+      url.pathname === "/admin/api/identity/pet/events"
     ) {
       try {
         if (isOperator())
@@ -5461,18 +5539,24 @@ export class IdentityService {
         params.delete("organizationId");
         params.delete("workspaceId");
         params.delete("profile");
+        if (url.pathname.endsWith("/events")) {
+          if (req.method !== "GET" || [...params.keys()].length)
+            throw new IdentityError(400, "identity_invalid_input");
+          check();
+          this.streamPet(req, res, actor, check);
+          return true;
+        }
         const command = req.method === "POST" ? payload : undefined;
-        return respond(
-          200,
-          await this.petRequest(
-            actor,
-            a.role,
-            check,
-            url.pathname.endsWith("/memory"),
-            params,
-            command,
-          ),
+        const result = await this.petRequest(
+          actor,
+          a.role,
+          check,
+          url.pathname.endsWith("/memory"),
+          params,
+          command,
         );
+        if (command !== undefined) this.petChanged(actor);
+        return respond(200, result);
       } catch (error) {
         if (error instanceof IdentityError)
           return respond(error.status, { error: error.code });

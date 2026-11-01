@@ -1,3 +1,4 @@
+import { fetch as expoFetch } from "expo/fetch";
 import {
   PetProfile,
   PetTopBarActions,
@@ -2574,6 +2575,7 @@ export function Workspace({
                     const [kind, id] = href.slice(1).split("/");
                     if (!id) return;
                     if (kind === "chat") {
+                  changes={petProfile.changes}
                       changeSection("chat");
                       switchConversation(id);
                     } else if (kind === "meetings") {
@@ -3246,6 +3248,8 @@ export default function App() {
     connections.subscribe,
     connections.getSnapshot,
     connections.getSnapshot,
+          // Expo's fetch streams the body; the pet follows the web live.
+          streamRequest: expoFetch as unknown as typeof fetch,
   );
   const session = connection.session;
   const [error, setError] = useState<TranslationKey | null>(null);

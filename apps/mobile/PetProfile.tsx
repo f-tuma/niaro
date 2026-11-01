@@ -196,6 +196,7 @@ export function PetProfile({
   screen: controlled,
   manage: manageControlled,
   onManage,
+  changes = 0,
 }: {
   session: ClientSession;
   language: Language;
@@ -213,6 +214,8 @@ export function PetProfile({
   /** The manage-memory sheet, opened from the saved screen. */
   manage?: boolean;
   onManage?: (open: boolean) => void;
+  /** Bumped when the pet changed on another device. */
+  changes?: number;
 }) {
   const own = usePetScreen();
   const screen = controlled ?? own;
@@ -359,6 +362,16 @@ export function PetProfile({
       tickets.current++;
     };
   }, []);
+  // A save in flight reads its own result; otherwise follow the other device.
+  const followChange = useEffectEvent(() => {
+    if (!busy) void read();
+  });
+  const seenChanges = useRef(changes);
+  useEffect(() => {
+    if (seenChanges.current === changes) return;
+    seenChanges.current = changes;
+    followChange();
+  }, [changes]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- A changed server query must hide the previous private slice before reading.
     setPage(undefined);

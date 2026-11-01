@@ -276,6 +276,11 @@ export type ClientSessionOptions = {
    * does not stream falls back to the JSON response and polling.
    */
   stream?: boolean;
+  /**
+   * A fetch whose response body streams (Expo's on the phone). Without it the
+   * pet is not followed live and the caller polls instead.
+   */
+  streamRequest?: typeof fetch;
   /** The credential has no refresh token, but `renewCredential` issues a new
    * one (the web app asks its signed-in browser session). */
   reissue?: boolean;
@@ -1383,6 +1388,75 @@ export class ClientSession {
     this.checkPetScope(result);
     return result;
   }
+  /**
+   * Follows the person's pet over a server event stream: `ready` on each
+   * connect, `pet` when its profile or memory changed anywhere. Resolves when
+   * the stream ends (reconnect), or `unsupported` when the server or this
+   * client cannot stream (poll instead).
+   */
+  async watchPet(
+    onEvent: (type: "ready" | "pet") => void,
+    signal: AbortSignal,
+  ): Promise<"ended" | "unsupported"> {
+    const request = this.options.streamRequest;
+    if (!request) return "unsupported";
+    const { response, controller, done } = await this.open(
+      "pet/events",
+      { signal, headers: { Accept: "text/event-stream" } },
+      // Reconnect now and then, so a stale route never lingers.
+      30 * 60_000,
+      true,
+      request,
+    );
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    try {
+      if (response.status === 404 || response.status === 406)
+        return "unsupported";
+      if (
+        !response.ok ||
+        !response.body ||
+        !response.headers.get("content-type")?.includes("text/event-stream")
+      )
+        throw new Error("pet_failed");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      // The server beats every 25 s; silence means the route is gone.
+      const touch = () => {
+        clearTimeout(idle);
+        idle = setTimeout(() => controller.abort(), 60_000);
+      };
+      touch();
+      try {
+        for (;;) {
+          const { done: ended, value } = await reader.read();
+          if (ended) break;
+          touch();
+          buffer += decoder.decode(value, { stream: true });
+          const { events, rest } = splitServerSentEvents(buffer);
+          buffer = rest;
+          for (const event of events) {
+            let type: unknown;
+            try {
+              type = (JSON.parse(event) as { type?: unknown } | null)?.type;
+            } catch {
+              continue;
+            }
+            if (type === "ready" || type === "pet") onEvent(type);
+          }
+        }
+      } catch (error) {
+        // Our own timers end the stream; the caller's abort is its own.
+        if (signal.aborted || !controller.signal.aborted) throw error;
+      } finally {
+        void reader.cancel().catch(() => {});
+      }
+      return "ended";
+    } finally {
+      clearTimeout(idle);
+      done();
+    }
+  }
   async petMemory(
     query: PetMemoryQuery = {},
     signal?: AbortSignal,
@@ -1864,6 +1938,7 @@ export class ClientSession {
     init?: RequestInit,
     timeoutMs = 8000,
     allowForbidden = false,
+    request: typeof fetch = this.request,
   ) {
     if (this.stopped) throw new Error("session_stopped");
     await this.ensureCredential();
@@ -1895,7 +1970,7 @@ export class ClientSession {
       this.controllers.delete(controller);
     };
     try {
-      const response = await this.request(this.deliveryUrl(path), {
+      const response = await request(this.deliveryUrl(path), {
         ...init,
         credentials: "omit",
         headers: {

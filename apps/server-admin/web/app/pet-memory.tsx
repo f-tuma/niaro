@@ -21,6 +21,42 @@ import type {
 } from "../../../../packages/protocol/work-pet";
 export { profilePetAppearance as profileAppearance } from "../../../shared/pet-appearance";
 
+/**
+ * One event stream per pet scope, shared by every hook on the page: the
+ * server says `pet` when the profile or its memory changed anywhere (the
+ * phone included), and `ready` after each (re)connect, when a change may
+ * have been missed.
+ */
+const petStreams = new Map<
+  string,
+  { source: EventSource; listeners: Set<() => void> }
+>();
+function watchPet(query: string, listener: () => void) {
+  if (typeof EventSource === "undefined") return () => {};
+  let stream = petStreams.get(query);
+  if (!stream) {
+    const source = new EventSource(`/admin/api/identity/pet/events?${query}`);
+    const listeners = new Set<() => void>();
+    let opened = false;
+    const notify = () => listeners.forEach((fn) => fn());
+    source.addEventListener("pet", notify);
+    source.addEventListener("ready", () => {
+      // The first connect follows the initial read; reconnects catch up.
+      if (opened) notify();
+      opened = true;
+    });
+    stream = { source, listeners };
+    petStreams.set(query, stream);
+  }
+  const current = stream;
+  current.listeners.add(listener);
+  return () => {
+    current.listeners.delete(listener);
+    if (current.listeners.size) return;
+    current.source.close();
+    if (petStreams.get(query) === current) petStreams.delete(query);
+  };
+}
 function usePetTransport() {
   const { workspace, identity } = useApp();
   const userId = identity.user?.id;
@@ -44,6 +80,7 @@ function usePetTransport() {
       return value;
     };
     return {
+      events: suffix.toString(),
       petProfile: async (signal?: AbortSignal) =>
         validate(
           PetProfileSchema.parse(
@@ -87,10 +124,15 @@ export function usePetProfile() {
     queryFn: ({ signal }) => session!.petProfile(signal),
     enabled: !!session,
     retry: false,
-    // The phone edits the same pet; keep a visible tab in step with it.
-    refetchInterval: 30_000,
-    refetchOnWindowFocus: "always",
   });
+  const events = session?.events;
+  const keyText = JSON.stringify(key);
+  useEffect(() => {
+    if (!events) return;
+    return watchPet(events, () => {
+      void client.invalidateQueries({ queryKey: JSON.parse(keyText) });
+    });
+  }, [events, client, keyText]);
   return {
     ...query,
     save: async (update: SavePetProfile) => {
@@ -155,6 +197,12 @@ export function usePetMemory(query: PetMemoryQuery) {
       tickets.current++;
     };
   }, [owner]); // owner binds both identity and filters
+  const events = session?.events;
+  useEffect(() => {
+    if (!events) return;
+    // A change made on the phone shows here without reloading.
+    return watchPet(events, () => void readSelection());
+  }, [events]);
   async function save(command: PetMemoryCommand) {
     const page = await session!.savePetMemory(command);
     if (current.current !== owner) throw Error("owner_changed");
