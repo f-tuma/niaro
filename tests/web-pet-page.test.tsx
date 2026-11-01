@@ -328,7 +328,9 @@ test("appearance saves confirmed server state; a rejected write keeps the entere
     view.root.findAllByType("input").some((i) => i.props.value === "Edited"),
   ).toBe(true);
   expect(mockApi.mock.calls.filter(([, body]) => body).length).toBe(1);
-  expect(view.root.findAllByProps({ role: "alert" }).length).toBe(1);
+  // The unconfirmed save asks in a dialog, not in an inline alert.
+  expect(view.root.findAllByProps({ role: "alert" }).length).toBe(0);
+  expect(view.root.findAllByProps({ role: "alertdialog" }).length).toBe(1);
   act(() => view.unmount());
 });
 

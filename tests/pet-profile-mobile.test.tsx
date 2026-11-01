@@ -58,6 +58,7 @@ const profile: Profile = {
   ) as Profile["look"],
 };
 test("native actual profile reads the selected private section and retains a rejected correction", async () => {
+  const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
   const item = {
     id: "memory-1",
     revision: 1,
@@ -120,7 +121,14 @@ test("native actual profile reads the selected private section and retains a rej
     }),
   );
   expect(screen.getByDisplayValue("My retained correction")).toBeTruthy();
-  expect(screen.getByText(/Couldn't confirm the save/)).toBeTruthy();
+  // The unconfirmed save asks in a dialog instead of shifting the page.
+  await waitFor(() =>
+    expect(alert).toHaveBeenCalledWith(
+      "Couldn't confirm the save.",
+      expect.stringContaining("This memory changed"),
+      expect.arrayContaining([expect.objectContaining({ text: "Try again" })]),
+    ),
+  );
 });
 
 test("profile save acknowledgement fences earlier reads and later stale revisions per session", async () => {

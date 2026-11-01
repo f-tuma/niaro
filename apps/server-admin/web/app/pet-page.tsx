@@ -199,9 +199,18 @@ function PetPageOwner({ manager }: { manager: boolean }) {
       alive.current = false;
     };
   }, []);
+  // While the appearance sheet is open the page previews the draft live.
+  const previewDraft = sheet === "appearance" ? draft : undefined;
+  const preview = useMemo(
+    () =>
+      previewDraft && profile.data
+        ? { ...profile.data, settings: previewDraft }
+        : profile.data,
+    [previewDraft, profile.data],
+  );
   const look = useMemo(
-    () => (profile.data ? profileAppearance(profile.data) : undefined),
-    [profile.data],
+    () => (preview ? profileAppearance(preview) : undefined),
+    [preview],
   );
   useEffect(() => {
     if (view !== "overview" && !manager) detail.current?.focus();
@@ -253,7 +262,7 @@ function PetPageOwner({ manager }: { manager: boolean }) {
   }
   const editable = !!memory.page?.enabled && !memory.page.optOut;
   const settings = draft ?? profile.data?.settings;
-  const animate = profile.data?.settings.animate ?? true;
+  const animate = preview?.settings.animate ?? true;
   const petState =
     memory.page && (!memory.page.enabled || memory.page.optOut)
       ? "resting"
@@ -317,45 +326,48 @@ function PetPageOwner({ manager }: { manager: boolean }) {
     buttons[next]?.focus();
   }
 
-  const conflictAlert = issue && !confirm && (
-    <Alert variant="destructive">
-      <AlertDescription>
-        {copy.uncertain} {copy.conflict}
-      </AlertDescription>
-      <AlertAction>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={saving}
-          onClick={async () => {
-            await profile.refetch();
-            const fresh = await memory.read();
-            if (conflict) {
-              setPending(undefined);
-              setIssue(false);
-              if (edit) {
-                const item = fresh?.items.find(
-                  (item) => item.id === edit.item.id,
-                );
-                if (item) setEdit({ ...edit, item });
-              }
-            }
-          }}
-        >
-          {copy.refresh}
-        </Button>
-        {pending && (
+  // An unconfirmed save asks in a dialog; nothing inline shifts the page.
+  const recover = async () => {
+    await profile.refetch();
+    const fresh = await memory.read();
+    if (conflict) {
+      setPending(undefined);
+      setIssue(false);
+      if (edit) {
+        const item = fresh?.items.find((item) => item.id === edit.item.id);
+        if (item) setEdit({ ...edit, item });
+      }
+    }
+  };
+  const issueDialog = (
+    <AlertDialog
+      open={issue && !confirm}
+      onOpenChange={(next) => {
+        if (!next && !saving) setIssue(false);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{copy.uncertain}</AlertDialogTitle>
+          <AlertDialogDescription>{copy.conflict}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={saving}>{copy.cancel}</AlertDialogCancel>
           <Button
             variant="outline"
-            size="sm"
             disabled={saving}
-            onClick={() => void mutate(pending)}
+            onClick={() => void recover()}
           >
-            {copy.retry}
+            {copy.refresh}
           </Button>
-        )}
-      </AlertAction>
-    </Alert>
+          {pending && (
+            <Button disabled={saving} onClick={() => void mutate(pending)}>
+              {copy.retry}
+            </Button>
+          )}
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 
   const memorySwitch = (
@@ -378,7 +390,7 @@ function PetPageOwner({ manager }: { manager: boolean }) {
   const pet = profile.data ? (
     <WebPetView
       size={petSize}
-      label={profile.data.settings.name}
+      label={preview?.settings.name ?? profile.data.settings.name}
       appearance={look}
       animate={profile.data.settings.animate}
       state={petState}
@@ -411,7 +423,7 @@ function PetPageOwner({ manager }: { manager: boolean }) {
       <span className="shrink-0">{pet}</span>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-base font-semibold">
-          {profile.data?.settings.name}
+          {preview?.settings.name}
         </span>
         <span className="truncate text-sm text-muted-foreground">
           {statusLine}
@@ -432,7 +444,7 @@ function PetPageOwner({ manager }: { manager: boolean }) {
         data-open={open}
         className="mt-3 max-w-full text-2xl font-semibold break-words data-[open=true]:mt-1 data-[open=true]:text-xl"
       >
-        {profile.data?.settings.name}
+        {preview?.settings.name}
       </h2>
       {about && !open && (
         <p className="text-md text-muted-foreground">{about}</p>
@@ -441,13 +453,16 @@ function PetPageOwner({ manager }: { manager: boolean }) {
       {retry}
     </div>
   );
+  // Saved feedback floats over the page as a toast; it never takes layout.
   const live = (
-    <div
-      role="status"
-      aria-live="polite"
-      className="text-sm text-muted-foreground empty:hidden"
-    >
-      {status}
+    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center">
+      <div
+        role="status"
+        aria-live="polite"
+        className="pet-fade rounded-lg border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md empty:hidden"
+      >
+        {status}
+      </div>
     </div>
   );
   // The six section tiles fill their column; the keys row sits under them.
@@ -605,7 +620,6 @@ function PetPageOwner({ manager }: { manager: boolean }) {
           </Toggle>
         </div>
       </div>
-      {!sheet && conflictAlert}
       {memory.error ? (
         <Alert variant="destructive">
           <AlertDescription>{copy.statusError}</AlertDescription>
@@ -943,7 +957,6 @@ function PetPageOwner({ manager }: { manager: boolean }) {
                 </SettingRows>
               </>
             )}
-            {sheet && conflictAlert}
           </form>
         )}
         <SheetFooter>
@@ -1126,7 +1139,6 @@ function PetPageOwner({ manager }: { manager: boolean }) {
           <>
             <div className="flex flex-col gap-4">
               {screen}
-              {!sheet && conflictAlert}
             </div>
             {controls}
           </>
@@ -1135,6 +1147,7 @@ function PetPageOwner({ manager }: { manager: boolean }) {
       </div>
       {sheetPanel}
       {confirmDialog}
+      {issueDialog}
     </MenuPage>
   );
 }

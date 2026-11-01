@@ -38,7 +38,6 @@ import {
   Field,
   Icon,
   ListRow,
-  Notice,
   Text,
   Toggle,
   type IconName,
@@ -457,49 +456,42 @@ export function PetProfile({
       next === "saved" ? { kind: "saved" } : { kind: "section", section: next },
     );
   };
-  const issueBlock = issue ? (
-    <View style={styles.issue}>
-      <Notice error>
-        {c.uncertain} {c.conflict}
-      </Notice>
-      <View style={styles.actions}>
-        <Button
-          label={c.refresh}
-          variant="secondary"
-          size="small"
-          onPress={async () => {
-            await onRefresh();
-            const fresh = await read();
-            if (conflict) {
-              setPending(undefined);
-              setIssue(false);
-              if (edit) {
-                const item = fresh?.items.find(
-                  (item) => item.id === edit.item.id,
-                );
-                if (item) setEdit({ ...edit, item });
-              }
-            }
-          }}
-        />
-        {pending && (
-          <Button
-            label={c.retry}
-            size="small"
-            disabled={busy}
-            onPress={() => void mutate(pending)}
-          />
-        )}
-      </View>
-    </View>
-  ) : null;
-  const memoryValue = !!page && !page.optOut,
-    memoryDisabled = busy || !page || !page.enabled;
-  const { setMemory } = screen;
   const mutateRef = useRef(mutate);
   useEffect(() => {
     mutateRef.current = mutate;
   });
+  // An unconfirmed save asks in a dialog; nothing inline shifts the page.
+  const recover = async () => {
+    await onRefresh();
+    const fresh = await read();
+    if (conflict) {
+      setPending(undefined);
+      setIssue(false);
+      if (edit) {
+        const item = fresh?.items.find((item) => item.id === edit.item.id);
+        if (item) setEdit({ ...edit, item });
+      }
+    }
+  };
+  const recoverRef = useRef(recover);
+  useEffect(() => {
+    recoverRef.current = recover;
+  });
+  useEffect(() => {
+    if (!issue) return;
+    Alert.alert(c.uncertain, c.conflict, [
+      { text: c.cancel, style: "cancel", onPress: () => setIssue(false) },
+      { text: c.refresh, onPress: () => void recoverRef.current() },
+      ...(pending
+        ? [{ text: c.retry, onPress: () => void mutateRef.current(pending) }]
+        : []),
+    ]);
+    // The dialog opens once per failed save; its buttons read the latest handlers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issue]);
+  const memoryValue = !!page && !page.optOut,
+    memoryDisabled = busy || !page || !page.enabled;
+  const { setMemory } = screen;
   useEffect(() => {
     setMemory({
       value: memoryValue,
@@ -819,7 +811,6 @@ export function PetProfile({
           onChange={setPersonal}
         />
       ) : null}
-      {!sheetOpen && issueBlock}
       {error ? (
         <View style={styles.empty}>
           <Text tone="secondary">{c.statusError}</Text>
@@ -933,16 +924,12 @@ export function PetProfile({
       ) : (
         <View key={viewKey}>{content}</View>
       )}
-      {view.kind === "overview" && !sheetOpen ? issueBlock : null}
       {!!status && (
-        <Text
-          accessibilityLiveRegion="polite"
-          role="meta"
-          tone="secondary"
-          style={styles.centerText}
-        >
-          {status}
-        </Text>
+        <View pointerEvents="none" style={styles.toast}>
+          <Text accessibilityLiveRegion="polite" role="meta">
+            {status}
+          </Text>
+        </View>
       )}
       {menuItem ? (
         <DetailSheet
@@ -1027,7 +1014,6 @@ export function PetProfile({
                 setDraft({ ...settings, department })
               }
             />
-            {issueBlock}
           </View>
         </DetailSheet>
       ) : null}
@@ -1148,7 +1134,6 @@ export function PetProfile({
                 />
               ))}
             </View>
-            {issueBlock}
           </View>
         </DetailSheet>
       ) : null}
@@ -1188,7 +1173,6 @@ export function PetProfile({
                 }
               />
             </View>
-            {issueBlock}
             <Button
               label={c.erase}
               variant="danger"
@@ -1281,7 +1265,16 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     gap: t.spacing.sm,
   },
-  issue: { gap: t.spacing.sm },
+  toast: {
+    position: "absolute",
+    bottom: t.spacing.md,
+    alignSelf: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: t.radius.pill,
+    backgroundColor: t.color.surfaceRaised,
+    ...t.elevation.card,
+  },
   memory: {
     flexDirection: "row",
     alignItems: "flex-start",
