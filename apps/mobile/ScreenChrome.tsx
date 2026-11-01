@@ -605,10 +605,7 @@ export function Home({
   meetingRecording = false,
   level,
   onMeeting,
-  onRecord,
   onTasks,
-  onProcesses,
-  processesLabel,
   onConnect,
   compact = false,
   petVisible = true,
@@ -636,11 +633,7 @@ export function Home({
   meetingRecording?: boolean;
   onTalk?: () => void;
   onMeeting: () => void;
-  onRecord?: () => void;
   onTasks: () => void;
-  onProcesses?: () => void;
-  /** Names a saved process start waiting to be reopened. */
-  processesLabel?: string;
   onConnect: () => void;
   compact?: boolean;
   petVisible?: boolean;
@@ -750,17 +743,6 @@ export function Home({
       onPress: onMeeting,
       disabled: !connected || busy,
     },
-    // Recording is local first, so it stays available while offline.
-    ...(onRecord
-      ? [
-          {
-            id: "record",
-            label: tr("homeRecord"),
-            icon: "waveform" as const,
-            onPress: onRecord,
-          },
-        ]
-      : []),
     // Tasks has its own tab; here it appears only when something waits.
     ...(count
       ? [
@@ -770,17 +752,6 @@ export function Home({
             icon: "tasks" as const,
             onPress: onTasks,
             count,
-          },
-        ]
-      : []),
-    ...(onProcesses
-      ? [
-          {
-            id: "processes",
-            label: processesLabel ?? tr("processesTitle"),
-            icon: "bolt" as const,
-            onPress: onProcesses,
-            disabled: !connected || busy,
           },
         ]
       : []),

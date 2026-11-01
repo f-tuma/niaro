@@ -81,17 +81,21 @@ test.each(["en", "cs"] as const)(
       session = h.open(),
       tr = translate(language);
     await session.start(false);
-    render(
-      <Workspace
-        session={session}
-        language={language}
-        section="chat"
-        setSection={jest.fn<void, [Section]>()}
-        settings={null}
-        authError={null}
-        spokenReplies={false}
-      />,
-    );
+    function Harness() {
+      const [section, setSection] = React.useState<Section>("chat");
+      return (
+        <Workspace
+          session={session}
+          language={language}
+          section={section}
+          setSection={setSection}
+          settings={null}
+          authError={null}
+          spokenReplies={false}
+        />
+      );
+    }
+    render(<Harness />);
     expect(h.inventoryRequests).toHaveLength(0);
     expect(h.commands).toHaveLength(0);
     await act(async () => {

@@ -92,7 +92,6 @@ import {
 } from "../../packages/client-core/connections";
 import { useReplySpeech } from "./ReplySpeech";
 import { VoiceSettings } from "./VoiceSettings";
-import { ArchivedChatsSection } from "./ArchivedChats";
 import { chatChangeError } from "../../packages/client-core/conversation-directory";
 import { credentialVault } from "./credential-vault";
 import { ConnectionCard } from "../../packages/ui-catalog/ConnectionCard";
@@ -140,7 +139,6 @@ import {
   FadeEdge,
   Group,
   Icon,
-  IconTile,
   ListRow,
   Row,
 } from "../../packages/ui";
@@ -168,7 +166,6 @@ import {
 } from "./VoiceReply";
 import { ServiceConnection } from "./ServiceConnection";
 import { ProcessLaunch } from "./ProcessLaunch";
-import { ProcessDesign } from "./ProcessDesign";
 import { ProcessApprovalRecovery } from "./ProcessApprovalRecovery";
 import { feedback, setFeedbackEnabled } from "./feedback";
 import type { VoiceDraft } from "../../packages/client-core/voice";
@@ -521,10 +518,6 @@ export function Workspace({
   const [processOffer, setProcessOffer] = useState<ProcessOfferResult | null>(
     null,
   );
-  const [processDesignerOpen, setProcessDesignerOpen] = useState(false);
-  const [processDesignerServiceId, setProcessDesignerServiceId] = useState<
-    string | null
-  >(null);
   const [selectedProcessRunId, setSelectedProcessRunId] = useState<
     string | null
   >(null);
@@ -569,8 +562,6 @@ export function Workspace({
           setSection(returnTo ?? fallback);
         };
         if (historyOpen) setHistoryOpen(false);
-        else if (processOpen && processDesignerOpen)
-          setProcessDesignerOpen(false);
         else if (processOpen && selectedProcessRunId)
           setSelectedProcessRunId(null);
         else if (processOpen) setProcessOpen(false);
@@ -589,7 +580,6 @@ export function Workspace({
   }, [
     historyOpen,
     processOpen,
-    processDesignerOpen,
     selectedProcessRunId,
     petOpen,
     petAppearanceOpen,
@@ -2067,15 +2057,9 @@ export function Workspace({
     closeVoice();
     speech.player.stop();
     setSelectedProcessRunId(null);
-    setProcessDesignerOpen(false);
     setProcessOffer(offer);
     setProcessOpen(true);
   };
-  const processesLabel = tr(
-    state.pending?.type === "process.start"
-      ? "processesOpenSaved"
-      : "processesTitle",
-  );
   const openMenu = () => {
     closeVoice();
     speech.player.stop();
@@ -2168,7 +2152,6 @@ export function Workspace({
                     visible={
                       !historyOpen &&
                       !processOpen &&
-                      !processDesignerOpen &&
                       !contextMenu &&
                       !voiceSettingsOpen &&
                       !mentions.sheet
@@ -2617,17 +2600,8 @@ export function Workspace({
                   onSettings={() => changeSection("more")}
                 />
               ) : section === "more" ? (
-                <>
-                  {settings}
-                  {session ? (
-                    <ArchivedChatsSection
-                      session={session}
-                      language={language}
-                      online={online}
-                      onOpen={openHistoryConversation}
-                    />
-                  ) : null}
-                </>
+                // Archived chats are found in Search, under Archived.
+                settings
               ) : section === "meetings" ? (
                 <>
                   {!session ? (
@@ -2676,7 +2650,6 @@ export function Workspace({
                     homePetVisibility.visible &&
                     !historyOpen &&
                     !processOpen &&
-                    !processDesignerOpen &&
                     !contextMenu &&
                     !voiceSettingsOpen &&
                     !mentions.sheet
@@ -2686,15 +2659,7 @@ export function Workspace({
                   meetingRecording={meetingRecording}
                   onTalk={openVoice}
                   onMeeting={() => startRequest(true)}
-                  // Recording needs the native app; on web the shortcut would dead-end.
-                  onRecord={
-                    session && Platform.OS !== "web"
-                      ? () => changeSection("meetings")
-                      : undefined
-                  }
                   onTasks={() => changeSection("tasks")}
-                  onProcesses={session ? () => openProcesses() : undefined}
-                  processesLabel={processesLabel}
                   onConnect={() => changeSection("more")}
                 />
               ) : (
@@ -3094,23 +3059,16 @@ export function Workspace({
             processOpen ? "auto" : "no-hide-descendants"
           }
         >
-          {selectedProcessRun || processDesignerOpen ? (
+          {selectedProcessRun ? (
             <TopBar
               leading={
                 <IconButton
                   icon="back"
                   label={tr("back")}
-                  onPress={() => {
-                    if (processDesignerOpen) setProcessDesignerOpen(false);
-                    else setSelectedProcessRunId(null);
-                  }}
+                  onPress={() => setSelectedProcessRunId(null)}
                 />
               }
-              title={
-                processDesignerOpen
-                  ? tr("processDesignTitle")
-                  : (selectedProcessRun?.title ?? tr("processesTitle"))
-              }
+              title={selectedProcessRun?.title ?? tr("processesTitle")}
             />
           ) : (
             // The list root: a large title, closed from the top right.
@@ -3145,15 +3103,7 @@ export function Workspace({
               />
             </View>
           ) : null}
-          {processDesignerOpen ? (
-            <ProcessDesign
-              key={`${session.identityKey}:${processDesignerServiceId ?? "workspace"}`}
-              session={session}
-              language={language}
-              serviceId={processDesignerServiceId}
-              onServiceChange={setProcessDesignerServiceId}
-            />
-          ) : (
+          {
             <ScrollView
               style={styles.flex}
               keyboardShouldPersistTaps="handled"
@@ -3168,17 +3118,6 @@ export function Workspace({
                 </View>
               ) : (
                 <View style={{ gap: t.spacing.section }}>
-                  {historySelection?.readOnly ? null : (
-                    <Group>
-                      <ListRow
-                        leading={<IconTile icon="sparkle" size={38} />}
-                        label={tr("processDesignOpen")}
-                        description={tr("processDesignIntro")}
-                        onPress={() => setProcessDesignerOpen(true)}
-                        testID="open-process-designer"
-                      />
-                    </Group>
-                  )}
                   {historySelection?.readOnly ? null : (
                     <ProcessLaunch
                       session={session}
@@ -3213,7 +3152,7 @@ export function Workspace({
                 </View>
               )}
             </ScrollView>
-          )}
+          }
         </View>
       ) : null}
     </View>

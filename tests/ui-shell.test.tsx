@@ -167,8 +167,7 @@ test("without a server, home introduces the assistant and offers only Connect", 
   expect(connect).toHaveBeenCalledTimes(1);
 });
 test("offline home keeps local recording and tasks but not server actions", () => {
-  const record = jest.fn(),
-    meeting = jest.fn(),
+  const meeting = jest.fn(),
     talk = jest.fn();
   render(
     <Home
@@ -177,7 +176,6 @@ test("offline home keeps local recording and tasks but not server actions", () =
       busy={false}
       onTalk={talk}
       onMeeting={meeting}
-      onRecord={record}
       onTasks={jest.fn()}
       onConnect={jest.fn()}
     />,
@@ -191,13 +189,13 @@ test("offline home keeps local recording and tasks but not server actions", () =
   fireEvent.press(screen.getByRole("button", { name: "Plan a meeting" }));
   expect(talk).not.toHaveBeenCalled();
   expect(meeting).not.toHaveBeenCalled();
-  fireEvent.press(screen.getByRole("button", { name: "Record a meeting" }));
-  expect(record).toHaveBeenCalledTimes(1);
+  // Recording and Processes have their own tab and Library entry.
+  expect(screen.queryByRole("button", { name: "Record a meeting" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Processes" })).toBeNull();
 });
 test("connected home leads with waiting work and starts nothing by itself", () => {
   const tasks = jest.fn(),
     meeting = jest.fn(),
-    processes = jest.fn(),
     talk = jest.fn();
   const { rerender } = render(
     <Home
@@ -208,7 +206,6 @@ test("connected home leads with waiting work and starts nothing by itself", () =
       onTalk={talk}
       onMeeting={meeting}
       onTasks={tasks}
-      onProcesses={processes}
       onConnect={jest.fn()}
     />,
   );
@@ -227,8 +224,6 @@ test("connected home leads with waiting work and starts nothing by itself", () =
     }),
   );
   expect(talk).not.toHaveBeenCalled();
-  fireEvent.press(screen.getByRole("button", { name: "Processes" }));
-  expect(processes).toHaveBeenCalledTimes(1);
   rerender(
     <Home
       language="en"

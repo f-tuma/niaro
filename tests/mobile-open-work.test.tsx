@@ -1,7 +1,6 @@
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { ChatHistory } from "../apps/mobile/ChatHistory";
-import { ArchivedChats } from "../apps/mobile/ArchivedChats";
 import { MobileWorkItemCard } from "../apps/mobile/MobileWorkItemCard";
 import { ConversationOpenWorkError } from "../packages/client-core/conversation-directory";
 import type {
@@ -138,36 +137,6 @@ test("an older server's refusal keeps the general sentence; Keep leaves the chat
   expect(screen.queryByTestId("open-work-notice")).toBeNull();
   expect(session.archiveConversation).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("button", { name: "TEST chat TEST-A" })).toBeTruthy();
-});
-
-test("the archive offers to cancel waiting work and delete", async () => {
-  const session = directorySession(true);
-  session.deleteConversation.mockRejectedValueOnce(waiting);
-  render(
-    <ArchivedChats
-      session={session as unknown as ClientSession}
-      language="en"
-      online
-      onOpen={jest.fn()}
-    />,
-  );
-  await act(flush);
-  await press(
-    screen.getAllByRole("button", { name: "Delete: TEST chat TEST-A" }).at(-1)!,
-  );
-  await press(screen.getByRole("button", { name: "Delete" }));
-  expect(
-    screen.getByText(
-      "Waiting in this chat: TEST asks a day (question), TEST invoice run (process)",
-    ),
-  ).toBeTruthy();
-  await press(screen.getByRole("button", { name: "Cancel and delete" }));
-  expect(session.deleteConversation).toHaveBeenLastCalledWith(
-    "TEST-A",
-    "TEST-open-work",
-    { cancelOpenWork: true },
-  );
-  expect(screen.queryByText("TEST chat TEST-A")).toBeNull();
 });
 
 function cardSession(pending: SessionState["pending"] = null) {
