@@ -15,6 +15,7 @@ import { selectReplyInput } from "../../packages/client-core/store";
 import { messageCommand } from "../../packages/client-core/commands";
 import { withChatSession } from "./chat-session";
 import { VoiceComposer } from "../../packages/ui-catalog/VoiceComposer";
+import type { PetAppearance } from "../../packages/ui/pet-motion";
 import { useReducedMotion } from "../../packages/ui/motion";
 import { voiceVisualMeter } from "../../packages/audio/spectrum";
 import { createVoiceCapture } from "./voice-capture";
@@ -164,6 +165,8 @@ export function VoiceReply({
   blocked,
   onClose,
   level,
+  petAppearance,
+  petAnimate,
 }: {
   draft: VoiceDraft;
   language: Language;
@@ -171,6 +174,9 @@ export function VoiceReply({
   onClose: () => void;
   /** Mirrors the live level for other voice visuals, such as the home orb. */
   level?: Animated.Value;
+  /** The person's pet as drawn elsewhere in the app. */
+  petAppearance?: PetAppearance;
+  petAnimate?: boolean;
 }) {
   const state = useSyncExternalStore(
     draft.subscribe,
@@ -263,6 +269,8 @@ export function VoiceReply({
         blocked={blocked && state.stage === "review"}
         level={meter.level}
         petLevel={petLevel}
+        petAppearance={petAppearance}
+        petAnimate={petAnimate}
         elapsedSeconds={elapsedSeconds}
         bands={meter.bands}
         spectrum={meter.spectrum}

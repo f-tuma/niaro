@@ -31,11 +31,11 @@ test("an outstanding command allows microphone start and stop while keeping tran
   );
   render(<VoiceReply draft={draft} language="en" blocked onClose={() => {}} />);
   expect(
-    screen.getByRole("button", { name: "Start recording" }).props
+    screen.getByRole("button", { name: "Record" }).props
       .accessibilityState.disabled,
   ).toBe(false);
   await act(async () => {
-    fireEvent.press(screen.getByRole("button", { name: "Start recording" }));
+    fireEvent.press(screen.getByRole("button", { name: "Record" }));
   });
   expect(capture.start).toHaveBeenCalledTimes(1);
   expect(

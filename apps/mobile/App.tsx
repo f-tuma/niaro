@@ -2853,6 +2853,8 @@ export function Workspace({
                 blocked={busy}
                 onClose={closeVoice}
                 level={voiceLevel}
+                petAppearance={petLook}
+                petAnimate={petProfile.profile?.settings.animate ?? true}
               />
             ) : historySelection?.readOnly ? (
               <ReadOnlyComposer

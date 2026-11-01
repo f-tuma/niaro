@@ -25,7 +25,7 @@ test("general voice starts only on press and explains auto-send before recording
     screen.getByRole("button", { name: "How voice input works" }),
   );
   expect(screen.getByText(props.address)).toBeTruthy();
-  fireEvent.press(screen.getByRole("button", { name: "Start recording" }));
+  fireEvent.press(screen.getByRole("button", { name: "Record" }));
   expect(props.onStart).toHaveBeenCalledTimes(1);
   rerender(<VoiceReplyCard {...props} stage="recording" />);
   fireEvent.press(screen.getByRole("button", { name: "Done" }));

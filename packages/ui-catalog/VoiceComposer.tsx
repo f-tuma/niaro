@@ -5,12 +5,16 @@ import type { Language } from "../protocol";
 import type { VoiceTranscript } from "../protocol/voice";
 import { useCompanionTypography } from "../ui/typography";
 import { PetView } from "../ui/PetView";
+import type { PetAppearance } from "../ui/pet-motion";
 import { tokens as t } from "../design-tokens";
 import { Icon, Text, ui, type IconName } from "../ui";
 import { MotionPressable, useReducedMotion } from "../ui/motion";
 
 export type VoiceComposerProps = {
   language: Language;
+  /** The person's own pet, so the sheet shows it and not a default body. */
+  petAppearance?: PetAppearance;
+  petAnimate?: boolean;
   stage:
     | "idle"
     | "starting"
@@ -44,11 +48,9 @@ export type VoiceComposerProps = {
 const copy = {
   cs: {
     listening: "Poslouchám",
-    silence: "Odmlkou nahrávku ukončíš.",
   },
   en: {
     listening: "Listening",
-    silence: "Pause to finish.",
   },
 } as const;
 
@@ -163,6 +165,8 @@ export function VoiceComposer({
   reviewReasons = [],
   level = 0,
   petLevel,
+  petAppearance,
+  petAnimate = true,
   elapsedSeconds,
   bands,
   spectrum,
@@ -282,6 +286,8 @@ export function VoiceComposer({
               <PetView
                 testID="voice-pet"
                 size={140}
+                appearance={petAppearance}
+                animate={petAnimate}
                 background={t.color.surfaceRaised}
                 state={
                   recording ? "listening" : pending ? "working" : "resting"
@@ -311,9 +317,6 @@ export function VoiceComposer({
                   spectrum={spectrum}
                   label={tr("voice_recording_short")}
                 />
-                <Text role="caption" tone="secondary" style={styles.center}>
-                  {words.silence}
-                </Text>
               </>
             ) : null}
             <View style={styles.actions}>

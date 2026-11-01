@@ -62,7 +62,7 @@ test("failed transcription needs explicit retry and does not reopen the micropho
     />,
   );
   expect(props.onUpload).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: "Start recording" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Record" })).toBeNull();
   expect(props.onStart).not.toHaveBeenCalled();
   fireEvent.press(screen.getByRole("button", { name: "Retry transcription" }));
   expect(props.onUpload).toHaveBeenCalledTimes(1);
@@ -80,7 +80,7 @@ test.each(["starting", "stopping", "transcribing"] as const)(
     };
     expect(screen.getByText(status[stage])).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: "Start recording" }),
+      screen.queryByRole("button", { name: "Record" }),
     ).toBeNull();
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
     expect(props.onStart).not.toHaveBeenCalled();

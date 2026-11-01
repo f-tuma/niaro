@@ -735,7 +735,7 @@ export const en = {
   voice_destination: "Audio destination",
   voice_disclosure:
     "Recording stops after speech and a short silence, or when you tap Done. Maximum 2 minutes. Audio goes to this server, which may forward it to the transcription service shown in Settings. Usable text is submitted automatically as a message or an answer to the selected question; uncertain or time-limited recordings require review. Calendar changes still need separate approval. Temporary audio is removed after processing; a crash may leave a file.",
-  voice_start: "Start recording",
+  voice_start: "Record",
   voice_stop: "Done",
   voice_upload: "Retry transcription",
   voice_transcript: "Recognized text",
@@ -1755,7 +1755,7 @@ export const cs: Record<TranslationKey, string> = {
   voice_destination: "Kam odejde zvuk",
   voice_disclosure:
     "Nahrávání skončí po řeči a krátkém tichu nebo klepnutím na Hotovo. Nejvýše 2 minuty. Zvuk odejde na tento server, který jej může předat službě pro přepis uvedené v nastavení. Použitelný text se automaticky odešle jako zpráva nebo odpověď na vybranou otázku; nejistý přepis nebo záznam ukončený limitem vyžaduje kontrolu. Změny v kalendáři stále vyžadují samostatné schválení. Dočasný zvuk se po zpracování odstraní; při pádu může soubor zůstat.",
-  voice_start: "Začít nahrávat",
+  voice_start: "Nahrávat",
   voice_stop: "Hotovo",
   voice_upload: "Zkusit přepis znovu",
   voice_transcript: "Rozpoznaný text",
