@@ -11,7 +11,6 @@ export function CompanionLibrary({
   language,
   connected,
   onMeetings,
-  onHistory,
   onProcesses,
   onSettings,
   onPet,
@@ -19,7 +18,6 @@ export function CompanionLibrary({
   language: Language;
   connected: boolean;
   onMeetings: () => void;
-  onHistory: () => void;
   onProcesses: () => void;
   onSettings: () => void;
   onPet?: () => void;
@@ -40,12 +38,6 @@ export function CompanionLibrary({
           label={tr("meetings")}
           leading={<IconTile icon="calendar" size={38} />}
           onPress={onMeetings}
-        />
-        <ListRow
-          label={tr("chatHistory")}
-          leading={<IconTile icon="history" size={38} />}
-          onPress={onHistory}
-          disabled={!connected}
         />
         <ListRow
           label={tr("processesTitle")}

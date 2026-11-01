@@ -622,7 +622,7 @@ test("opening a genuine native waiting question supersedes an unresolved history
   render(<f.Harness />);
   await select("TEST-A");
   await act(async () => {
-    fireEvent.press(screen.getByRole("button", { name: "Menu" }));
+    fireEvent.press(screen.getByRole("tab", { name: "Library" }));
     await flush();
   });
   await act(async () => {
@@ -1506,4 +1506,26 @@ test.each([
     if (change !== "unmount") current.unmount();
     window.restore();
   }
+});
+test("the chat panel holds chats only; sections live in the tabs", async () => {
+  const f = fixture();
+  render(
+    <ChatHistory
+      session={f.session as unknown as ClientSession}
+      language="en"
+      open
+      selectedId="TEST-A"
+      busy={false}
+      online
+      onClose={() => {}}
+      onSelect={() => {}}
+      onNew={async () => {}}
+      onNavigate={() => {}}
+    />,
+  );
+  await act(flush);
+  expect(screen.getByText("New chat")).toBeTruthy();
+  expect(screen.getByText("Search")).toBeTruthy();
+  for (const section of ["Work", "Library", "Processes", "You and Niaro"])
+    expect(screen.queryByText(section)).toBeNull();
 });

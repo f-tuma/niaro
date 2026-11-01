@@ -1,4 +1,3 @@
-import { petCopy } from "./pet-profile-copy";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -39,10 +38,10 @@ import {
 } from "../../packages/ui/motion";
 import * as cues from "./feedback";
 import { MenuItem } from "./ScreenChrome";
-import { companionCopy } from "./companion-copy";
 import { OpenWorkNotice, type OpenWorkRefusal } from "./OpenWorkNotice";
 
-export type MenuTarget = "processes" | "search" | "tasks" | "library" | "pet";
+/** The history panel only leads on to chat search; the tabs carry the rest. */
+export type MenuTarget = "search";
 
 type DrawerProps = {
   session: ClientSession | null;
@@ -57,8 +56,6 @@ type DrawerProps = {
   onDeleted?: (id: string) => void;
   /** Shows destinations; the drawer slides away before navigating. */
   onNavigate?: (target: MenuTarget) => void;
-  processesLabel?: string;
-  processesDisabled?: boolean;
   recordingControls?: React.ReactNode;
 };
 /**
@@ -90,8 +87,6 @@ function OpenChatHistory({
   onNew,
   onDeleted,
   onNavigate,
-  processesLabel,
-  processesDisabled,
   recordingControls,
 }: DrawerProps) {
   const tr = translate(language);
@@ -441,35 +436,6 @@ function OpenChatHistory({
                   icon="search"
                   label={language === "cs" ? "Hledat" : "Search"}
                   onPress={() => go("search")}
-                />
-              ) : null}
-              {onNavigate ? (
-                <>
-                  <MenuItem
-                    icon="briefcase"
-                    label={companionCopy(language).work}
-                    onPress={() => go("tasks")}
-                  />
-                  {session && (
-                    <MenuItem
-                      icon="paw"
-                      label={petCopy(language).title}
-                      onPress={() => go("pet")}
-                    />
-                  )}
-                  <MenuItem
-                    icon="library"
-                    label={companionCopy(language).library}
-                    onPress={() => go("library")}
-                  />
-                </>
-              ) : null}
-              {onNavigate && session ? (
-                <MenuItem
-                  icon="bolt"
-                  label={processesLabel ?? tr("processesTitle")}
-                  disabled={processesDisabled}
-                  onPress={() => go("processes")}
                 />
               ) : null}
             </View>

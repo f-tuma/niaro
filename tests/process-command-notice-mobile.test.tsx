@@ -1,3 +1,4 @@
+import { companionCopy } from "../apps/mobile/companion-copy";
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Workspace } from "../apps/mobile/App";
@@ -73,7 +74,9 @@ async function openRunDetail(language: Language) {
     await flush();
   });
   await act(async () => {
-    fireEvent.press(screen.getByRole("button", { name: tr("menu") }));
+    fireEvent.press(
+      screen.getByRole("tab", { name: companionCopy(language).library }),
+    );
     await flush();
   });
   await act(async () => {
@@ -93,6 +96,10 @@ async function closeProcessPanel(language: Language) {
   });
   await act(async () => {
     fireEvent.press(screen.getByRole("button", { name: tr("close") }));
+    await flush();
+  });  // Processes open from Library; the chat is one tab away.
+  await act(async () => {
+    fireEvent.press(screen.getByRole("tab", { name: tr("chat") }));
     await flush();
   });
 }

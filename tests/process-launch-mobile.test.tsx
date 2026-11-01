@@ -1,3 +1,4 @@
+import { companionCopy } from "../apps/mobile/companion-copy";
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { processLaunchDetails } from "./helpers/process-launch-details";
@@ -93,7 +94,12 @@ test.each(["en", "cs"] as const)(
     );
     expect(h.inventoryRequests).toHaveLength(0);
     expect(h.commands).toHaveLength(0);
-    await press(tr("menu"));
+    await act(async () => {
+      fireEvent.press(
+        screen.getByRole("tab", { name: companionCopy(language).library }),
+      );
+      await flush();
+    });
     await press(tr("processesTitle"));
     await review(language);
     expect(h.commands).toHaveLength(0);
@@ -101,7 +107,12 @@ test.each(["en", "cs"] as const)(
       JSON.stringify({ name: "  TEST exact input\n" }, null, 2),
     );
     await press(tr("close"));
-    await press(tr("menu"));
+    await act(async () => {
+      fireEvent.press(
+        screen.getByRole("tab", { name: companionCopy(language).library }),
+      );
+      await flush();
+    });
     await press(tr("processesTitle"));
     await press(tr("processesEdit"));
     expect(screen.getByLabelText("name").props.value).toBe(

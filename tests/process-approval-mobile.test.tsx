@@ -1,3 +1,4 @@
+import { companionCopy } from "../apps/mobile/companion-copy";
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { BackHandler } from "react-native";
@@ -161,16 +162,20 @@ test("Android Back dismisses the chat history drawer before leaving Chat", async
   try {
     render(<Harness />);
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: translate("en")("menu") }));
+      fireEvent.press(
+        screen.getByRole("button", { name: translate("en")("menu") }),
+      );
       await flush();
     });
-    expect(screen.getByText(translate("en")("processesTitle"))).toBeTruthy();
+    expect(screen.getByText(translate("en")("newChat"))).toBeTruthy();
     await act(async () => {
       expect(back?.({} as never)).toBe(true);
       await flush();
     });
     expect(screen.queryByText(translate("en")("newChat"))).toBeNull();
-    expect(screen.getByRole("button", { name: translate("en")("menu") })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: translate("en")("menu") }),
+    ).toBeTruthy();
   } finally {
     listener.mockRestore();
     session.stop();
@@ -320,7 +325,7 @@ test("StrictMode replay leaves current review active and outer revision cannot r
 });
 
 test.each(["en", "cs"] as const)(
-	  "%s Workspace keeps a process out of Tasks and reviews it from Processes",
+  "%s Workspace keeps a process out of Tasks and reviews it from Processes",
   async (language) => {
     const h = processApprovalFixture(),
       session = h.open();
@@ -344,11 +349,15 @@ test.each(["en", "cs"] as const)(
     // approvals are reviewed from Processes instead.
     expect(screen.queryByTestId("summary-TEST-parent")).toBeNull();
     await act(async () => {
-      fireEvent.press(screen.getByRole("tab", { name: translate(language)("chat") }));
+      fireEvent.press(
+        screen.getByRole("tab", { name: translate(language)("chat") }),
+      );
       await flush();
     });
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: translate(language)("menu") }));
+      fireEvent.press(
+        screen.getByRole("tab", { name: companionCopy(language).library }),
+      );
       await flush();
     });
     await act(async () => {

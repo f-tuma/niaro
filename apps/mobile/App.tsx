@@ -548,6 +548,12 @@ export function Workspace({
   const [meetingRecordingControl, setMeetingRecordingControl] =
     useState<MeetingRecordingControl | null>(null);
   const meetingOpen = section === "meetings" && !!meetingId;
+  // A screen opened from the chat (its pet, a recording) goes back there.
+  const [returnTo, setReturnTo] = useState<Section | null>(null);
+  const leaveTo = (fallback: Section) => {
+    setReturnTo(null);
+    setSection(returnTo ?? fallback);
+  };
   // Back closes overlays first, then nested records, then returns to the chat.
   useEffect(() => {
     if (
@@ -558,6 +564,10 @@ export function Workspace({
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
+        const leaveTo = (fallback: Section) => {
+          setReturnTo(null);
+          setSection(returnTo ?? fallback);
+        };
         if (historyOpen) setHistoryOpen(false);
         else if (processOpen && processDesignerOpen)
           setProcessDesignerOpen(false);
@@ -566,10 +576,12 @@ export function Workspace({
         else if (processOpen) setProcessOpen(false);
         else if (petOpen && petAppearanceOpen) setPetAppearanceOpen(false);
         else if (petOpen && petScreen.nested) petScreen.back();
-        else if (petOpen) setPetOpen(false);
-        else if (meetingOpen) setMeetingId(null);
+        else if (petOpen) {
+          setPetOpen(false);
+          if (returnTo) leaveTo("library");
+        } else if (meetingOpen) setMeetingId(null);
         else if (section === "meetings" || section === "more")
-          setSection("library");
+          leaveTo("library");
         else setSection("chat");
         return true;
       },
@@ -587,6 +599,7 @@ export function Workspace({
     section,
     setSection,
     meetingOpen,
+    returnTo,
   ]);
   const [voice, setVoice] = useState<VoiceDraft>();
   // Shared by every voice visual; written by the recorder, never by rendering.
@@ -2031,6 +2044,7 @@ export function Workspace({
     void next.start();
   };
   const changeSection = (next: Section) => {
+    setReturnTo(null);
     setPetOpen(false);
     speech.player.stop();
     focusWork.current = undefined;
@@ -2126,12 +2140,7 @@ export function Workspace({
           {section === "chat" && !session ? null : section === "chat" ? (
             <TopBar
               leading={
-                <IconButton
-                  icon="menu"
-                  label={tr("menu")}
-                  badge={count > 0}
-                  onPress={openMenu}
-                />
+                <IconButton icon="menu" label={tr("menu")} onPress={openMenu} />
               }
               title={
                 conversationTitle(historySelection?.title ?? "") || "Niaro"
@@ -2147,6 +2156,7 @@ export function Workspace({
                     onPress={() => {
                       changeSection("library");
                       setPetOpen(true);
+                      setReturnTo("chat");
                     }}
                     occupied={petOccupied}
                     visible={
@@ -2191,17 +2201,16 @@ export function Workspace({
                   <IconButton
                     icon="back"
                     label={tr("back")}
-                    onPress={() =>
-                      petOpen
-                        ? petAppearanceOpen
-                          ? setPetAppearanceOpen(false)
-                          : petScreen.nested
-                            ? petScreen.back()
-                            : setPetOpen(false)
-                        : meetingOpen
-                          ? setMeetingId(null)
-                          : changeSection("library")
-                    }
+                    onPress={() => {
+                      if (petOpen && petAppearanceOpen)
+                        setPetAppearanceOpen(false);
+                      else if (petOpen && petScreen.nested) petScreen.back();
+                      else if (petOpen) {
+                        setPetOpen(false);
+                        if (returnTo) leaveTo("library");
+                      } else if (meetingOpen) setMeetingId(null);
+                      else leaveTo("library");
+                    }}
                   />
                 ) : undefined
               }
@@ -2566,6 +2575,7 @@ export function Workspace({
                   onPetBounds={onProfilePetBounds}
                   onSave={petProfile.save}
                   onRefresh={petProfile.read}
+                  changes={petProfile.changes}
                   appearance={petAppearanceOpen}
                   onAppearance={setPetAppearanceOpen}
                   screen={petScreen}
@@ -2575,7 +2585,6 @@ export function Workspace({
                     const [kind, id] = href.slice(1).split("/");
                     if (!id) return;
                     if (kind === "chat") {
-                  changes={petProfile.changes}
                       changeSection("chat");
                       switchConversation(id);
                     } else if (kind === "meetings") {
@@ -2590,7 +2599,6 @@ export function Workspace({
                   connected={!!session}
                   onPet={() => setPetOpen(true)}
                   onMeetings={() => changeSection("meetings")}
-                  onHistory={openMenu}
                   onProcesses={() => openProcesses()}
                   onSettings={() => changeSection("more")}
                 />
@@ -2666,11 +2674,15 @@ export function Workspace({
                   // Recording needs the native app; on web the shortcut would dead-end.
                   onRecord={
                     session && Platform.OS !== "web"
-                      ? () => changeSection("meetings")
+                      ? () => {
+                          changeSection("meetings");
+                          setReturnTo("chat");
+                        }
                       : undefined
                   }
                   onTasks={() => changeSection("tasks")}
                   onProcesses={session ? () => openProcesses() : undefined}
+                  processesLabel={processesLabel}
                   onConnect={() => changeSection("more")}
                 />
               ) : (
@@ -2931,9 +2943,8 @@ export function Workspace({
           </View>
         ) : null}
         {/* While typing, the keyboard needs the room more than the tabs do. */}
-        {keyboardOpen ||
-        voice ||
-        (section === "chat" && hasConversation) ? null : (
+        {/* The tabs are the one way between sections, in a chat as well. */}
+        {keyboardOpen || voice ? null : (
           <Navigation
             section={section}
             onChange={changeSection}
@@ -3038,18 +3049,10 @@ export function Workspace({
           switchConversation("conversation-1");
           void session?.refresh();
         }}
-        onNavigate={(target) => {
+        onNavigate={() => {
           setHistoryOpen(false);
-          if (target === "pet") {
-            changeSection("library");
-            setPetOpen(true);
-          } else if (target === "search") setSearchOpen(true);
-          else if (target === "tasks" || target === "library")
-            changeSection(target);
-          else openProcesses();
+          setSearchOpen(true);
         }}
-        processesLabel={processesLabel}
-        processesDisabled={false}
       />
       {session && searchOpen ? (
         <ChatSearchScreen
@@ -3172,7 +3175,11 @@ export function Workspace({
                       chatGeneration={chatGeneration}
                       offer={(processOpen && processOffer) || undefined}
                       showTitle={false}
-                      onDone={() => setProcessOpen(false)}
+                      // "Back to chat" means it, also when opened from Library.
+                      onDone={() => {
+                        setProcessOpen(false);
+                        changeSection("chat");
+                      }}
                     />
                   )}
                   {/* Recent runs only once there are any. */}
@@ -3241,6 +3248,8 @@ export default function App() {
           attachmentId: randomUUID,
           messageResults: MOBILE_MESSAGE_RESULTS,
           generativeUi: true,
+          // Expo's fetch streams the body; the pet follows the web live.
+          streamRequest: expoFetch as unknown as typeof fetch,
         },
       ),
   );
@@ -3248,8 +3257,6 @@ export default function App() {
     connections.subscribe,
     connections.getSnapshot,
     connections.getSnapshot,
-          // Expo's fetch streams the body; the pet follows the web live.
-          streamRequest: expoFetch as unknown as typeof fetch,
   );
   const session = connection.session;
   const [error, setError] = useState<TranslationKey | null>(null);

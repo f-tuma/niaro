@@ -1,3 +1,4 @@
+import { companionCopy } from "../apps/mobile/companion-copy";
 import React from "react";
 import {
   act,
@@ -123,7 +124,12 @@ const openRunDetail = async (language: Language = "en") => {
     fireEvent.press(screen.getByRole("tab", { name: tr("chat") }));
     await flush();
   });
-  await press(tr("menu"));
+  await act(async () => {
+    fireEvent.press(
+      screen.getByRole("tab", { name: companionCopy(language).library }),
+    );
+    await flush();
+  });
   await press(tr("processesTitle"));
   await act(async () => {
     fireEvent.press(screen.getByTestId("process-run-history-TEST-parent"));
@@ -134,6 +140,11 @@ const closeProcessPanel = async (language: Language = "en") => {
   const tr = translate(language);
   await press(tr("back"));
   await press(tr("close"));
+  // Processes open from Library; the chat is one tab away.
+  await act(async () => {
+    fireEvent.press(screen.getByRole("tab", { name: tr("chat") }));
+    await flush();
+  });
 };
 const reviewSaved = async (language: Language = "en") => {
   await press(translate(language)("savedProcessApprovalReview"));

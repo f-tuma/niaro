@@ -1,3 +1,4 @@
+import { companionCopy } from "../apps/mobile/companion-copy";
 import React, { useState } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AppState } from "react-native";
@@ -147,7 +148,9 @@ function fixture(language: Language = "en", conversationId = "conversation-1") {
       await flush();
     });
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: tr("menu") }));
+      fireEvent.press(
+        screen.getByRole("tab", { name: companionCopy(language).library }),
+      );
       await flush();
     });
     await act(async () => {

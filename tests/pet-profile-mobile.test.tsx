@@ -29,7 +29,6 @@ test("Library opens the real profile without adding a root destination", () => {
       connected
       onPet={open}
       onMeetings={() => {}}
-      onHistory={() => {}}
       onProcesses={() => {}}
       onSettings={() => {}}
     />,
@@ -261,7 +260,11 @@ test("profile hero visibility follows measured bounds and section selection focu
 
 const counted: Profile = {
   ...profile,
-  settings: { ...profile.settings, jobTitle: "Product manager", department: "" },
+  settings: {
+    ...profile.settings,
+    jobTitle: "Product manager",
+    department: "",
+  },
   look: [
     { section: "work", weight: 0.5, count: 5 },
     { section: "projects", weight: 0.3, count: 3 },
@@ -326,9 +329,9 @@ test("the device shows honest per-section counts and sums them in the status lin
   expect(screen.getAllByText("5")).toHaveLength(1);
   expect(screen.queryByText("0")).toBeNull();
   await waitFor(() =>
-    expect(
-      screen.getByRole("switch", { name: "Use memory" }).props.value,
-    ).toBe(true),
+    expect(screen.getByRole("switch", { name: "Use memory" }).props.value).toBe(
+      true,
+    ),
   );
 });
 
@@ -497,11 +500,17 @@ test("the row menu runs delete and classify through the confirmed commands", asy
   await screen.findByText("Saved");
   await waitFor(() => expect(session.petMemory).toHaveBeenCalledTimes(3));
   fireEvent.press(screen.getByRole("button", { name: "More" }));
-  fireEvent.press(await screen.findByRole("button", { name: "Mark as personal" }));
+  fireEvent.press(
+    await screen.findByRole("button", { name: "Mark as personal" }),
+  );
   const classify = alert.mock.calls.at(-1)![2]!;
   await act(async () => classify[1]!.onPress!());
   expect(session.savePetMemory).toHaveBeenLastCalledWith(
-    expect.objectContaining({ type: "classify", id: "memory-1", personal: true }),
+    expect.objectContaining({
+      type: "classify",
+      id: "memory-1",
+      personal: true,
+    }),
   );
   alert.mockRestore();
 });
@@ -535,5 +544,51 @@ test("native profile follows changes made on the web", async () => {
   await waitFor(() => expect(model.profile?.revision).toBe(0));
   act(() => listeners.forEach((listener) => listener("active")));
   await waitFor(() => expect(model.profile?.settings.shape).toBe("heart"));
+  subscribe.mockRestore();
+});
+test("native profile follows the server's pet events live", async () => {
+  const state = AppState.currentState;
+  AppState.currentState = "active";
+  const subscribe = jest
+    .spyOn(AppState, "addEventListener")
+    .mockReturnValue({ remove: jest.fn() } as never);
+  let emit!: (type: "ready" | "pet") => void;
+  const changed = {
+    ...profile,
+    revision: 4,
+    settings: { ...profile.settings, shape: "cat" as const },
+  };
+  const petProfile = jest
+    .fn()
+    .mockResolvedValueOnce(profile)
+    .mockResolvedValue(changed);
+  const session = {
+    petProfile,
+    watchPet: jest.fn(
+      (onEvent: typeof emit, signal: AbortSignal) =>
+        new Promise((resolve) => {
+          emit = onEvent;
+          signal.addEventListener("abort", () => resolve("ended"));
+        }),
+    ),
+  } as unknown as ClientSession;
+  let model!: ReturnType<typeof useNativePetProfile>;
+  function Probe() {
+    const current = useNativePetProfile(session);
+    useEffect(() => {
+      model = current;
+    });
+    return null;
+  }
+  const view = render(<Probe />);
+  await waitFor(() => expect(model.profile?.revision).toBe(0));
+  // The first connect follows the initial read: nothing to catch up.
+  act(() => emit("ready"));
+  expect(petProfile).toHaveBeenCalledTimes(1);
+  act(() => emit("pet"));
+  await waitFor(() => expect(model.profile?.settings.shape).toBe("cat"));
+  expect(model.changes).toBe(1);
+  view.unmount();
+  AppState.currentState = state;
   subscribe.mockRestore();
 });

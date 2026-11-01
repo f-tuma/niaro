@@ -599,6 +599,7 @@ export function Home({
   onRecord,
   onTasks,
   onProcesses,
+  processesLabel,
   onConnect,
   compact = false,
   petVisible = true,
@@ -628,6 +629,8 @@ export function Home({
   onRecord?: () => void;
   onTasks: () => void;
   onProcesses?: () => void;
+  /** Names a saved process start waiting to be reopened. */
+  processesLabel?: string;
   onConnect: () => void;
   compact?: boolean;
   petVisible?: boolean;
@@ -762,7 +765,7 @@ export function Home({
       ? [
           {
             id: "processes",
-            label: tr("processesTitle"),
+            label: processesLabel ?? tr("processesTitle"),
             icon: "bolt" as const,
             onPress: onProcesses,
             disabled: !connected || busy,

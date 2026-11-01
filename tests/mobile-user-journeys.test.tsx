@@ -716,7 +716,11 @@ test.each([
     expect(f.capture.getSnapshot().phase).toBe("recording");
     fireEvent.press(screen.getByRole("tab", { name: "Chat" }));
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: "Menu" }));
+      fireEvent.press(
+        destination === "processes"
+          ? screen.getByRole("tab", { name: "Library" })
+          : screen.getByRole("button", { name: "Menu" }),
+      );
       await flush();
     });
     if (destination === "processes")
