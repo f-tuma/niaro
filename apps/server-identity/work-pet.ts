@@ -59,23 +59,22 @@ export function automaticPetShape(items: MemoryItem[]) {
   return strongest ? shapes[strongest[0]] : "circle";
 }
 export function petLook(items: MemoryItem[]) {
-  return (Object.keys(shapes) as (keyof typeof shapes)[]).map((section) => ({
-    section,
-    weight: Math.min(
-      1,
-      Math.sqrt(
-        items.filter(
-          (item) =>
-            item.scope === "private" &&
-            item.status === "active" &&
-            item.origin === "observed" &&
-            item.source?.type === "observed" &&
-            !item.source.personal &&
-            item.source.section === section,
-        ).length,
-      ) / Math.sqrt(12),
-    ),
-  }));
+  return (Object.keys(shapes) as (keyof typeof shapes)[]).map((section) => {
+    const count = items.filter(
+      (item) =>
+        item.scope === "private" &&
+        item.status === "active" &&
+        item.origin === "observed" &&
+        item.source?.type === "observed" &&
+        !item.source.personal &&
+        item.source.section === section,
+    ).length;
+    return {
+      section,
+      weight: Math.min(1, Math.sqrt(count) / Math.sqrt(12)),
+      count,
+    };
+  });
 }
 export class WorkPetStore {
   constructor(

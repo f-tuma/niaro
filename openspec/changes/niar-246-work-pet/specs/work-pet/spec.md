@@ -48,7 +48,12 @@ The person SHALL set the pet's name (1–40 characters) and body colour (one of 
 
 ### Requirement: Appearance reflects real work
 
-The pet SHALL show one inner colour for each profile section that has at least one work observation (each section a fixed colour), sized within fixed bounds by how many observations the section holds. Personal observations SHALL NOT change the look, and deleting observations SHALL shrink or remove their colour.
+The pet SHALL show one inner colour for each profile section that has at least one work observation (each section a fixed colour), sized within fixed bounds by how many observations the section holds. Personal observations SHALL NOT change the look, and deleting observations SHALL shrink or remove their colour. The profile SHALL carry, next to each section's weight, the count of current work observations in that section (`look[].count`), and the pet pages SHALL show these counts as plain numbers: on each section control and summed in one status line under the pet's name (`Zná 12 věcí o tvé práci`; `Ještě tě poznává` when every count is zero; `Paměť spí` when memory is off). No meter, score, streak, stage or reward SHALL be derived from them.
+
+#### Scenario: Honest counts
+
+- **WHEN** the person has 5 work observations in Work and 3 in Tools and none elsewhere
+- **THEN** the Work and Tools controls show 5 and 3, the other controls show no number, and the status line reads `Zná 8 věcí o tvé práci`
 
 #### Scenario: New section
 

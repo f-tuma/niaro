@@ -121,6 +121,10 @@ export const PetView = memo(function PetView({
     (state === "idle" || state === "resting");
 
   const dimensions = petRenderSize(size, PixelRatio.get());
+  useEffect(() => {
+    // A replaced drawing buffer shows the still fallback until its first frame.
+    setReady(false);
+  }, [dimensions.pixels]);
   const latest = useRef({
     state,
     reduced,
@@ -748,7 +752,9 @@ export const PetView = memo(function PetView({
               transform: [{ scale: dimensions.logical / dimensions.surface }],
             }}
           >
+            {/* expo-gl keeps the first drawing buffer; a new size needs a new surface. */}
             <Surface
+              key={dimensions.pixels}
               style={{ width: dimensions.surface, height: dimensions.surface }}
               onContextCreate={create}
             />

@@ -6,12 +6,17 @@ import {
   fireEvent,
   waitFor,
 } from "@testing-library/react-native";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, Alert } from "react-native";
 import { useNativePetProfile } from "../apps/mobile/pet-profile-model";
 import { useHomePetVisibility } from "../apps/mobile/home-pet-visibility";
 import { CompanionLibrary } from "../apps/mobile/CompanionLibrary";
 
-import { PetProfile } from "../apps/mobile/PetProfile";
+import {
+  PetProfile,
+  petScreenTitle,
+  usePetScreen,
+  type PetScreen,
+} from "../apps/mobile/PetProfile";
 import type { ClientSession } from "../packages/client-core/session";
 import type { PetProfile as Profile } from "../packages/protocol/work-pet";
 jest.mock("../packages/ui/gl-surface", () => ({ supportedGLView: () => null }));
@@ -48,7 +53,7 @@ const profile: Profile = {
   },
   automaticShape: "circle",
   look: ["work", "projects", "tools", "people", "style", "rhythm"].map(
-    (section) => ({ section, weight: 0 }),
+    (section) => ({ section, weight: 0, count: 0 }),
   ) as Profile["look"],
 };
 test("native actual profile reads the selected private section and retains a rejected correction", async () => {
@@ -99,10 +104,20 @@ test("native actual profile reads the selected private section and retains a rej
       }),
     ),
   );
-  fireEvent.press(await screen.findByText("Correct"));
+  await screen.findByText("Synthetic preference");
+  fireEvent.press(screen.getByRole("button", { name: "More" }));
+  fireEvent.press(await screen.findByRole("button", { name: "Correct" }));
   fireEvent.changeText(screen.getByLabelText("Edit"), "My retained correction");
-  fireEvent.press(screen.getByText("Save changes"));
+  fireEvent.press(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: "revise",
+      id: "memory-1",
+      revision: 1,
+      content: "My retained correction",
+    }),
+  );
   expect(screen.getByDisplayValue("My retained correction")).toBeTruthy();
   expect(screen.getByText(/Couldn't confirm the save/)).toBeTruthy();
 });
@@ -227,4 +242,227 @@ test("profile hero visibility follows measured bounds and section selection focu
   await waitFor(() => expect(focus).toHaveBeenCalledWith(77));
   handle.mockRestore();
   focus.mockRestore();
+});
+
+const counted: Profile = {
+  ...profile,
+  settings: { ...profile.settings, jobTitle: "Product manager", department: "" },
+  look: [
+    { section: "work", weight: 0.5, count: 5 },
+    { section: "projects", weight: 0.3, count: 3 },
+    { section: "tools", weight: 0.2, count: 2 },
+    { section: "people", weight: 0.1, count: 1 },
+    { section: "style", weight: 0.1, count: 1 },
+    { section: "rhythm", weight: 0, count: 0 },
+  ],
+};
+const memoryPage = (overrides: Record<string, unknown> = {}) => ({
+  enabled: true,
+  optOut: false,
+  personalThings: "keep",
+  version: 1,
+  items: [],
+  nextCursor: null,
+  ...overrides,
+});
+function renderPet(session: ClientSession, value: Profile = counted) {
+  return render(
+    <PetProfile
+      session={session}
+      language="en"
+      profile={value}
+      onSave={async () => value}
+      onRefresh={async () => {}}
+      appearance={false}
+      onAppearance={() => {}}
+      onOpenSource={() => {}}
+    />,
+  );
+}
+test("the device shows honest per-section counts and sums them in the status line", async () => {
+  const session = {
+    petMemory: jest.fn(async () => memoryPage()),
+  } as unknown as ClientSession;
+  renderPet(session);
+  await waitFor(() => expect(session.petMemory).toHaveBeenCalled());
+  expect(screen.getByText("Knows 12 work things")).toBeTruthy();
+  expect(screen.getByText("Product manager")).toBeTruthy();
+  const work = screen.getByRole("button", { name: "Work" });
+  expect(work.props.accessibilityValue).toEqual({ text: "5 observations" });
+  expect(
+    screen.getByRole("button", { name: "Rhythm" }).props.accessibilityValue,
+  ).toEqual({ text: "0 observations" });
+  expect(screen.getAllByText("5")).toHaveLength(1);
+  expect(screen.queryByText("0")).toBeNull();
+  expect(screen.getByRole("switch", { name: "Use memory" }).props.value).toBe(
+    true,
+  );
+});
+
+test("an empty profile says it is still learning and no number animates in", async () => {
+  const session = {
+    petMemory: jest.fn(async () => memoryPage()),
+  } as unknown as ClientSession;
+  renderPet(session, profile);
+  await waitFor(() => expect(session.petMemory).toHaveBeenCalled());
+  expect(screen.getByText("Still learning you")).toBeTruthy();
+});
+
+test("memory off puts the pet to rest with an asleep status and keeps the counts", async () => {
+  const session = {
+    petMemory: jest.fn(async () => memoryPage({ optOut: true })),
+    savePetMemory: jest.fn(async () => memoryPage({ optOut: false })),
+  } as unknown as ClientSession;
+  renderPet(session);
+  await waitFor(() => expect(screen.getByText("Memory asleep")).toBeTruthy());
+  expect(
+    screen.UNSAFE_getByProps({ label: "Niaro", interactive: true }).props.state,
+  ).toBe("resting");
+  expect(screen.getByText("5")).toBeTruthy();
+  const toggle = screen.getByRole("switch", { name: "Use memory" });
+  expect(toggle.props.value).toBe(false);
+  fireEvent(toggle, "valueChange", true);
+  await waitFor(() =>
+    expect(session.savePetMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "preference", optOut: false }),
+    ),
+  );
+});
+
+test("a section opens as a nested screen and the back path restores focus to its opener", async () => {
+  const focus = jest
+    .spyOn(AccessibilityInfo, "setAccessibilityFocus")
+    .mockImplementation(() => {});
+  jest
+    .spyOn(
+      jest.requireActual<typeof import("react-native")>("react-native"),
+      "findNodeHandle",
+    )
+    .mockImplementation((node) => (node ? 91 : null));
+  const session = {
+    petMemory: jest.fn(async (query: { section?: string }) =>
+      memoryPage({
+        items:
+          query.section === "work"
+            ? [
+                {
+                  id: "memory-1",
+                  revision: 1,
+                  content: "Leads weekly planning",
+                  origin: "observed",
+                  status: "active",
+                  trust: "model_inference",
+                  seenAt: new Date().toISOString(),
+                  createdAt: new Date().toISOString(),
+                  source: {
+                    type: "observed",
+                    section: "work",
+                    personal: false,
+                    sources: [],
+                  },
+                },
+              ]
+            : [],
+      }),
+    ),
+  } as unknown as ClientSession;
+  let petScreen!: PetScreen;
+  function Probe() {
+    petScreen = usePetScreen();
+    return (
+      <PetProfile
+        session={session}
+        language="en"
+        profile={counted}
+        onSave={async () => counted}
+        onRefresh={async () => {}}
+        appearance={false}
+        onAppearance={() => {}}
+        onOpenSource={() => {}}
+        screen={petScreen}
+      />
+    );
+  }
+  render(<Probe />);
+  await waitFor(() => expect(session.petMemory).toHaveBeenCalled());
+  expect(petScreenTitle(petScreen, "en")).toBe("You and Niaro");
+  fireEvent.press(screen.getByRole("button", { name: "Work" }));
+  expect(petScreenTitle(petScreen, "en")).toBe("Work");
+  expect(await screen.findByText("Leads weekly planning")).toBeTruthy();
+  expect(screen.getByText(/5 observations · last today/)).toBeTruthy();
+  expect(screen.getByText("Observation · last today")).toBeTruthy();
+  expect(screen.getByRole("radio", { name: "Personal" })).toBeTruthy();
+  await waitFor(() => expect(focus).toHaveBeenCalledTimes(1));
+  focus.mockClear();
+  act(() => {
+    expect(petScreen.back()).toBe(true);
+  });
+  expect(petScreenTitle(petScreen, "en")).toBe("You and Niaro");
+  await waitFor(() => expect(focus).toHaveBeenCalledWith(91));
+  expect(screen.getByRole("button", { name: "Work" })).toBeTruthy();
+  expect(petScreen.back()).toBe(false);
+  jest.restoreAllMocks();
+});
+
+test("the row menu runs delete and classify through the confirmed commands", async () => {
+  const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  const item = {
+    id: "memory-1",
+    revision: 3,
+    content: "Writes specs in Notion",
+    origin: "observed",
+    status: "active",
+    trust: "model_inference",
+    seenAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    source: { type: "observed", section: "work", personal: false, sources: [] },
+  };
+  const session = {
+    petMemory: jest.fn(async () => memoryPage({ items: [item] })),
+    savePetMemory: jest.fn(async () => memoryPage({ items: [] })),
+  } as unknown as ClientSession;
+  let petScreen!: PetScreen;
+  function Probe() {
+    petScreen = usePetScreen();
+    return (
+      <PetProfile
+        session={session}
+        language="en"
+        profile={counted}
+        onSave={async () => counted}
+        onRefresh={async () => {}}
+        appearance={false}
+        onAppearance={() => {}}
+        onOpenSource={() => {}}
+        screen={petScreen}
+      />
+    );
+  }
+  render(<Probe />);
+  act(() => petScreen.setView({ kind: "section", section: "work" }));
+  await screen.findByText("Writes specs in Notion");
+  fireEvent.press(screen.getByRole("button", { name: "More" }));
+  fireEvent.press(await screen.findByRole("button", { name: "Delete" }));
+  expect(alert).toHaveBeenLastCalledWith(
+    "Delete this memory and its earlier versions?",
+    undefined,
+    expect.arrayContaining([
+      expect.objectContaining({ text: "Delete", style: "destructive" }),
+    ]),
+  );
+  const buttons = alert.mock.calls.at(-1)![2]!;
+  await act(async () => buttons[1]!.onPress!());
+  expect(session.savePetMemory).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "forget", id: "memory-1", revision: 3 }),
+  );
+  await screen.findByText("Saved");
+  await waitFor(() => expect(session.petMemory).toHaveBeenCalledTimes(3));
+  fireEvent.press(screen.getByRole("button", { name: "More" }));
+  fireEvent.press(await screen.findByRole("button", { name: "Mark as personal" }));
+  const classify = alert.mock.calls.at(-1)![2]!;
+  await act(async () => classify[1]!.onPress!());
+  expect(session.savePetMemory).toHaveBeenLastCalledWith(
+    expect.objectContaining({ type: "classify", id: "memory-1", personal: true }),
+  );
+  alert.mockRestore();
 });

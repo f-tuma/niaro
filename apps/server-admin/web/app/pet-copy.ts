@@ -61,6 +61,20 @@ export const petCopy = (language: "en" | "cs") =>
           "Odstranit všechny osobní poznatky včetně předchozích verzí? Výslovně uložené vzpomínky zůstanou.",
         classify: "Označit jako osobní",
         classifyWork: "Označit jako pracovní",
+        statusKnows: (n: number) =>
+          `Zná ${n} ${n === 1 ? "věc" : n >= 2 && n <= 4 ? "věci" : "věcí"} o tvé práci`,
+        statusKnowsSections: "Zná tvou práci a nástroje",
+        statusEmpty: "Ještě tě poznává",
+        statusAsleep: "Paměť spí",
+        statusError: "Nepodařilo se načíst",
+        lastSeen: (relative: string) => `naposledy ${relative}`,
+        countLabel: (n: number) =>
+          `${n} ${n === 1 ? "poznatek" : n >= 2 && n <= 4 ? "poznatky" : "poznatků"}`,
+        sourcesCount: (n: number) => `Zdroje (${n})`,
+        relative: (days: number) =>
+          days <= 0 ? "dnes" : days === 1 ? "včera" : `před ${days} dny`,
+        sections: "Oblasti",
+        more: "Možnosti",
         shapes: [
           "Kruh",
           "Pilulka",
@@ -133,6 +147,20 @@ export const petCopy = (language: "en" | "cs") =>
           "Erase all personal observations and their earlier versions? Explicitly saved memories remain.",
         classify: "Mark as personal",
         classifyWork: "Mark as work",
+        statusKnows: (n: number) =>
+          `Knows ${n} work ${n === 1 ? "thing" : "things"}`,
+        statusKnowsSections: "Knows your work, tools",
+        statusEmpty: "Still learning you",
+        statusAsleep: "Memory asleep",
+        statusError: "Couldn't load",
+        lastSeen: (relative: string) => `last ${relative}`,
+        countLabel: (n: number) =>
+          `${n} ${n === 1 ? "observation" : "observations"}`,
+        sourcesCount: (n: number) => `Sources (${n})`,
+        relative: (days: number) =>
+          days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`,
+        sections: "Sections",
+        more: "Options",
         shapes: [
           "Circle",
           "Pill",

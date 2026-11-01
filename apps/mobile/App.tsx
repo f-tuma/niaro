@@ -1,6 +1,11 @@
-import { PetProfile } from "./PetProfile";
+import {
+  PetProfile,
+  PetTopBarActions,
+  petMenu,
+  petScreenTitle,
+  usePetScreen,
+} from "./PetProfile";
 import { useNativePetProfile, nativePetAppearance } from "./pet-profile-model";
-import { petCopy } from "./pet-profile-copy";
 import {
   useMobileComposerMentions,
   MobileMentionSuggestions,
@@ -349,15 +354,23 @@ export function Workspace({
     [publishProfileBounds],
   );
   const petProfile = useNativePetProfile(session);
+  const petScreen = usePetScreen();
   const [petScreenOwner, setPetScreenOwner] = useState<ClientSession | null>(
     null,
   );
   const petOpen = !!session && petScreenOwner === session;
-  const setPetOpen = useCallback(
-    (open: boolean) => setPetScreenOwner(open ? session : null),
-    [session],
-  );
   const [petAppearanceOpen, setPetAppearanceOpen] = useState(false);
+  const [petManageOpen, setPetManageOpen] = useState(false);
+  const setPetOpen = useCallback(
+    (open: boolean) => {
+      setPetScreenOwner(open ? session : null);
+      if (!open) {
+        petScreen.reset();
+        setPetManageOpen(false);
+      }
+    },
+    [session, petScreen],
+  );
   const petLook = useMemo(
     () =>
       petProfile.profile ? nativePetAppearance(petProfile.profile) : undefined,
@@ -547,6 +560,7 @@ export function Workspace({
           setSelectedProcessRunId(null);
         else if (processOpen) setProcessOpen(false);
         else if (petOpen && petAppearanceOpen) setPetAppearanceOpen(false);
+        else if (petOpen && petScreen.nested) petScreen.back();
         else if (petOpen) setPetOpen(false);
         else if (meetingOpen) setMeetingId(null);
         else if (section === "meetings" || section === "more")
@@ -563,6 +577,7 @@ export function Workspace({
     selectedProcessRunId,
     petOpen,
     petAppearanceOpen,
+    petScreen,
     setPetOpen,
     section,
     setSection,
@@ -2175,7 +2190,9 @@ export function Workspace({
                       petOpen
                         ? petAppearanceOpen
                           ? setPetAppearanceOpen(false)
-                          : setPetOpen(false)
+                          : petScreen.nested
+                            ? petScreen.back()
+                            : setPetOpen(false)
                         : meetingOpen
                           ? setMeetingId(null)
                           : changeSection("library")
@@ -2185,7 +2202,7 @@ export function Workspace({
               }
               title={
                 petOpen
-                  ? petCopy(language).title
+                  ? petScreenTitle(petScreen, language)
                   : section === "library"
                     ? companionCopy(language).library
                     : section === "tasks"
@@ -2195,10 +2212,15 @@ export function Workspace({
               subtitle={statusLine}
               trailing={
                 petOpen ? (
-                  <IconButton
-                    icon="settings"
-                    label={petCopy(language).appearance}
-                    onPress={() => setPetAppearanceOpen(true)}
+                  <PetTopBarActions
+                    screen={petScreen}
+                    language={language}
+                    onMenu={() =>
+                      petMenu(language, {
+                        manage: () => setPetManageOpen(true),
+                        appearance: () => setPetAppearanceOpen(true),
+                      })
+                    }
                   />
                 ) : session && section === "tasks" ? (
                   <IconButton
@@ -2550,6 +2572,9 @@ export function Workspace({
                   onRefresh={petProfile.read}
                   appearance={petAppearanceOpen}
                   onAppearance={setPetAppearanceOpen}
+                  screen={petScreen}
+                  manage={petManageOpen}
+                  onManage={setPetManageOpen}
                   onOpenSource={(href) => {
                     const [kind, id] = href.slice(1).split("/");
                     if (!id) return;

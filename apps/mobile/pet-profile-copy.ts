@@ -55,6 +55,13 @@ export const petCopy = (language: "en" | "cs") =>
         unavailable: "Paměť není dostupná",
         manager: "Správa paměti",
         savedStatus: "Uloženo",
+        more: "Více",
+        statusEmpty: "Ještě tě poznává",
+        statusAsleep: "Paměť spí",
+        statusError: "Nepodařilo se načíst",
+        statusKnowsSections: "Zná tvou práci a nástroje",
+        today: "dnes",
+        yesterday: "včera",
         personalKeep: "Uchovávat osobní poznatky",
         personalDrop: "Odstranit osobní poznatky",
         dropHint:
@@ -127,6 +134,13 @@ export const petCopy = (language: "en" | "cs") =>
         unavailable: "Memory unavailable",
         manager: "Manage memory",
         savedStatus: "Saved",
+        more: "More",
+        statusEmpty: "Still learning you",
+        statusAsleep: "Memory asleep",
+        statusError: "Couldn't load",
+        statusKnowsSections: "Knows your work, tools",
+        today: "today",
+        yesterday: "yesterday",
         personalKeep: "Keep personal observations",
         personalDrop: "Drop personal observations",
         dropHint:
@@ -144,3 +158,47 @@ export const petCopy = (language: "en" | "cs") =>
           "Pebble",
         ],
       };
+
+/** Czech counts: 1 věc · 2–4 věci · 5+ věcí; English keeps one plural. */
+export const petPlural = (
+  language: "en" | "cs",
+  n: number,
+  forms: readonly [one: string, few: string, many: string],
+) =>
+  n === 1
+    ? forms[0]
+    : language === "cs" && n >= 2 && n <= 4
+      ? forms[1]
+      : forms[2];
+/** Calendar days between `iso` and now: dnes · včera · před N dny. */
+export function petRelative(
+  language: "en" | "cs",
+  iso: string,
+  now: Date = new Date(),
+) {
+  const then = new Date(iso);
+  const day = (d: Date) =>
+    Math.floor(
+      new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 864e5,
+    );
+  const days = Math.max(0, day(now) - day(then));
+  const c = petCopy(language);
+  if (days === 0) return c.today;
+  if (days === 1) return c.yesterday;
+  return language === "cs" ? `před ${days} dny` : `${days} days ago`;
+}
+/** The new short device strings from the brief, with their plurals. */
+export const petFormat = (language: "en" | "cs") => ({
+  statusKnows: (n: number) =>
+    language === "cs"
+      ? `Zná ${n} ${petPlural(language, n, ["věc", "věci", "věcí"])} o tvé práci`
+      : `Knows ${n} work ${petPlural(language, n, ["thing", "things", "things"])}`,
+  countLabel: (n: number) =>
+    language === "cs"
+      ? `${n} ${petPlural(language, n, ["poznatek", "poznatky", "poznatků"])}`
+      : `${n} ${petPlural(language, n, ["observation", "observations", "observations"])}`,
+  lastSeen: (iso: string, now?: Date) =>
+    `${language === "cs" ? "naposledy" : "last"} ${petRelative(language, iso, now)}`,
+  sourcesCount: (n: number) =>
+    language === "cs" ? `Zdroje (${n})` : `Sources (${n})`,
+});

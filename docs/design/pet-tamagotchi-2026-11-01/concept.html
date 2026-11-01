@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pet device concept</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Dark theme tokens copied from apps/server-admin/web/style.css (.dark) */
+  :root {
+    --background: #141518; --foreground: #ececef;
+    --card: #1b1c20; --card-foreground: #e9eaec;
+    --primary: #7d98f0; --primary-foreground: #0e1426;
+    --secondary: #1e1f23; --muted: #212226; --muted-foreground: #9b9ea6;
+    --accent: #2a2b30; --accent-foreground: #e9eaec;
+    --destructive: #f07079; --border: #2c2d32; --input: #3c3e44; --ring: #7d98f0;
+    --sidebar: #0b0c0e; --sidebar-accent: #1a1b1f;
+    --radius: 0.5rem;
+    --radius-2xl: calc(var(--radius) * 1.8); --radius-3xl: calc(var(--radius) * 2.2); --radius-4xl: calc(var(--radius) * 2.6);
+    --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+    /* mobile tokens from packages/design-tokens */
+    --m-surface: #1D1F23; --m-fill: #24262B; --m-border: #35373E; --m-soft-blue: #252F4A; --m-link: #9AAFFF; --m-secondary: #A3A7B2;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0a0a0c; color: var(--foreground); font-family: var(--font-sans); font-size: 14px; line-height: 1.35; padding: 24px 16px 64px; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .lead { color: var(--muted-foreground); margin: 0 0 24px; max-width: 70ch; }
+  .frames { display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 8px; }
+  .frame > .cap { color: var(--muted-foreground); font-size: 12px; }
+  svg.i { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* ---------- device ---------- */
+  .shell { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-4xl); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .screen { position: relative; background: var(--background); box-shadow: inset 0 0 0 1px var(--border); border-radius: var(--radius-3xl); padding: 20px 16px 16px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; }
+  .screen .name { font-size: 20px; font-weight: 600; margin-top: 8px; }
+  .screen .about, .screen .status { font-size: 14px; color: var(--muted-foreground); }
+  .screen .status { color: var(--foreground); opacity: .85; }
+  .light { position: absolute; top: 12px; right: 12px; display: flex; align-items: center; gap: 6px; color: var(--muted-foreground); }
+  .switch { width: 34px; height: 20px; border-radius: 999px; background: var(--primary); position: relative; }
+  .switch::after { content: ""; position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--primary-foreground); }
+  .switch.off { background: var(--input); } .switch.off::after { right: auto; left: 2px; background: var(--foreground); }
+  .pet { border-radius: 50%; background: radial-gradient(circle at 38% 32%, #8a82b8 0, #5B537D 45%, #333042 100%); box-shadow: 0 18px 30px -16px #000; position: relative; }
+  .pet.rest { filter: saturate(.6) brightness(.85); }
+  .pet .face { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 14%; }
+  .pet .eye { width: 9%; height: 13%; background: #120F1A; border-radius: 50%; }
+  .pet.rest .eye { height: 3%; border-radius: 999px; }
+  .icons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .well { min-width: 48px; height: 48px; padding: 0 10px; border-radius: 12px; background: var(--secondary); border: 1px solid transparent; display: inline-flex; align-items: center; gap: 6px; color: var(--foreground); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .well .n { color: var(--muted-foreground); }
+  .well.on { background: var(--accent); border-color: var(--primary); color: var(--primary); }
+  .well.dot::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+  .keys { display: flex; gap: 8px; flex-wrap: wrap; }
+  .key { height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border); display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; }
+  .shell.compact { flex-direction: row; align-items: center; gap: 12px; padding: 10px 12px; }
+  .shell.compact .screen { flex-direction: row; text-align: left; padding: 8px 10px; gap: 10px; flex: 1; }
+  .shell.compact .name { margin: 0; font-size: 16px; }
+  .shell.compact .status { font-size: 13px; }
+
+  /* ---------- list / status screen ---------- */
+  .list { display: flex; flex-direction: column; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; height: 40px; }
+  .seg span { padding: 0 14px; display: inline-flex; align-items: center; font-weight: 500; }
+  .seg span.on { background: var(--accent); color: var(--primary); }
+  .row { padding: 14px 0; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 1fr 44px; gap: 4px 8px; }
+  .row .txt { font-size: 15px; grid-column: 1; }
+  .row .meta { color: var(--muted-foreground); font-size: 13px; grid-column: 1; }
+  .row .src { color: var(--muted-foreground); font-size: 13px; display: flex; align-items: center; gap: 4px; grid-column: 1; }
+  .row .more { grid-column: 2; grid-row: 1 / 4; display: flex; align-items: flex-start; justify-content: center; padding-top: 2px; color: var(--muted-foreground); }
+  .rowhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0 12px; }
+  .rowhead h2 { font-size: 20px; font-weight: 600; margin: 0; }
+  .rowhead .sub { color: var(--muted-foreground); font-size: 13px; }
+  .btn { height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: 12px; display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
+  .btn.icon { width: 40px; padding: 0; justify-content: center; }
+  .btn.icon.on { background: var(--accent); border-color: var(--primary); color: var(--primary); }
+  .btn.primary { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+  .live { color: var(--muted-foreground); font-size: 13px; }
+
+  /* ---------- mobile frame ---------- */
+  .phone { width: 360px; min-height: 720px; background: var(--background); border-radius: 28px; border: 1px solid var(--border); padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 16px; }
+  .topbar { display: flex; align-items: center; gap: 8px; height: 44px; }
+  .topbar .t { font-size: 20px; font-weight: 600; flex: 1; }
+  .topbar .ib { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted-foreground); }
+  .phone .shell { background: var(--m-surface); border-color: var(--m-border); border-radius: 24px; }
+  .phone .screen { border-radius: 16px; }
+  .phone .well { background: var(--m-fill); }
+  .phone .well.on { background: var(--m-soft-blue); color: var(--m-link); border-color: transparent; }
+
+  /* ---------- desktop frame ---------- */
+  .desk { width: 1180px; height: 780px; background: var(--background); border: 1px solid var(--border); border-radius: 12px; display: grid; grid-template-columns: 232px 1fr; overflow: hidden; }
+  .side { background: var(--sidebar); padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted-foreground); }
+  .side .it { padding: 7px 10px; border-radius: 8px; display: flex; gap: 8px; align-items: center; }
+  .side .it.on { background: var(--sidebar-accent); color: var(--foreground); }
+  .side .grp { margin-top: 14px; font-size: 11px; padding: 0 10px; }
+  .page { padding: 28px 40px; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .ph { display: flex; align-items: center; justify-content: space-between; }
+  .ph h1 { font-size: 24px; margin: 0; }
+  .ph .act { display: flex; gap: 10px; }
+  .center { display: flex; justify-content: center; padding-top: 4px; }
+  .center .shell { width: 480px; }
+  .split { display: grid; grid-template-columns: 360px minmax(0, 640px); gap: 40px; align-items: start; }
+  .split .shell { position: sticky; top: 0; }
+  .split .shell .icons { gap: 6px; }
+  .split .shell .well { min-width: 0; flex: 1 1 30%; height: 44px; justify-content: center; }
+</style>
+</head>
+<body>
+<h1>Pet as a little device — static concept</h1>
+<p class="lead">Dark theme tokens from <code>style.css</code>; the circle is a placeholder for the existing <code>PetView</code>. Counts are
+observations stored per section (honest data), the ☾ switch is “Používat paměť”. No meters, no scores. See <code>brief.md</code>.</p>
+
+<!-- icon sprite (lucide) -->
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="briefcase" viewBox="0 0 24 24"><path d="M12 12h.01"/><path d="M16 6V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M22 13a18.15 18.15 0 0 1-20 0"/><rect width="20" height="14" x="2" y="6" rx="2"/></symbol>
+  <symbol id="workflow" viewBox="0 0 24 24"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></symbol>
+  <symbol id="wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></symbol>
+  <symbol id="people" viewBox="0 0 24 24"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></symbol>
+  <symbol id="style" viewBox="0 0 24 24"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6h4"/></symbol>
+  <symbol id="bookmark" viewBox="0 0 24 24"><path d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z"/></symbol>
+  <symbol id="user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></symbol>
+  <symbol id="palette" viewBox="0 0 24 24"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+  <symbol id="moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></symbol>
+  <symbol id="history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+  <symbol id="back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+</svg>
+
+<div class="frames">
+
+<!-- ================= MOBILE OVERVIEW ================= -->
+<div class="frame">
+  <div class="cap">Mobile 360 dp — overview</div>
+  <div class="phone">
+    <div class="topbar"><span class="ib"><svg class="i"><use href="#back"/></svg></span><span class="t">Ty a Niaro</span><span class="ib"><svg class="i"><use href="#more"/></svg></span></div>
+    <div class="shell">
+      <div class="screen">
+        <div class="light" aria-label="Používat paměť"><svg class="i"><use href="#moon"/></svg><span class="switch"></span></div>
+        <div class="pet" style="width:200px;height:200px"><div class="face"><span class="eye"></span><span class="eye"></span></div></div>
+        <div class="name">Niaro</div>
+        <div class="about">Produktový manažer · Vývoj</div>
+        <div class="status">Zná 12 věcí o tvé práci</div>
+      </div>
+      <div class="icons" role="group" aria-label="Poznatky">
+        <span class="well" aria-label="Práce, 5 poznatků"><svg class="i"><use href="#briefcase"/></svg><span class="n">5</span></span>
+        <span class="well"><svg class="i"><use href="#workflow"/></svg><span class="n">3</span></span>
+        <span class="well"><svg class="i"><use href="#wrench"/></svg><span class="n">2</span></span>
+        <span class="well"><svg class="i"><use href="#people"/></svg><span class="n">1</span></span>
+        <span class="well"><svg class="i"><use href="#style"/></svg><span class="n">1</span></span>
+        <span class="well"><svg class="i"><use href="#clock"/></svg></span>
+      </div>
+      <div class="keys">
+        <span class="key"><svg class="i"><use href="#bookmark"/></svg>Uložené</span>
+        <span class="key"><svg class="i"><use href="#user"/></svg>O tobě</span>
+        <span class="key"><svg class="i"><use href="#palette"/></svg>Vzhled</span>
+      </div>
+    </div>
+    <div class="live" role="status">Uloženo</div>
+  </div>
+</div>
+
+<!-- ================= MOBILE SECTION ================= -->
+<div class="frame">
+  <div class="cap">Mobile 360 dp — section screen (Práce)</div>
+  <div class="phone">
+    <div class="topbar"><span class="ib"><svg class="i"><use href="#back"/></svg></span><span class="t">Práce</span><span class="btn icon on" aria-pressed="true" aria-label="Předchozí verze"><svg class="i"><use href="#history"/></svg></span><span class="ib"><svg class="i"><use href="#more"/></svg></span></div>
+    <div class="shell compact">
+      <div class="screen">
+        <div class="pet" style="width:56px;height:56px"><div class="face"><span class="eye"></span><span class="eye"></span></div></div>
+        <div><div class="name">Niaro</div><div class="status">5 poznatků · naposledy včera</div></div>
+      </div>
+    </div>
+    <div class="seg"><span class="on">Pracovní</span><span>Osobní</span></div>
+    <div class="list">
+      <div class="row"><div class="txt">Vede týdenní plánování týmu a připravuje agendu předem.</div><div class="more"><svg class="i"><use href="#more"/></svg></div><div class="meta">Pozorování · naposledy včera</div><div class="src"><svg class="i" style="width:14px;height:14px"><use href="#down"/></svg> Zdroje (2)</div></div>
+      <div class="row"><div class="txt">Píše specifikace v Notionu, než je sdílí s vývojem.</div><div class="more"><svg class="i"><use href="#more"/></svg></div><div class="meta">Pozorování · naposledy před 3 dny</div><div class="src"><svg class="i" style="width:14px;height:14px"><use href="#down"/></svg> Zdroje (1)</div></div>
+      <div class="row"><div class="txt">Pracuje na kvartálním plánu produktu.</div><div class="more"><svg class="i"><use href="#more"/></svg></div><div class="meta">Pozorování · Předchozí verze</div><div class="src"><svg class="i" style="width:14px;height:14px"><use href="#down"/></svg> Zdroje (1) · Zdroj odstraněn</div></div>
+    </div>
+    <span class="btn" style="align-self:flex-start">Další</span>
+  </div>
+</div>
+
+<!-- ================= MOBILE MEMORY OFF / EMPTY ================= -->
+<div class="frame">
+  <div class="cap">Mobile — memory off (left) and empty (right), screens only</div>
+  <div style="display:flex;gap:16px">
+    <div class="phone" style="min-height:0;width:300px">
+      <div class="shell"><div class="screen">
+        <div class="light"><svg class="i"><use href="#moon"/></svg><span class="switch off"></span></div>
+        <div class="pet rest" style="width:160px;height:160px"><div class="face"><span class="eye"></span><span class="eye"></span></div></div>
+        <div class="name">Niaro</div><div class="status">Paměť spí</div>
+      </div>
+      <div class="icons"><span class="well"><svg class="i"><use href="#briefcase"/></svg><span class="n">5</span></span><span class="well"><svg class="i"><use href="#workflow"/></svg><span class="n">3</span></span><span class="well"><svg class="i"><use href="#wrench"/></svg><span class="n">2</span></span></div></div>
+    </div>
+    <div class="phone" style="min-height:0;width:300px">
+      <div class="shell"><div class="screen">
+        <div class="light"><svg class="i"><use href="#moon"/></svg><span class="switch"></span></div>
+        <div class="pet" style="width:160px;height:160px"><div class="face"><span class="eye"></span><span class="eye"></span></div></div>
+        <div class="name">Niaro</div><div class="status">Ještě tě poznává</div>
+      </div>
+      <div class="icons"><span class="well"><svg class="i"><use href="#briefcase"/></svg></span><span class="well"><svg class="i"><use href="#workflow"/></svg></span><span class="well"><svg class="i"><use href="#wrench"/></svg></span></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= DESKTOP OVERVIEW ================= -->
+<div class="frame">
+  <div class="cap">Web desktop 1180 px — overview</div>
+  <div class="desk">
+    <div class="side">
+      <div class="it">Overview</div><div class="it">New chat</div><div class="it">Search</div>
+      <div class="grp"></div><div class="it">Tasks</div><div class="it">Meetings</div><div class="it">Processes</div><div class="it">Skills</div><div class="it">Connections</div><div class="it on">Pet</div>
+      <div class="grp">Previous 7 days</div><div class="it">How many companies in o…</div><div class="it">Kolik lidí v CRM…</div>
+    </div>
+    <div class="page">
+      <div class="ph"><h1>Ty a Niaro</h1><div class="act"><span class="btn"><svg class="i"><use href="#palette"/></svg>Vzhled</span><span class="btn icon"><svg class="i"><use href="#more"/></svg></span></div></div>
+      <div class="center">
+        <div class="shell">
+          <div class="screen">
+            <div class="light"><svg class="i"><use href="#moon"/></svg><span class="switch"></span></div>
+            <div class="pet" style="width:280px;height:280px"><div class="face"><span class="eye"></span><span class="eye"></span></div></div>
+            <div class="name">Niaro</div>
+            <div class="about">Produktový manažer · Vývoj</div>
+            <div class="status">Zná 12 věcí o tvé práci</div>
+          </div>
+          <div class="icons">
+            <span class="well"><svg class="i"><use href="#briefcase"/></svg><span class="n">5</span></span>
+            <span class="well"><svg class="i"><use href="#workflow"/></svg><span class="n">3</span></span>
+            <span class="well"><svg class="i"><use href="#wrench"/></svg><span class="n">2</span></span>
+            <span class="well"><svg class="i"><use href="#people"/></svg><span class="n">1</span></span>
+            <span class="well"><svg class="i"><use href="#style"/></svg><span class="n">1</span></span>
+            <span class="well"><svg class="i"><use href="#clock"/></svg></span>
+          </div>
+          <div class="keys"><span class="key"><svg class="i"><use href="#bookmark"/></svg>Uložené</span><span class="key"><svg class="i"><use href="#user"/></svg>O tobě</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= DESKTOP SECTION ================= -->
+<div class="frame">
+  <div class="cap">Web desktop 1180 px — section open (Práce): device docks left, status screen right</div>
+  <div class="desk">
+    <div class="side">
+      <div class="it">Overview</div><div class="it">New chat</div><div class="it">Search</div>
+      <div class="grp"></div><div class="it">Tasks</div><div class="it">Meetings</div><div class="it">Processes</div><div class="it">Skills</div><div class="it">Connections</div><div class="it on">Pet</div>
+      <div class="grp">Previous 7 days</div><div class="it">How many companies in o…</div><div class="it">Kolik lidí v CRM…</div>
+    </div>
+    <div class="page">
+      <div class="ph"><h1>Ty a Niaro</h1><div class="act"><span class="btn"><svg class="i"><use href="#palette"/></svg>Vzhled</span><span class="btn icon"><svg class="i"><use href="#more"/></svg></span></div></div>
+      <div class="split">
+        <div class="shell">
+          <div class="screen">
+            <div class="light"><svg class="i"><use href="#moon"/></svg><span class="switch"></span></div>
+            <div class="pet" style="width:160px;height:160px"><div class="face"><span class="eye"></span><span class="eye"></span></div></div>
+            <div class="name">Niaro</div>
+            <div class="status">Zná 12 věcí o tvé práci</div>
+          </div>
+          <div class="icons">
+            <span class="well on" aria-pressed="true"><svg class="i"><use href="#briefcase"/></svg><span class="n">5</span></span>
+            <span class="well"><svg class="i"><use href="#workflow"/></svg><span class="n">3</span></span>
+            <span class="well"><svg class="i"><use href="#wrench"/></svg><span class="n">2</span></span>
+            <span class="well"><svg class="i"><use href="#people"/></svg><span class="n">1</span></span>
+            <span class="well"><svg class="i"><use href="#style"/></svg><span class="n">1</span></span>
+            <span class="well"><svg class="i"><use href="#clock"/></svg></span>
+          </div>
+          <div class="keys"><span class="key"><svg class="i"><use href="#bookmark"/></svg>Uložené</span><span class="key"><svg class="i"><use href="#user"/></svg>O tobě</span></div>
+        </div>
+        <div class="list">
+          <div class="rowhead"><div><h2>Práce</h2><div class="sub">5 poznatků · naposledy včera</div></div><div style="display:flex;gap:8px;align-items:center"><span class="seg"><span class="on">Pracovní</span><span>Osobní</span></span><span class="btn icon" aria-pressed="false" aria-label="Předchozí verze"><svg class="i"><use href="#history"/></svg></span></div></div>
+          <div class="row"><div class="txt">Vede týdenní plánování týmu a připravuje agendu předem.</div><div class="more"><svg class="i"><use href="#more"/></svg></div><div class="meta">Pozorování · naposledy včera</div><div class="src"><svg class="i" style="width:14px;height:14px"><use href="#down"/></svg> Zdroje (2)</div></div>
+          <div class="row"><div class="txt">Píše specifikace v Notionu, než je sdílí s vývojem.</div><div class="more"><svg class="i"><use href="#more"/></svg></div><div class="meta">Pozorování · naposledy před 3 dny</div><div class="src"><svg class="i" style="width:14px;height:14px"><use href="#down"/></svg> Zdroje (1)</div></div>
+          <div class="row"><div class="txt">Preferuje krátké stand-upy, delší plánování ve čtvrtek.</div><div class="more"><svg class="i"><use href="#more"/></svg></div><div class="meta">Pozorování · naposledy před týdnem</div><div class="src"><svg class="i" style="width:14px;height:14px"><use href="#down"/></svg> Zdroje (3)</div></div>
+          <div class="row"><div class="txt">Pracuje na kvartálním plánu produktu.</div><div class="more"><svg class="i"><use href="#more"/></svg></div><div class="meta">Pozorování · naposledy před 2 týdny</div><div class="src"><svg class="i" style="width:14px;height:14px"><use href="#down"/></svg> Zdroje (1)</div></div>
+          <span class="btn" style="align-self:flex-start;margin-top:12px">Další</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

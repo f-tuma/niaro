@@ -78,6 +78,12 @@ import BookOpen from "lucide-react-native/icons/book-open";
 import PawPrint from "lucide-react-native/icons/paw-print";
 import Briefcase from "lucide-react-native/icons/briefcase";
 import ArchiveRestore from "lucide-react-native/icons/archive-restore";
+import Workflow from "lucide-react-native/icons/workflow";
+import Wrench from "lucide-react-native/icons/wrench";
+import UsersRound from "lucide-react-native/icons/users-round";
+import Bookmark from "lucide-react-native/icons/bookmark";
+import Palette from "lucide-react-native/icons/palette";
+import Moon from "lucide-react-native/icons/moon";
 import { tokens as t } from "../design-tokens";
 import { useCompanionTypography } from "./typography";
 import { Entrance, MotionPressable } from "./motion";
@@ -545,6 +551,12 @@ const icons = {
   record: Circle,
   archive: Archive,
   restore: ArchiveRestore,
+  workflow: Workflow,
+  wrench: Wrench,
+  people: UsersRound,
+  bookmark: Bookmark,
+  palette: Palette,
+  moon: Moon,
 } as const;
 export type IconName = keyof typeof icons;
 export function Icon({

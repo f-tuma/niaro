@@ -3,11 +3,80 @@ import TestRenderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PetPage } from "../apps/server-admin/web/app/pet-page";
 jest.mock("../apps/server-admin/web/components/console/forms", () => ({
-  MoreActions: () => null,
+  MoreActions: ({ children }: { children: React.ReactNode }) => (
+    <div data-menu>{children}</div>
+  ),
 }));
 jest.mock("../apps/server-admin/web/components/ui/dropdown-menu", () => ({
-  DropdownMenuItem: () => null,
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+    asChild,
+  }: {
+    children: React.ReactNode;
+    onSelect?: () => void;
+    asChild?: boolean;
+  }) => (asChild ? children : <button onClick={onSelect}>{children}</button>),
+  DropdownMenuSeparator: () => null,
 }));
+jest.mock("../apps/server-admin/web/components/ui/sheet", () => {
+  const Box = ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  );
+  return {
+    Sheet: ({
+      open,
+      children,
+    }: {
+      open: boolean;
+      children: React.ReactNode;
+    }) => (open ? <div role="dialog">{children}</div> : null),
+    SheetContent: Box,
+    SheetHeader: Box,
+    SheetFooter: Box,
+    SheetTitle: ({ children }: { children: React.ReactNode }) => (
+      <h2>{children}</h2>
+    ),
+  };
+});
+jest.mock("../apps/server-admin/web/components/ui/alert-dialog", () => {
+  const Box = ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  );
+  const Action = ({
+    children,
+    onClick,
+    disabled,
+  }: {
+    children: React.ReactNode;
+    onClick?: (event: { preventDefault(): void }) => void;
+    disabled?: boolean;
+  }) => (
+    <button disabled={disabled} onClick={onClick}>
+      {children}
+    </button>
+  );
+  return {
+    AlertDialog: ({
+      open,
+      children,
+    }: {
+      open: boolean;
+      children: React.ReactNode;
+    }) => (open ? <div role="alertdialog">{children}</div> : null),
+    AlertDialogContent: Box,
+    AlertDialogHeader: Box,
+    AlertDialogFooter: Box,
+    AlertDialogTitle: ({ children }: { children: React.ReactNode }) => (
+      <p>{children}</p>
+    ),
+    AlertDialogDescription: ({ children }: { children: React.ReactNode }) => (
+      <p>{children}</p>
+    ),
+    AlertDialogAction: Action,
+    AlertDialogCancel: Action,
+  };
+});
 const mockApi = jest.fn();
 const mockPet = jest.fn();
 let mockOwner = "owner";
@@ -35,6 +104,7 @@ jest.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => children,
 }));
 jest.mock("../apps/server-admin/web/app/pet-page.css", () => ({}));
+const counts = [5, 3, 2, 1, 1, 0];
 const profile = {
   profile: "work-pet/1",
   organizationId: "org",
@@ -52,7 +122,7 @@ const profile = {
   },
   automaticShape: "circle",
   look: ["work", "projects", "tools", "people", "style", "rhythm"].map(
-    (section) => ({ section, weight: 0 }),
+    (section, i) => ({ section, weight: counts[i]! / 12, count: counts[i] }),
   ),
 };
 const page = {
@@ -67,7 +137,7 @@ const page = {
   items: [],
   nextCursor: null,
 };
-async function mount() {
+async function mount(manager = false) {
   let view!: TestRenderer.ReactTestRenderer;
   await act(async () => {
     view = TestRenderer.create(
@@ -78,7 +148,7 @@ async function mount() {
           })
         }
       >
-        <PetPage />
+        <PetPage manager={manager} />
       </QueryClientProvider>,
     );
   });
@@ -96,9 +166,25 @@ function button(view: TestRenderer.ReactTestRenderer, text: string) {
       ),
     )!;
 }
+function labelled(view: TestRenderer.ReactTestRenderer, label: string) {
+  return view.root
+    .findAllByType("button")
+    .find((b) => b.props["aria-label"] === label)!;
+}
+function texts(view: TestRenderer.ReactTestRenderer, type: React.ElementType) {
+  return view.root
+    .findAllByType(type)
+    .map((node) =>
+      node.children.map((c) => (typeof c === "string" ? c : "")).join(""),
+    );
+}
+function statusLine(view: TestRenderer.ReactTestRenderer) {
+  return texts(view, "p").concat(texts(view, "span"));
+}
 beforeEach(() => {
   global.HTMLFormElement = class {} as unknown as typeof HTMLFormElement;
   mockApi.mockReset();
+  mockPet.mockReset();
   mockOwner = "owner";
   mockApi.mockImplementation((url: string) =>
     Promise.resolve(url.includes("/memory?") ? page : profile),
@@ -109,28 +195,118 @@ beforeEach(() => {
     return 0;
   };
 });
-test("authenticated profile and paged private manager read without a chat session", async () => {
+test("the screen counts work observations from look[].count and an icon toggles its section", async () => {
   const view = await mount();
   expect(mockApi.mock.calls[0][0]).toContain(
     "identity/pet?organizationId=org&workspaceId=ws&profile=work-pet%2F1",
   );
+  expect(statusLine(view)).toContain("Knows 12 work things");
+  const toolbar = view.root.findByProps({ role: "toolbar" });
   expect(
-    view.root.findAllByProps({ role: "tab" }).map((t) => t.children.join("")),
-  ).toEqual(["Observed", "Saved", "About you"]);
-  await act(async () =>
-    button(view, "Work").props.onClick({ currentTarget: { focus: jest.fn() } }),
-  );
+    toolbar.findAllByType("button").map((b) => b.props["aria-label"]),
+  ).toEqual([
+    "Work · 5 observations",
+    "Projects · 3 observations",
+    "Tools · 2 observations",
+    "People · 1 observation",
+    "Style · 1 observation",
+    "Rhythm · 0 observations",
+  ]);
+  expect(
+    toolbar
+      .findAllByType("button")
+      .map((b) => (b.children.length > 1 ? b.children[1] : null))
+      .map((c) =>
+        c && typeof c !== "string" ? Number(c.children.join("")) : null,
+      ),
+  ).toEqual([5, 3, 2, 1, 1, null]);
+  const focus = jest.fn();
+  const work = labelled(view, "Work · 5 observations");
+  await act(async () => work.props.onClick({ currentTarget: { focus } }));
   expect(
     mockApi.mock.calls.some(([path]) => path.includes("section=work")),
   ).toBe(true);
+  expect(texts(view, "h2")).toContain("Work");
+  expect(labelled(view, "Work · 5 observations").props["aria-pressed"]).toBe(
+    true,
+  );
+  expect(mockPet.mock.lastCall![0].size).toBe(160);
+  await act(async () =>
+    labelled(view, "Work · 5 observations").props.onClick({
+      currentTarget: { focus },
+    }),
+  );
+  expect(texts(view, "h2")).not.toContain("Work");
+  expect(focus).toHaveBeenCalled();
+  expect(mockPet.mock.lastCall![0].size).toBe(280);
+  act(() => view.unmount());
+});
+test("memory off puts the pet to rest with an honest status; an unavailable plugin disables the light", async () => {
+  mockApi.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.includes("/memory?") ? { ...page, optOut: true } : profile,
+    ),
+  );
+  const asleep = await mount();
+  expect(statusLine(asleep)).toContain("Memory asleep");
+  expect(mockPet.mock.lastCall![0].state).toBe("resting");
+  const light = asleep.root
+    .findAllByProps({ "aria-label": "Use memory" })
+    .find((node) => typeof node.props.onCheckedChange === "function")!;
+  expect(light.props.checked).toBe(false);
+  expect(light.props.disabled).toBe(false);
+  act(() => asleep.unmount());
+  mockApi.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.includes("/memory?") ? { ...page, enabled: false } : profile,
+    ),
+  );
+  const off = await mount();
+  expect(statusLine(off)).toContain("Memory unavailable");
+  expect(mockPet.mock.lastCall![0].state).toBe("resting");
   expect(
-    view.root.findAllByType("h2").some((h) => h.children.join("") === "Work"),
+    off.root
+      .findAllByProps({ "aria-label": "Use memory" })
+      .find((node) => typeof node.props.onCheckedChange === "function")!.props
+      .disabled,
   ).toBe(true);
+  act(() => off.unmount());
+});
+test("an empty profile says it is still learning", async () => {
+  mockApi.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.includes("/memory?")
+        ? page
+        : {
+            ...profile,
+            look: profile.look.map((item) => ({
+              ...item,
+              weight: 0,
+              count: 0,
+            })),
+          },
+    ),
+  );
+  const view = await mount();
+  expect(statusLine(view)).toContain("Still learning you");
+  expect(mockPet.mock.lastCall![0].state).toBe("idle");
   act(() => view.unmount());
 });
 test("appearance saves confirmed server state; a rejected write keeps the entered draft", async () => {
   const view = await mount();
   await act(async () => button(view, "Appearance").props.onClick());
+  expect(texts(view, "h2")).toContain("Appearance");
+  const swatches = view.root.findAllByProps({ role: "radio" });
+  expect(swatches.map((s) => s.props["aria-label"])).toEqual([
+    "Lavender",
+    "Mint",
+    "Peach",
+    "Sky",
+    "Lemon",
+    "Rose",
+    "Sage",
+    "Mist",
+  ]);
   const name = view.root
     .findAllByType("input")
     .find((i) => i.props.value === "Niaro")!;
@@ -151,7 +327,43 @@ test("appearance saves confirmed server state; a rejected write keeps the entere
   act(() => view.unmount());
 });
 
-test("committed personal erasure updates renderer shape and ink without discarding appearance draft", async () => {
+test("/me/memory shows the saved list, the keep switch and a confirmed erase", async () => {
+  const view = await mount(true);
+  expect(texts(view, "h2")).toContain("Saved");
+  expect(
+    mockApi.mock.calls.some(([path]) => path.includes("origin=explicit")),
+  ).toBe(true);
+  const keep = view.root
+    .findAllByProps({ "aria-label": "Keep personal observations" })
+    .find((node) => typeof node.props.onCheckedChange === "function")!;
+  expect(keep.props.checked).toBe(true);
+  expect(view.root.findAllByProps({ role: "alertdialog" }).length).toBe(0);
+  await act(async () => button(view, "Delete").props.onClick());
+  const dialog = view.root.findByProps({ role: "alertdialog" });
+  expect(texts(view, "p")).toContain(
+    "Erase private memories and all earlier versions? Chats and meetings remain.",
+  );
+  const sent = mockApi.mock.calls.length;
+  await act(async () =>
+    dialog
+      .findAllByType("button")
+      .at(-1)!
+      .props.onClick({ preventDefault: () => {} }),
+  );
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20));
+  });
+  expect(
+    mockApi.mock.calls
+      .slice(sent)
+      .some(([, body]) => (body as { type?: string })?.type === "forgetAll"),
+  ).toBe(true);
+  expect(view.root.findAllByProps({ role: "alertdialog" }).length).toBe(0);
+  expect(view.root.findByProps({ role: "status" }).children).toEqual(["Saved"]);
+  act(() => view.unmount());
+});
+
+test("committed personal erasure on /me/memory updates renderer shape and ink", async () => {
   let erased = false;
   mockApi.mockImplementation(
     (url: string, body: { type?: string } | undefined) => {
@@ -166,44 +378,41 @@ test("committed personal erasure updates renderer shape and ink without discardi
               look: profile.look.map((item) => ({
                 ...item,
                 weight: erased ? 0 : 0.8,
+                count: erased ? 0 : 8,
               })),
             },
       );
     },
   );
-  const view = await mount();
+  const view = await mount(true);
   expect(mockPet.mock.lastCall![0].appearance.shape).toBe("flower");
-  await act(async () => button(view, "Appearance").props.onClick());
-  act(() =>
-    view.root
-      .findAllByType("input")
-      .find((i) => i.props.value === "Niaro")!
-      .props.onChange({ target: { value: "Unsaved name" } }),
+  const keep = view.root
+    .findAllByProps({ "aria-label": "Keep personal observations" })
+    .find((node) => typeof node.props.onCheckedChange === "function")!;
+  await act(async () => keep.props.onCheckedChange(false));
+  const dialog = view.root.findByProps({ role: "alertdialog" });
+  expect(texts(view, "p")).toContain(
+    "Erase all personal observations and their earlier versions? Explicitly saved memories remain.",
   );
   await act(async () =>
-    button(view, "Drop personal observations").props.onClick(),
-  );
-  await act(async () =>
-    view.root
-      .findByType("dialog")
+    dialog
       .findAllByType("button")
       .at(-1)!
-      .props.onClick(),
+      .props.onClick({ preventDefault: () => {} }),
   );
   await act(async () => {
     await new Promise((r) => setTimeout(r, 20));
   });
-  const draftPreserved = view.root
-    .findAllByType("input")
-    .some((i) => i.props.value === "Unsaved name");
-  await act(async () =>
-    view.root.findAllByProps({ role: "tab" })[0]!.props.onClick(),
-  );
   expect(mockPet.mock.lastCall![0].appearance.shape).toBe("circle");
   expect(mockPet.mock.lastCall![0].appearance.counts).toEqual([
     0, 0, 0, 0, 0, 0,
   ]);
-  expect(draftPreserved).toBe(true);
+  expect(
+    view.root
+      .findAllByProps({ "aria-label": "Keep personal observations" })
+      .find((node) => typeof node.props.onCheckedChange === "function")!.props
+      .checked,
+  ).toBe(false);
   act(() => view.unmount());
 });
 

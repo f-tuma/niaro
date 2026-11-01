@@ -67,6 +67,8 @@ export const PetProfileSchema = z.strictObject({
       z.strictObject({
         section: ObservationSectionSchema,
         weight: z.number().min(0).max(1),
+        /** Current own work observations in the section; the page shows it as an honest count. */
+        count: z.number().int().nonnegative(),
       }),
     )
     .length(6)

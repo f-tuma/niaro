@@ -1,19 +1,72 @@
-import { Switch } from "@admin/components/ui/switch";
-import { NativeSelect } from "@admin/components/ui/native-select";
-import { MoreActions } from "@admin/components/console/forms";
-import { DropdownMenuItem } from "@admin/components/ui/dropdown-menu";
-import { PET_PALETTE } from "../../../shared/pet-appearance";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type KeyboardEvent,
+} from "react";
 import { Link } from "@tanstack/react-router";
 import {
+  Bookmark,
   BriefcaseBusiness,
+  Clock3,
+  ExternalLink,
+  History,
+  MessageSquare,
+  Moon,
+  Palette,
+  Pencil,
+  Tags,
+  Trash2,
+  UserRound,
+  UsersRound,
   Workflow,
   Wrench,
-  UsersRound,
-  MessageSquare,
-  Clock3,
-  ChevronRight,
 } from "lucide-react";
+import { Button } from "@admin/components/ui/button";
+import { Switch } from "@admin/components/ui/switch";
+import { Input } from "@admin/components/ui/input";
+import { Textarea } from "@admin/components/ui/textarea";
+import { Label } from "@admin/components/ui/label";
+import { Skeleton } from "@admin/components/ui/skeleton";
+import { Toggle } from "@admin/components/ui/toggle";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@admin/components/ui/toggle-group";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@admin/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@admin/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@admin/components/ui/alert-dialog";
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+} from "@admin/components/ui/alert";
+import { MoreActions } from "@admin/components/console/forms";
+import { Disclosure } from "@admin/components/console/disclosure";
+import { PageHeader } from "@admin/components/console/page";
+import { SettingRow, SettingRows } from "@admin/components/console/setting-row";
+import { PET_PALETTE } from "../../../shared/pet-appearance";
 import {
   PetSettingsSchema,
   PetShapeSchema,
@@ -22,7 +75,12 @@ import {
   type SavePetProfile,
 } from "../../../../packages/protocol/work-pet";
 import type { MemoryItem } from "../../../../packages/protocol/memory";
+import {
+  PetFallbackDrawing,
+  type PetSvgPrimitives,
+} from "../../../../packages/ui/pet-fallback-drawing";
 import { useApp } from "./context";
+import { MenuPage } from "./menu-page";
 import { petCopy } from "./pet-copy";
 import { profileAppearance, usePetMemory, usePetProfile } from "./pet-memory";
 import { WebPetView } from "./pet-view";
@@ -35,6 +93,8 @@ const sections = [
   "style",
   "rhythm",
 ] as const;
+type Section = (typeof sections)[number];
+type View = "overview" | "saved" | Section;
 const icons = [
   BriefcaseBusiness,
   Workflow,
@@ -43,6 +103,42 @@ const icons = [
   MessageSquare,
   Clock3,
 ];
+const isSection = (view: View): view is Section =>
+  (sections as readonly string[]).includes(view);
+
+/** The web layout folds to the mobile one under the `md` breakpoint. */
+const narrowQuery = "(max-width: 767px)";
+const canMatch = () =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function";
+function subscribeNarrow(callback: () => void) {
+  if (!canMatch()) return () => {};
+  const media = window.matchMedia(narrowQuery);
+  media.addEventListener("change", callback);
+  return () => media.removeEventListener("change", callback);
+}
+const readNarrow = () => canMatch() && window.matchMedia(narrowQuery).matches;
+const serverNarrow = () => false;
+
+/** Whole days between a timestamp and today, in local time. */
+function daysAgo(value: string, now = new Date()) {
+  const then = new Date(value);
+  const start = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  return Math.max(0, Math.round((start(now) - start(then)) / 86_400_000));
+}
+
+const svgPrimitives: PetSvgPrimitives = {
+  Svg: "svg",
+  Circle: "circle",
+  ClipPath: "clipPath",
+  Defs: "defs",
+  Ellipse: "ellipse",
+  G: "g",
+  Path: "path",
+  RadialGradient: "radialGradient",
+  Stop: "stop",
+};
+
 export function PetPage({ manager = false }: { manager?: boolean }) {
   const { workspace, identity } = useApp();
   return (
@@ -52,17 +148,20 @@ export function PetPage({ manager = false }: { manager?: boolean }) {
     />
   );
 }
+
 function PetPageOwner({ manager }: { manager: boolean }) {
   const { language } = useApp(),
     copy = petCopy(language);
-  const profile = usePetProfile();
-  const [tab, setTab] = useState<"observed" | "saved" | "about">(
-    manager ? "saved" : "observed",
+  const narrow = useSyncExternalStore(
+    subscribeNarrow,
+    readNarrow,
+    serverNarrow,
   );
-  const [section, setSection] = useState<(typeof sections)[number]>();
+  const profile = usePetProfile();
+  const [view, setView] = useState<View>(manager ? "saved" : "overview");
   const [personal, setPersonal] = useState<"work" | "personal">("work");
   const [history, setHistory] = useState(false);
-  const [appearance, setAppearance] = useState(false);
+  const [sheet, setSheet] = useState<"about" | "appearance">();
   const [draft, setDraft] = useState<PetSettings>();
   const [edit, setEdit] = useState<{ item: MemoryItem; content: string }>();
   const [confirm, setConfirm] = useState<PetMemoryCommand>();
@@ -71,16 +170,14 @@ function PetPageOwner({ manager }: { manager: boolean }) {
   const [issue, setIssue] = useState(false),
     [saving, setSaving] = useState(false),
     [status, setStatus] = useState("");
+  const section = isSection(view) ? view : undefined;
   const memory = usePetMemory({
-    origin: tab === "observed" ? "observed" : "explicit",
-    ...(tab === "observed"
-      ? { personal, ...(section ? { section } : {}) }
-      : {}),
+    origin: view === "saved" ? "explicit" : "observed",
+    ...(view !== "saved" ? { personal, ...(section ? { section } : {}) } : {}),
     history,
     limit: 30,
   });
-  const dialog = useRef<HTMLDialogElement>(null),
-    detail = useRef<HTMLHeadingElement>(null),
+  const detail = useRef<HTMLHeadingElement>(null),
     opener = useRef<HTMLButtonElement | null>(null);
   const alive = useRef(true);
   useEffect(() => {
@@ -89,17 +186,19 @@ function PetPageOwner({ manager }: { manager: boolean }) {
       alive.current = false;
     };
   }, []);
-
   const look = useMemo(
     () => (profile.data ? profileAppearance(profile.data) : undefined),
     [profile.data],
   );
   useEffect(() => {
-    if (confirm) dialog.current?.showModal();
-  }, [confirm]);
+    if (view !== "overview" && !manager) detail.current?.focus();
+  }, [view, manager]);
   useEffect(() => {
-    if (section) detail.current?.focus();
-  }, [section]);
+    if (!status) return;
+    const timer = setTimeout(() => setStatus(""), 2500);
+    return () => clearTimeout(timer);
+  }, [status]);
+
   async function mutate(command: PetMemoryCommand | SavePetProfile) {
     setSaving(true);
     setIssue(false);
@@ -117,16 +216,14 @@ function PetPageOwner({ manager }: { manager: boolean }) {
       setPending(undefined);
       if ("settings" in command) {
         setDraft(undefined);
-        setAppearance(false);
+        setSheet(undefined);
       }
       setEdit(undefined);
-      dialog.current?.close();
       setConfirm(undefined);
       setStatus(copy.savedStatus);
-      if ("type" in command && command.type === "revise") {
-        setTab("saved");
-        setSection(undefined);
-      } else await memory.read();
+      if ("type" in command && command.type === "revise" && !manager)
+        setView("saved");
+      else await memory.read();
       requestAnimationFrame(() => detail.current?.focus());
     } catch (error) {
       if (alive.current) {
@@ -141,473 +238,447 @@ function PetPageOwner({ manager }: { manager: boolean }) {
       if (alive.current) setSaving(false);
     }
   }
-  const editable = memory.page?.enabled && !memory.page.optOut;
-  useEffect(() => {
-    if (!status) return;
-    const timer = setTimeout(() => setStatus(""), 2500);
-    return () => clearTimeout(timer);
-  }, [status]);
+  const editable = !!memory.page?.enabled && !memory.page.optOut;
   const settings = draft ?? profile.data?.settings;
-  return (
-    <div className="pet-page">
-      <header className="pet-heading">
-        <h1>{manager ? copy.manager : copy.title}</h1>
-        <div className="pet-actions">
-          <button
-            onClick={() => {
-              setAppearance(true);
-              setDraft(profile.data?.settings);
-            }}
-            disabled={!profile.data}
+  const animate = profile.data?.settings.animate ?? true;
+  const petState =
+    memory.page && (!memory.page.enabled || memory.page.optOut)
+      ? "resting"
+      : "idle";
+  const counts = useMemo(
+    () =>
+      sections.map(
+        (value) =>
+          profile.data?.look.find((item) => item.section === value)?.count ?? 0,
+      ),
+    [profile.data],
+  );
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  const statusLine = !profile.data
+    ? profile.isError
+      ? copy.statusError
+      : copy.loading
+    : memory.page && !memory.page.enabled
+      ? copy.unavailable
+      : memory.page?.optOut
+        ? copy.statusAsleep
+        : total === 0
+          ? copy.statusEmpty
+          : copy.statusKnows(total);
+  const open = view !== "overview";
+  const compact = manager || (open && narrow);
+  const petSize = compact ? 56 : open ? 160 : narrow ? 220 : 280;
+
+  function openSheet(kind: "about" | "appearance") {
+    setDraft(profile.data?.settings);
+    setSheet(kind);
+  }
+  function closeSheet() {
+    setDraft(undefined);
+    setSheet(undefined);
+  }
+  function toggleView(next: Exclude<View, "overview">) {
+    setEdit(undefined);
+    if (view === next) {
+      setView("overview");
+      requestAnimationFrame(() => opener.current?.focus());
+    } else setView(next);
+  }
+  function rove(e: KeyboardEvent<HTMLDivElement>) {
+    const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
+    if (!keys.includes(e.key)) return;
+    const buttons = Array.from(
+      e.currentTarget.querySelectorAll<HTMLButtonElement>("button"),
+    );
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (index < 0) return;
+    e.preventDefault();
+    const next =
+      e.key === "ArrowRight"
+        ? (index + 1) % buttons.length
+        : e.key === "ArrowLeft"
+          ? (index + buttons.length - 1) % buttons.length
+          : e.key === "Home"
+            ? 0
+            : buttons.length - 1;
+    buttons[next]?.focus();
+  }
+
+  const conflictAlert = issue && !confirm && (
+    <Alert variant="destructive">
+      <AlertDescription>
+        {copy.uncertain} {copy.conflict}
+      </AlertDescription>
+      <AlertAction>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={saving}
+          onClick={async () => {
+            await profile.refetch();
+            const fresh = await memory.read();
+            if (conflict) {
+              setPending(undefined);
+              setIssue(false);
+              if (edit) {
+                const item = fresh?.items.find(
+                  (item) => item.id === edit.item.id,
+                );
+                if (item) setEdit({ ...edit, item });
+              }
+            }
+          }}
+        >
+          {copy.refresh}
+        </Button>
+        {pending && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={saving}
+            onClick={() => void mutate(pending)}
           >
-            {copy.appearance}
-          </button>
-          <MoreActions label={copy.manager}>
-            <DropdownMenuItem
-              disabled={!memory.page}
-              onSelect={() =>
-                setConfirm({
-                  type: "forgetAll",
-                  requestId: crypto.randomUUID(),
-                })
-              }
-            >
-              {copy.erase}
-            </DropdownMenuItem>
-          </MoreActions>
-        </div>
-      </header>
-      <div className="pet-toolbar">
-        <div className="pet-tabs" role="tablist" aria-label={copy.title}>
-          {(["observed", "saved", "about"] as const).map((value) => (
-            <button
-              key={value}
-              role="tab"
-              disabled={saving}
-              tabIndex={tab === value ? 0 : -1}
-              onKeyDown={(e) => {
-                const tabs = ["observed", "saved", "about"] as const;
-                const i = tabs.indexOf(value);
-                const next =
-                  e.key === "ArrowRight"
-                    ? tabs[(i + 1) % 3]
-                    : e.key === "ArrowLeft"
-                      ? tabs[(i + 2) % 3]
-                      : e.key === "Home"
-                        ? tabs[0]
-                        : e.key === "End"
-                          ? tabs[2]
-                          : undefined;
-                if (next) {
-                  e.preventDefault();
-                  setTab(next);
-                  setSection(undefined);
-                  (
-                    e.currentTarget.parentElement?.querySelectorAll("button")[
-                      tabs.indexOf(next)
-                    ] as HTMLButtonElement
-                  )?.focus();
-                }
-              }}
-              aria-selected={tab === value}
-              onClick={() => {
-                setTab(value);
-                setSection(undefined);
-                setAppearance(false);
-              }}
-            >
-              {copy[value]}
-            </button>
-          ))}
-        </div>
-        <div className="pet-actions">
-          {tab === "observed" && (
-            <NativeSelect
-              aria-label={copy.observed}
-              value={personal}
-              onChange={(e) =>
-                setPersonal(e.target.value as "work" | "personal")
-              }
-            >
-              <option value="work">{copy.workScope}</option>
-              <option value="personal">{copy.personal}</option>
-            </NativeSelect>
-          )}
-          {memory.page && (
-            <label className="pet-memory-toggle">
-              <Switch
-                aria-label={copy.memory}
-                checked={!memory.page.optOut}
-                disabled={saving || !memory.page.enabled}
-                onCheckedChange={(checked) =>
-                  void mutate({
-                    type: "preference",
-                    optOut: !checked,
-                    requestId: crypto.randomUUID(),
-                  })
-                }
-              />
-              <span>{copy.memory}</span>
-            </label>
-          )}
-        </div>
+            {copy.retry}
+          </Button>
+        )}
+      </AlertAction>
+    </Alert>
+  );
+
+  const memorySwitch = (
+    <span className="flex items-center gap-1.5 text-muted-foreground">
+      <Moon className="size-4" aria-hidden="true" />
+      <Switch
+        aria-label={copy.memory}
+        checked={!!memory.page && !memory.page.optOut}
+        disabled={saving || !memory.page || !memory.page.enabled}
+        onCheckedChange={(checked) =>
+          void mutate({
+            type: "preference",
+            optOut: !checked,
+            requestId: crypto.randomUUID(),
+          })
+        }
+      />
+    </span>
+  );
+  const pet = profile.data ? (
+    <WebPetView
+      size={petSize}
+      label={profile.data.settings.name}
+      appearance={look}
+      animate={profile.data.settings.animate}
+      state={petState}
+    />
+  ) : (
+    <span aria-hidden="true" className="block opacity-60">
+      <PetFallbackDrawing components={svgPrimitives} size={petSize} resting />
+    </span>
+  );
+  const about = profile.data
+    ? [profile.data.settings.jobTitle, profile.data.settings.department]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+  const screen = compact ? (
+    <div className="flex items-center gap-3 rounded-3xl bg-background px-3 py-2 text-left ring-1 ring-border ring-inset">
+      <span className="shrink-0">{pet}</span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-base font-semibold">
+          {profile.data?.settings.name}
+        </span>
+        <span className="truncate text-sm text-muted-foreground">
+          {statusLine}
+        </span>
       </div>
-      <div role="status" aria-live="polite">
+      {profile.isError && !profile.data && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void profile.refetch()}
+        >
+          {copy.retry}
+        </Button>
+      )}
+      {memorySwitch}
+    </div>
+  ) : (
+    <div className="relative flex flex-col items-center gap-1 rounded-3xl bg-background px-4 pt-5 pb-4 text-center ring-1 ring-border ring-inset">
+      <span className="absolute top-3 right-3">{memorySwitch}</span>
+      {pet}
+      <h2 className="mt-2 max-w-full text-xl font-semibold break-words">
+        {profile.data?.settings.name}
+      </h2>
+      {about && <p className="text-md text-muted-foreground">{about}</p>}
+      <p className="text-md">{statusLine}</p>
+      {profile.isError && !profile.data && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2"
+          onClick={() => void profile.refetch()}
+        >
+          {copy.retry}
+        </Button>
+      )}
+    </div>
+  );
+  const shell = (
+    <div
+      data-compact={compact}
+      className="flex w-full flex-col gap-3 rounded-4xl border bg-card p-4 data-[compact=true]:p-3"
+    >
+      {screen}
+      {!manager && (
+        <>
+          <div
+            role="toolbar"
+            aria-label={copy.sections}
+            data-dock={open && !compact}
+            className="grid grid-cols-6 gap-2 data-[dock=true]:grid-cols-3"
+            onKeyDown={rove}
+          >
+            {sections.map((value, i) => {
+              const Icon = icons[i]!;
+              const pressed = section === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  title={copy[value]}
+                  aria-label={`${copy[value]} · ${copy.countLabel(counts[i]!)}`}
+                  aria-pressed={pressed}
+                  disabled={!profile.data}
+                  tabIndex={(section ? pressed : i === 0) ? 0 : -1}
+                  onClick={(e) => {
+                    opener.current = e.currentTarget;
+                    toggleView(value);
+                  }}
+                  className="flex h-12 min-w-12 items-center justify-center gap-1.5 rounded-xl border border-transparent bg-secondary px-2.5 text-foreground transition-colors duration-100 outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-pressed:border-primary aria-pressed:bg-accent aria-pressed:text-primary"
+                >
+                  <Icon className="size-4.5" aria-hidden="true" />
+                  {counts[i]! > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="text-xs font-semibold text-muted-foreground tabular-nums"
+                    >
+                      {counts[i]}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Toggle
+              variant="outline"
+              size="lg"
+              pressed={view === "saved"}
+              onPressedChange={() => toggleView("saved")}
+              onClick={(e) => {
+                opener.current = e.currentTarget;
+              }}
+            >
+              <Bookmark data-icon="inline-start" aria-hidden="true" />
+              {copy.saved}
+            </Toggle>
+            <Button
+              variant="outline"
+              size="lg"
+              disabled={!profile.data}
+              onClick={() => openSheet("about")}
+            >
+              <UserRound data-icon="inline-start" aria-hidden="true" />
+              {copy.about}
+            </Button>
+          </div>
+        </>
+      )}
+      <div
+        role="status"
+        aria-live="polite"
+        className="text-sm text-muted-foreground empty:-mt-3"
+      >
         {status}
       </div>
-      {issue && !confirm && (
-        <div role="alert">
-          <p>
-            {copy.uncertain} {copy.conflict}
+    </div>
+  );
+
+  // The status screen: the list of one section, or the saved items.
+  const items = memory.page?.items ?? [];
+  const lastSeen = items.reduce<string | undefined>((latest, item) => {
+    const at = item.seenAt ?? item.createdAt;
+    return !latest || at > latest ? at : latest;
+  }, undefined);
+  const listCount =
+    section && personal === "work"
+      ? counts[sections.indexOf(section)]!
+      : items.length;
+  const list = (
+    <section
+      key={`${view}:${personal}:${history}`}
+      data-still={!animate}
+      aria-labelledby="pet-detail-title"
+      className="pet-fade flex min-w-0 flex-col gap-4"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2
+            id="pet-detail-title"
+            ref={detail}
+            tabIndex={-1}
+            className="text-xl font-semibold outline-none"
+          >
+            {section ? copy[section] : copy.saved}
+          </h2>
+          <p className="text-sm text-muted-foreground tabular-nums">
+            {memory.page
+              ? `${copy.countLabel(listCount)}${
+                  lastSeen
+                    ? ` · ${copy.lastSeen(copy.relative(daysAgo(lastSeen)))}`
+                    : ""
+                }`
+              : copy.loading}
           </p>
-          <button
-            disabled={saving}
-            onClick={async () => {
-              await profile.refetch();
-              const fresh = await memory.read();
-              if (conflict) {
-                setPending(undefined);
-                setIssue(false);
-                if (edit) {
-                  const item = fresh?.items.find(
-                    (item) => item.id === edit.item.id,
-                  );
-                  if (item) setEdit({ ...edit, item });
-                }
-              }
-            }}
-          >
-            {copy.refresh}
-          </button>
-          {pending && (
-            <button disabled={saving} onClick={() => void mutate(pending)}>
-              {copy.retry}
-            </button>
-          )}
         </div>
-      )}
-      {profile.isError && (
-        <p role="alert">
-          {copy.failed}{" "}
-          <button onClick={() => void profile.refetch()}>{copy.retry}</button>
-        </p>
-      )}
-      {appearance || tab === "about" ? (
-        settings && (
-          <form
-            className="pet-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (profile.data && PetSettingsSchema.safeParse(settings).success)
-                void mutate({
-                  requestId: crypto.randomUUID(),
-                  revision: profile.data.revision,
-                  settings,
-                });
-            }}
+        <div className="flex items-center gap-2">
+          {section && (
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              spacing={0}
+              aria-label={copy.observed}
+              value={personal}
+              onValueChange={(value) => {
+                if (value === "work" || value === "personal")
+                  setPersonal(value);
+              }}
+            >
+              <ToggleGroupItem value="work">{copy.workScope}</ToggleGroupItem>
+              <ToggleGroupItem value="personal">
+                {copy.personal}
+              </ToggleGroupItem>
+            </ToggleGroup>
+          )}
+          <Toggle
+            variant="outline"
+            aria-label={copy.history}
+            title={copy.history}
+            pressed={history}
+            onPressedChange={setHistory}
           >
-            {!appearance && profile.data && (
-              <div className="pet-center">
-                <WebPetView
-                  size={140}
-                  label={profile.data.settings.name}
-                  appearance={look}
-                  animate={profile.data.settings.animate}
-                />
-                <h2>{profile.data.settings.name}</h2>
-              </div>
-            )}
-            {(appearance
-              ? (["name"] as const)
-              : (["jobTitle", "department"] as const)
-            ).map((field) => (
-              <label key={field}>
-                {field === "jobTitle"
-                  ? copy.job
-                  : field === "department"
-                    ? copy.department
-                    : copy[field]}
-                <input
-                  type="text"
-                  value={settings[field]}
-                  maxLength={field === "name" ? 40 : 120}
-                  onChange={(e) =>
-                    setDraft({ ...settings, [field]: e.target.value })
-                  }
-                />
-              </label>
-            ))}
-            {appearance && (
-              <>
-                <label>
-                  {copy.colour}
-                  <NativeSelect
-                    value={settings.colour}
-                    onChange={(e) =>
-                      setDraft({
-                        ...settings,
-                        colour: e.target.value as PetSettings["colour"],
-                      })
-                    }
-                  >
-                    {PET_PALETTE.map((colour) => (
-                      <option key={colour.hex} value={colour.hex}>
-                        {colour[language]}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
-                <label>
-                  {copy.shape}
-                  <NativeSelect
-                    value={settings.shape}
-                    onChange={(e) =>
-                      setDraft({
-                        ...settings,
-                        shape: e.target.value as PetSettings["shape"],
-                      })
-                    }
-                  >
-                    <option value="auto">{copy.auto}</option>
-                    {PetShapeSchema.options.map((shape, i) => (
-                      <option value={shape} key={shape}>
-                        {copy.shapes[i]}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </label>
-                {(["animate", "showInChat"] as const).map((field) => (
-                  <label key={field}>
-                    <span>
-                      <Switch
-                        aria-label={
-                          field === "animate" ? copy.animate : copy.chat
-                        }
-                        checked={settings[field]}
-                        onCheckedChange={(checked) =>
-                          setDraft({ ...settings, [field]: checked })
-                        }
-                      />{" "}
-                      {field === "animate" ? copy.animate : copy.chat}
-                    </span>
-                  </label>
-                ))}
-              </>
-            )}
-            <div className="pet-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(undefined);
-                  setAppearance(false);
-                }}
-              >
-                {copy.cancel}
-              </button>
-              <button
-                disabled={
-                  saving ||
-                  !draft ||
-                  !PetSettingsSchema.safeParse(settings).success
-                }
-              >
-                {copy.save}
-              </button>
-            </div>
-          </form>
-        )
+            <History aria-hidden="true" />
+          </Toggle>
+        </div>
+      </div>
+      {!sheet && conflictAlert}
+      {memory.error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{copy.statusError}</AlertDescription>
+          <AlertAction>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void memory.read()}
+            >
+              {copy.refresh}
+            </Button>
+          </AlertAction>
+        </Alert>
+      ) : !memory.page ? (
+        <div className="flex flex-col gap-3" aria-hidden="true">
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-5/6" />
+          <Skeleton className="h-12 w-2/3" />
+        </div>
       ) : (
         <>
-          {!manager && (
-            <div
-              className={`pet-stage${section || tab !== "observed" ? " is-open" : ""}`}
-            >
-              <div className="pet-center">
-                {profile.data ? (
-                  <WebPetView
-                    size={section || tab !== "observed" ? 140 : 320}
-                    label={profile.data.settings.name}
-                    appearance={look}
-                    animate={profile.data.settings.animate}
-                    state={
-                      memory.page &&
-                      (!memory.page.enabled || memory.page.optOut)
-                        ? "resting"
-                        : "idle"
-                    }
-                  />
-                ) : (
-                  <p>{profile.isPending ? copy.loading : copy.unavailable}</p>
-                )}
-                <h2>{profile.data?.settings.name}</h2>
-              </div>
-              {tab === "observed" &&
-                sections.map((value, i) => {
-                  const Icon = icons[i]!;
-                  return (
-                    <button
-                      className="pet-section"
-                      key={value}
-                      aria-pressed={section === value}
-                      onClick={(e) => {
-                        opener.current = e.currentTarget;
-                        setSection(value);
-                      }}
-                    >
-                      <Icon size={18} aria-hidden />
-                      <span>{copy[value]}</span>
-                      <ChevronRight size={14} aria-hidden />
-                    </button>
-                  );
-                })}
-            </div>
+          {items.length === 0 && !memory.busy && (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              {copy.empty}
+            </p>
           )}
-          {(section || tab === "saved" || manager) && (
-            <section className="pet-details">
-              <div className="pet-actions">
-                {section && (
-                  <button
-                    onClick={() => {
-                      setSection(undefined);
-                      requestAnimationFrame(() => opener.current?.focus());
-                    }}
-                  >
-                    {copy.all}
-                  </button>
-                )}
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={history}
-                    onChange={(e) => setHistory(e.target.checked)}
-                  />{" "}
-                  {copy.history}
-                </label>
-              </div>
-              <h2 tabIndex={-1} ref={detail}>
-                {section ? copy[section] : copy.saved}
-              </h2>
-              {memory.error ? (
-                <p role="alert">
-                  {copy.failed}{" "}
-                  <button onClick={() => void memory.read()}>
-                    {copy.refresh}
-                  </button>
-                </p>
-              ) : !memory.page ? (
-                <p>{copy.loading}</p>
-              ) : (
-                <>
-                  {!memory.page.enabled && <p>{copy.unavailable}</p>}
-                  {memory.page.items.length === 0 && !memory.busy && (
-                    <p>{copy.empty}</p>
-                  )}
-                  {memory.page.items.map((item) => (
-                    <article className="pet-memory-row" key={item.id}>
-                      <p>{item.content}</p>
-                      <p className="pet-meta">
-                        {item.trust === "user_assertion"
-                          ? copy.assertion
-                          : item.trust === "verified_result"
-                            ? copy.verified
-                            : copy.inference}
-                        {item.status !== "active"
-                          ? ` · ${item.status === "superseded" ? copy.earlier : copy.unused}`
-                          : ""}
-                      </p>
-                      {edit?.item.id === item.id ? (
-                        <form
-                          className="pet-form"
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            void mutate({
-                              type: "revise",
-                              id: item.id,
-                              revision: edit.item.revision,
-                              content: edit.content,
-                              requestId: crypto.randomUUID(),
-                            });
-                          }}
-                        >
-                          <textarea
-                            aria-label={copy.edit}
-                            value={edit.content}
-                            onChange={(e) =>
-                              setEdit({ ...edit, content: e.target.value })
-                            }
-                            maxLength={4000}
-                          />
-                          <div className="pet-actions">
-                            <button
-                              type="button"
-                              onClick={() => setEdit(undefined)}
-                            >
-                              {copy.cancel}
-                            </button>
-                            <button
-                              disabled={
-                                saving ||
-                                !!pending ||
-                                !editable ||
-                                !edit.content.trim()
-                              }
-                            >
-                              {copy.save}
-                            </button>
-                          </div>
-                        </form>
-                      ) : (
-                        <div className="pet-actions">
-                          {editable && item.status !== "superseded" && (
-                            <button
-                              onClick={() =>
-                                setEdit({ item, content: item.content ?? "" })
-                              }
-                            >
-                              {item.origin === "observed"
-                                ? copy.correct
-                                : copy.edit}
-                            </button>
-                          )}
-                          <button
-                            onClick={() =>
-                              setConfirm({
-                                type: "forget",
-                                id: item.id,
-                                revision: item.revision,
-                                requestId: crypto.randomUUID(),
-                              })
+          <ul className="divide-y divide-border">
+            {items.map((item) => {
+              const sourceCount =
+                item.source?.type === "observed"
+                  ? item.source.sources.length
+                  : 1;
+              const trust =
+                item.trust === "user_assertion"
+                  ? copy.assertion
+                  : item.trust === "verified_result"
+                    ? copy.verified
+                    : copy.inference;
+              const meta = [
+                trust +
+                  (item.seenAt
+                    ? ` · ${copy.lastSeen(copy.relative(daysAgo(item.seenAt)))}`
+                    : ""),
+                item.status === "superseded"
+                  ? copy.earlier
+                  : item.status !== "active"
+                    ? copy.unused
+                    : "",
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <li key={item.id} className="flex items-start gap-2 py-3.5">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <p className="text-base break-words whitespace-pre-wrap">
+                      {item.content}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{meta}</p>
+                    {edit?.item.id === item.id && (
+                      <form
+                        className="mt-2 flex flex-col gap-2"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void mutate({
+                            type: "revise",
+                            id: item.id,
+                            revision: edit.item.revision,
+                            content: edit.content,
+                            requestId: crypto.randomUUID(),
+                          });
+                        }}
+                      >
+                        <Textarea
+                          aria-label={copy.edit}
+                          value={edit.content}
+                          maxLength={4000}
+                          onChange={(e) =>
+                            setEdit({ ...edit, content: e.target.value })
+                          }
+                        />
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => setEdit(undefined)}
+                          >
+                            {copy.cancel}
+                          </Button>
+                          <Button
+                            type="submit"
+                            disabled={
+                              saving ||
+                              !!pending ||
+                              !editable ||
+                              !edit.content.trim()
                             }
                           >
-                            {copy.remove}
-                          </button>
-                          {editable && item.source?.type === "observed" && (
-                            <button
-                              onClick={() =>
-                                setConfirm({
-                                  type: "classify",
-                                  id: item.id,
-                                  revision: item.revision,
-                                  personal:
-                                    item.source?.type === "observed"
-                                      ? !item.source.personal
-                                      : false,
-                                  requestId: crypto.randomUUID(),
-                                })
-                              }
-                            >
-                              {item.source.personal
-                                ? copy.classifyWork
-                                : copy.classify}
-                            </button>
-                          )}
+                            {copy.save}
+                          </Button>
                         </div>
-                      )}
-                      <details>
-                        <summary>{copy.sources}</summary>
+                      </form>
+                    )}
+                    <Disclosure title={copy.sourcesCount(sourceCount)}>
+                      <div className="flex flex-col gap-1 text-sm text-muted-foreground">
                         {item.source?.type === "observed" ? (
                           item.source.sources.map((source) => (
-                            <p className="pet-meta" key={source.sourceId}>
+                            <p key={source.sourceId}>
                               {source.type === "chat"
                                 ? copy.chatSource
                                 : copy.meetingSource}{" "}
@@ -615,12 +686,21 @@ function PetPageOwner({ manager }: { manager: boolean }) {
                               {source.removed
                                 ? copy.removed
                                 : source.href && (
-                                    <a href={source.href}>{copy.sources}</a>
+                                    <a
+                                      href={source.href}
+                                      className="inline-flex items-center gap-1 text-foreground underline underline-offset-3"
+                                    >
+                                      {copy.sources}
+                                      <ExternalLink
+                                        className="size-3.5"
+                                        aria-hidden="true"
+                                      />
+                                    </a>
                                   )}
                             </p>
                           ))
                         ) : (
-                          <p className="pet-meta">
+                          <p>
                             {item.source?.type === "verified_operation"
                               ? `${copy.verified} · ${item.source.serviceId}`
                               : copy.assertion}{" "}
@@ -628,87 +708,392 @@ function PetPageOwner({ manager }: { manager: boolean }) {
                             {new Date(item.createdAt).toLocaleString(language)}
                           </p>
                         )}
-                      </details>
-                    </article>
-                  ))}
-                  {memory.page.nextCursor && (
-                    <button
-                      disabled={memory.busy}
-                      onClick={() => void memory.read(true)}
+                      </div>
+                    </Disclosure>
+                  </div>
+                  <MoreActions label={copy.more} size="sm">
+                    {editable && item.status !== "superseded" && (
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          setEdit({ item, content: item.content ?? "" })
+                        }
+                      >
+                        <Pencil aria-hidden="true" />
+                        {item.origin === "observed" ? copy.correct : copy.edit}
+                      </DropdownMenuItem>
+                    )}
+                    {editable && item.source?.type === "observed" && (
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          setConfirm({
+                            type: "classify",
+                            id: item.id,
+                            revision: item.revision,
+                            personal:
+                              item.source?.type === "observed"
+                                ? !item.source.personal
+                                : false,
+                            requestId: crypto.randomUUID(),
+                          })
+                        }
+                      >
+                        <Tags aria-hidden="true" />
+                        {item.source.personal
+                          ? copy.classifyWork
+                          : copy.classify}
+                      </DropdownMenuItem>
+                    )}
+                    {editable && <DropdownMenuSeparator />}
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() =>
+                        setConfirm({
+                          type: "forget",
+                          id: item.id,
+                          revision: item.revision,
+                          requestId: crypto.randomUUID(),
+                        })
+                      }
                     >
-                      {copy.loadMore}
-                    </button>
-                  )}
-                </>
-              )}
-            </section>
+                      <Trash2 aria-hidden="true" />
+                      {copy.remove}
+                    </DropdownMenuItem>
+                  </MoreActions>
+                </li>
+              );
+            })}
+          </ul>
+          {memory.page.nextCursor && (
+            <Button
+              variant="outline"
+              className="self-start"
+              disabled={memory.busy}
+              onClick={() => void memory.read(true)}
+            >
+              {copy.loadMore}
+            </Button>
           )}
         </>
       )}
-      <footer className="pet-details pet-actions">
-        {!manager && <Link to="/me/memory">{copy.manager}</Link>}
-        {memory.page && appearance && (
-          <button
-            disabled={saving}
-            onClick={() =>
-              setConfirm({
-                type: "personalThings",
-                value: memory.page!.personalThings === "keep" ? "drop" : "keep",
-                requestId: crypto.randomUUID(),
-              })
-            }
+    </section>
+  );
+
+  const valid = !!settings && PetSettingsSchema.safeParse(settings).success;
+  const sheetPanel = (
+    <Sheet
+      open={!!sheet}
+      onOpenChange={(next) => {
+        if (!next) closeSheet();
+      }}
+    >
+      <SheetContent side="right">
+        <SheetHeader>
+          <SheetTitle>
+            {sheet === "about" ? copy.about : copy.appearance}
+          </SheetTitle>
+        </SheetHeader>
+        {settings && (
+          <form
+            id="pet-sheet-form"
+            className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (profile.data && valid)
+                void mutate({
+                  requestId: crypto.randomUUID(),
+                  revision: profile.data.revision,
+                  settings,
+                });
+            }}
           >
-            {memory.page.personalThings === "keep"
-              ? copy.personalDrop
-              : copy.personalKeep}
-          </button>
+            {sheet === "about" ? (
+              (["jobTitle", "department"] as const).map((field) => (
+                <div key={field} className="flex flex-col gap-2">
+                  <Label htmlFor={`pet-${field}`}>
+                    {field === "jobTitle" ? copy.job : copy.department}
+                  </Label>
+                  <Input
+                    id={`pet-${field}`}
+                    value={settings[field]}
+                    maxLength={120}
+                    onChange={(e) =>
+                      setDraft({ ...settings, [field]: e.target.value })
+                    }
+                  />
+                </div>
+              ))
+            ) : (
+              <>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="pet-name">{copy.name}</Label>
+                  <Input
+                    id="pet-name"
+                    value={settings.name}
+                    maxLength={40}
+                    onChange={(e) =>
+                      setDraft({ ...settings, name: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span id="pet-colour" className="text-sm font-medium">
+                    {copy.colour}
+                  </span>
+                  <div
+                    role="radiogroup"
+                    aria-labelledby="pet-colour"
+                    className="flex flex-wrap gap-2"
+                  >
+                    {PET_PALETTE.map((colour) => (
+                      <button
+                        key={colour.hex}
+                        type="button"
+                        role="radio"
+                        aria-checked={settings.colour === colour.hex}
+                        aria-label={colour[language]}
+                        title={colour[language]}
+                        style={{ "--swatch": colour.hex } as CSSProperties}
+                        className="pet-swatch size-9 rounded-full border border-border outline-none focus-visible:ring-3 focus-visible:ring-ring/50 aria-checked:ring-2 aria-checked:ring-primary aria-checked:ring-offset-2 aria-checked:ring-offset-popover"
+                        onClick={() =>
+                          setDraft({ ...settings, colour: colour.hex })
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span id="pet-shape" className="text-sm font-medium">
+                    {copy.shape}
+                  </span>
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    aria-labelledby="pet-shape"
+                    className="flex-wrap"
+                    value={settings.shape}
+                    onValueChange={(value) => {
+                      if (value)
+                        setDraft({
+                          ...settings,
+                          shape: value as PetSettings["shape"],
+                        });
+                    }}
+                  >
+                    <ToggleGroupItem value="auto">{copy.auto}</ToggleGroupItem>
+                    {PetShapeSchema.options.map((shape, i) => (
+                      <ToggleGroupItem value={shape} key={shape}>
+                        {copy.shapes[i]}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </div>
+                <SettingRows>
+                  {(["animate", "showInChat"] as const).map((field) => (
+                    <SettingRow
+                      key={field}
+                      label={field === "animate" ? copy.animate : copy.chat}
+                      htmlFor={`pet-${field}`}
+                    >
+                      <Switch
+                        id={`pet-${field}`}
+                        aria-label={
+                          field === "animate" ? copy.animate : copy.chat
+                        }
+                        checked={settings[field]}
+                        onCheckedChange={(checked) =>
+                          setDraft({ ...settings, [field]: checked })
+                        }
+                      />
+                    </SettingRow>
+                  ))}
+                </SettingRows>
+              </>
+            )}
+            {sheet && conflictAlert}
+          </form>
         )}
-      </footer>
-      <dialog
-        ref={dialog}
-        onCancel={() => setConfirm(undefined)}
-        onClose={() => setConfirm(undefined)}
-      >
-        {confirm && (
-          <>
-            {issue && <p role="alert">{copy.uncertain}</p>}
-            <p>
-              {confirm.type === "forgetAll"
-                ? copy.eraseHint
-                : confirm.type === "personalThings"
-                  ? confirm.value === "drop"
-                    ? copy.dropHint
-                    : copy.personalKeep
-                  : confirm.type === "classify"
-                    ? confirm.personal
-                      ? memory.page?.personalThings === "drop"
-                        ? copy.dropHint
-                        : copy.classify
-                      : copy.classifyWork
-                    : copy.removeHint}
-            </p>
-            <div className="pet-actions">
-              <button
-                disabled={saving}
-                onClick={() => {
-                  dialog.current?.close();
-                  setConfirm(undefined);
-                }}
+        <SheetFooter>
+          <Button type="button" variant="ghost" onClick={closeSheet}>
+            {copy.cancel}
+          </Button>
+          <Button
+            type="submit"
+            form="pet-sheet-form"
+            disabled={saving || !draft || !valid}
+          >
+            {copy.save}
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  );
+
+  const confirmTitle = confirm
+    ? confirm.type === "forgetAll"
+      ? copy.erase
+      : confirm.type === "personalThings"
+        ? confirm.value === "drop"
+          ? copy.personalDrop
+          : copy.personalKeep
+        : confirm.type === "classify"
+          ? confirm.personal
+            ? copy.classify
+            : copy.classifyWork
+          : copy.remove
+    : "";
+  const confirmHint = confirm
+    ? confirm.type === "forgetAll"
+      ? copy.eraseHint
+      : confirm.type === "personalThings"
+        ? confirm.value === "drop"
+          ? copy.dropHint
+          : ""
+        : confirm.type === "classify"
+          ? confirm.personal && memory.page?.personalThings === "drop"
+            ? copy.dropHint
+            : ""
+          : copy.removeHint
+    : "";
+  const destructive =
+    !!confirm &&
+    (confirm.type === "forget" ||
+      confirm.type === "forgetAll" ||
+      (confirm.type === "personalThings" && confirm.value === "drop") ||
+      (confirm.type === "classify" &&
+        confirm.personal &&
+        memory.page?.personalThings === "drop"));
+  const confirmDialog = (
+    <AlertDialog
+      open={!!confirm}
+      onOpenChange={(next) => {
+        if (!next && !saving) setConfirm(undefined);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
+          {confirmHint && (
+            <AlertDialogDescription>{confirmHint}</AlertDialogDescription>
+          )}
+        </AlertDialogHeader>
+        {issue && (
+          <Alert variant="destructive">
+            <AlertDescription>{copy.uncertain}</AlertDescription>
+          </Alert>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={saving}>{copy.cancel}</AlertDialogCancel>
+          <AlertDialogAction
+            variant={destructive ? "destructive" : "default"}
+            disabled={saving}
+            onClick={(e) => {
+              e.preventDefault();
+              if (confirm) void mutate(confirm);
+            }}
+          >
+            {confirm?.type === "forget" || confirm?.type === "forgetAll"
+              ? copy.remove
+              : copy.save}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
+  if (manager)
+    return (
+      <MenuPage>
+        <PageHeader
+          title={copy.manager}
+          back={{ to: "/pet", label: copy.title }}
+        />
+        <div data-still={!animate} className="pet-page flex flex-col gap-8">
+          {shell}
+          {list}
+          <SettingRows>
+            <SettingRow label={copy.personalKeep} htmlFor="pet-personal">
+              <Switch
+                id="pet-personal"
+                aria-label={copy.personalKeep}
+                checked={memory.page?.personalThings !== "drop"}
+                disabled={saving || !memory.page}
+                onCheckedChange={(checked) =>
+                  setConfirm({
+                    type: "personalThings",
+                    value: checked ? "keep" : "drop",
+                    requestId: crypto.randomUUID(),
+                  })
+                }
+              />
+            </SettingRow>
+          </SettingRows>
+          <SettingRows>
+            <SettingRow label={copy.erase}>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={saving || !memory.page}
+                onClick={() =>
+                  setConfirm({
+                    type: "forgetAll",
+                    requestId: crypto.randomUUID(),
+                  })
+                }
               >
-                {copy.cancel}
-              </button>
-              <button disabled={saving} onClick={() => void mutate(confirm)}>
-                {confirm.type === "forget" || confirm.type === "forgetAll"
-                  ? copy.remove
-                  : copy.save}
-              </button>
-            </div>
+                <Trash2 data-icon="inline-start" aria-hidden="true" />
+                {copy.remove}
+              </Button>
+            </SettingRow>
+          </SettingRows>
+        </div>
+        {confirmDialog}
+      </MenuPage>
+    );
+
+  return (
+    <MenuPage wide={open}>
+      <PageHeader
+        title={copy.title}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              disabled={!profile.data}
+              onClick={() => openSheet("appearance")}
+            >
+              <Palette data-icon="inline-start" aria-hidden="true" />
+              {copy.appearance}
+            </Button>
+            <MoreActions label={copy.more}>
+              <DropdownMenuItem asChild>
+                <Link to="/me/memory">{copy.manager}</Link>
+              </DropdownMenuItem>
+            </MoreActions>
           </>
-        )}
-      </dialog>
-    </div>
+        }
+      />
+      <div
+        data-open={open}
+        data-still={!animate}
+        className="pet-page pet-layout"
+      >
+        <div
+          className="pet-shell-slot md:data-[open=true]:sticky md:data-[open=true]:top-4"
+          data-open={open}
+        >
+          {shell}
+          {!open && !sheet && conflictAlert && (
+            <div className="mt-4">{conflictAlert}</div>
+          )}
+        </div>
+        {open && list}
+      </div>
+      {sheetPanel}
+      {confirmDialog}
+    </MenuPage>
   );
 }
+
 export function PetMemoryPage() {
   return <PetPage manager />;
 }

@@ -11,7 +11,7 @@ const profile = {
   settings: DEFAULT_PET_SETTINGS,
   automaticShape: "circle",
   look: ["work", "projects", "tools", "people", "style", "rhythm"].map(
-    (section) => ({ section, weight: 0 }),
+    (section) => ({ section, weight: 0, count: 0 }),
   ),
 };
 const response = (value: unknown, status = 200) =>
