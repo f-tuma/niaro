@@ -1,3 +1,4 @@
+import { nativeActionView } from "./helpers/action-dispatch";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
@@ -115,7 +116,7 @@ test("native HTTP binds forms and approval to paired scope and replays after res
     assert.equal(url.pathname, "/v1/chat/completions");
     assert.equal(request.headers?.Authorization, `Bearer ${providerKey}`);
     await request.beforeDispatch!(() => {});
-    const body = request.body as ModelRequest;
+    const body = nativeActionView(request.body as ModelRequest);
     assert.equal(body.model, "TEST-native-http-model");
     requests.push(structuredClone(body));
     assert(requests.length <= 16, "The offline native scenario is bounded");

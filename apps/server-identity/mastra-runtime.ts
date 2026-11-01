@@ -529,6 +529,7 @@ export function createNativeCatalogRuntime(
         signal,
         session,
         definitions,
+        actionDispatch: session.chat,
         createModel: (selected, _guard, observer) =>
           createNiaroMastraModel(
             selected,

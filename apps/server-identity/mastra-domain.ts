@@ -915,6 +915,8 @@ export type DomainOptions = {
 };
 export type DomainFinalize = ServiceAnswer | { repair: string };
 export type DomainSession = {
+  /** A person's chat: actions are loaded mid-run, so they are dispatched. */
+  chat: boolean;
   recordToolProblem(
     title: string,
     reason?: "invalid_arguments" | "unavailable",
@@ -4275,7 +4277,11 @@ export function createMastraDomain(
           taggedSkills.length > 0 ||
           taggedMeetings.length > 0,
         instructions:
-          "You are a capable assistant. The connected services and the actions you may use are listed under 'Connected services' below; nothing else is connected. Call an action's tool directly when it is already available. For a listed action without a tool yet, call use_actions with its exact name (several at once when the request needs them), then call it. Use find_actions only when you cannot tell which listed action fits. Reads execute directly; writes require the person's explicit approval. Never claim a write succeeded without its authoritative receipt. " +
+          "You are a capable assistant. The connected services and the actions you may use are listed under 'Connected services' below; nothing else is connected. " +
+          (chat
+            ? "An action is ready to run once it is listed under 'Actions ready to run'; run it with call_action. For a listed action that is not ready yet, call use_actions with its exact name (several at once when the request needs them), then run it."
+            : "Call an action's tool directly when it is already available. For a listed action without a tool yet, call use_actions with its exact name (several at once when the request needs them), then call it.") +
+          " Use find_actions only when you cannot tell which listed action fits. Reads execute directly; writes require the person's explicit approval. Never claim a write succeeded without its authoritative receipt. " +
           (humanTasksAvailable
             ? "Tasks lists open items: things that still have to be resolved but cannot be finished now because information, a decision or an outside step is missing. Create one with human_task_create only for such a thing, never for something you finish in this conversation and never to track your own execution. openTasks may be truncated; the server checks all open tasks for an exact normalized duplicate and returns status duplicate when one already exists. Then tell the person that the existing item remains in Tasks; never say you created another one. Do not create a semantic duplicate of an item you can see in openTasks. When this conversation resolves an item in openTasks or attachedTask, or the person says it is done or no longer needed, close it with human_task_close and its observed revision plus a short reason. If the close reports revision_conflict, the item changed since you read it: review its current state and do not repeat the stale decision. Never close an item because you replied, a write awaits approval, or a write failed. Creating or closing an item performs no action and grants no approval. Tell the person in one short sentence when you created or closed an item. " +
               (tasks?.attached
@@ -5486,6 +5492,7 @@ export function createMastraDomain(
       resolve,
       toolResult,
       canContinue,
+      chat,
       activeTools: () => [
         ...sessionBuiltins
           .map((tool) => tool.name)

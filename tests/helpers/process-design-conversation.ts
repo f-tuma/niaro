@@ -1,3 +1,4 @@
+import { nativeActionView } from "./action-dispatch";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -208,7 +209,9 @@ export function designConversationFixture(
         modelCount() <= 100,
         "Synthetic conversation exceeded its dispatch limit",
       );
-      const message = await modelScript(structuredClone(body));
+      const message = await modelScript(
+        nativeActionView(structuredClone(body)),
+      );
       await afterModel?.(body);
       return {
         status: modelStatus,

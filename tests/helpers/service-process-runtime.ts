@@ -1,3 +1,4 @@
+import { nativeActionView } from "./action-dispatch";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { CatalogCommand } from "../../packages/protocol/service-catalog";
@@ -163,7 +164,9 @@ export function fixture(
           JSON.stringify(request.body),
         );
       });
-      const message = modelScript(request.body as ModelRequest);
+      const message = modelScript(
+        nativeActionView(request.body as ModelRequest),
+      );
       await afterModel?.();
       return {
         status: 200,

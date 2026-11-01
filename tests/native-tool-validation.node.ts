@@ -1740,3 +1740,77 @@ test("duplicate provider call identities fail before any captured argument can b
     await h.close();
   }
 });
+
+test("the chat reaches the provider through call_action: a stable tool list, schemas as text after the person's message", async () => {
+  const h = createTrustHarness();
+  const tool = h.tool("Find contact");
+  // The UUID as the model often writes it: hyphens and no prefix.
+  const hex = tool.slice("action_".length).replaceAll("_", "");
+  const uuid = [8, 4, 4, 4, 12]
+    .reduce<string[]>((parts, size) => {
+      const at = parts.join("").length;
+      return [...parts, hex.slice(at, at + size)];
+    }, [])
+    .join("-");
+  try {
+    h.onChat((body) => {
+      if (!body.tools?.some((entry) => entry.function.name === tool))
+        return h.call("find_actions", {
+          service: "TEST Calendar and contacts",
+          need: "find contact",
+        });
+      if (toolResults(body).some((result) => result.data?.contacts))
+        return { content: "Contact found." };
+      return {
+        content: null,
+        tool_calls: [
+          {
+            id: "TEST-call-action",
+            type: "function",
+            function: {
+              name: "call_action",
+              arguments: JSON.stringify({
+                action: uuid,
+                input: { name: "Jane Test" },
+              }),
+            },
+          },
+        ],
+      };
+    });
+    await h.send("Find Jane Test");
+    assert.equal(h.network.length, 1);
+    assert.equal(h.commandState().operations.length, 1);
+    const modelRequests = h.requests.filter((request) => request.messages);
+    for (const request of modelRequests) {
+      const names = (request.tools ?? []).map((entry) => entry.function.name);
+      // Actions never ride as their own tools; the list stays the same.
+      assert(!names.some((name) => name.startsWith("action_")), names.join());
+      assert.deepEqual(
+        names,
+        (modelRequests[0]!.tools ?? []).map((entry) => entry.function.name),
+      );
+    }
+    const later = modelRequests.at(-1)!.messages!;
+    const listing = later.findIndex(
+      (message) =>
+        message.role === "system" &&
+        String(message.content).startsWith(
+          "Actions ready to run with call_action",
+        ),
+    );
+    assert(listing > 0);
+    assert.equal(later[listing - 1]!.role, "user");
+    assert(String(later[listing]!.content).includes(tool));
+    // The earlier call is shown back as call_action with its business input.
+    const call = later
+      .flatMap((message) => message.tool_calls ?? [])
+      .find((entry) => entry.function.name === "call_action")!;
+    assert.deepEqual(JSON.parse(call.function.arguments), {
+      action: tool,
+      input: { name: "Jane Test" },
+    });
+  } finally {
+    await h.close();
+  }
+});

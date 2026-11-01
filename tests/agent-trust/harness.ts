@@ -1,4 +1,8 @@
-import { NativeAttachmentBindingSchema , DomainCommandSchema } from "../../apps/server-identity/mastra-domain";
+import { nativeActionView } from "../helpers/action-dispatch";
+import {
+  NativeAttachmentBindingSchema,
+  DomainCommandSchema,
+} from "../../apps/server-identity/mastra-domain";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -335,7 +339,7 @@ export function createTrustHarness(
         );
         return response;
       }
-      const message = await chat(body);
+      const message = await chat(nativeActionView(body));
       assert(message, "Script must return a model message");
       return (
         providerResponse?.(body, message) ?? json({ choices: [{ message }] })

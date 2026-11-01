@@ -1,3 +1,4 @@
+import { nativeActionView } from "./action-dispatch";
 import assert from "node:assert/strict";
 import {
   chmodSync,
@@ -166,7 +167,7 @@ export async function designHttpFixture(
         requests.push(request.body as ModelRequest);
       });
       const response = await model(
-        request.body as ModelRequest,
+        nativeActionView(request.body as ModelRequest),
         request.signal,
       );
       return {
