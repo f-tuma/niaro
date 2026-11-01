@@ -51,6 +51,7 @@ import Square from "lucide-react-native/icons/square";
 import Mic from "lucide-react-native/icons/mic";
 import Clock from "lucide-react-native/icons/clock";
 import History from "lucide-react-native/icons/rotate-ccw-clock";
+import RotateCcw from "lucide-react-native/icons/rotate-ccw";
 import Pin from "lucide-react-native/icons/pin";
 import User from "lucide-react-native/icons/user";
 import Link from "lucide-react-native/icons/link";
@@ -529,6 +530,7 @@ const icons = {
   mic: Mic,
   clock: Clock,
   history: History,
+  rotate: RotateCcw,
   pin: Pin,
   person: User,
   link: Link,

@@ -51,7 +51,7 @@ import { PetFallback } from "../../packages/ui/PetFallback";
 import { tokens as t } from "../../packages/design-tokens";
 import { petCopy, petFormat } from "./pet-profile-copy";
 import { nativePetAppearance } from "./pet-profile-model";
-import { DetailSheet, IconButton, chrome } from "./ScreenChrome";
+import { DetailSheet, chrome } from "./ScreenChrome";
 
 const sections = [
   "work",
@@ -78,15 +78,24 @@ export type PetScreenView =
  * The nested screen state lives with the app so the one TopBar can show the
  * section title, the history toggle and the way back to the overview.
  */
+/** The memory switch's state, published by the page for the TopBar to render. */
+export type PetMemoryControl = {
+  value: boolean;
+  disabled: boolean;
+  onChange: (value: boolean) => void;
+};
 export function usePetScreen() {
   const [view, setView] = useState<PetScreenView>({ kind: "overview" });
   const [history, setHistory] = useState(false);
+  const [memory, setMemory] = useState<PetMemoryControl | null>(null);
   return useMemo(
     () => ({
       view,
       setView,
       history,
       setHistory,
+      memory,
+      setMemory,
       nested: view.kind !== "overview",
       /** Returns to the overview; false when already there. */
       back: () => {
@@ -96,7 +105,7 @@ export function usePetScreen() {
       },
       reset: () => setView({ kind: "overview" }),
     }),
-    [view, history],
+    [view, history, memory],
   );
 }
 export type PetScreen = ReturnType<typeof usePetScreen>;
@@ -108,54 +117,47 @@ export function petScreenTitle(screen: PetScreen, language: Language) {
       ? c.saved
       : c.title;
 }
-/** TopBar trailing actions: the history toggle on nested screens, then `…`. */
+/** TopBar trailing actions: the memory switch on the overview, the history toggle on nested screens. */
 export function PetTopBarActions({
   screen,
   language,
-  onMenu,
 }: {
   screen: PetScreen;
   language: Language;
-  onMenu: () => void;
 }) {
   const c = petCopy(language);
-  return (
-    <>
-      {screen.nested ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={c.history}
-          accessibilityState={{ selected: screen.history }}
-          aria-pressed={screen.history}
-          onPress={() => screen.setHistory(!screen.history)}
-          style={({ pressed }) => [
-            styles.iconButton,
-            screen.history && { backgroundColor: t.color.accent.softBlue },
-            pressed && { backgroundColor: t.color.pressed },
-          ]}
-        >
-          <Icon
-            name="history"
-            size={22}
-            color={screen.history ? t.color.action.link : t.color.text.primary}
-          />
-        </Pressable>
-      ) : null}
-      <IconButton icon="more" label={c.more} onPress={onMenu} />
-    </>
-  );
-}
-/** The `…` menu of the pet page: an Alert so no sheet stacks on a sheet. */
-export function petMenu(
-  language: Language,
-  actions: { manage: () => void; appearance: () => void },
-) {
-  const c = petCopy(language);
-  Alert.alert(c.title, undefined, [
-    { text: c.cancel, style: "cancel" },
-    { text: c.manager, onPress: actions.manage },
-    { text: c.appearance, onPress: actions.appearance },
-  ]);
+  if (screen.nested)
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={c.history}
+        accessibilityState={{ selected: screen.history }}
+        aria-pressed={screen.history}
+        onPress={() => screen.setHistory(!screen.history)}
+        style={({ pressed }) => [
+          styles.iconButton,
+          screen.history && { backgroundColor: t.color.accent.softBlue },
+          pressed && { backgroundColor: t.color.pressed },
+        ]}
+      >
+        <Icon
+          name="rotate"
+          size={22}
+          color={screen.history ? t.color.action.link : t.color.text.primary}
+        />
+      </Pressable>
+    );
+  return screen.memory ? (
+    <View style={styles.light}>
+      <Icon name="moon" size={16} color={t.color.text.secondary} />
+      <Toggle
+        accessibilityLabel={c.memory}
+        value={screen.memory.value}
+        disabled={screen.memory.disabled}
+        onChange={screen.memory.onChange}
+      />
+    </View>
+  ) : null;
 }
 const deviceKeys = [
   ["saved", "bookmark"],
@@ -209,7 +211,7 @@ export function PetProfile({
   onPetBounds?: (bounds: HomePetBounds | null) => void;
   /** Nested screen state shared with the TopBar; owned here when absent. */
   screen?: PetScreen;
-  /** The manage-memory sheet, opened from the TopBar `…` menu. */
+  /** The manage-memory sheet, opened from the saved screen. */
   manage?: boolean;
   onManage?: (open: boolean) => void;
 }) {
@@ -491,20 +493,26 @@ export function PetProfile({
       </View>
     </View>
   ) : null;
-  const memorySwitch = (
-    <Toggle
-      accessibilityLabel={c.memory}
-      value={!!page && !page.optOut}
-      disabled={busy || !page || !page.enabled}
-      onChange={(value) =>
-        void mutate({
+  const memoryValue = !!page && !page.optOut,
+    memoryDisabled = busy || !page || !page.enabled;
+  const { setMemory } = screen;
+  const mutateRef = useRef(mutate);
+  useEffect(() => {
+    mutateRef.current = mutate;
+  });
+  useEffect(() => {
+    setMemory({
+      value: memoryValue,
+      disabled: memoryDisabled,
+      onChange: (value) =>
+        void mutateRef.current({
           type: "preference",
           optOut: !value,
           requestId: randomUUID(),
-        })
-      }
-    />
-  );
+        }),
+    });
+  }, [setMemory, memoryValue, memoryDisabled]);
+  useEffect(() => () => setMemory(null), [setMemory]);
   const pet = (size: number, interactive: boolean, visible = true) =>
     profile ? (
       <PetView
@@ -528,12 +536,6 @@ export function PetProfile({
           publishBounds();
         }}
       >
-        {!compact && (
-          <View style={styles.light}>
-            <Icon name="moon" size={16} color={t.color.text.secondary} />
-            {memorySwitch}
-          </View>
-        )}
         <View
           style={styles.stageBody}
           onLayout={(event) => {
@@ -576,13 +578,6 @@ export function PetProfile({
           ) : null}
         </View>
       </View>
-      {compact && (
-        <View style={styles.lightRow}>
-          <Icon name="moon" size={18} color={t.color.text.secondary} />
-          <Text style={{ flex: 1 }}>{c.memory}</Text>
-          {memorySwitch}
-        </View>
-      )}
       <View
         accessibilityRole="list"
         accessibilityLabel={c.observed}
@@ -868,6 +863,14 @@ export function PetProfile({
               disabled={busy}
               onPress={() => void read(true)}
               style={{ marginTop: t.spacing.md }}
+            />
+          ) : null}
+          {view.kind === "saved" ? (
+            <Button
+              label={c.manager}
+              variant="quiet"
+              onPress={() => setManage(true)}
+              style={{ marginTop: t.spacing.md, alignSelf: "center" }}
             />
           ) : null}
         </View>
@@ -1208,10 +1211,10 @@ const styles = StyleSheet.create({
   page: { gap: t.spacing.md },
   stage: { flex: 1, gap: t.spacing.xs },
   light: {
-    alignSelf: "flex-end",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    paddingRight: 6,
   },
   stageBody: {
     flex: 1,
@@ -1225,12 +1228,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     alignItems: "center",
     justifyContent: "center",
-  },
-  lightRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: t.spacing.sm,
-    minHeight: t.control.minHeight,
   },
   centerText: { textAlign: "center" },
   strip: {

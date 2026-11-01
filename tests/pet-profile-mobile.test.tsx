@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   act,
   render,
@@ -14,6 +14,7 @@ import { CompanionLibrary } from "../apps/mobile/CompanionLibrary";
 import {
   PetProfile,
   petScreenTitle,
+  PetTopBarActions,
   usePetScreen,
   type PetScreen,
 } from "../apps/mobile/PetProfile";
@@ -139,7 +140,10 @@ test("profile save acknowledgement fences earlier reads and later stale revision
   } as unknown as ClientSession;
   let model!: ReturnType<typeof useNativePetProfile>;
   function Probe({ owner }: { owner: ClientSession }) {
-    model = useNativePetProfile(owner);
+    const current = useNativePetProfile(owner);
+    useEffect(() => {
+      model = current;
+    });
     return null;
   }
   const view = render(<Probe owner={session} />);
@@ -195,7 +199,10 @@ test("profile hero visibility follows measured bounds and section selection focu
     }),
   } as unknown as ClientSession;
   function Probe() {
-    visibility = useHomePetVisibility();
+    const current = useHomePetVisibility();
+    useEffect(() => {
+      visibility = current;
+    });
     return (
       <PetProfile
         session={session}
@@ -206,8 +213,8 @@ test("profile hero visibility follows measured bounds and section selection focu
         appearance={false}
         onAppearance={() => {}}
         onOpenSource={() => {}}
-        petVisible={visibility.visible}
-        onPetBounds={visibility.onBounds}
+        petVisible={current.visible}
+        onPetBounds={current.onBounds}
       />
     );
   }
@@ -265,19 +272,35 @@ const memoryPage = (overrides: Record<string, unknown> = {}) => ({
   nextCursor: null,
   ...overrides,
 });
-function renderPet(session: ClientSession, value: Profile = counted) {
-  return render(
-    <PetProfile
-      session={session}
-      language="en"
-      profile={value}
-      onSave={async () => value}
-      onRefresh={async () => {}}
-      appearance={false}
-      onAppearance={() => {}}
-      onOpenSource={() => {}}
-    />,
+// The TopBar actions render the memory switch and the history toggle, so the
+// page and the bar share one screen state as they do in the app.
+function PetWithBar({
+  session,
+  value,
+}: {
+  session: ClientSession;
+  value: Profile;
+}) {
+  const petScreen = usePetScreen();
+  return (
+    <>
+      <PetTopBarActions screen={petScreen} language="en" />
+      <PetProfile
+        session={session}
+        language="en"
+        profile={value}
+        onSave={async () => value}
+        onRefresh={async () => {}}
+        appearance={false}
+        onAppearance={() => {}}
+        onOpenSource={() => {}}
+        screen={petScreen}
+      />
+    </>
   );
+}
+function renderPet(session: ClientSession, value: Profile = counted) {
+  return render(<PetWithBar session={session} value={value} />);
 }
 test("the device shows honest per-section counts and sums them in the status line", async () => {
   const session = {
@@ -294,8 +317,10 @@ test("the device shows honest per-section counts and sums them in the status lin
   ).toEqual({ text: "0 observations" });
   expect(screen.getAllByText("5")).toHaveLength(1);
   expect(screen.queryByText("0")).toBeNull();
-  expect(screen.getByRole("switch", { name: "Use memory" }).props.value).toBe(
-    true,
+  await waitFor(() =>
+    expect(
+      screen.getByRole("switch", { name: "Use memory" }).props.value,
+    ).toBe(true),
   );
 });
 
@@ -368,7 +393,10 @@ test("a section opens as a nested screen and the back path restores focus to its
   } as unknown as ClientSession;
   let petScreen!: PetScreen;
   function Probe() {
-    petScreen = usePetScreen();
+    const current = usePetScreen();
+    useEffect(() => {
+      petScreen = current;
+    });
     return (
       <PetProfile
         session={session}
@@ -379,7 +407,7 @@ test("a section opens as a nested screen and the back path restores focus to its
         appearance={false}
         onAppearance={() => {}}
         onOpenSource={() => {}}
-        screen={petScreen}
+        screen={current}
       />
     );
   }
@@ -423,7 +451,10 @@ test("the row menu runs delete and classify through the confirmed commands", asy
   } as unknown as ClientSession;
   let petScreen!: PetScreen;
   function Probe() {
-    petScreen = usePetScreen();
+    const current = usePetScreen();
+    useEffect(() => {
+      petScreen = current;
+    });
     return (
       <PetProfile
         session={session}
@@ -434,7 +465,7 @@ test("the row menu runs delete and classify through the confirmed commands", asy
         appearance={false}
         onAppearance={() => {}}
         onOpenSource={() => {}}
-        screen={petScreen}
+        screen={current}
       />
     );
   }

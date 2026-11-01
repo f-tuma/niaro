@@ -2,7 +2,6 @@
  * the viewport-height math are what utilities cannot express. */
 .pet-layout {
   --pet-rail-width: 320px;
-  --pet-detail-width: 720px;
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -24,11 +23,8 @@
   /* A section or the saved list open: a sticky rail and the status screen at
    * a readable width, aligned left. */
   .pet-layout[data-open="true"] {
-    grid-template-columns: var(--pet-rail-width) minmax(
-        0,
-        var(--pet-detail-width)
-      );
-    justify-content: start;
+    grid-template-columns: var(--pet-rail-width) minmax(0, 1fr);
+    max-width: none;
     align-items: start;
     gap: 2.5rem;
   }

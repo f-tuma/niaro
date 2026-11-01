@@ -1,7 +1,6 @@
 import {
   PetProfile,
   PetTopBarActions,
-  petMenu,
   petScreenTitle,
   usePetScreen,
 } from "./PetProfile";
@@ -2212,16 +2211,7 @@ export function Workspace({
               subtitle={statusLine}
               trailing={
                 petOpen ? (
-                  <PetTopBarActions
-                    screen={petScreen}
-                    language={language}
-                    onMenu={() =>
-                      petMenu(language, {
-                        manage: () => setPetManageOpen(true),
-                        appearance: () => setPetAppearanceOpen(true),
-                      })
-                    }
-                  />
+                  <PetTopBarActions screen={petScreen} language={language} />
                 ) : session && section === "tasks" ? (
                   <IconButton
                     icon="refresh"
