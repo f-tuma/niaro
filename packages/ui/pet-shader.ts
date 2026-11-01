@@ -5,11 +5,72 @@ import { petNoise } from "./pet-interaction";
 import {
   PET_COLORS,
   PET_COUNTS,
+  PET_CUSTOM_SHAPES,
   petFrame,
   petTransform,
   type PetMotion,
   type PetState,
 } from "./pet-motion";
+
+// The custom silhouettes (cat, heart): k = Σ cᵢ·Tᵢ(y) with y = sin th, by Clenshaw's
+// recurrence unrolled from the same table pet-motion.ts evaluates, and its d/dy for the
+// outline's slope. Generated here so the GLSL can never drift from the TypeScript.
+const glslFloat = (value: number) => {
+  const text = value.toFixed(10);
+  return value < 0 ? `(${text})` : text;
+};
+const customShapes = Object.entries(PET_CUSTOM_SHAPES).sort(
+  ([, a], [, b]) => b.kind - a.kind,
+);
+const customGlsl =
+  customShapes
+    .map(([name, shape]) => {
+      const cs = shape.coefficients;
+      const tail = cs.slice(1).reverse();
+      const radius = tail
+        .map(
+          (c) => `  b = 2.0 * y * b1 - b2 + ${glslFloat(c)}; b2 = b1; b1 = b;`,
+        )
+        .join("\n");
+      const slope = tail
+        .map(
+          (c) =>
+            `  d = 2.0 * b1 + 2.0 * y * d1 - d2; d2 = d1; d1 = d; b = 2.0 * y * b1 - b2 + ${glslFloat(c)}; b2 = b1; b1 = b;`,
+        )
+        .join("\n");
+      return `float ${name}K(float y){
+  float b1 = 0.0, b2 = 0.0, b;
+${radius}
+  return y * b1 - b2 + ${glslFloat(cs[0]!)};
+}
+float ${name}Kd(float y){
+  float b1 = 0.0, b2 = 0.0, b, d1 = 0.0, d2 = 0.0, d;
+${slope}
+  return b1 + y * d1 - d2;
+}`;
+    })
+    .join("\n") +
+  `
+float customLobe(vec2 u, float kind){
+${customShapes
+  .slice(0, -1)
+  .map(
+    ([name, shape]) =>
+      `  if (kind > ${glslFloat(shape.kind - 0.5)}) return ${name}K(u.y);`,
+  )
+  .join("\n")}
+  return ${customShapes[customShapes.length - 1]![0]}K(u.y);
+}
+float customSlope(vec2 u, float kind){
+${customShapes
+  .slice(0, -1)
+  .map(
+    ([name, shape]) =>
+      `  if (kind > ${glslFloat(shape.kind - 0.5)}) return ${name}Kd(u.y);`,
+  )
+  .join("\n")}
+  return ${customShapes[customShapes.length - 1]![0]}Kd(u.y);
+}`;
 
 const vertex = `attribute vec2 p; varying vec2 uv; void main(){ uv=p; gl_Position=vec4(p,0.,1.); }`;
 const fragment = `
@@ -77,8 +138,18 @@ vec2 cpick(vec2 u1, vec2 u2, vec2 u4, vec2 u8, float n){
   return r;
 }
 vec2 cpowi(vec2 u, float n){ vec2 u2 = cmul(u, u), u4 = cmul(u2, u2); return cpick(u, u2, u4, cmul(u4, u4), n); }
-// a*cos(n*th + rot) = a*Re(u^n * e^(i*rot)), with s = (n, a, cos rot, sin rot)
-float lobe(vec2 u1, vec2 u2, vec2 u4, vec2 u8, vec4 s){ return s.y * cmul(cpick(u1, u2, u4, u8, s.x), s.zw).x; }
+// a*cos(n*th + rot) = a*Re(u^n * e^(i*rot)), with s = (n, a, cos rot, sin rot);
+// s.x < 0 is a custom silhouette (cat -1, heart -2): a series in sin th instead
+${customGlsl}
+float lobe(vec2 u1, vec2 u2, vec2 u4, vec2 u8, vec4 s){
+  if (s.x < -0.5) return customLobe(u1, s.x);
+  return s.y * cmul(cpick(u1, u2, u4, u8, s.x), s.zw).x;
+}
+// d(a*cos(n*th + rot))/dth = -a*n*sin(n*th + rot); for a series in y = sin th, dk/dy * cos th
+float lobeSlope(vec2 u, vec4 s){
+  if (s.x < -0.5) return u.x * customSlope(u, s.x);
+  return -s.y * s.x * cmul(cpowi(u, s.x), s.zw).y;
+}
 float shape2(vec2 p){
   vec2 st = uShapeK.xy;
   vec2 q = p / st;
@@ -420,9 +491,7 @@ vec2 edgeGL(vec3 x){
   vec2 q = l.xy / st;
   float r = max(length(q), 1e-3);
   vec2 qh = q / r;
-  // d(a*cos(n*th + rot))/dth = -a*n*sin(n*th + rot)
-  float kd = mix(-uShapeA.y * uShapeA.x * cmul(cpowi(qh, uShapeA.x), uShapeA.zw).y,
-                 -uShapeB.y * uShapeB.x * cmul(cpowi(qh, uShapeB.x), uShapeB.zw).y, uMorph);
+  float kd = mix(lobeSlope(qh, uShapeA), lobeSlope(qh, uShapeB), uMorph);
   float lip = uShapeK.w;
   vec2 gq = qh - vec2(-qh.y, qh.x) * (uR * kd / r);
   return vec2(length(gq / st) * min(st.x, st.y), lip);
@@ -877,10 +946,16 @@ export function createPetShader(gl: WebGLRenderingContext, background: string) {
           0.4 *
           0.7 *
           Math.max(Math.abs(frame.stretch), Math.abs(1 / inverseX - 1));
+        // the widest lobe of either morph end, the crest of every rim wave, the
+        // stretch, and a margin beyond a pixel (the cookie's 0.7 * 1.075 + 0.004 * 0.7 * 1.675)
         four(
           "uBound",
           frame.bob,
-          (0.7 * 1.075 + 0.004 * 0.7 * 1.675) * scale + shift + 0.02,
+          (0.7 * (1 + sh.extent) + 0.004 * 0.7 * sh.lip) *
+            Math.max(sh.a.sx, sh.a.sy, sh.b.sx, sh.b.sy) *
+            scale +
+            shift +
+            0.02,
           (0.42 + Math.max(0, -frame.dent)) / 1.15,
           0,
         );

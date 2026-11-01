@@ -16,6 +16,8 @@ export const PetShapeSchema = z.enum([
   "clover",
   "burst",
   "pebble",
+  "cat",
+  "heart",
 ]);
 export const PET_PALETTE = [
   { name: "Levandule", hex: "#BDB3FA", rgb: [0.74, 0.7, 0.98] },

@@ -77,6 +77,8 @@ export const petCopy = (language: "en" | "cs") =>
           "Jetel",
           "Výbuch",
           "Oblázek",
+          "Kočka",
+          "Srdíčko",
         ],
       }
     : {
@@ -156,6 +158,8 @@ export const petCopy = (language: "en" | "cs") =>
           "Clover",
           "Burst",
           "Pebble",
+          "Cat",
+          "Heart",
         ],
       };
 

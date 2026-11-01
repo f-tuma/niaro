@@ -34,7 +34,7 @@ A pet, its personalization and its profile SHALL be readable and changeable only
 
 ### Requirement: Pet personalization
 
-The person SHALL set the pet's name (1–40 characters) and body colour (one of 8), and its body shape: either **automatic** (default) or one of 8 shapes pinned by the person, revision-checked (`409 pet_conflict` on a stale revision). The person SHALL NOT choose the pet's inner colours.
+The person SHALL set the pet's name (1–40 characters) and body colour (one of 8), and its body shape: either **automatic** (default) or one of 10 shapes pinned by the person (the six section shapes, circle and pill, plus the pinned-only cat and heart, which share the family's soft silhouette and morph with it), revision-checked (`409 pet_conflict` on a stale revision). The person SHALL NOT choose the pet's inner colours.
 
 #### Scenario: Rename
 

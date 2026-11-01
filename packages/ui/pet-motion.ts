@@ -88,15 +88,111 @@ export const PET_SHAPES = {
   clover: [4, 0.16, Math.PI / 4, 1, 1],
   burst: [12, 0.055, 0, 1, 1],
   pebble: [3, 0.06, Math.PI / 2, 1.08, 0.96],
+  // n < 0 marks a pinnable silhouette outside the cosine family (PET_CUSTOM_SHAPES)
+  cat: [-1, 0, 0, 1, 1],
+  heart: [-2, 0, 0, 1, 1],
 } as const;
+/**
+ * Pinnable silhouettes outside the cosine family: a left/right symmetric radial
+ * profile k(θ) = Σ cᵢ·Tᵢ(sin θ), a Chebyshev series that the shader and this file
+ * both evaluate with Clenshaw's recurrence (petCustomRadius), so hit tests, sign
+ * anchors and the SVG fallback agree with the GL outline. Refitted from the owner's
+ * prototype (scripts in the 2026-11-01 pet polish) so both read as family members:
+ * every tip and valley is at least as round as the clover's (curvature radius
+ * ≥ 0.36 R), the reach stays within the family's (max radius ≤ 1.15 R) and
+ * lip = 1 + max |dk/dθ| is below the sunny's. The eyes sit where they always do.
+ */
+export const PET_CUSTOM_SHAPES = {
+  cat: {
+    kind: -1,
+    lip: 1.837,
+    extent: 0.116,
+    coefficients: [
+      -0.0042593474, -0.0155978729, -0.0779941228, -0.0393060313, -0.0667054002,
+      -0.0491415048, -0.0126014884, 0.0046361276, 0.002930107, -0.0019095837,
+      -0.0015957923, 0.0014775075, 0.0028113626, 0.0018750184, 0.0007161073,
+      0.0004200229, 0.0004865534, 0.0003356527, 0.0000674863, -0.0000431128,
+      -0.0000206794, -0.0000282995, -0.0000827531, -0.0000840048,
+    ],
+  },
+  heart: {
+    kind: -2,
+    lip: 1.787,
+    extent: 0.122,
+    coefficients: [
+      -0.0862171347, 0.0322517753, -0.0149505025, -0.1814463962, -0.0235317855,
+      -0.022395714, 0.0043996717, -0.0101174928, -0.0021910599, 0.0021078849,
+      0.0016479107, 0.0017803478, -0.0001502293, 0.0017674377, 0.0007422655,
+      0.0007098666, 0.0000535624, 0.0001752318, 0.0002062251, -0.0000484928,
+      -0.0000282796, -0.0001172522, 0.0000151147, -0.0000229164,
+    ],
+  },
+} as const;
+export type PetCustomShape =
+  (typeof PET_CUSTOM_SHAPES)[keyof typeof PET_CUSTOM_SHAPES];
 export type PetAppearance = {
   shape?: keyof typeof PET_SHAPES;
   tint?: readonly number[];
   counts?: readonly number[];
 };
 export function petShape(appearance?: PetAppearance) {
-  const [n, a, rot, sx, sy] = PET_SHAPES[appearance?.shape ?? "cookie"];
-  return { n, a, rot, sx, sy, lip: 1 + n * a };
+  const shape = appearance?.shape ?? "cookie";
+  const [n, a, rot, sx, sy] = PET_SHAPES[shape];
+  const custom = (
+    PET_CUSTOM_SHAPES as Partial<
+      Record<keyof typeof PET_SHAPES, PetCustomShape>
+    >
+  )[shape];
+  return {
+    n,
+    a,
+    rot,
+    sx,
+    sy,
+    lip: custom ? custom.lip : 1 + n * a,
+    extent: custom ? custom.extent : a,
+    custom: custom?.coefficients,
+  };
+}
+export type PetShapeTerms = ReturnType<typeof petShape>;
+/** Σ cᵢ·Tᵢ(y) by Clenshaw's recurrence; the shader unrolls the same steps. */
+export function petCustomRadius(y: number, coefficients: readonly number[]) {
+  let b1 = 0,
+    b2 = 0;
+  for (let i = coefficients.length - 1; i > 0; i--) {
+    const b = 2 * y * b1 - b2 + coefficients[i]!;
+    b2 = b1;
+    b1 = b;
+  }
+  return y * b1 - b2 + coefficients[0]!;
+}
+/** d/dy of petCustomRadius, differentiating the recurrence term by term. */
+export function petCustomSlope(y: number, coefficients: readonly number[]) {
+  let b1 = 0,
+    b2 = 0,
+    d1 = 0,
+    d2 = 0;
+  for (let i = coefficients.length - 1; i > 0; i--) {
+    const d = 2 * b1 + 2 * y * d1 - d2;
+    d2 = d1;
+    d1 = d;
+    const b = 2 * y * b1 - b2 + coefficients[i]!;
+    b2 = b1;
+    b1 = b;
+  }
+  return b1 + y * d1 - d2;
+}
+/** The lobe k(θ) of one shape: a·cos(nθ + rot) for the family, the series for a custom one. */
+export function petLobe(shape: PetShapeTerms, angle: number) {
+  return shape.custom
+    ? petCustomRadius(Math.sin(angle), shape.custom)
+    : shape.a * Math.cos(shape.n * angle + shape.rot);
+}
+/** dk/dθ, the outline's slope the shader's edgeGL() uses (chain rule: dy/dθ = cos θ). */
+export function petLobeSlope(shape: PetShapeTerms, angle: number) {
+  return shape.custom
+    ? Math.cos(angle) * petCustomSlope(Math.sin(angle), shape.custom)
+    : -shape.a * shape.n * Math.sin(shape.n * angle + shape.rot);
 }
 export function setPetAppearance(
   motion: PetMotion,
@@ -122,7 +218,15 @@ export function petGeometry(motion?: PetMotion) {
   const mix = progress * progress * (3 - 2 * progress);
   const sx = a.sx + (b.sx - a.sx) * mix,
     sy = a.sy + (b.sy - a.sy) * mix;
-  return { a, b, mix, sx, sy, lip: Math.max(a.lip, b.lip) };
+  return {
+    a,
+    b,
+    mix,
+    sx,
+    sy,
+    lip: Math.max(a.lip, b.lip),
+    extent: Math.max(a.extent, b.extent),
+  };
 }
 function geometryRadius(
   sh: ReturnType<typeof petGeometry>,
@@ -133,8 +237,7 @@ function geometryRadius(
     PET_RADIUS *
     (1 +
       smoothing *
-        ((1 - sh.mix) * sh.a.a * Math.cos(sh.a.n * angle + sh.a.rot) +
-          sh.mix * sh.b.a * Math.cos(sh.b.n * angle + sh.b.rot)))
+        ((1 - sh.mix) * petLobe(sh.a, angle) + sh.mix * petLobe(sh.b, angle)))
   );
 }
 export function petBodyPath(
@@ -148,7 +251,7 @@ export function petBodyPath(
       const angle = (i / 96) * 2 * Math.PI;
       const r = geometry
         ? geometryRadius(geometry, angle)
-        : PET_RADIUS * (1 + sh.a * Math.cos(sh.n * angle + sh.rot));
+        : PET_RADIUS * (1 + petLobe(sh, angle));
       return `${i ? "L" : "M"}${240 + r * Math.cos(angle) * (geometry?.sx ?? sh.sx) * scale} ${240 - r * Math.sin(angle) * (geometry?.sy ?? sh.sy) * scale}`;
     }).join(" ") + "Z"
   );
