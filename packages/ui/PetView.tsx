@@ -44,6 +44,7 @@ import { PetFallback } from "./PetFallback";
 import {
   focusPetPlay,
   keyPetPlay,
+  typePetPlay,
   hoverPetPlay,
   PET_FACES,
   petPlayBusy,
@@ -70,6 +71,8 @@ export type PetViewProps = {
   occupied?: boolean;
   /** Native screen owner visibility; web also observes its actual viewport. */
   visible?: boolean;
+  /** Bumped as the person types to it; the pet glances at their words. */
+  typed?: number;
 };
 export type { PetState } from "./pet-motion";
 
@@ -88,6 +91,7 @@ export const PetView = memo(function PetView({
   disabled = false,
   occupied = false,
   visible: ownerVisible = true,
+  typed = 0,
 }: PetViewProps) {
   const systemReduced = useReducedMotion();
   const reduced = systemReduced || !animate;
@@ -438,6 +442,18 @@ export const PetView = memo(function PetView({
   }, [Surface, failed, create]);
   const clockNow = () =>
     latest.current.reduced ? performance.now() / 1000 : motion.current.time;
+  const seenTyping = useRef({ typed, at: -Infinity });
+  useEffect(() => {
+    const seen = seenTyping.current;
+    if (seen.typed === typed) return;
+    seen.typed = typed;
+    const now = motion.current.time;
+    // One glance per short burst of keys, not one per letter.
+    if (now - seen.at < 0.35) return;
+    seen.at = now;
+    typePetPlay(motion.current.interaction!.play, now, latest.current.reduced);
+    control.current?.wake();
+  }, [typed]);
   // Gesture velocity uses each native sample, not the quantized rendered pose clock.
   const sampleNow = (event: GestureResponderEvent) =>
     Number.isFinite(event.nativeEvent.timestamp)

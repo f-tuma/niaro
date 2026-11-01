@@ -1818,6 +1818,26 @@ export function keyPetPlay(
     }
   });
 }
+/**
+ * The person is typing to the pet: a glance down to the composer and a soft
+ * bob, then back. Callers throttle it; it never runs while being touched.
+ */
+export function typePetPlay(p: PetPlay, now: number, reduced = false) {
+  notePetInput(p, now);
+  if (reduced || p.state !== "idle" || p.pressed || p.petting) return;
+  lookAt(p, 0, -0.85, { lean: 0.45, blink: false });
+  if (random(p) < 0.35) blinkNow(p, true);
+  p.squash.z = 0.45;
+  p.squash.w = 20;
+  p.squash.t = 0.035;
+  const gen = ++p.ch.bodyGeneration;
+  later(p, 0.18, () => {
+    if (gen === p.ch.bodyGeneration && !p.pressed) p.squash.t = 0;
+  });
+  later(p, 1.1, () => {
+    if (gen === p.ch.bodyGeneration && !p.pressed) lookAt(p, 0, 0);
+  });
+}
 export function focusPetPlay(p: PetPlay, now: number, reduced = false) {
   notePetInput(p, now);
   if (reduced || p.state !== "idle" || p.pressed) return;

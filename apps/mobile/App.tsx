@@ -2653,6 +2653,7 @@ export function Workspace({
                   }
                   compact={keyboardOpen}
                   petOccupied={petOccupied}
+                  petTyped={draft.length}
                   petVisible={
                     homePetVisibility.visible &&
                     !historyOpen &&

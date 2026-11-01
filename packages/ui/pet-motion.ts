@@ -23,6 +23,8 @@ export type PetMotion = {
   level: number;
   touch: number;
   sleep: number;
+  /** Eases toward 1 while listening; drives the attentive nod. */
+  listen?: number;
   interaction?: PetInteraction;
   appearance?: PetAppearance;
   appearanceTransition?: { from: PetAppearance; progress: number };
@@ -296,6 +298,10 @@ export function advancePetMotion(
   motion.sleep +=
     ((state === "resting" ? 1 : 0) - motion.sleep) *
     (1 - Math.exp(-step / 0.4));
+  motion.listen =
+    (motion.listen ?? 0) +
+    ((state === "listening" ? 1 : 0) - (motion.listen ?? 0)) *
+      (1 - Math.exp(-step / 0.25));
   const interaction = motion.interaction;
   if (interaction) {
     const followSign = (h: number) => {
@@ -384,6 +390,12 @@ export function petFrame(
   const o = reduced
     ? 0.2
     : 0.2 + 0.04 * (2 * breathCurve(ch?.breath.phase ?? 0) - 1);
+  // Listening: eyes up to the person and a slow nod, deeper while they talk.
+  const listen = reduced ? 0 : (motion.listen ?? 0);
+  const nod =
+    listen *
+    (0.4 + 0.6 * motion.level) *
+    Math.sin(2 * Math.PI * 0.85 * motion.time);
   const emblem = p?.sign;
   const age = emblem ? p!.now - emblem.at : -1;
   const sign = emblem && age >= 0 ? PET_SIGNS[emblem.name] : undefined;
@@ -396,7 +408,7 @@ export function petFrame(
     eyeSleep: Math.max(bodySleep, reduced ? 0 : (ch?.doze.x ?? 0)),
     inkTime: reduced ? 2 : (ch?.inkClock ?? motion.time),
     lagX: reduced ? 0 : (ch?.sloshX.x ?? 0) - (p?.leanX.x ?? 0) * 0.12,
-    lagY: reduced ? 0 : (ch?.sloshY.x ?? 0) - (ch?.frameBob ?? 0),
+    lagY: reduced ? 0 : (ch?.sloshY.x ?? 0) - (ch?.frameBob ?? 0) - nod * 0.025,
     blink,
     stretch: reduced
       ? 0
@@ -405,11 +417,14 @@ export function petFrame(
           Math.min(
             0.05,
             (ch?.frameStretch ?? Math.sin(time * 1.35) * 0.004) +
-              motion.level * 0.014 -
+              motion.level * 0.014 +
+              nod * 0.012 -
               legacyTouch * 0.02,
           ),
         ),
-    bob: reduced ? 0 : (ch?.frameBob ?? Math.sin(time * 1.1) * 0.003),
+    bob: reduced
+      ? 0
+      : (ch?.frameBob ?? Math.sin(time * 1.1) * 0.003) + nod * 0.02,
     gazeX: reduced
       ? 0
       : Math.max(
@@ -425,16 +440,19 @@ export function petFrame(
           -1,
           Math.min(
             1,
-            (p?.gazeY.x ?? 0) + 0.5 * ((p?.gazeY.x ?? 0) - (p?.leanY.x ?? 0)),
+            (p?.gazeY.x ?? 0) +
+              0.5 * ((p?.gazeY.x ?? 0) - (p?.leanY.x ?? 0)) +
+              listen * 0.22 +
+              nod * 0.3,
           ),
         ),
     leanX: reduced
       ? 0
       : Math.max(-1, Math.min(1, (p?.leanX.x ?? 0) + (ch?.sway ?? 0))),
-    leanY: reduced ? 0 : (p?.leanY.x ?? 0),
+    leanY: reduced ? 0 : (p?.leanY.x ?? 0) + nod * 0.8,
     tilt: reduced ? 0 : (p?.leanX.x ?? 0) * 0.16,
     axis: p?.axis ?? Math.PI / 2,
-    open: face.open,
+    open: face.open * (1 + 0.06 * listen),
     lid:
       Math.max(0, Math.min(1.1, face.lid)) *
       (1 - 0.15 * Math.max(0, -(p?.gazeY.x ?? 0))),

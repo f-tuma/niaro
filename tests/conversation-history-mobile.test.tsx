@@ -960,7 +960,7 @@ test("actual Home passes viewport visibility to the pet using layout and scroll 
       .accessibilityState.disabled,
   ).toBe(true);
 });
-test("native keyboard visibility unmounts the actual Home pet and returns it on dismissal", async () => {
+test("native keyboard visibility swaps the Home stage for a smaller pet and back", async () => {
   const listeners = new Map<string, Set<() => void>>();
   const spy = jest
     .spyOn(Keyboard, "addListener")
@@ -978,9 +978,13 @@ test("native keyboard visibility unmounts the actual Home pet and returns it on 
   });
   expect(screen.getByTestId("home-pet")).toBeTruthy();
   act(() => listeners.get("keyboardDidShow")?.forEach((fn) => fn()));
-  expect(screen.queryByTestId("home-pet")).toBeNull();
+  // Typing keeps a smaller pet above the keyboard; the hero stage steps away.
+  expect(screen.queryByTestId("home-pet-stage")).toBeNull();
+  expect(screen.queryByTestId("home-shortcuts")).toBeNull();
+  expect(screen.getByTestId("home-pet-compact")).toBeTruthy();
   act(() => listeners.get("keyboardDidHide")?.forEach((fn) => fn()));
-  expect(screen.getByTestId("home-pet")).toBeTruthy();
+  expect(screen.queryByTestId("home-pet-compact")).toBeNull();
+  expect(screen.getByTestId("home-pet-stage")).toBeTruthy();
   spy.mockRestore();
 });
 

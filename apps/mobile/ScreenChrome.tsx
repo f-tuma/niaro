@@ -616,6 +616,7 @@ export function Home({
   petAppearance,
   petAnimate = true,
   petOccupied = false,
+  petTyped = 0,
   onPetBounds,
   petState = busy ? "working" : meetingRecording ? "listening" : "idle",
 }: {
@@ -647,6 +648,8 @@ export function Home({
   petAppearance?: PetAppearance;
   petAnimate?: boolean;
   petOccupied?: boolean;
+  /** Changes as the person types; the pet glances at the composer. */
+  petTyped?: number;
   onPetBounds?: (bounds: HomePetBounds | null) => void;
   petState?: PetState;
 }) {
@@ -794,7 +797,11 @@ export function Home({
     <View
       testID="home-screen"
       onLayout={onHomeLayout}
-      style={[chrome.home, (voiceBusy || compact) && { minHeight: 0, flex: 0 }]}
+      style={[
+        chrome.home,
+        (voiceBusy || (compact && !showPet)) && { minHeight: 0, flex: 0 },
+        compact && showPet && { minHeight: 0 },
+      ]}
     >
       {!voiceBusy && !compact ? (
         <View
@@ -807,6 +814,7 @@ export function Home({
               <PetView
                 visible={petVisible}
                 occupied={petOccupied}
+                typed={petTyped}
                 appearance={petAppearance}
                 animate={petAnimate}
                 testID="home-pet"
@@ -833,6 +841,22 @@ export function Home({
               </Text>
             ) : null}
           </View>
+        </View>
+      ) : compact && !voiceBusy && showPet ? (
+        // Typing: a smaller pet keeps the room above the keyboard and watches.
+        <View testID="home-pet-compact" style={chrome.stage}>
+          <PetView
+            visible={petVisible}
+            occupied={petOccupied}
+            typed={petTyped}
+            appearance={petAppearance}
+            animate={petAnimate}
+            testID="home-pet"
+            label={companionCopy(language).petTouch}
+            disabled={busy || meetingRecording}
+            state={petState}
+            size={140}
+          />
         </View>
       ) : null}
       {!voiceBusy && !compact ? (
