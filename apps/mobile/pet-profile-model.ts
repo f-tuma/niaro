@@ -1,3 +1,4 @@
+import { AppState } from "react-native";
 import {
   useCallback,
   useEffect,
@@ -12,6 +13,9 @@ import type {
   SavePetProfile,
 } from "../../packages/protocol/work-pet";
 export { profilePetAppearance as nativePetAppearance } from "../shared/pet-appearance";
+
+/** The profile is edited on the web too; poll while the app is in front. */
+export const PET_PROFILE_REFRESH_MS = 30_000;
 
 export function useNativePetProfile(session: ClientSession | null) {
   const scope = useMemo(() => ({ session }), [session]);
@@ -53,6 +57,25 @@ export function useNativePetProfile(session: ClientSession | null) {
     const tickets = request;
     return () => {
       tickets.current++;
+    };
+  }, [read]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const sync = (state: string) => {
+      if (timer) clearInterval(timer);
+      timer = undefined;
+      if (state !== "active") return;
+      timer = setInterval(() => void read(), PET_PROFILE_REFRESH_MS);
+    };
+    sync(AppState.currentState);
+    const subscription = AppState.addEventListener("change", (state) => {
+      // Back in front: pick up changes made on another device right away.
+      if (state === "active") void read();
+      sync(state);
+    });
+    return () => {
+      subscription.remove();
+      if (timer) clearInterval(timer);
     };
   }, [read]);
   return {

@@ -6,7 +6,7 @@ import {
   fireEvent,
   waitFor,
 } from "@testing-library/react-native";
-import { AccessibilityInfo, Alert } from "react-native";
+import { AccessibilityInfo, Alert, AppState } from "react-native";
 import { useNativePetProfile } from "../apps/mobile/pet-profile-model";
 import { useHomePetVisibility } from "../apps/mobile/home-pet-visibility";
 import { CompanionLibrary } from "../apps/mobile/CompanionLibrary";
@@ -504,4 +504,36 @@ test("the row menu runs delete and classify through the confirmed commands", asy
     expect.objectContaining({ type: "classify", id: "memory-1", personal: true }),
   );
   alert.mockRestore();
+});
+test("native profile follows changes made on the web", async () => {
+  const listeners: ((state: string) => void)[] = [];
+  const subscribe = jest
+    .spyOn(AppState, "addEventListener")
+    .mockImplementation((type, listener) => {
+      if (type === "change") listeners.push(listener as (s: string) => void);
+      return { remove: jest.fn() } as never;
+    });
+  const changed = {
+    ...profile,
+    revision: 3,
+    settings: { ...profile.settings, shape: "heart" as const },
+  };
+  const petProfile = jest
+    .fn()
+    .mockResolvedValueOnce(profile)
+    .mockResolvedValue(changed);
+  const session = { petProfile } as unknown as ClientSession;
+  let model!: ReturnType<typeof useNativePetProfile>;
+  function Probe() {
+    const current = useNativePetProfile(session);
+    useEffect(() => {
+      model = current;
+    });
+    return null;
+  }
+  render(<Probe />);
+  await waitFor(() => expect(model.profile?.revision).toBe(0));
+  act(() => listeners.forEach((listener) => listener("active")));
+  await waitFor(() => expect(model.profile?.settings.shape).toBe("heart"));
+  subscribe.mockRestore();
 });

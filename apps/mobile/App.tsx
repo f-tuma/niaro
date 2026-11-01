@@ -375,6 +375,11 @@ export function Workspace({
       petProfile.profile ? nativePetAppearance(petProfile.profile) : undefined,
     [petProfile.profile],
   );
+  const { read: readPetProfile } = petProfile;
+  useEffect(() => {
+    // Opening the pet shows what the web may have changed meanwhile.
+    if (petOpen) void readPetProfile();
+  }, [petOpen, readPetProfile]);
 
   const composerInput = useRef<TextInput>(null);
   const focusWork = useRef<string | undefined>(undefined);

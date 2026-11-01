@@ -87,6 +87,9 @@ export function usePetProfile() {
     queryFn: ({ signal }) => session!.petProfile(signal),
     enabled: !!session,
     retry: false,
+    // The phone edits the same pet; keep a visible tab in step with it.
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: "always",
   });
   return {
     ...query,
