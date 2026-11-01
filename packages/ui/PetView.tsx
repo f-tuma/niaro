@@ -29,6 +29,7 @@ import {
   PixelRatio,
   Platform,
   Animated,
+  Easing,
   View,
   type GestureResponderEvent,
   type NativeSyntheticEvent,
@@ -93,6 +94,11 @@ export const PetView = memo(function PetView({
   const [Surface] = useState(supportedGLView);
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
+  // Until the shader draws, nothing shows; the still drawing is only a
+  // fallback for a renderer that does not start.
+  const [slow, setSlow] = useState(false);
+  const appear = useRef(new Animated.Value(0)).current;
+  const appeared = useRef(false);
   const host = useRef<View>(null);
   const gesture = useRef<{
     x: number;
@@ -122,9 +128,32 @@ export const PetView = memo(function PetView({
 
   const dimensions = petRenderSize(size, PixelRatio.get());
   useEffect(() => {
-    // A replaced drawing buffer shows the still fallback until its first frame.
+    // A replaced drawing buffer stays hidden until its first frame.
     setReady(false);
   }, [dimensions.pixels]);
+  useEffect(() => {
+    if (ready || !Surface || failed) return;
+    const timer = setTimeout(() => setSlow(true), 1200);
+    return () => clearTimeout(timer);
+  }, [ready, Surface, failed]);
+  useEffect(() => {
+    if (!ready) return;
+    // The first appearance eases in; a resized buffer simply returns.
+    if (appeared.current || reduced) {
+      appear.setValue(1);
+      appeared.current = true;
+      return;
+    }
+    appeared.current = true;
+    const run = Animated.timing(appear, {
+      toValue: 1,
+      duration: t.motion.sheetEnter,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== "web",
+    });
+    run.start();
+    return () => run.stop();
+  }, [ready, reduced, appear]);
   const latest = useRef({
     state,
     reduced,
@@ -737,19 +766,29 @@ export const PetView = memo(function PetView({
         fallback
       ) : (
         <GLBoundary fallback={fallback} onError={failRenderer}>
-          {!ready ? (
+          {!ready && slow ? (
             <View pointerEvents="none" style={{ position: "absolute" }}>
               {fallback}
             </View>
           ) : null}
-          <View
+          <Animated.View
             pointerEvents="none"
             aria-hidden
             style={{
               width: dimensions.surface,
               height: dimensions.surface,
-              opacity: ready ? 1 : 0,
-              transform: [{ scale: dimensions.logical / dimensions.surface }],
+              opacity: ready ? appear : 0,
+              transform: [
+                {
+                  scale: appear.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [
+                      (0.9 * dimensions.logical) / dimensions.surface,
+                      dimensions.logical / dimensions.surface,
+                    ],
+                  }),
+                },
+              ],
             }}
           >
             {/* expo-gl keeps the first drawing buffer; a new size needs a new surface. */}
@@ -758,7 +797,7 @@ export const PetView = memo(function PetView({
               style={{ width: dimensions.surface, height: dimensions.surface }}
               onContextCreate={create}
             />
-          </View>
+          </Animated.View>
         </GLBoundary>
       )}
     </View>

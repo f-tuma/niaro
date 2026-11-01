@@ -46,7 +46,6 @@ import { Entrance, useReducedMotion } from "../../packages/ui/motion";
 import { Tabs } from "../../packages/ui/Tabs";
 import type { HomePetBounds } from "./home-pet-visibility";
 import { PetView } from "../../packages/ui/PetView";
-import { PetFallback } from "../../packages/ui/PetFallback";
 import { tokens as t } from "../../packages/design-tokens";
 import { petCopy, petFormat } from "./pet-profile-copy";
 import { nativePetAppearance } from "./pet-profile-model";
@@ -530,7 +529,8 @@ export function PetProfile({
         state={resting ? "resting" : "idle"}
       />
     ) : (
-      <PetFallback size={size} resting />
+      // Holds the pet's room while the profile loads; no still drawing flashes.
+      <View style={{ width: size, height: size }} />
     );
   const overview = (
     <View style={[styles.page, fill > 0 && { minHeight: fill }]}>
