@@ -356,6 +356,7 @@ export function TopBar({
   trailing,
   large = !leading,
   emblem,
+  lines = 2,
 }: {
   /** A Back or Menu control; tab roots have none. */
   leading?: React.ReactNode;
@@ -364,13 +365,19 @@ export function TopBar({
   trailing?: React.ReactNode;
   large?: boolean;
   emblem?: React.ReactNode;
+  /** Title lines before it truncates; a chat title keeps to one. */
+  lines?: number;
 }) {
   return (
     <View style={[chrome.topbar, large && chrome.topbarLarge]}>
       {leading}
       {emblem}
       <View style={chrome.topbarTitle}>
-        <Text role="headerTitle" accessibilityRole="header" numberOfLines={2}>
+        <Text
+          role="headerTitle"
+          accessibilityRole="header"
+          numberOfLines={lines}
+        >
           {title}
         </Text>
         {subtitle}

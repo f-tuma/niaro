@@ -2145,6 +2145,7 @@ export function Workspace({
               title={
                 conversationTitle(historySelection?.title ?? "") || "Niaro"
               }
+              lines={1}
               subtitle={statusLine}
               emblem={
                 hasConversation &&
