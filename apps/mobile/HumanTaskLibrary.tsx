@@ -327,10 +327,9 @@ export function HumanTaskLibrary({
       !pending &&
       !loadError &&
       !(tab === "open" && leading?.length) ? (
-        !online ||
-        loading ||
-        projection?.tab !== tab ||
-        projection.after !== after ? (
+        // Only the first read of a tab says "loading"; a background
+        // refresh of an empty list keeps the empty state still.
+        !online || projection?.tab !== tab || projection.after !== after ? (
           <Text role="caption" tone="secondary" style={{ textAlign: "center" }}>
             {tr(!online ? "humanTaskOffline" : "humanTaskLoading")}
           </Text>

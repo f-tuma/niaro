@@ -2357,7 +2357,15 @@ export function Workspace({
             {section === "chat" && historySelection ? (
               <Stack>
                 {historyError ? (
-                  <Notice error>{tr("chatHistoryLoadFailed")}</Notice>
+                  <Notice error>{tr("chatLoadFailed")}</Notice>
+                ) : null}
+                {historyError ? (
+                  <Button
+                    variant="secondary"
+                    label={tr("chatLoadRetry")}
+                    disabled={historyLoading || !online}
+                    onPress={() => void readHistory(historySelection)}
+                  />
                 ) : null}
                 {historyLoading ? (
                   <Text role="caption">{tr("loading")}</Text>

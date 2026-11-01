@@ -101,8 +101,11 @@ export function ServiceConnection({
                 flow.current.state.phase === "connected" &&
                 state.phase === "connected" &&
                 result.resumeText
-              )
+              ) {
+                // One continuation per connection, pressed or automatic.
+                setContinued(true);
                 onContinue(result.resumeText);
+              }
             }
       }
     />

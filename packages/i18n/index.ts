@@ -251,6 +251,8 @@ export const en = {
   chatArchiveUpdateRequired: "Update the server to use the archive.",
   noChatHistory: "No chats yet.",
   chatHistoryLoadFailed: "Couldn't load chats. Reopen the menu to retry.",
+  chatLoadFailed: "This chat didn't load.",
+  chatLoadRetry: "Try again",
   chatHistoryUpdateRequired:
     "Update the server to use chat history and new chats.",
   earlierChatMessages: "Earlier messages",
@@ -1271,6 +1273,8 @@ export const cs: Record<TranslationKey, string> = {
   chatArchiveUpdateRequired: "Archiv potřebuje novější server.",
   noChatHistory: "Zatím žádné chaty.",
   chatHistoryLoadFailed: "Chaty se nenačetly. Otevři menu znovu.",
+  chatLoadFailed: "Chat se nenačetl.",
+  chatLoadRetry: "Zkusit znovu",
   chatHistoryUpdateRequired: "Pro historii a nové chaty aktualizuj server.",
   earlierChatMessages: "Starší zprávy",
   chatHistoryReadOnly: "Archivovaný chat. Jen ke čtení.",
