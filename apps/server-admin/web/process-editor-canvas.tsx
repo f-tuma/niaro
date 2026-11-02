@@ -8,6 +8,7 @@ import {
   Plus,
   Redo2,
   Split,
+  StickyNote,
   Trash2,
   TriangleAlert,
   Undo2,
@@ -17,9 +18,15 @@ import {
 } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@admin/components/ui/button";
+import { Textarea } from "@admin/components/ui/textarea";
 import { initials } from "@admin/components/console/entity-icon";
 import type { DesignCapabilities } from "../../../packages/protocol/process-design";
-import type { ProcessStep } from "../../../packages/protocol/service-processes";
+import {
+  PROCESS_LAYOUT_NOTE_MAX_LENGTH,
+  type ProcessLayout,
+  type ProcessLayoutNote,
+  type ProcessStep,
+} from "../../../packages/protocol/service-processes";
 import { UNCONNECTED, type Workflow } from "./lib/process-editor";
 import type { EditorCopy } from "./process-editor-copy";
 import {
@@ -51,10 +58,15 @@ export type ProcessEditorCanvasProps = {
   selected: string;
   disabled: boolean;
   copy: EditorCopy;
-  /** Where arranged positions are remembered in this browser. */
-  layoutKey?: string;
+  /** The arrangement saved with the proposal; read when the canvas opens. */
+  layout?: ProcessLayout | null;
+  /** A person moved a step or changed a note. Positions are presentation
+   * only: they never change the definition. */
+  onLayoutChange?(layout: ProcessLayout): void;
   /** Problems with the graph that block saving, already phrased for people. */
   issues?: string[];
+  /** Validation problems per step id, one sentence each. */
+  stepIssues?: Record<string, string[]>;
   canUndo?: boolean;
   canRedo?: boolean;
   onSelect(id: string): void;
@@ -79,6 +91,7 @@ type Source = { from: string | null; port: CanvasPort };
 type GestureKind =
   | { kind: "pan"; origin: CanvasPoint }
   | { kind: "node"; id: string; origin: CanvasPoint }
+  | { kind: "note"; id: string; origin: CanvasPoint }
   | { kind: "wire"; source: Source };
 type Gesture = {
   pointer: number;
@@ -87,35 +100,33 @@ type Gesture = {
   capture: Element;
 } & GestureKind;
 type Wire = Source & { point: CanvasPoint; target?: string; refused?: boolean };
-const LAYOUT_PREFIX = "niaro:process-canvas:";
 /** A drag from an output ends with a click on it, which must not toggle it. */
 const WIRE = "\u0000wire";
 const icons = { agent: Bot, branch: Split, return: Flag };
-
-function loadLayout(key?: string): Record<string, CanvasPoint> {
-  if (!key) return {};
-  try {
-    const value: unknown = JSON.parse(
-      localStorage.getItem(LAYOUT_PREFIX + key) ?? "{}",
-    );
-    if (!value || typeof value !== "object") return {};
-    return Object.fromEntries(
-      Object.entries(value).filter(
-        ([, point]) =>
-          Number.isFinite((point as CanvasPoint)?.x) &&
-          Number.isFinite((point as CanvasPoint)?.y),
-      ),
-    ) as Record<string, CanvasPoint>;
-  } catch {
-    return {};
-  }
-}
-function saveLayout(key: string, positions: Record<string, CanvasPoint>) {
-  try {
-    localStorage.setItem(LAYOUT_PREFIX + key, JSON.stringify(positions));
-  } catch {
-    // Arrangement is a convenience; the process itself is unaffected.
-  }
+const MAX_NOTES = 20;
+const coordinate = (value: number) =>
+  Math.max(-100_000, Math.min(100_000, Math.round(value)));
+/** What is saved: whole-pixel positions of known steps, notes with text. */
+function savedLayout(
+  positions: Record<string, CanvasPoint>,
+  notes: ProcessLayoutNote[],
+): ProcessLayout {
+  return {
+    positions: Object.fromEntries(
+      Object.entries(positions).map(([id, point]) => [
+        id,
+        { x: coordinate(point.x), y: coordinate(point.y) },
+      ]),
+    ),
+    notes: notes
+      .filter((note) => note.text.trim())
+      .map((note) => ({
+        ...note,
+        x: coordinate(note.x),
+        y: coordinate(note.y),
+        text: note.text.trim().slice(0, PROCESS_LAYOUT_NOTE_MAX_LENGTH),
+      })),
+  };
 }
 /** `search_people` reads as "Search people". */
 export function readableName(name: string) {
@@ -165,8 +176,10 @@ export function ProcessEditorCanvas({
   selected,
   disabled,
   copy,
-  layoutKey,
+  layout,
+  onLayoutChange,
   issues = [],
+  stepIssues = {},
   canUndo = false,
   canRedo = false,
   onSelect,
@@ -189,8 +202,16 @@ export function ProcessEditorCanvas({
   // Where a connection was dropped on empty canvas: the next new step goes there.
   const [dropHint, setDropHint] = useState<CanvasPoint>();
   const [stored, setStored] = useState(() =>
-    placeCanvasSteps(workflow, loadLayout(layoutKey)),
+    placeCanvasSteps(workflow, layout?.positions ?? {}),
   );
+  const [notes, setNotes] = useState<ProcessLayoutNote[]>(
+    () => layout?.notes ?? [],
+  );
+  const [editingNote, setEditingNote] = useState<string | null>(null);
+  const changeLayout = (
+    positions: Record<string, CanvasPoint>,
+    nextNotes: ProcessLayoutNote[],
+  ) => onLayoutChange?.(savedLayout(positions, nextNotes));
   const ids = workflow.steps.map((step) => step.id);
   const unplaced =
     ids.some((id) => !stored[id]) || Object.keys(stored).length !== ids.length;
@@ -221,9 +242,6 @@ export function ProcessEditorCanvas({
     );
   }
 
-  useEffect(() => {
-    if (layoutKey && !unplaced) saveLayout(layoutKey, stored);
-  }, [layoutKey, stored, unplaced]);
   useEffect(() => () => clearTimeout(leaveTimer.current), []);
   useLayoutEffect(() => {
     const element = root.current;
@@ -398,6 +416,18 @@ export function ProcessEditorCanvas({
           y: snapToGrid(drag.origin.y + dy / view.zoom),
         },
       }));
+    } else if (drag.kind === "note") {
+      setNotes((current) =>
+        current.map((note) =>
+          note.id === drag.id
+            ? {
+                ...note,
+                x: snapToGrid(drag.origin.x + dx / view.zoom),
+                y: snapToGrid(drag.origin.y + dy / view.zoom),
+              }
+            : note,
+        ),
+      );
     } else if (drag.kind === "pan") {
       navigated.current = true;
       setView((current) => ({
@@ -424,7 +454,14 @@ export function ProcessEditorCanvas({
     gesture.current = null;
     if (drag.capture.hasPointerCapture?.(event.pointerId))
       drag.capture.releasePointerCapture(event.pointerId);
-    if (drag.kind === "node" && drag.moved) suppressClick.current = drag.id;
+    if (drag.kind === "node" && drag.moved) {
+      suppressClick.current = drag.id;
+      changeLayout(stored, notes);
+    }
+    if (drag.kind === "note" && drag.moved) {
+      suppressClick.current = drag.id;
+      changeLayout(stored, notes);
+    }
     if (drag.kind !== "wire" || !drag.moved) return;
     suppressClick.current = WIRE;
     const point = scenePoint(event);
@@ -436,6 +473,47 @@ export function ProcessEditorCanvas({
       setDropHint(point);
       onAdd(drag.source.from, drag.source.port, { replace: true });
     }
+  }
+  function addNote() {
+    if (disabled || notes.length >= MAX_NOTES) return;
+    let index = notes.length + 1;
+    while (notes.some((note) => note.id === `note${index}`)) index++;
+    const center = {
+      x: (size.width / 2 - view.x) / view.zoom - 88,
+      y: (size.height / 2 - view.y) / view.zoom - 40,
+    };
+    setNotes([
+      ...notes,
+      {
+        id: `note${index}`,
+        x: snapToGrid(center.x),
+        y: snapToGrid(center.y),
+        text: "",
+      },
+    ]);
+    setEditingNote(`note${index}`);
+  }
+  function editNote(id: string, text: string) {
+    setNotes((current) =>
+      current.map((note) =>
+        note.id === id
+          ? { ...note, text: text.slice(0, PROCESS_LAYOUT_NOTE_MAX_LENGTH) }
+          : note,
+      ),
+    );
+  }
+  /** Leaving a note saves it; an empty one disappears. */
+  function closeNote() {
+    const next = notes.filter((note) => note.text.trim());
+    setNotes(next);
+    setEditingNote(null);
+    changeLayout(stored, next);
+  }
+  function removeNote(id: string) {
+    const next = notes.filter((note) => note.id !== id);
+    setNotes(next);
+    if (editingNote === id) setEditingNote(null);
+    changeLayout(stored, next);
   }
   function hoverEdge(key: string | null) {
     clearTimeout(leaveTimer.current);
@@ -744,11 +822,80 @@ export function ProcessEditorCanvas({
             </div>
           </div>
         )}
+        {notes.map((note) => (
+          <div
+            key={note.id}
+            data-canvas-control
+            data-note-id={note.id}
+            className="group pointer-events-auto absolute top-(--note-y) left-(--note-x) flex w-44 flex-col gap-1 rounded-md border border-border bg-muted p-2 text-xs text-foreground shadow-xs"
+            style={
+              {
+                "--note-x": `${note.x}px`,
+                "--note-y": `${note.y}px`,
+              } as React.CSSProperties
+            }
+            onPointerDown={(event) => {
+              if (disabled || editingNote === note.id) return;
+              begin(event, {
+                kind: "note",
+                id: note.id,
+                origin: { x: note.x, y: note.y },
+              });
+            }}
+          >
+            {editingNote === note.id && !disabled ? (
+              <Textarea
+                autoFocus
+                aria-label={copy.note}
+                value={note.text}
+                maxLength={PROCESS_LAYOUT_NOTE_MAX_LENGTH}
+                className="min-h-16 w-full"
+                onChange={(event) => editNote(note.id, event.target.value)}
+                onBlur={closeNote}
+                onKeyDown={(event) => {
+                  event.stopPropagation();
+                  if (event.key === "Escape") closeNote();
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                aria-label={`${copy.editNote}: ${note.text}`}
+                disabled={disabled}
+                className="cursor-grab text-left break-words whitespace-pre-wrap outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
+                onClick={() => {
+                  if (suppressClick.current === note.id) {
+                    suppressClick.current = null;
+                    return;
+                  }
+                  setEditingNote(note.id);
+                }}
+              >
+                {note.text}
+              </button>
+            )}
+            {!disabled && (
+              <div className="absolute -top-3 -right-3 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                <Button
+                  variant="outline"
+                  size="icon-xs"
+                  aria-label={copy.removeNote}
+                  title={copy.removeNote}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => removeNote(note.id)}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
         {workflow.steps.map((step) => {
           const point = positions[step.id]!,
             label = stepLabel(step, capabilities, copy),
             Icon = step.type === "action" ? null : icons[step.type];
           const target = wire?.target === step.id;
+          const problems = stepIssues[step.id] ?? [];
           return (
             <div
               key={step.id}
@@ -808,6 +955,18 @@ export function ProcessEditorCanvas({
                   <span className="text-xl font-semibold">{label.mark}</span>
                 )}
               </button>
+              {problems.length > 0 && (
+                <button
+                  type="button"
+                  data-step-issue={step.id}
+                  aria-label={`${copy.stepProblem}: ${problems.join(" ")}`}
+                  title={problems.join("\n")}
+                  className="absolute -top-2.5 -right-2.5 flex size-6 items-center justify-center rounded-full border border-border bg-background text-warning outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => onSelect(step.id)}
+                >
+                  <TriangleAlert aria-hidden="true" className="size-3.5" />
+                </button>
+              )}
               <div
                 data-shown={selected === step.id && !busy}
                 className="absolute -top-9 left-1/2 flex -translate-x-1/2 pb-3 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 data-[shown=true]:opacity-100"
@@ -1042,10 +1201,23 @@ export function ProcessEditorCanvas({
             setStored(next);
             navigated.current = true;
             setView(fitCanvas(canvasBounds(next, workflow.entry), size));
+            if (!disabled) changeLayout(next, notes);
           }}
         >
           <LayoutGrid />
         </Button>
+        {onLayoutChange && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={copy.addNote}
+            title={copy.addNote}
+            disabled={disabled || notes.length >= MAX_NOTES}
+            onClick={addNote}
+          >
+            <StickyNote />
+          </Button>
+        )}
         {(onUndo || onRedo) && (
           <>
             <span className="mx-0.5 h-5 w-px bg-border" />

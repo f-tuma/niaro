@@ -1,3 +1,4 @@
+import { processIssueCopy } from "./lib/process-issues";
 export const designEn = {
   chooseAvailableModel:
     "The selected model is no longer available. Choose another model.",
@@ -195,6 +196,12 @@ export const designEn = {
   graph_invalid: "Invalid workflow graph",
   binding_invalid: "Invalid binding",
   binding_type_unproven: "Binding type could not be verified",
+  // NIAR-270: sectioned agent instructions and problem sentences in Review.
+  issues: processIssueCopy("en"),
+  instructionGoal: "Goal",
+  instructionSteps: "Steps",
+  instructionNever: "Never",
+  instructionDoneWhen: "Done when",
 };
 export type DesignCopy = typeof designEn;
 export const designCs: DesignCopy = {
@@ -391,6 +398,12 @@ export const designCs: DesignCopy = {
   graph_invalid: "Neplatný workflow graf",
   binding_invalid: "Neplatná vazba",
   binding_type_unproven: "Typ vazby nešlo ověřit",
+  // NIAR-270: sectioned agent instructions and problem sentences in Review.
+  issues: processIssueCopy("cs"),
+  instructionGoal: "Cíl",
+  instructionSteps: "Postup",
+  instructionNever: "Nikdy",
+  instructionDoneWhen: "Hotovo, když",
 };
 export function designProblem(code: string, copy: DesignCopy): string {
   if (code === "authority_lost") return copy.authorityLost;

@@ -8,6 +8,7 @@ import {
   DesignUpdateSchema,
   DesignAcknowledgeSchema,
   DesignAcceptSchema,
+  DesignLayoutSchema,
   DesignSessionListSchema,
   DesignServiceDraftListSchema,
 } from "../../packages/protocol/process-design";
@@ -128,6 +129,14 @@ export async function handleProcessDesign(
       profile,
       review: review(await actor(request, context), request.sessionId),
     }));
+  }
+  if (path === "/layout" && method === "POST") {
+    const request = DesignLayoutSchema.parse(payload);
+    return context.serial(async () => {
+      const current = await actor(request, context);
+      review(current, request.sessionId);
+      return { profile, layout: input.proposals.layout(current, request) };
+    });
   }
   if (
     method === "POST" &&

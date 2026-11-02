@@ -42,11 +42,18 @@ export async function handleServiceProcesses(
       const actor = await authorized(query, context);
       if (query.id) {
         if (!workspace) store.get(actor, query.id);
+        const layout = query.version
+          ? store.versionLayout(actor, query.id, query.version)
+          : null;
         return {
           profile: workspace ? WORKSPACE_PROCESS_PROFILE : PROCESS_PROFILE,
           ...target,
           ...(query.version
-            ? { version: store.version(actor, query.id, query.version) }
+            ? {
+                version: store.version(actor, query.id, query.version),
+                // The arrangement it was frozen with, outside the artifact.
+                ...(layout ? { layout } : {}),
+              }
             : {
                 process: workspace
                   ? store.getOwned(actor, query.id)

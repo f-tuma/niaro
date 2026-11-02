@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   Bot,
   Plus,
@@ -17,6 +17,7 @@ import {
   ProcessDefinitionSchema,
   ProcessDataSchema,
   type ProcessDefinition,
+  type ProcessLayout,
   type ProcessStep,
   type ProcessBinding,
 } from "../../../packages/protocol/service-processes";
@@ -94,6 +95,16 @@ import { ProcessBindingFields } from "./process-binding-fields";
 import { ProcessSchemaFields } from "./process-schema-fields";
 import { useIsMobile } from "./hooks/use-mobile";
 import type { ProcessDesignClient } from "./lib/process-design-client";
+import {
+  formatAgentInstructions,
+  parseAgentInstructions,
+  type AgentInstructionParts,
+} from "./lib/agent-instructions";
+import {
+  processIssueCopy,
+  processIssues,
+  processIssuesTruncated,
+} from "./lib/process-issues";
 
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 function FormField({
@@ -212,6 +223,109 @@ function JsonField({
     </FormField>
   );
 }
+/**
+ * Agent instructions as Goal, Steps, Never and Done when, saved as one text.
+ * Text written another way stays one field until the person splits it.
+ */
+function AgentInstructionsField({
+  value,
+  disabled,
+  copy,
+  onChange,
+}: {
+  value: string;
+  disabled: boolean;
+  copy: EditorCopy;
+  onChange(value: string): void;
+}) {
+  type Draft = Record<keyof AgentInstructionParts, string>;
+  const toDraft = (parts: AgentInstructionParts): Draft => ({
+    goal: parts.goal,
+    steps: parts.steps.join("\n"),
+    never: parts.never.join("\n"),
+    doneWhen: parts.doneWhen,
+  });
+  const parsed = parseAgentInstructions(value);
+  const [draft, setDraft] = useState<Draft | null>(() =>
+    parsed ? toDraft(parsed) : null,
+  );
+  // What this field last wrote; any other value came from outside.
+  const [written, setWritten] = useState(value);
+  if (value !== written) {
+    setWritten(value);
+    setDraft(parsed ? toDraft(parsed) : null);
+  }
+  const id = useId();
+  const write = (next: Draft) => {
+    setDraft(next);
+    const text = formatAgentInstructions({
+      goal: next.goal,
+      steps: next.steps.split("\n"),
+      never: next.never.split("\n"),
+      doneWhen: next.doneWhen,
+    });
+    setWritten(text);
+    onChange(text);
+  };
+  if (!draft)
+    return (
+      <Field>
+        <FieldLabel htmlFor={id}>{copy.instructions}</FieldLabel>
+        <Textarea
+          id={id}
+          value={value}
+          maxLength={4000}
+          disabled={disabled}
+          className="max-h-72"
+          onChange={(e) => {
+            setWritten(e.target.value);
+            onChange(e.target.value);
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={() =>
+            write({
+              goal: value.replace(/\s+/g, " ").trim(),
+              steps: "",
+              never: "",
+              doneWhen: "",
+            })
+          }
+        >
+          {copy.instructionSections}
+        </Button>
+      </Field>
+    );
+  const fields = [
+    ["goal", copy.instructionGoal, undefined, 2],
+    ["steps", copy.instructionSteps, copy.instructionStepsHint, 4],
+    ["never", copy.instructionNever, copy.instructionNeverHint, 2],
+    ["doneWhen", copy.instructionDoneWhen, undefined, 2],
+  ] as const;
+  return (
+    <fieldset className="flex flex-col gap-3" data-agent-instructions>
+      <legend className="mb-1 text-sm font-medium">{copy.instructions}</legend>
+      {fields.map(([key, label, hint, rows]) => (
+        <Field key={key}>
+          <FieldLabel htmlFor={`${id}-${key}`}>{label}</FieldLabel>
+          <Textarea
+            id={`${id}-${key}`}
+            value={draft[key]}
+            rows={rows}
+            placeholder={hint}
+            maxLength={4000}
+            disabled={disabled}
+            className="max-h-48"
+            onChange={(e) => write({ ...draft, [key]: e.target.value })}
+          />
+        </Field>
+      ))}
+    </fieldset>
+  );
+}
 function nodeTitle(
   step: ProcessStep,
   capabilities: DesignCapabilities,
@@ -319,6 +433,46 @@ export function ProcessVisualEditor({
           name: `${nodeTitle(s, capabilities, copy)} (${s.id})`,
         }))
       : [];
+  // Server problems belong to the saved proposal: shown while nothing changed.
+  const issueCopy = processIssueCopy(language);
+  const serverIssues = dirty
+    ? []
+    : processIssues(base.validation, base.candidate, issueCopy, (s) =>
+        readableName(nodeTitle(s, capabilities, copy)),
+      );
+  const stepIssues: Record<string, string[]> = {};
+  for (const issue of serverIssues)
+    if (issue.stepId) (stepIssues[issue.stepId] ??= []).push(issue.sentence);
+  const processIssueLines = serverIssues
+    .filter((issue) => !issue.stepId)
+    .map((issue) => issue.sentence);
+  if (!dirty && processIssuesTruncated(base.validation))
+    processIssueLines.push(issueCopy.more);
+  // The arrangement saves on its own, one write at a time, latest wins.
+  const layoutQueue = useRef<{ busy: boolean; next: ProcessLayout | null }>({
+    busy: false,
+    next: null,
+  });
+  const [layoutFailed, setLayoutFailed] = useState(false);
+  const saveLayout = (layout: ProcessLayout) => {
+    const queue = layoutQueue.current;
+    queue.next = layout;
+    if (queue.busy) return;
+    queue.busy = true;
+    void (async () => {
+      while (queue.next) {
+        const value = queue.next;
+        queue.next = null;
+        try {
+          await client.saveLayout(value);
+          setLayoutFailed(false);
+        } catch {
+          setLayoutFailed(true);
+        }
+      }
+      queue.busy = false;
+    })();
+  };
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -755,18 +909,13 @@ export function ProcessVisualEditor({
             disabled={disabled}
             onChange={(v) => agentPatch("modelId", v)}
           />
-          <FormField label={copy.instructions}>
-            {(id) => (
-              <Textarea
-                id={id}
-                value={agent.instructions}
-                maxLength={4000}
-                disabled={disabled}
-                className="max-h-72"
-                onChange={(e) => agentPatch("instructions", e.target.value)}
-              />
-            )}
-          </FormField>
+          <AgentInstructionsField
+            key={selectedStep?.id ?? "agent"}
+            value={agent.instructions}
+            disabled={disabled}
+            copy={copy}
+            onChange={(value) => agentPatch("instructions", value)}
+          />
           {selectedStep?.type === "agent" &&
             schemaField(
               `node/${selected}`,
@@ -1181,6 +1330,7 @@ export function ProcessVisualEditor({
       {(problem ||
         stale ||
         invalidFields ||
+        layoutFailed ||
         (candidate && (!purpose.trim() || unapplied))) && (
         <div className="px-4 py-2">
           <Alert variant={problem || invalidFields ? "destructive" : "default"}>
@@ -1205,6 +1355,7 @@ export function ProcessVisualEditor({
                 </div>
               )}
               {unapplied && <div>{copy.pendingFields}</div>}
+              {layoutFailed && <div>{copy.layoutNotSaved}</div>}
             </AlertDescription>
           </Alert>
         </div>
@@ -1221,8 +1372,15 @@ export function ProcessVisualEditor({
             setRename(id);
             setInspector(true);
           }}
-          layoutKey={review.id}
-          issues={problems.map((p) => problemText(p, copy))}
+          layout={review.layout}
+          onLayoutChange={
+            disabled || review.acceptedProcessId ? undefined : saveLayout
+          }
+          issues={[
+            ...problems.map((p) => problemText(p, copy)),
+            ...processIssueLines,
+          ]}
+          stepIssues={stepIssues}
           canUndo={history.past.length > 0}
           canRedo={history.future.length > 0}
           onUndo={() => travel("past")}

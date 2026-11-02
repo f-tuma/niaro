@@ -3,6 +3,7 @@ import { CatalogTarget } from "../../../../packages/protocol/service-catalog";
 import {
   WORKSPACE_PROCESS_PROFILE,
   ProcessVersionSchema,
+  ProcessLayoutSchema,
   type OwnedProcessSummarySchema,
 } from "../../../../packages/protocol/service-processes";
 import type { ProcessExecutionEntry } from "../../../../packages/protocol/process-execution";
@@ -24,7 +25,9 @@ export type PersonalProcess = {
   state: PersonalProcessState;
   activeVersion: number | null;
   /** Why an active process can't start now. */
-  reason: Extract<ProcessExecutionEntry, { availability: "blocked" }>["reason"] | null;
+  reason:
+    | Extract<ProcessExecutionEntry, { availability: "blocked" }>["reason"]
+    | null;
   /** The start inventory's entry when it can start now. */
   start: Extract<ProcessExecutionEntry, { availability: "ready" }> | null;
 };
@@ -37,6 +40,7 @@ export type OwnedProcesses = {
 const versionResponse = CatalogTarget.extend({
   profile: z.literal(WORKSPACE_PROCESS_PROFILE),
   version: ProcessVersionSchema,
+  layout: ProcessLayoutSchema.optional(),
 });
 
 const isMine = (p: Summary, userId: string) =>

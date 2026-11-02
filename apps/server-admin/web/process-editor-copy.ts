@@ -156,6 +156,20 @@ export const editorEn = {
   unreachable: "A step is not connected to the entry",
   applying: "Saving…",
   graph: "Workflow graph",
+  // NIAR-270: canvas notes, step problems, sectioned agent instructions.
+  addNote: "Add note",
+  note: "Note",
+  editNote: "Edit note",
+  removeNote: "Remove note",
+  stepProblem: "Problem",
+  layoutNotSaved: "The arrangement wasn't saved. Move a step to try again.",
+  instructionGoal: "Goal",
+  instructionSteps: "Steps",
+  instructionStepsHint: "One step per line",
+  instructionNever: "Never",
+  instructionNeverHint: "One rule per line",
+  instructionDoneWhen: "Done when",
+  instructionSections: "Use sections",
 };
 export const editorCs: typeof editorEn = {
   operator: "Operátor",
@@ -315,5 +329,19 @@ export const editorCs: typeof editorEn = {
   unreachable: "Krok není propojený se vstupem",
   applying: "Ukládání…",
   graph: "Graf workflow",
+  // NIAR-270: canvas notes, step problems, sectioned agent instructions.
+  addNote: "Přidat poznámku",
+  note: "Poznámka",
+  editNote: "Upravit poznámku",
+  removeNote: "Odebrat poznámku",
+  stepProblem: "Problém",
+  layoutNotSaved: "Rozložení se neuložilo. Zkus znovu posunout krok.",
+  instructionGoal: "Cíl",
+  instructionSteps: "Postup",
+  instructionStepsHint: "Jeden krok na řádek",
+  instructionNever: "Nikdy",
+  instructionNeverHint: "Jedno pravidlo na řádek",
+  instructionDoneWhen: "Hotovo, když",
+  instructionSections: "Rozdělit na části",
 };
 export type EditorCopy = typeof editorEn;

@@ -8,6 +8,7 @@ import {
   DesignReviewSchema,
   DesignTurnSchema,
   DesignReceiptSchema,
+  DesignLayoutResultSchema,
   type DesignCapabilities,
   type DesignCapabilityService,
 } from "../../../../packages/protocol/process-design";
@@ -44,6 +45,10 @@ export const designMutationResponse = z.union([
     review: WorkspaceDesignReviewSchema,
   }),
 ]);
+export const designLayoutResponse = z.strictObject({
+  profile: z.enum([DESIGN_PROFILE, WORKSPACE_DESIGN_PROFILE]),
+  layout: DesignLayoutResultSchema,
+});
 const capabilitiesResponse = z.strictObject({
   profile: z.literal(DESIGN_PROFILE),
   capabilities: DesignCapabilitiesSchema,

@@ -975,3 +975,60 @@ test("choosing the first service action creates a connected workflow locally", a
       .type,
   ).toBe("return");
 });
+
+test("server problems mark the steps they concern, with a sentence naming the fix", () => {
+  const review = structuredClone(designUiReview);
+  review.validation = {
+    valid: false,
+    issues: [
+      { code: "binding_invalid", path: "/steps/0/input/name" },
+      { code: "limit_exceeded", path: "/limits/maxSteps" },
+    ],
+    sources: null,
+  };
+  const f = fixture(review);
+  const mark = f.tree.root.findByProps({ "data-step-issue": "lookup" });
+  expect(mark.props["aria-label"]).toBe(
+    `${editorEn.stepProblem}: Find contacts: give “name” a value from the process input or an earlier step.`,
+  );
+  // A problem of the whole process is listed on the canvas, not on a step.
+  expect(f.tree.root.findAllByProps({ "data-step-issue": "check" })).toEqual(
+    [],
+  );
+  expect(JSON.stringify(f.tree.toJSON())).toContain(
+    "Limits: allow more steps or model calls, or remove steps.",
+  );
+});
+
+test("agent instructions are edited as Goal, Steps, Never and Done when and saved as one text", async () => {
+  const f = fixture();
+  f.openNode("explain");
+  // Text written another way stays one field until the person splits it.
+  act(() =>
+    f
+      .field(editorEn.instructions)
+      .findAllByType("button")
+      .find((item) => text(item) === editorEn.instructionSections)!
+      .props.onClick(),
+  );
+  f.change(editorEn.instructionGoal, "Explain the contact.");
+  f.change(editorEn.instructionSteps, "Read the result\n\nSay what was found");
+  f.change(editorEn.instructionNever, "Invent details");
+  f.change(editorEn.instructionDoneWhen, "One short paragraph exists.");
+  await f.save();
+  expect(
+    f.updateCandidate.mock.calls[0]![1].steps.find(
+      (step: { id: string }) => step.id === "explain",
+    ).instructions,
+  ).toBe(
+    [
+      "Goal: Explain the contact.",
+      "Steps:",
+      "1. Read the result",
+      "2. Say what was found",
+      "Never:",
+      "- Invent details",
+      "Done when: One short paragraph exists.",
+    ].join("\n"),
+  );
+});

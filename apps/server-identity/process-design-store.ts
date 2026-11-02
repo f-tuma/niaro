@@ -12,6 +12,8 @@ import {
   DesignUpdateSchema,
   DesignAcknowledgeSchema,
   DesignAcceptSchema,
+  DesignLayoutSchema,
+  DesignLayoutResultSchema,
   DesignReviewSchema,
   DesignReceiptSchema,
   emptyDesignBrief,
@@ -23,6 +25,7 @@ import {
 } from "../../packages/protocol/process-design";
 import {
   type ProcessDefinition,
+  type ProcessLayout,
   type ProcessOwner,
 } from "../../packages/protocol/service-processes";
 import { IdentityError } from "./error";
@@ -55,6 +58,10 @@ type DesignState = {
   acknowledgments: Record<string, string>;
   acceptedProcessId: string | null;
   updatedAt: string;
+  /** Canvas arrangement; outside the proposal revision and review digest.
+   * Older sessions lack it and keep the draft's arrangement on accept. */
+  layout?: ProcessLayout | null;
+  layoutRevision?: number;
 };
 const actorSchema = z.strictObject({
   organizationId: IdentityId,
@@ -324,6 +331,8 @@ export class ProcessDesignStore {
           purpose: existing?.draft.description || existing?.draft.name || "",
         },
         candidate: existing?.draft ?? null,
+        layout: existing?.layout ?? null,
+        layoutRevision: 0,
         baseline,
         baselineSources,
         ...(existing
@@ -381,6 +390,37 @@ export class ProcessDesignStore {
       this.write(actor, state);
       this.readReview(actor, state.id);
       return this.receipt(actor, state, input.requestId, "acknowledged");
+    });
+  }
+  /**
+   * Saves the canvas arrangement of an open session. It leaves the proposal,
+   * its revision, acknowledgments and the review digest as they are. The same
+   * layout sent again (a lost response) returns the stored state; a different
+   * one over a newer revision is a conflict.
+   */
+  layout(raw: ProcessActor, body: unknown) {
+    assertDesignContent(body);
+    const actor = this.actor(raw),
+      input = DesignLayoutSchema.parse(body);
+    this.target(actor, input);
+    return this.atomic(() => {
+      const state = this.row(actor, input.sessionId);
+      if (state.acceptedProcessId)
+        throw new IdentityError(409, "process_design_conflict");
+      const current = state.layoutRevision ?? 0;
+      if (current !== input.layoutRevision) {
+        if (processDigest(state.layout ?? null) !== processDigest(input.layout))
+          throw new IdentityError(409, "process_design_layout_conflict");
+      } else {
+        state.layout = input.layout;
+        state.layoutRevision = current + 1;
+        this.write(actor, state);
+      }
+      return DesignLayoutResultSchema.parse({
+        sessionId: state.id,
+        layoutRevision: state.layoutRevision ?? 0,
+        layout: state.layout ?? null,
+      });
     });
   }
   get(raw: ProcessActor, id: string): DesignReview {
@@ -586,6 +626,10 @@ export class ProcessDesignStore {
     ).parse({
       ...value,
       reviewDigest: processDigest(value),
+      // Presentation only: added after the digest so moving a step never
+      // invalidates a review or an acceptance.
+      layout: state.layout ?? null,
+      layoutRevision: state.layoutRevision ?? 0,
     });
   }
   /** Exact reviewed metadata only. Nested savepoints make draft, audit and receipt atomic. */
@@ -613,6 +657,8 @@ export class ProcessDesignStore {
           ? this.registry.getOwned(actor, state.baseline.processId).revision
           : 0,
         definition: state.candidate,
+        // Sessions from before layouts keep the draft's arrangement.
+        ...(state.layout !== undefined ? { layout: state.layout } : {}),
       };
       const saved =
         state.serviceId === null

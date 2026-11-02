@@ -41,6 +41,8 @@ import { DetailList } from "@admin/components/console/forms";
 import { StatusBadge } from "@admin/components/console/status";
 import type { DesignCopy } from "./process-design-copy";
 import { processReviewOrder } from "./lib/process-review-order";
+import { parseAgentInstructions } from "./lib/agent-instructions";
+import { processIssues, processIssuesTruncated } from "./lib/process-issues";
 
 // Shared with the other process pages; the console owns the treatment.
 export { Disclosure, JsonDetail };
@@ -187,7 +189,7 @@ function agentItems(
     },
     {
       label: copy.instructions,
-      value: <p className="whitespace-pre-wrap">{agent.instructions}</p>,
+      value: <AgentInstructions text={agent.instructions} copy={copy} />,
     },
     {
       label: copy.allowedActions,
@@ -208,8 +210,53 @@ function agentItems(
     },
   ];
 }
+/** Goal, Steps, Never and Done when as a list; other text as written. */
+function AgentInstructions({ text, copy }: { text: string; copy: DesignCopy }) {
+  const parts = parseAgentInstructions(text);
+  if (!parts || !text.trim())
+    return <p className="whitespace-pre-wrap">{text}</p>;
+  const label = (value: string) => (
+    <span className="text-xs text-muted-foreground">{value}</span>
+  );
+  return (
+    <div className="flex flex-col gap-2">
+      {parts.goal && (
+        <div className="flex flex-col gap-0.5">
+          {label(copy.instructionGoal)}
+          <p className="whitespace-pre-wrap">{parts.goal}</p>
+        </div>
+      )}
+      {parts.steps.length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          {label(copy.instructionSteps)}
+          <ol className="flex list-decimal flex-col gap-0.5 pl-5">
+            {parts.steps.map((step, index) => (
+              <li key={index}>{step}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {parts.never.length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          {label(copy.instructionNever)}
+          <ul className="flex list-disc flex-col gap-0.5 pl-5">
+            {parts.never.map((rule, index) => (
+              <li key={index}>{rule}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {parts.doneWhen && (
+        <div className="flex flex-col gap-0.5">
+          {label(copy.instructionDoneWhen)}
+          <p className="whitespace-pre-wrap">{parts.doneWhen}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 /** A step named the way the canvas names it, never by its internal ID. */
-function stepTitle(
+export function stepTitle(
   step: ProcessStep,
   capabilities: DesignCapabilities,
   copy: DesignCopy,
@@ -219,74 +266,6 @@ function stepTitle(
         .find((s) => s.id === step.serviceId)
         ?.actions.find((a) => a.id === step.actionId)?.name ?? step.actionId)
     : copy[step.type];
-}
-const pathLabels: Partial<Record<string, keyof DesignCopy>> = {
-  modelId: "executionModel",
-  memory: "memory",
-  instructions: "instructions",
-  inputSchema: "inputSchema",
-  outputSchema: "outputSchema",
-  serviceId: "service",
-  condition: "condition",
-  next: "next",
-  whenTrue: "whenTrue",
-  whenFalse: "whenFalse",
-  entry: "entry",
-  limits: "limits",
-  maxSteps: "maxSteps",
-  maxModelCalls: "maxModelCalls",
-  maxTokens: "maxTokens",
-  maxCostMicros: "maxCostMicros",
-  maxDurationMs: "maxDurationMs",
-};
-/** "/steps/2/input/email" reads as "Search people › email". */
-export function issueTarget(
-  path: string,
-  definition: ProcessDefinition | null,
-  capabilities: DesignCapabilities,
-  copy: DesignCopy,
-): string | null {
-  const parts = path.split("/").filter(Boolean);
-  const labels: string[] = [];
-  let scope: unknown = definition;
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i]!;
-    if (part === "steps" && definition?.kind === "workflow") {
-      const key = parts[i + 1];
-      if (key === undefined) {
-        labels.push(copy.steps);
-        break;
-      }
-      const step =
-        (/^\d+$/.test(key) ? definition.steps[Number(key)] : undefined) ??
-        definition.steps.find((s) => s.id === key);
-      labels.push(step ? stepTitle(step, capabilities, copy) : key);
-      scope = step;
-      i++;
-      continue;
-    }
-    if (part === "capabilities") {
-      const ref = (
-        scope as { capabilities?: { serviceId: string; actionId: string }[] }
-      )?.capabilities?.[Number(parts[i + 1])];
-      const action = ref
-        ? capabilities.services
-            .find((s) => s.id === ref.serviceId)
-            ?.actions.find((a) => a.id === ref.actionId)
-        : undefined;
-      labels.push(action?.name ?? ref?.actionId ?? copy.allowedActions);
-      break;
-    }
-    // Containers and indexes add nothing a person needs.
-    if (
-      ["input", "output", "properties", "items", "required"].includes(part) ||
-      /^\d+$/.test(part)
-    )
-      continue;
-    const known = pathLabels[part];
-    labels.push(known ? copy[known] : part);
-  }
-  return labels.length ? labels.join(" › ") : null;
 }
 function StepSummary({
   step,
@@ -462,19 +441,14 @@ export function ProcessDesignReview({
   const [confirmation, setConfirmation] = useState(review.confirmation);
   const disabled = blocked || !!review.acceptedProcessId;
   const valid = review.validation.valid && !review.blockers.length;
-  // One line per problem kind, naming what it refers to instead of repeating it.
-  const issueGroups = new Map<string, Set<string>>();
-  for (const issue of review.validation.issues) {
-    const targets = issueGroups.get(issue.code) ?? new Set<string>();
-    const target = issueTarget(
-      issue.path,
-      review.candidate,
-      capabilities,
-      copy,
-    );
-    if (target) targets.add(target);
-    issueGroups.set(issue.code, targets);
-  }
+  // One sentence per problem: the step it concerns and what to do.
+  const issues = processIssues(
+    review.validation,
+    review.candidate,
+    copy.issues,
+    (step) => stepTitle(step, capabilities, copy),
+  );
+  const truncated = processIssuesTruncated(review.validation);
   const brief: { label: string; value: React.ReactNode }[] = [
     {
       label: copy.purpose,
@@ -516,7 +490,7 @@ export function ProcessDesignReview({
       )}
       <div className="flex min-w-0 flex-col gap-8 p-4">
         <div className="flex flex-col gap-4">
-          {!valid && (review.blockers.length > 0 || issueGroups.size > 0) && (
+          {!valid && (review.blockers.length > 0 || issues.length > 0) && (
             <Alert>
               <AlertTitle>{copy.blockers}</AlertTitle>
               <AlertDescription>
@@ -524,18 +498,15 @@ export function ProcessDesignReview({
                   {review.blockers.map((code) => (
                     <li key={code}>{copy[code]}</li>
                   ))}
-                  {[...issueGroups].map(([code, targets]) => (
-                    <li key={code}>
-                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        {copy[code as keyof DesignCopy]}
-                        {[...targets].map((target) => (
-                          <Badge key={target} variant="outline">
-                            {target}
-                          </Badge>
-                        ))}
-                      </span>
+                  {issues.map((issue, index) => (
+                    <li
+                      key={`${issue.path}/${index}`}
+                      data-issue-code={issue.code}
+                    >
+                      {issue.sentence}
                     </li>
                   ))}
+                  {truncated && <li>{copy.issues.more}</li>}
                 </ul>
               </AlertDescription>
             </Alert>

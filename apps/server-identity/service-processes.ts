@@ -13,6 +13,8 @@ import {
   ProcessRecordSchema,
   ProcessVersionSchema,
   ProcessSourceManifestSchema,
+  ProcessLayoutSchema,
+  type ProcessLayout,
   type ProcessDefinition,
   type ProcessRecord,
   type ProcessVersion,
@@ -194,6 +196,47 @@ export class ServiceProcessStore {
         .some((column) => column.name === "archived_at")
     )
       db.exec("ALTER TABLE agent_service_process ADD COLUMN archived_at TEXT");
+    // Canvas arrangement: beside the draft (version 0) and each frozen
+    // version, never inside a definition or any digest. A version's row is
+    // written once, when the version is frozen.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_service_process_layout (
+        process_id TEXT NOT NULL REFERENCES agent_service_process(id) ON DELETE CASCADE,
+        version INTEGER NOT NULL, layout TEXT NOT NULL,
+        PRIMARY KEY(process_id,version)
+      ) STRICT;
+      CREATE TRIGGER IF NOT EXISTS agent_service_process_layout_version_immutable
+        BEFORE UPDATE ON agent_service_process_layout WHEN OLD.version > 0
+        BEGIN SELECT RAISE(ABORT,'process_version_immutable'); END;
+    `);
+  }
+  /** Stored arrangement of the draft (0) or a frozen version; null if none. */
+  private storedLayout(id: string, version: number): ProcessLayout | null {
+    const row = this.db
+      .prepare(
+        "SELECT layout FROM agent_service_process_layout WHERE process_id=? AND version=?",
+      )
+      .get(id, version);
+    if (!row) return null;
+    const parsed = ProcessLayoutSchema.safeParse(
+      JSON.parse(String(row.layout)),
+    );
+    return parsed.success ? parsed.data : null;
+  }
+  /** Keeps only the positions of steps the definition has. */
+  private fittedLayout(
+    definition: ProcessDefinition,
+    layout: ProcessLayout,
+  ): ProcessLayout {
+    const ids = new Set(
+      definition.kind === "workflow" ? definition.steps.map((s) => s.id) : [],
+    );
+    return ProcessLayoutSchema.parse({
+      positions: Object.fromEntries(
+        Object.entries(layout.positions).filter(([id]) => ids.has(id)),
+      ),
+      notes: layout.notes,
+    });
   }
   /** Scope only. Row access is decided per process by `access`. */
   private actor(raw: ProcessActor) {
@@ -716,10 +759,18 @@ export class ServiceProcessStore {
   }
   getOwned(raw: ProcessActor, id: string): OwnedProcessRecord {
     const row = this.row(this.actor(raw), id, "read");
+    const layout = this.storedLayout(row.id, 0);
     return OwnedProcessRecordSchema.parse({
       ...this.summary(row),
       draft: JSON.parse(row.draft),
+      ...(layout ? { layout } : {}),
     });
+  }
+  /** A frozen version's arrangement, as it was when it was frozen. */
+  versionLayout(raw: ProcessActor, id: string, version: number) {
+    const actor = this.actor(raw);
+    this.versionValue(actor, id, version, "read");
+    return this.storedLayout(id, version);
   }
   validate(raw: ProcessActor, serviceId: string, definition: unknown) {
     return this.validateOwner(raw, { type: "service", serviceId }, definition);
@@ -772,6 +823,8 @@ export class ServiceProcessStore {
       serviceId: string;
       revision: number;
       definition: ProcessDefinition;
+      /** Replaces the draft's arrangement; left out, it stays as it is. */
+      layout?: ProcessLayout | null;
     },
   ): ProcessRecord {
     const { serviceId, ...rest } = input;
@@ -791,6 +844,7 @@ export class ServiceProcessStore {
       revision: number;
       definition: ProcessDefinition;
       owner?: ProcessOwnerRequest;
+      layout?: ProcessLayout | null;
     },
   ): OwnedProcessRecord {
     const { owner = { type: "workspace" }, ...rest } = input;
@@ -803,6 +857,7 @@ export class ServiceProcessStore {
       owner: ProcessOwner | ProcessOwnerRequest;
       revision: number;
       definition: ProcessDefinition;
+      layout?: ProcessLayout | null;
     },
   ): OwnedProcessRecord {
     const actor = this.actor(raw);
@@ -844,6 +899,26 @@ export class ServiceProcessStore {
             owner.type,
             owner.type === "user" ? owner.userId : null,
           );
+      if (input.layout === null)
+        this.db
+          .prepare(
+            "DELETE FROM agent_service_process_layout WHERE process_id=? AND version=0",
+          )
+          .run(id);
+      else if (input.layout)
+        this.db
+          .prepare(
+            "INSERT INTO agent_service_process_layout VALUES (?,0,?) ON CONFLICT(process_id,version) DO UPDATE SET layout=excluded.layout",
+          )
+          .run(
+            id,
+            JSON.stringify(
+              this.fittedLayout(
+                definition,
+                ProcessLayoutSchema.parse(input.layout),
+              ),
+            ),
+          );
       this.changed(actor, this.row(actor, id, "manage"));
       return this.getOwned(actor, id);
     });
@@ -875,6 +950,12 @@ export class ServiceProcessStore {
           new Date(this.now()).toISOString(),
           actor.userId,
         );
+      // The version keeps the arrangement it was frozen with.
+      const layout = this.storedLayout(id, 0);
+      if (layout)
+        this.db
+          .prepare("INSERT INTO agent_service_process_layout VALUES (?,?,?)")
+          .run(id, latest + 1, JSON.stringify(layout));
       this.bump(actor, row, "version_frozen", latest + 1);
       return this.versionValue(actor, id, latest + 1, "manage");
     });

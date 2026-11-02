@@ -9,6 +9,7 @@ import {
   ProcessLimitsSchema,
   OwnedProcessOwnerSchema,
   ProcessOwnerRequestSchema,
+  ProcessLayoutSchema,
 } from "./service-processes";
 
 export const DESIGN_PROFILE = "agent-process-design/1" as const;
@@ -150,6 +151,23 @@ export const DesignAcceptSchema = CatalogTarget.extend({
   reviewDigest: DesignDigest,
 });
 export const DesignReadSchema = CatalogTarget.extend({ sessionId: IdentityId });
+/**
+ * Saves where the steps sit on the canvas and the notes beside them. It is
+ * outside the proposal: the proposal revision and the review digest stay as
+ * they are. `layoutRevision` is the one the client last saw; resending the
+ * same layout after a lost response is answered with the stored one.
+ */
+export const DesignLayoutSchema = CatalogTarget.extend({
+  sessionId: IdentityId,
+  layoutRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  layout: ProcessLayoutSchema,
+});
+export const DesignLayoutResultSchema = z.strictObject({
+  sessionId: IdentityId,
+  layoutRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  layout: ProcessLayoutSchema.nullable(),
+});
+export type DesignLayoutResult = z.infer<typeof DesignLayoutResultSchema>;
 export const DesignBaselineSchema = z.strictObject({
   processId: IdentityId,
   registryRevision: Revision,
@@ -214,6 +232,14 @@ export const DesignReviewSchema = CatalogTarget.extend({
   reviewDigest: DesignDigest,
   acceptedProcessId: IdentityId.nullable(),
   updatedAt: z.iso.datetime(),
+  /** Canvas arrangement, not part of `reviewDigest` (see DesignLayoutSchema). */
+  layout: ProcessLayoutSchema.nullable().optional(),
+  layoutRevision: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(Number.MAX_SAFE_INTEGER)
+    .optional(),
 });
 export type DesignReview = z.infer<typeof DesignReviewSchema>;
 /** Mutation replay returns this immutable receipt; reads separately refresh validation. */

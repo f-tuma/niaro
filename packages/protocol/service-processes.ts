@@ -277,6 +277,37 @@ export const ProcessValidationSchema = z.strictObject({
   sources: ProcessSourceManifestSchema.nullable(),
 });
 export type ProcessValidation = z.infer<typeof ProcessValidationSchema>;
+/**
+ * Where a person arranged the steps on the canvas, and short notes beside
+ * them. Presentation only: it is stored next to the draft and each frozen
+ * version but never in the definition, its digests or the "changed since
+ * active" comparison, and nothing at run time reads it.
+ */
+export const PROCESS_LAYOUT_NOTE_MAX_LENGTH = 280;
+const canvasCoordinate = z.number().int().min(-100_000).max(100_000);
+export const ProcessLayoutPointSchema = z.strictObject({
+  x: canvasCoordinate,
+  y: canvasCoordinate,
+});
+export const ProcessLayoutNoteSchema = z.strictObject({
+  id: ProcessKey,
+  x: canvasCoordinate,
+  y: canvasCoordinate,
+  text: z.string().trim().min(1).max(PROCESS_LAYOUT_NOTE_MAX_LENGTH),
+});
+export const ProcessLayoutSchema = z
+  .strictObject({
+    positions: z
+      .record(ProcessKey, ProcessLayoutPointSchema)
+      .refine((value) => Object.keys(value).length <= 64),
+    notes: z.array(ProcessLayoutNoteSchema).max(20),
+  })
+  .refine(
+    (value) =>
+      new Set(value.notes.map((n) => n.id)).size === value.notes.length,
+  );
+export type ProcessLayout = z.infer<typeof ProcessLayoutSchema>;
+export type ProcessLayoutNote = z.infer<typeof ProcessLayoutNoteSchema>;
 export const ProcessSummarySchema = z.strictObject({
   id: IdentityId,
   serviceId: IdentityId,
@@ -292,6 +323,8 @@ export const ProcessSummarySchema = z.strictObject({
 });
 export const ProcessRecordSchema = ProcessSummarySchema.extend({
   draft: ProcessDefinitionSchema,
+  /** The draft's canvas arrangement; null when nobody arranged it. */
+  layout: ProcessLayoutSchema.nullable().optional(),
 });
 export type ProcessRecord = z.infer<typeof ProcessRecordSchema>;
 export const ProcessVersionSchema = z.strictObject({
@@ -375,7 +408,10 @@ export const WorkspaceProcessSummarySchema = ProcessSummarySchema.omit({
   serviceId: z.never().optional(),
 });
 export const WorkspaceProcessRecordSchema =
-  WorkspaceProcessSummarySchema.extend({ draft: ProcessDefinitionSchema });
+  WorkspaceProcessSummarySchema.extend({
+    draft: ProcessDefinitionSchema,
+    layout: ProcessLayoutSchema.nullable().optional(),
+  });
 export const OwnedProcessSummarySchema = z.union([
   ProcessSummarySchema,
   WorkspaceProcessSummarySchema,

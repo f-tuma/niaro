@@ -6,6 +6,7 @@ import {
   ProcessListSchema,
   ProcessRecordSchema,
   ProcessVersionSchema,
+  ProcessLayoutSchema,
   type ProcessDefinition,
 } from "../../../../packages/protocol/service-processes";
 import {
@@ -28,6 +29,7 @@ const recordResponse = CatalogTarget.extend({
 const versionResponse = CatalogTarget.extend({
   profile: z.literal(PROCESS_PROFILE),
   version: ProcessVersionSchema,
+  layout: ProcessLayoutSchema.optional(),
 });
 function scoped(
   value: z.infer<typeof CatalogTarget>,

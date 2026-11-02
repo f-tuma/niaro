@@ -442,3 +442,76 @@ test("layout splits condition exits into rows and inserted steps push what follo
   expect(grown.finish!.x).toBe(layout.finish!.x + CANVAS_COLUMN);
   expect(grown.lookup).toEqual(layout.lookup);
 });
+
+test("the canvas opens the saved arrangement and reports a moved step as a layout change", () => {
+  const saved = {
+    positions: {
+      lookup: { x: 0, y: 0 },
+      check: { x: 240, y: 0 },
+      explain: { x: 480, y: 0 },
+      finish: { x: 720, y: 240 },
+    },
+    notes: [{ id: "note1", x: 0, y: 240, text: "Ask TEST finance" }],
+  };
+  const onLayoutChange = jest.fn();
+  const f = fixture({ layout: saved, onLayoutChange }, 1200);
+  expect(f.at("finish")).toEqual({ x: 720, y: 240 });
+  expect(
+    f.tree.root.findByProps({ "data-note-id": "note1" }).props.style,
+  ).toMatchObject({ "--note-x": "0px", "--note-y": "240px" });
+  // Moving a step saves its new place; nothing in the definition changes.
+  const from = f.client(f.at("lookup").x + 40, f.at("lookup").y + 40);
+  f.drag(
+    f.button(`${editorEn.select}: lookup`),
+    from,
+    f.client(f.at("lookup").x + 40 + 96, f.at("lookup").y + 40),
+  );
+  expect(onLayoutChange).toHaveBeenCalledTimes(1);
+  const layout = onLayoutChange.mock.calls[0][0];
+  expect(layout.positions.lookup.x).toBeGreaterThan(0);
+  expect(layout.positions.check).toEqual({ x: 240, y: 0 });
+  expect(layout.notes).toEqual(saved.notes);
+  expect(f.props.onConnect).not.toHaveBeenCalled();
+  expect(f.props.onSelect).not.toHaveBeenCalled();
+});
+
+test("a note is added, written and removed, each saved with the arrangement", () => {
+  const onLayoutChange = jest.fn();
+  const f = fixture({ onLayoutChange }, 1200);
+  f.click(editorEn.addNote);
+  const area = f.tree.root.findByProps({ "aria-label": editorEn.note });
+  act(() => area.props.onChange({ target: { value: "Check the owner" } }));
+  act(() => area.props.onBlur());
+  const added = onLayoutChange.mock.calls.at(-1)[0];
+  expect(added.notes).toEqual([
+    expect.objectContaining({ id: "note1", text: "Check the owner" }),
+  ]);
+  // An emptied note disappears instead of being saved blank.
+  f.click(`${editorEn.editNote}: Check the owner`);
+  const again = f.tree.root.findByProps({ "aria-label": editorEn.note });
+  act(() => again.props.onChange({ target: { value: "  " } }));
+  act(() => again.props.onBlur());
+  expect(onLayoutChange.mock.calls.at(-1)[0].notes).toEqual([]);
+  // Disabled canvases (an accepted proposal) take no notes.
+  f.update({ disabled: true });
+  expect(f.button(editorEn.addNote).props.disabled).toBe(true);
+});
+
+test("a step with problems carries a mark naming them that selects the step", () => {
+  const f = fixture({
+    stepIssues: {
+      lookup: [
+        "Find contacts: give “name” a value from the process input or an earlier step.",
+      ],
+    },
+  });
+  const mark = f.tree.root.findByProps({ "data-step-issue": "lookup" });
+  expect(mark.props["aria-label"]).toBe(
+    `${editorEn.stepProblem}: Find contacts: give “name” a value from the process input or an earlier step.`,
+  );
+  act(() => mark.props.onClick());
+  expect(f.props.onSelect).toHaveBeenCalledWith("lookup");
+  expect(
+    f.tree.root.findAllByProps({ "data-step-issue": "check" }),
+  ).toHaveLength(0);
+});

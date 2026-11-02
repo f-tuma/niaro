@@ -8,13 +8,17 @@ import {
   DesignAcknowledgeSchema,
   DesignAcceptSchema,
   DesignUpdateSchema,
+  DesignLayoutSchema,
   DesignTurnStartSchema,
   type OwnedDesignReview as DesignReview,
   type DesignTurn,
   type DesignCapabilities,
   type DesignBrief,
 } from "../../../../packages/protocol/process-design";
-import { type ProcessDefinition } from "../../../../packages/protocol/service-processes";
+import {
+  type ProcessDefinition,
+  type ProcessLayout,
+} from "../../../../packages/protocol/service-processes";
 import { api, ApiError } from "./api";
 import {
   designApiPath,
@@ -22,6 +26,7 @@ import {
   designTurnsResponse,
   designTurnResponse,
   designMutationResponse,
+  designLayoutResponse,
   loadDesignCapabilities,
 } from "./process-design-api";
 import { designStoragePrefix } from "./design-authority";
@@ -656,6 +661,53 @@ export class ProcessDesignClient {
         candidate,
       }),
     });
+  }
+  /**
+   * Saves the canvas arrangement. It is outside the proposal (no revision,
+   * no review digest), so it skips the command outbox: sending the same
+   * layout again is harmless. A newer arrangement saved elsewhere is a
+   * conflict; the session is read again and the error is thrown.
+   */
+  async saveLayout(layout: ProcessLayout) {
+    const review = this.state.review;
+    if (
+      !review ||
+      review.acceptedProcessId ||
+      this.disposed ||
+      this.state.denied ||
+      this.storageInvalid
+    )
+      return;
+    try {
+      const { layout: saved } = designLayoutResponse.parse(
+        await this.transport.request(
+          `${designApiPath}/layout${this.scope.serviceId ? "" : `?profile=${encodeURIComponent(WORKSPACE_DESIGN_PROFILE)}`}`,
+          DesignLayoutSchema.parse({
+            ...this.target,
+            sessionId: review.id,
+            layoutRevision: review.layoutRevision ?? 0,
+            layout,
+          }),
+          this.controller.signal,
+        ),
+      );
+      const current = this.state.review;
+      if (!this.disposed && current?.id === saved.sessionId)
+        this.set({
+          review: {
+            ...current,
+            layout: saved.layout,
+            layoutRevision: saved.layoutRevision,
+          },
+        });
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.code === "process_design_layout_conflict"
+      )
+        await this.refresh({ reuseCapabilities: true });
+      throw error;
+    }
   }
   async acknowledge(
     expected: Pick<DesignReview, "revision" | "reviewDigest">,
