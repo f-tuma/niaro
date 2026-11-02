@@ -225,6 +225,9 @@ export const en = {
   attachmentWait: "Wait for the attachment",
   attachmentFailedSend: "An attachment failed",
   // end NIAR-269
+  // NIAR-266 (phone chat): kept together for merging.
+  answerReady: "Answer ready",
+  // end NIAR-266
   renameChat: "Rename",
   chatName: "Chat name",
   deleteChat: "Delete",
@@ -1196,6 +1199,9 @@ export const cs: Record<TranslationKey, string> = {
   attachmentWait: "Počkej na přílohu",
   attachmentFailedSend: "Příloha se nenahrála",
   // end NIAR-269
+  // NIAR-266 (phone chat): kept together for merging.
+  answerReady: "Odpověď je hotová",
+  // end NIAR-266
   renameChat: "Přejmenovat",
   chatName: "Název chatu",
   deleteChat: "Smazat",

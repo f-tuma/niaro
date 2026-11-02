@@ -76,10 +76,14 @@ export function chatFixture(paged = false) {
     activityConnection: "waiting",
   };
   const listeners = new Set<() => void>();
+  // The chat as the server has it now: its revision follows the store.
   const page = (part: ChatMessage[], nextAfter: string | null) => ({
     profile: CONVERSATION_HISTORY_PROFILE,
     scope: snapshot.scope,
-    conversation: summary,
+    conversation: {
+      ...summary,
+      revision: state.store!.conversations["TEST-A"]!.revision,
+    },
     messages: part,
     nextAfter,
   });
@@ -102,7 +106,7 @@ export function chatFixture(paged = false) {
     })),
     readConversation: jest.fn(async (_id: string, after?: string | null) =>
       !paged
-        ? page(messages, null)
+        ? page(state.store!.conversations["TEST-A"]!.messages, null)
         : after === "TEST-older"
           ? page(messages.slice(0, 2), null)
           : page(messages.slice(2), "TEST-older"),
@@ -157,5 +161,9 @@ export function chatFixture(paged = false) {
       />
     );
   }
-  return { session, Harness };
+  const publish = (patch: Partial<SessionState>) => {
+    state = { ...state, ...patch };
+    listeners.forEach((r) => r());
+  };
+  return { session, Harness, publish, state: () => state };
 }

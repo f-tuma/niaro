@@ -51,6 +51,7 @@ import React, {
   useMemo,
 } from "react";
 import {
+  AccessibilityInfo,
   Alert,
   Animated,
   AppState,
@@ -173,6 +174,7 @@ import { WorkItemSummary } from "../../packages/ui-catalog/WorkItemSummary";
 import type { ProcessOfferResult } from "../../packages/protocol/process-offer";
 
 import { ChatThread } from "./chat/ChatThread";
+import { answerAnnouncement } from "./chat/announce";
 import { ChatFooter } from "./chat/composer";
 import { MobileChatProvider, type MobileChat } from "./chat/parts";
 import { projectThread, trailingWork, visibleMessages } from "./chat/thread";
@@ -1376,6 +1378,21 @@ export function Workspace({
   const messages = visibleMessages(allMessages, historySelection, chatStart);
   // A sound for what arrives while the chat is open; history loaded at start is silent.
   const heard = useRef<Map<string, string> | undefined>(undefined);
+  /** What the announcement below needs to know without re-running. */
+  const announcing = useRef({
+    heldReply,
+    chat: section === "chat",
+    language,
+    speaking: speech.state,
+  });
+  useEffect(() => {
+    announcing.current = {
+      heldReply,
+      chat: section === "chat",
+      language,
+      speaking: speech.state,
+    };
+  }, [heldReply, section, language, speech.state]);
   useEffect(() => {
     const status = (m: (typeof allMessages)[number]) =>
       m.result?.type === "service.action" ? m.result.status : "message";
@@ -1386,6 +1403,7 @@ export function Workspace({
       return;
     }
     let cue: "reply" | "done" | undefined;
+    let stored: (typeof allMessages)[number] | undefined;
     for (const m of allMessages) {
       if (m.role !== "assistant") continue;
       const now = status(m),
@@ -1394,9 +1412,29 @@ export function Workspace({
       heard.current.set(m.id, now);
       // An approved write that completed is the strongest confirmation.
       if (now === "succeeded" && before === "awaiting_approval") cue = "done";
-      else if (before === undefined) cue ??= "reply";
+      else if (before === undefined) {
+        cue ??= "reply";
+        stored = m;
+      }
     }
     if (cue) feedback(cue);
+    // A stored answer is said once to a screen reader, never while it is
+    // read aloud (a spoken reply is held until its sound starts).
+    const {
+      heldReply: spoken,
+      chat,
+      language: said,
+      speaking,
+    } = announcing.current;
+    if (
+      stored?.text.trim() &&
+      chat &&
+      !(spoken && stored.replyToCommandId === spoken) &&
+      !(speaking.messageId === stored.id && speaking.phase !== "idle")
+    )
+      AccessibilityInfo.announceForAccessibility(
+        answerAnnouncement(translate(said)("answerReady"), stored.text),
+      );
   }, [allMessages, store, historySelection]);
   const failure = state.error;
   useEffect(() => {
