@@ -7,6 +7,7 @@ FROM python:3.12-slim@sha256:12316debbfb86890f6b2d825820612741ba527ad5a44e390275
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_ROOT_USER_ACTION=ignore \
     # The model is downloaded once into the volume mounted here; the root
     # filesystem can stay read-only.
     HF_HOME=/models \
