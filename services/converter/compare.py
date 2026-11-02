@@ -1,7 +1,9 @@
 """Runs a folder of test files through converter services and prints how
 much of the expected text each one found, how long it took and the memory
 peak of its container. A development tool; the files and their expected
-strings come from manifest.json in that folder (the NIAR-250 pilot corpus).
+strings come from manifest.json in that folder: tests/fixtures/documents/pilot
+and tests/fixtures/documents/qualification (synthetic, from the NIAR-250 pilot).
+CONVERTER_TOKEN in the environment is sent as the bearer token.
 
   python3 compare.py FIXTURES name=http://host:8000[@container] ...
 """
@@ -9,6 +11,7 @@ strings come from manifest.json in that folder (the NIAR-250 pilot corpus).
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -54,7 +57,7 @@ def main() -> None:
     services = [arg.split("=", 1) for arg in sys.argv[2:]]
     cases = json.loads((folder / "manifest.json").read_text())
     cases = cases["cases"] if isinstance(cases, dict) else cases
-    token = (Path.home() / ".niaro-converter-token").read_text().strip() if (Path.home() / ".niaro-converter-token").exists() else ""
+    token = os.environ.get("CONVERTER_TOKEN", "")
     totals = {name: [0, 0, 0.0] for name, _ in services}
     print(f"{'file':28}" + "".join(f"{name:>34}" for name, _ in services))
     for case in cases:

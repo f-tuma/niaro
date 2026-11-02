@@ -1,0 +1,542 @@
+[
+  {
+    "file": "card-cs.png",
+    "sha256": "fda050c7e629048ed6bf860a6bbd299535c08827d790685bbbcc0054c218e765",
+    "bytes": 62377,
+    "fields": [
+      "Jana Nováková",
+      "Obchodní ředitelka",
+      "Žlutý Most s.r.o.",
+      "jana.novakova@example.test",
+      "+420 777 123 456",
+      "Dlouhá 12, Brno 602 00"
+    ],
+    "sources": [
+      "image:1"
+    ],
+    "table": [],
+    "expected": "readable",
+    "contact": true
+  },
+  {
+    "file": "card-en.png",
+    "sha256": "d700aab750c401f2f841a3e8a555415052804b72482e8a4654cf815cd8846a19",
+    "bytes": 62348,
+    "fields": [
+      "Alex Morgan",
+      "Sales Director",
+      "North Bridge Ltd",
+      "alex.morgan@example.test",
+      "+44 7700 900123",
+      "12 Market Street, London"
+    ],
+    "sources": [
+      "image:1"
+    ],
+    "table": [],
+    "expected": "readable",
+    "contact": true
+  },
+  {
+    "file": "card-cs-rotated90.png",
+    "sha256": "7842bbd9acd81e6d7004cf6b262848dd32218234256ec36c4e5e87bd4e18daac",
+    "bytes": 89431,
+    "fields": [
+      "Jana Nováková",
+      "Obchodní ředitelka",
+      "Žlutý Most s.r.o.",
+      "jana.novakova@example.test",
+      "+420 777 123 456",
+      "Dlouhá 12, Brno 602 00"
+    ],
+    "sources": [
+      "image:1"
+    ],
+    "table": [],
+    "expected": "readable",
+    "contact": true
+  },
+  {
+    "file": "card-cs-exif.jpg",
+    "sha256": "a5a917edbaf728ae61ed470a6520bc0cbe93dbfa729e52df51d8c3be01de08c8",
+    "bytes": 108118,
+    "fields": [
+      "Jana Nováková",
+      "Obchodní ředitelka",
+      "Žlutý Most s.r.o.",
+      "jana.novakova@example.test",
+      "+420 777 123 456",
+      "Dlouhá 12, Brno 602 00"
+    ],
+    "sources": [
+      "image:1"
+    ],
+    "table": [],
+    "expected": "readable",
+    "contact": true
+  },
+  {
+    "file": "card-cs-blur.jpg",
+    "sha256": "3608c71b932c6b62e5c9cb61ba14e4deeafccc5856d62a04d5ea1831f4aa23c9",
+    "bytes": 57834,
+    "fields": [
+      "Jana Nováková",
+      "Obchodní ředitelka",
+      "Žlutý Most s.r.o.",
+      "jana.novakova@example.test",
+      "+420 777 123 456",
+      "Dlouhá 12, Brno 602 00"
+    ],
+    "sources": [
+      "image:1"
+    ],
+    "table": [],
+    "expected": "readable",
+    "contact": true
+  },
+  {
+    "file": "card-cs-glare.jpg",
+    "sha256": "881c609f3fdcc65d80c581b17fa36738e408ae4234582805883d1f911385102d",
+    "bytes": 80930,
+    "fields": [
+      "Jana Nováková",
+      "Obchodní ředitelka",
+      "Žlutý Most s.r.o.",
+      "jana.novakova@example.test",
+      "+420 777 123 456",
+      "Dlouhá 12, Brno 602 00"
+    ],
+    "sources": [
+      "image:1"
+    ],
+    "table": [],
+    "expected": "degraded",
+    "contact": true
+  },
+  {
+    "file": "blank.png",
+    "sha256": "b76e43b36cbd8db5563a13be7f7e3e5e8f850c7c6466a8448cb720cb25ad1989",
+    "bytes": 7087,
+    "fields": [],
+    "sources": [
+      "image:1"
+    ],
+    "table": [],
+    "expected": "unreadable"
+  },
+  {
+    "file": "text.pdf",
+    "sha256": "c6db56ac8eb79698a12cd10d89d9dde2cc340beb503ddb1e0f60802364554903",
+    "bytes": 15978,
+    "fields": [
+      "Položka",
+      "Množství",
+      "Jednotka",
+      "Cena CZK",
+      "Měděný drát",
+      "12,5",
+      "kg",
+      "1250",
+      "Ocelový plech",
+      "3",
+      "m2",
+      "900",
+      "NIARO-SYNTH-42",
+      "END-SECOND-PAGE-902"
+    ],
+    "sources": [
+      "page:1",
+      "page:2"
+    ],
+    "table": [
+      [
+        "Položka",
+        "Množství",
+        "Jednotka",
+        "Cena CZK"
+      ],
+      [
+        "Měděný drát",
+        "12,5",
+        "kg",
+        "1250"
+      ],
+      [
+        "Ocelový plech",
+        "3",
+        "m2",
+        "900"
+      ]
+    ],
+    "expected": "readable"
+  },
+  {
+    "file": "two-column.pdf",
+    "sha256": "dfd93b19f995ab96d7a8b81538bc340357133db8fe3ec70cf240937074fb9e5d",
+    "bytes": 15094,
+    "fields": [
+      "LEFT-BEGIN-111",
+      "Copper: 12.5 kg",
+      "LEFT-END-222",
+      "RIGHT-BEGIN-333",
+      "Steel: 3 m2",
+      "RIGHT-END-444"
+    ],
+    "sources": [
+      "page:1"
+    ],
+    "table": [],
+    "expected": "readable",
+    "order": [
+      "LEFT-BEGIN-111",
+      "LEFT-END-222",
+      "RIGHT-BEGIN-333",
+      "RIGHT-END-444"
+    ]
+  },
+  {
+    "file": "scanned.pdf",
+    "sha256": "a036dc706e997517e82b65d86fb4d84a30f1ec7aaf64a9bd4872ce56c8b616cc",
+    "bytes": 119832,
+    "fields": [
+      "Jana Nováková",
+      "Obchodní ředitelka",
+      "Žlutý Most s.r.o.",
+      "jana.novakova@example.test",
+      "+420 777 123 456",
+      "Dlouhá 12, Brno 602 00",
+      "Alex Morgan",
+      "Sales Director",
+      "North Bridge Ltd",
+      "alex.morgan@example.test",
+      "+44 7700 900123",
+      "12 Market Street, London"
+    ],
+    "sources": [
+      "page:1",
+      "page:2"
+    ],
+    "table": [],
+    "expected": "readable"
+  },
+  {
+    "file": "protected.pdf",
+    "sha256": "ac3ed244b9588f93170709b4ffddc4f19fad583349eb8edfa303c0562cbbff69",
+    "bytes": 16468,
+    "fields": [],
+    "sources": [],
+    "table": [],
+    "expected": "protected"
+  },
+  {
+    "file": "malformed.pdf",
+    "sha256": "db8377a68b8037f39959aa648b7200510ff0910620f0dd8492a06bcf9dc497f1",
+    "bytes": 31,
+    "fields": [],
+    "sources": [],
+    "table": [],
+    "expected": "malformed"
+  },
+  {
+    "file": "malformed.docx",
+    "sha256": "dc30cffaa1d823a4b077434d3ea15e6bc55ea0b250a748f6b9ebabba2278d3de",
+    "bytes": 24,
+    "fields": [],
+    "sources": [],
+    "table": [],
+    "expected": "malformed"
+  },
+  {
+    "file": "table.docx",
+    "sha256": "a33f8a40259d605788c329ef9d5afe9559dac3aac4fcbde3085c65fc57ef3ba0",
+    "bytes": 36894,
+    "fields": [
+      "Položka",
+      "Množství",
+      "Jednotka",
+      "Cena CZK",
+      "Měděný drát",
+      "12,5",
+      "kg",
+      "1250",
+      "Ocelový plech",
+      "3",
+      "m2",
+      "900",
+      "NIARO-SYNTH-42"
+    ],
+    "sources": [],
+    "table": [
+      [
+        "Položka",
+        "Množství",
+        "Jednotka",
+        "Cena CZK"
+      ],
+      [
+        "Měděný drát",
+        "12,5",
+        "kg",
+        "1250"
+      ],
+      [
+        "Ocelový plech",
+        "3",
+        "m2",
+        "900"
+      ]
+    ],
+    "expected": "readable"
+  },
+  {
+    "file": "slides.pptx",
+    "sha256": "a067473e0ba1bd353aaa96316d09660cdf8f2e2655815dbce81d4c1cb348e2c0",
+    "bytes": 29100,
+    "fields": [
+      "Slide Alpha",
+      "Copper: 12.5 kg",
+      "Slide Beta",
+      "Steel: 3 m2"
+    ],
+    "sources": [
+      "slide:1",
+      "slide:2"
+    ],
+    "table": [],
+    "expected": "readable"
+  },
+  {
+    "file": "workbook.xlsx",
+    "sha256": "80f6e5fa7277751059b55ec4d1a545b76f6871b01843910c58668f0f7411bbba",
+    "bytes": 5483,
+    "fields": [
+      "Položka",
+      "Množství",
+      "Jednotka",
+      "Cena CZK",
+      "Měděný drát",
+      "12,5",
+      "kg",
+      "1250",
+      "Ocelový plech",
+      "3",
+      "m2",
+      "900",
+      "SYNTH-902",
+      "Pending"
+    ],
+    "sources": [
+      "sheet:Materiál",
+      "sheet:Delivery"
+    ],
+    "table": [
+      [
+        "Položka",
+        "Množství",
+        "Jednotka",
+        "Cena CZK"
+      ],
+      [
+        "Měděný drát",
+        "12,5",
+        "kg",
+        "1250"
+      ],
+      [
+        "Ocelový plech",
+        "3",
+        "m2",
+        "900"
+      ]
+    ],
+    "expected": "readable"
+  },
+  {
+    "file": "table.csv",
+    "sha256": "6a8b66dd88a6079d496583b9f801f3689330b4f633f281761afc25d5cabd0425",
+    "bytes": 96,
+    "fields": [
+      "Položka",
+      "Množství",
+      "Jednotka",
+      "Cena CZK",
+      "Měděný drát",
+      "12,5",
+      "kg",
+      "1250",
+      "Ocelový plech",
+      "3",
+      "m2",
+      "900"
+    ],
+    "sources": [
+      "row:2",
+      "row:3"
+    ],
+    "table": [
+      [
+        "Položka",
+        "Množství",
+        "Jednotka",
+        "Cena CZK"
+      ],
+      [
+        "Měděný drát",
+        "12,5",
+        "kg",
+        "1250"
+      ],
+      [
+        "Ocelový plech",
+        "3",
+        "m2",
+        "900"
+      ]
+    ],
+    "expected": "readable"
+  },
+  {
+    "file": "table.tsv",
+    "sha256": "370b7c7bee55a9bc8d2970852947621d026e5af7e0736697d8b4a4fe074cceae",
+    "bytes": 94,
+    "fields": [
+      "Položka",
+      "Množství",
+      "Jednotka",
+      "Cena CZK",
+      "Měděný drát",
+      "12,5",
+      "kg",
+      "1250",
+      "Ocelový plech",
+      "3",
+      "m2",
+      "900"
+    ],
+    "sources": [
+      "row:2",
+      "row:3"
+    ],
+    "table": [
+      [
+        "Položka",
+        "Množství",
+        "Jednotka",
+        "Cena CZK"
+      ],
+      [
+        "Měděný drát",
+        "12,5",
+        "kg",
+        "1250"
+      ],
+      [
+        "Ocelový plech",
+        "3",
+        "m2",
+        "900"
+      ]
+    ],
+    "expected": "readable"
+  },
+  {
+    "file": "notes.txt",
+    "sha256": "76944c2d1b7e1ae00556c5806db78ab3f97289bdd1c5850f8f2f07c44d318c09",
+    "bytes": 45,
+    "fields": [
+      "Jana Nováková",
+      "Copper: 12.5 kg",
+      "END-TEXT-902"
+    ],
+    "sources": [
+      "line:1"
+    ],
+    "table": [],
+    "expected": "readable"
+  },
+  {
+    "file": "notes.md",
+    "sha256": "b59d39c5736a9a70aa1ab407334e2f54b34d642d0d6364094e05374ab5f457f0",
+    "bytes": 60,
+    "fields": [
+      "Jana Nováková",
+      "Copper: 12.5 kg",
+      "END-TEXT-902"
+    ],
+    "sources": [
+      "line:1"
+    ],
+    "table": [],
+    "expected": "readable"
+  },
+  {
+    "file": "structured.json",
+    "sha256": "3b1071d877808bfc626dc08aaa5216a32ecb91384f268b0bc51f34fc6025fc1c",
+    "bytes": 46,
+    "fields": [
+      "Jana Nováková",
+      "12.5"
+    ],
+    "sources": [],
+    "table": [],
+    "expected": "readable",
+    "optional": true
+  },
+  {
+    "file": "photo-12mp.jpg",
+    "fields": [
+      "Jana Nováková",
+      "Obchodní ředitelka",
+      "Žlutý Most s.r.o.",
+      "jana.novakova@example.test",
+      "+420 777 123 456",
+      "Dlouhá 12, Brno 602 00"
+    ],
+    "sources": [
+      "image:1"
+    ],
+    "table": [],
+    "expected": "readable",
+    "stress": true,
+    "bytes": 398314,
+    "sha256": "7c80e5feed5b939f6ac37c06fd4e2428fe0743cb1c6ac022bc2598da62ab01e0"
+  },
+  {
+    "file": "scan-10-pages.pdf",
+    "fields": [
+      "Jana Nováková",
+      "Obchodní ředitelka",
+      "Žlutý Most s.r.o.",
+      "jana.novakova@example.test",
+      "+420 777 123 456",
+      "Dlouhá 12, Brno 602 00"
+    ],
+    "sources": [
+      "page:1",
+      "page:2",
+      "page:3",
+      "page:4",
+      "page:5",
+      "page:6",
+      "page:7",
+      "page:8",
+      "page:9",
+      "page:10"
+    ],
+    "table": [],
+    "expected": "readable",
+    "stress": true,
+    "bytes": 65388,
+    "sha256": "b889a575874c94c79b782bb66508eeed6b10e6216406215413e32fb8787fb65f"
+  },
+  {
+    "file": "output-limit.txt",
+    "fields": [],
+    "sources": [],
+    "table": [],
+    "expected": "output_limit",
+    "stress": true,
+    "bytes": 2310000,
+    "sha256": "bd5c036586500a443b035118e7435c0a89592f3896469589cd4f030d89589ca3"
+  }
+]

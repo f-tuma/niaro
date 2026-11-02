@@ -1,0 +1,204 @@
+{
+ "font_sha256": "478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823",
+ "cases": [
+  {
+   "file": "mixed.pdf",
+   "kind": "pdf",
+   "bytes": 60607,
+   "sha256": "7e9db22fe13f8321eec6c0ec1ec53f8155d5ab56ebbcf4db81a2c7d0501c51c5",
+   "expected": "partial",
+   "source_assertions": [
+    {
+     "kind": "page",
+     "index": 1,
+     "contains": [
+      "NATIVE-HEADER-ONLY-401",
+      "alex.morgan@example.test"
+     ],
+     "absent": [
+      "SECOND-PAGE-902",
+      "112.5 kg"
+     ]
+    },
+    {
+     "kind": "page",
+     "index": 2,
+     "contains": [
+      "SECOND-PAGE-902: 112.5 kg"
+     ],
+     "absent": [
+      "alex.morgan@example.test"
+     ]
+    }
+   ]
+  },
+  {
+   "file": "text-100.pdf",
+   "kind": "pdf",
+   "bytes": 51728,
+   "sha256": "052306e54cd46b6a9b89ae0b774d8f7aca19df67b52afe959bcf71ca48214987",
+   "expected": "partial",
+   "page_sentinels": true
+  },
+  {
+   "file": "scan-100.pdf",
+   "kind": "pdf",
+   "bytes": 5445707,
+   "sha256": "b606f785bc1835e2ed8df3fa6892410cffd33f2be5db4db883df433b31944c62",
+   "expected": "partial",
+   "scan_sentinels": true
+  },
+  {
+   "file": "typed.xlsx",
+   "kind": "xlsx",
+   "bytes": 5435,
+   "sha256": "8d2a3f6793731adee8e232b3b56e96776d1e25a7504642d3fa5c0de8e8f83f63",
+   "expected": "partial",
+   "typed_cells": true
+  },
+  {
+   "file": "two-tables.docx",
+   "kind": "docx",
+   "bytes": 36784,
+   "sha256": "db0d62ab9f127fb6dc0a60df86184f71abdf0f373ff7960182f86b4a7f7cfd6b",
+   "expected": "partial",
+   "exact_tables": true
+  },
+  {
+   "file": "image-slide.pptx",
+   "kind": "pptx",
+   "bytes": 82535,
+   "sha256": "2be46872a3e2bb2b2c97ac663a0253ccdf3f919405614201e9e2fc8fe5d446f8",
+   "expected": "partial",
+   "omitted_slide_image": true
+  },
+  {
+   "file": "expansion.docx",
+   "kind": "docx",
+   "bytes": 66367,
+   "sha256": "be9ab2db0a6f143d36edc592a0a742b51c5f1f1c7018b20087def1ce83586d29",
+   "expected": "failed",
+   "error": "office_expansion_limit"
+  },
+  {
+   "file": "over-pixel.png",
+   "kind": "png",
+   "bytes": 43768,
+   "sha256": "1d922834e98ac3f5a627e659026d6286275a93ba2caa535535abf9f2db1f8910",
+   "expected": "failed",
+   "error": "pixel_limit"
+  },
+  {
+   "file": "../pilot/table.docx",
+   "kind": "docx",
+   "bytes": 36894,
+   "sha256": "a33f8a40259d605788c329ef9d5afe9559dac3aac4fcbde3085c65fc57ef3ba0",
+   "expected": "partial",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/workbook.xlsx",
+   "kind": "xlsx",
+   "bytes": 5483,
+   "sha256": "80f6e5fa7277751059b55ec4d1a545b76f6871b01843910c58668f0f7411bbba",
+   "expected": "success",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/slides.pptx",
+   "kind": "pptx",
+   "bytes": 29100,
+   "sha256": "a067473e0ba1bd353aaa96316d09660cdf8f2e2655815dbce81d4c1cb348e2c0",
+   "expected": "partial",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/table.csv",
+   "kind": "csv",
+   "bytes": 96,
+   "sha256": "6a8b66dd88a6079d496583b9f801f3689330b4f633f281761afc25d5cabd0425",
+   "expected": "success",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/table.tsv",
+   "kind": "tsv",
+   "bytes": 94,
+   "sha256": "370b7c7bee55a9bc8d2970852947621d026e5af7e0736697d8b4a4fe074cceae",
+   "expected": "success",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/notes.txt",
+   "kind": "txt",
+   "bytes": 45,
+   "sha256": "76944c2d1b7e1ae00556c5806db78ab3f97289bdd1c5850f8f2f07c44d318c09",
+   "expected": "success",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/notes.md",
+   "kind": "md",
+   "bytes": 60,
+   "sha256": "b59d39c5736a9a70aa1ab407334e2f54b34d642d0d6364094e05374ab5f457f0",
+   "expected": "success",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/card-cs.png",
+   "kind": "png",
+   "bytes": 62377,
+   "sha256": "fda050c7e629048ed6bf860a6bbd299535c08827d790685bbbcc0054c218e765",
+   "expected": "partial",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/card-cs-exif.jpg",
+   "kind": "jpg",
+   "bytes": 108118,
+   "sha256": "a5a917edbaf728ae61ed470a6520bc0cbe93dbfa729e52df51d8c3be01de08c8",
+   "expected": "partial",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/protected.pdf",
+   "kind": "pdf",
+   "bytes": 16468,
+   "sha256": "ac3ed244b9588f93170709b4ffddc4f19fad583349eb8edfa303c0562cbbff69",
+   "expected": "failed",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/malformed.pdf",
+   "kind": "pdf",
+   "bytes": 31,
+   "sha256": "db8377a68b8037f39959aa648b7200510ff0910620f0dd8492a06bcf9dc497f1",
+   "expected": "failed",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/malformed.docx",
+   "kind": "docx",
+   "bytes": 24,
+   "sha256": "dc30cffaa1d823a4b077434d3ea15e6bc55ea0b250a748f6b9ebabba2278d3de",
+   "expected": "failed",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/blank.png",
+   "kind": "png",
+   "bytes": 7087,
+   "sha256": "b76e43b36cbd8db5563a13be7f7e3e5e8f850c7c6466a8448cb720cb25ad1989",
+   "expected": "failed",
+   "old_smoke": true
+  },
+  {
+   "file": "../pilot/output-limit.txt",
+   "kind": "txt",
+   "bytes": 2310000,
+   "sha256": "bd5c036586500a443b035118e7435c0a89592f3896469589cd4f030d89589ca3",
+   "expected": "failed",
+   "old_smoke": true
+  }
+ ]
+}

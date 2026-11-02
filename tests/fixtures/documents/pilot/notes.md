@@ -1,0 +1,7 @@
+# Synthetic
+
+Jana Nováková
+
+Copper: 12.5 kg
+
+END-TEXT-902
