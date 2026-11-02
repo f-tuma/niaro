@@ -437,6 +437,14 @@ transcripts. Behavior: [meetings](../../openspec/specs/meetings/spec.md).
 4. Turn it on in administration → **Settings** → **Meetings** → **Tell voices
    apart**; see [telling voices apart](administration.md#telling-voices-apart).
 
+In a meeting, a click on "Speaker 2" names that voice everywhere in the
+meeting, or marks it "This is me". With "This is me", a person can also let
+Niaro recognize their voice in later single-track meetings: the diarizer
+makes a fingerprint of up to 90 s of their speech and the server keeps it for
+that person only, until they choose "Forget my voice". A fingerprint is
+biometric data; other participants' voices are compared in memory and never
+kept. Removing a member does not yet delete their meetings or fingerprint.
+
 The image is about 2 GB; the model (about 30 MB) is downloaded once into the
 `diarizer-models` volume. A two-hour meeting needs about 2 GB of memory on top
 of the model. To switch it off, leave out the profile or remove the

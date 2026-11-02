@@ -25,6 +25,7 @@ import {
   VoiceTranscriptSchema,
 } from "../../packages/protocol/voice";
 import { runVoiceProcess } from "../fixture-server/voice-media";
+import { enrollVoice, matchVoice, type VoiceProfile } from "./meeting-voices";
 import type { Transcriber } from "../fixture-server/voice";
 import { SpeechQueue } from "../fixture-server/speech-queue";
 import { resolveDateTime } from "../server-plugins/datetime";
@@ -216,6 +217,16 @@ function meetingDay(recordedAt: string, timeZone: string) {
   return { date, weekday: new Date(`${date}T00:00:00Z`).getUTCDay() || 7 };
 }
 /** Durable domain checkpoints surround bounded calls to the configured STT and closed Mastra agent. */
+/** The ffmpeg demuxer for a sealed upload's declared type, never guessed. */
+function containerFormat(meeting: Meeting) {
+  return {
+    "audio/mp4": "mov",
+    "audio/wav": "wav",
+    "audio/webm": "matroska",
+    "audio/mpeg": "mp3",
+    "audio/ogg": "ogg",
+  }[meeting.mimeType];
+}
 export class MeetingProcessor {
   private onPublished?: (scope: Scope) => void;
   private active = new Map<
@@ -392,6 +403,50 @@ export class MeetingProcessor {
       if (directory) await rm(directory, { recursive: true, force: true });
     }
   }
+  /**
+   * Keeps a fingerprint of the owner's own voice, cut from the turns of
+   * `voice` in this meeting, so later meetings recognize them. Runs only on
+   * the owner's explicit request; replaces any earlier fingerprint.
+   */
+  async rememberVoice(
+    scope: Meeting["scope"],
+    id: string,
+    voice: number,
+    signal: AbortSignal,
+  ) {
+    const config = this.diarization;
+    if (!config?.enabled)
+      throw new IdentityError(409, "meeting_diarization_unavailable");
+    const meeting = this.store.get(scope, id);
+    if (meeting.status !== "ready")
+      throw new IdentityError(409, "meeting_processing_busy");
+    if (meeting.audioDeletedAt || !meeting.sourceHash)
+      throw new IdentityError(409, "meeting_audio_not_found");
+    const utterances = this.store.utterances(scope, id)?.utterances ?? [];
+    try {
+      const result = await enrollVoice({
+        audio: await this.store.localAudio(meeting),
+        format: containerFormat(meeting),
+        utterances,
+        voice,
+        split: meeting.speakerChannels === "self-others",
+        diarizer: config,
+        signal,
+      });
+      this.store.voiceProfiles.set(scope, {
+        model: result.model,
+        embedding: result.embedding,
+        seconds: result.seconds,
+        meetingId: id,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "meeting_voice_too_short")
+        throw new IdentityError(422, "meeting_voice_too_short");
+      if (signal.aborted) throw error;
+      throw new IdentityError(503, "meeting_diarization_unavailable");
+    }
+  }
   /** Normalizes the sealed audio, then transcribes it. */
   private async transcribe(
     access: MeetingProcessingAccess,
@@ -402,13 +457,7 @@ export class MeetingProcessor {
   ) {
     const { scope, run } = access;
     const id = meeting.id;
-    let format = {
-      "audio/mp4": "mov",
-      "audio/wav": "wav",
-      "audio/webm": "matroska",
-      "audio/mpeg": "mp3",
-      "audio/ogg": "ogg",
-    }[meeting.mimeType];
+    let format = containerFormat(meeting);
     let source = await this.store.localAudio(meeting);
     // Uploaded containers cannot reference network resources or choose a demuxer.
     const probe = async () => {
@@ -899,6 +948,9 @@ export class MeetingProcessor {
       track,
       directory,
       signal,
+      // On one track the person recording is among the voices; their saved
+      // fingerprint, if they chose to keep one, finds them.
+      split ? undefined : this.store.voiceProfiles.get(meeting.scope),
     );
     const segments = minuteSegments(utterances, duration, {
       language: meeting.language,
@@ -921,6 +973,7 @@ export class MeetingProcessor {
     track: (path: string) => Promise<void>,
     directory: string,
     signal: AbortSignal,
+    profile?: VoiceProfile,
   ) {
     const config = this.diarization;
     if (!config?.enabled || !utterances.some((t) => t.speaker === speaker))
@@ -930,14 +983,24 @@ export class MeetingProcessor {
       try {
         signal.throwIfAborted();
         await track(wav);
-        return await diarize(config, wav, signal, { maxSpeakers: 20 });
+        return await diarize(config, wav, signal, {
+          maxSpeakers: 20,
+          embeddings: !!profile,
+        });
       } finally {
         await rm(wav, { force: true });
       }
     });
     this.diarizing = turn.catch(() => {});
     try {
-      return assignVoices(utterances, await turn, speaker);
+      const diarization = await turn;
+      // The other voices' fingerprints are compared here and dropped.
+      return assignVoices(
+        utterances,
+        diarization,
+        speaker,
+        matchVoice(diarization.embeddings, profile, diarization.model),
+      );
     } catch (error) {
       if (signal.aborted) throw error;
       console.warn(

@@ -1,6 +1,9 @@
 import type { Tone } from "@admin/components/console/status";
 import type { ClientSession } from "../../../../packages/client-core/session";
-import type { Meeting } from "../../../../packages/protocol/meetings";
+import type {
+  Meeting,
+  MeetingPeople,
+} from "../../../../packages/protocol/meetings";
 import type { MeetingRecord } from "../../../../packages/protocol/meeting-record";
 import {
   meetingSpeakerName,
@@ -137,12 +140,13 @@ export function meetingTranscriptText(
   segments: readonly { startSeconds: number; text: string }[],
   speakers: SpeakerNames,
   fallback: string,
+  people?: MeetingPeople,
 ) {
   if (notes.utterances.length)
     return notes.utterances
       .map(
         (turn) =>
-          `${meetingTime(turn.start)} ${meetingSpeakerName(turn, speakers)}: ${turn.text}`,
+          `${meetingTime(turn.start)} ${meetingSpeakerName(turn, speakers, people)}: ${turn.text}`,
       )
       .join("\n");
   const lines = segments

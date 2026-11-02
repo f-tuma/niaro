@@ -6,10 +6,16 @@ on the CPU, so meeting audio never leaves the machine.
 
   GET  /health    {"ready", "model", "error"}
   POST /diarize   body: WAV, 16 kHz, mono, 16-bit
-                  query: minSpeakers, maxSpeakers (optional)
-                  -> {"model", "speakers", "segments": [{"start", "end", "speaker"}]}
+                  query: minSpeakers, maxSpeakers, embeddings=1 (optional)
+                  -> {"model", "speakers", "segments": [{"start", "end", "speaker"}],
+                      "embeddings": {"1": [...], ...} with embeddings=1}
+  POST /embed     body: WAV of one person speaking (16 kHz, mono, 16-bit)
+                  -> {"model", "seconds", "embedding": [...]}
 
-Speakers are numbered 1, 2, ... in the order they first speak. With
+Speakers are numbered 1, 2, ... in the order they first speak. An embedding
+is the voice's fingerprint in the model's space (unit length, so the dot
+product of two is their cosine similarity); Niaro uses them only to find the
+voice of a person who chose to be recognized, and keeps none of the others. With
 DIARIZER_TOKEN set, every request must carry it as a bearer token. One
 recording is diarized at a time; others wait.
 """
@@ -125,7 +131,48 @@ def diarize(body: bytes, query: dict) -> dict:
         len(numbers),
         len(segments),
     )
-    return {"model": MODEL, "speakers": len(numbers), "segments": segments}
+    result = {"model": MODEL, "speakers": len(numbers), "segments": segments}
+    if query.get("embeddings", [""])[0] == "1":
+        by_label = voice_embeddings(output)
+        result["embeddings"] = {
+            str(number): by_label[label] for label, number in numbers.items() if label in by_label
+        }
+    return result
+
+
+def voice_embeddings(output) -> dict[str, list[float]]:
+    """Each voice's embedding by its pyannote label, unit length."""
+    import numpy as np
+
+    vectors = getattr(output, "speaker_embeddings", None)
+    annotation = getattr(output, "speaker_diarization", None)
+    if vectors is None or annotation is None:
+        return {}
+    found = {}
+    for label, vector in zip(annotation.labels(), vectors):
+        vector = np.asarray(vector, dtype=np.float64)
+        norm = float(np.linalg.norm(vector))
+        if np.isfinite(norm) and norm > 0:
+            found[str(label)] = [round(float(x), 6) for x in vector / norm]
+    return found
+
+
+def embed(body: bytes) -> dict:
+    """The fingerprint of the voice that speaks most in a recording of one
+    person: the same pipeline as diarization, so the two compare."""
+    pipeline = state["pipeline"]
+    if pipeline is None:
+        raise RuntimeError(state["error"] or "model is loading")
+    audio = read_wav(body)
+    output = pipeline(audio)
+    spoken: dict[str, float] = {}
+    for start, end, label in turns(output):
+        spoken[str(label)] = spoken.get(str(label), 0.0) + end - start
+    by_label = voice_embeddings(output)
+    if not spoken or not by_label:
+        raise ValueError("no speech found")
+    label = max(spoken, key=spoken.get)
+    return {"model": MODEL, "seconds": round(spoken[label], 1), "embedding": by_label[label]}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -157,7 +204,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         url = urlparse(self.path)
-        if url.path != "/diarize":
+        if url.path not in ("/diarize", "/embed"):
             return self.send(404, {"error": "not_found"})
         if not self.authorized():
             return self.send(401, {"error": "unauthorized"})
@@ -169,7 +216,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(503, {"error": "not_ready", "detail": state["error"]})
         try:
             with work:
-                result = diarize(body, parse_qs(url.query))
+                result = (
+                    embed(body) if url.path == "/embed" else diarize(body, parse_qs(url.query))
+                )
         except ValueError as error:
             return self.send(400, {"error": "invalid_audio", "detail": str(error)})
         except Exception as error:

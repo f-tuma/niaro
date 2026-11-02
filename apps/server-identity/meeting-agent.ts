@@ -3,6 +3,7 @@ import type { Scope } from "../../packages/protocol";
 import {
   meetingNotes,
   meetingSpeakerName,
+  namedMeetingNotes,
 } from "../../packages/protocol/meeting-notes";
 import { meetingSpeakerLabels } from "../../packages/protocol/meetings";
 import { meetingTime } from "../../packages/ui-catalog/meeting-format";
@@ -142,7 +143,13 @@ export function meetingAgentAccess(
           ? { minutes: Math.round(meeting.durationSeconds / 60) }
           : {}),
       };
-      const notes = meetingNotes(record);
+      const speakerLabels = meetingSpeakerLabels(meeting.language);
+      // The owner's names for the voices read in place of "Speaker 2".
+      const notes = namedMeetingNotes(
+        meetingNotes(record),
+        speakerLabels,
+        meeting,
+      );
       if (part === "notes") {
         const timed = (item: { text: string; at: number | null }) => ({
           text: clip(item.text, 1000),
@@ -176,7 +183,7 @@ export function meetingAgentAccess(
         ? notes.utterances.map((turn) => ({
             at: turn.start,
             text: clip(
-              `${meetingTime(turn.start)} ${turn.speaker === "unknown" && !turn.voice ? "" : meetingSpeakerName(turn, { ...labels, unknown: "" }) + ": "}${turn.text}`,
+              `${meetingTime(turn.start)} ${turn.speaker === "unknown" && !turn.voice ? "" : meetingSpeakerName(turn, { ...labels, unknown: "" }, meeting) + ": "}${turn.text}`,
               4000,
             ),
           }))

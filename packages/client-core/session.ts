@@ -49,6 +49,8 @@ import {
   MEETING_PROFILE,
   MEETING_MAX_BYTES,
   MeetingRenameSchema,
+  MeetingSpeakerSchema,
+  MeetingVoiceProfileSchema,
   MEETING_BLOCK_BYTES,
   MeetingCreateSchema,
   MeetingSchema,
@@ -960,9 +962,13 @@ export class ClientSession {
     const retry = retryMessageCommand(original, identity);
     return this.send(retry);
   }
-  private async personalArtifactRequest(path: string, init?: RequestInit) {
+  private async personalArtifactRequest(
+    path: string,
+    init?: RequestInit,
+    timeout = 30000,
+  ) {
     if (!this.authorized) await this.authorize();
-    const result = await this.json(path, init, 30000, 2000000, 4000000);
+    const result = await this.json(path, init, timeout, 2000000, 4000000);
     if (!result.response.ok) {
       const value = result.value as { error?: unknown };
       throw new Error(
@@ -1233,6 +1239,53 @@ export class ClientSession {
         body: JSON.stringify(payload),
       }),
       id,
+    );
+  }
+  /**
+   * Names a diarized voice of the meeting or marks it as the owner's own;
+   * `rememberVoice` also keeps the owner's voice fingerprint for later
+   * meetings (the owner's explicit choice).
+   */
+  async setMeetingSpeaker(
+    id: string,
+    input: {
+      voice: number;
+      name: string | null;
+      self: boolean;
+      rememberVoice?: boolean;
+    },
+  ) {
+    MeetingId.parse(id);
+    const payload = MeetingSpeakerSchema.parse({
+      profile: MEETING_PROFILE,
+      ...input,
+    });
+    return this.checkMeeting(
+      await this.personalArtifactRequest(
+        `meetings/${id}/speakers`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+        // Fingerprinting the voice runs the diarizer on up to 90 s of speech.
+        payload.rememberVoice ? 5 * 60_000 : 30000,
+      ),
+      id,
+    );
+  }
+  /** Whether the owner keeps a voice fingerprint, and since when. */
+  async readVoiceProfile() {
+    return MeetingVoiceProfileSchema.parse(
+      await this.personalArtifactRequest("meetings/voice-profile"),
+    );
+  }
+  /** Forgets the owner's voice fingerprint. */
+  async forgetVoiceProfile() {
+    return MeetingVoiceProfileSchema.parse(
+      await this.personalArtifactRequest("meetings/voice-profile", {
+        method: "DELETE",
+      }),
     );
   }
   /** Deletes only the meeting's sound; its notes and transcript stay. */

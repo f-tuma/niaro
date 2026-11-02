@@ -21,6 +21,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
+import { MeetingSpeakerDialog } from "./meeting-speaker-dialog";
 import { Card, CardContent } from "@admin/components/ui/card";
 import { Input } from "@admin/components/ui/input";
 import { Progress } from "@admin/components/ui/progress";
@@ -61,11 +62,13 @@ import {
   meetingSpeakerLabels,
   type Meeting,
   type MeetingSegment,
+  type MeetingPeople,
 } from "../../../../packages/protocol/meetings";
 import type { MeetingRecord } from "../../../../packages/protocol/meeting-record";
 import {
   meetingNotes,
   meetingSpeakerName,
+  namedMeetingNotes,
   type MeetingNoteItem,
   type MeetingUtterance,
 } from "../../../../packages/protocol/meeting-notes";
@@ -252,13 +255,25 @@ export function MeetingDetail({
     retry: false,
   });
   const loaded = segments.data?.pages.flatMap((page) => page.segments) ?? [];
-  const notes = record ? meetingNotes(record) : null;
   const speakerNames: SpeakerNames = {
     self: copy.speakerSelf,
     others: copy.speakerOthers,
     unknown: copy.speakerUnknown,
     voice: copy.speakerVoice,
   };
+  // Names the owner gave the voices read in place of "Speaker 2" everywhere.
+  const notes = record
+    ? namedMeetingNotes(meetingNotes(record), speakerNames, record.meeting)
+    : null;
+  /** The voice being named in the dialog. */
+  const [speakerVoice, setSpeakerVoice] = useState<number | null>(null);
+  const voiceProfileKey = ["app", "meeting-voice-profile", session.identityKey];
+  const voiceProfile = useQuery({
+    queryKey: voiceProfileKey,
+    queryFn: () => session.readVoiceProfile(),
+    enabled: speakerVoice !== null,
+    retry: false,
+  });
 
   const act = async (fn: () => Promise<unknown>) => {
     setActing(true);
@@ -429,6 +444,7 @@ export function MeetingDetail({
       await allSegments(),
       speakerNames,
       record.transcript,
+      meeting,
     );
   const copyMarkdown = async () => {
     const markdown = async () =>
@@ -666,6 +682,10 @@ export function MeetingDetail({
                 key={index}
                 block={block}
                 names={speakerNames}
+                people={meeting}
+                onSpeaker={
+                  meeting.status === "ready" ? setSpeakerVoice : undefined
+                }
                 labelled={blocks.some(
                   (b) => b.speaker !== "unknown" || b.voice,
                 )}
@@ -876,6 +896,41 @@ export function MeetingDetail({
         </div>
       )}
 
+      <MeetingSpeakerDialog
+        key={speakerVoice ?? 0}
+        voice={speakerVoice}
+        label={
+          speakerVoice === null ? "" : `${speakerNames.voice} ${speakerVoice}`
+        }
+        name={
+          speakerVoice === null
+            ? null
+            : (meeting.voiceNames?.[String(speakerVoice)] ?? null)
+        }
+        self={speakerVoice !== null && meeting.selfVoice === speakerVoice}
+        remembered={voiceProfile.data?.createdAt ?? null}
+        diarization={!meeting.audioDeletedAt}
+        copy={copy}
+        formatDate={(iso) =>
+          new Date(iso).toLocaleDateString(
+            language === "cs" ? "cs-CZ" : "en-GB",
+          )
+        }
+        onSave={async (choice) => {
+          await session.setMeetingSpeaker(id, {
+            voice: speakerVoice!,
+            ...choice,
+          });
+          await query.refetch();
+          if (choice.rememberVoice)
+            void client.invalidateQueries({ queryKey: voiceProfileKey });
+        }}
+        onForget={async () => {
+          await session.forgetVoiceProfile();
+          await client.invalidateQueries({ queryKey: voiceProfileKey });
+        }}
+        onClose={() => setSpeakerVoice(null)}
+      />
       <AlertDialog
         open={confirm === "retry"}
         onOpenChange={(open) => !open && setConfirm(null)}
@@ -1174,6 +1229,8 @@ function LineTime({
 function TranscriptBlockView({
   block,
   names,
+  people,
+  onSpeaker,
   labelled,
   focused,
   copy,
@@ -1181,6 +1238,9 @@ function TranscriptBlockView({
 }: {
   block: TranscriptBlock;
   names: SpeakerNames;
+  people: MeetingPeople;
+  /** Opens naming for a diarized voice; absent while the meeting changes. */
+  onSpeaker?(voice: number): void;
   /** Names are shown only when some speaker is known. */
   labelled: boolean;
   focused: number | null;
@@ -1189,14 +1249,28 @@ function TranscriptBlockView({
 }) {
   return (
     <div role="listitem" className="flex flex-col gap-2">
-      {labelled && (
-        <span
-          data-speaker={block.speaker}
-          className="pl-15 text-sm font-medium data-[speaker=self]:text-primary data-[speaker=unknown]:text-muted-foreground"
-        >
-          {meetingSpeakerName(block, names)}
-        </span>
-      )}
+      {labelled &&
+        (block.voice && block.speaker !== "self" && onSpeaker ? (
+          // A diarized voice: a click names it, or marks it as the owner.
+          <button
+            type="button"
+            data-speaker={people.selfVoice === block.voice ? "self" : "voice"}
+            aria-label={copy.speakerEdit(
+              meetingSpeakerName(block, names, people),
+            )}
+            className="w-fit cursor-pointer pl-15 text-left text-sm font-medium decoration-dotted underline-offset-4 hover:underline data-[speaker=self]:text-primary"
+            onClick={() => onSpeaker(block.voice!)}
+          >
+            {meetingSpeakerName(block, names, people)}
+          </button>
+        ) : (
+          <span
+            data-speaker={block.speaker}
+            className="pl-15 text-sm font-medium data-[speaker=self]:text-primary data-[speaker=unknown]:text-muted-foreground"
+          >
+            {meetingSpeakerName(block, names, people)}
+          </span>
+        ))}
       {block.paragraphs.map((paragraph, index) => (
         <div
           key={index}

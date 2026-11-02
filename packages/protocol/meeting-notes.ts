@@ -1,4 +1,10 @@
 import type { MeetingRecord } from "./meeting-record";
+import {
+  meetingSpeakerLabels,
+  nameVoices,
+  voiceLabel,
+  type MeetingPeople,
+} from "./meetings";
 
 /**
  * A meeting record as notes: summary, decisions, tasks, open questions and
@@ -81,10 +87,36 @@ export function meetingSpeaker(value: unknown): MeetingSpeaker {
 export function meetingSpeakerName(
   turn: { speaker: MeetingSpeaker; voice?: number },
   names: Record<MeetingSpeaker, string> & { voice: string },
+  people?: MeetingPeople,
 ) {
   return turn.speaker !== "self" && turn.voice
-    ? `${names.voice} ${turn.voice}`
+    ? voiceLabel(turn.voice, names, people)
     : names[turn.speaker];
+}
+/** The notes with every mention of a named voice replaced by its name. */
+export function namedMeetingNotes(
+  notes: MeetingNotes,
+  names: { self: string; voice: string },
+  people?: MeetingPeople,
+): MeetingNotes {
+  if (!people?.selfVoice && !Object.keys(people?.voiceNames ?? {}).length)
+    return notes;
+  const name = (text: string) => nameVoices(text, names, people);
+  const item = <T extends MeetingNoteItem>(value: T) => ({
+    ...value,
+    text: name(value.text),
+  });
+  return {
+    ...notes,
+    summary: name(notes.summary),
+    points: notes.points.map(item),
+    decisions: notes.decisions.map(item),
+    openQuestions: notes.openQuestions.map(item),
+    tasks: notes.tasks.map((task) => ({
+      ...item(task),
+      owner: task.owner && name(task.owner),
+    })),
+  };
 }
 
 export function meetingNotes(record: MeetingRecord): MeetingNotes {
@@ -130,5 +162,37 @@ export function meetingNotes(record: MeetingRecord): MeetingNotes {
         },
       ];
     }),
+  };
+}
+
+/**
+ * A record whose transcript and notes read the owner's names for the voices
+ * ("Jana:" for "Speaker 2:"), for views that show the record's text as is.
+ */
+export function namedMeetingRecord<
+  T extends {
+    meeting: MeetingPeople & { language: "en" | "cs" };
+    transcript: string;
+    analysis: unknown;
+  },
+>(record: T): T {
+  const people = record.meeting;
+  if (!people.selfVoice && !Object.keys(people.voiceNames ?? {}).length)
+    return record;
+  const labels = meetingSpeakerLabels(record.meeting.language);
+  const name = (value: unknown): unknown =>
+    typeof value === "string"
+      ? nameVoices(value, labels, people)
+      : Array.isArray(value)
+        ? value.map(name)
+        : value && typeof value === "object"
+          ? Object.fromEntries(
+              Object.entries(value).map(([key, item]) => [key, name(item)]),
+            )
+          : value;
+  return {
+    ...record,
+    transcript: nameVoices(record.transcript, labels, people),
+    analysis: name(record.analysis),
   };
 }

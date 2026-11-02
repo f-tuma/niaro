@@ -20,6 +20,7 @@ import { randomUUID } from "expo-crypto";
 import type { ClientSession } from "../../packages/client-core/session";
 import type { Language } from "../../packages/protocol";
 import type { Meeting, MeetingSegment } from "../../packages/protocol/meetings";
+import { namedMeetingRecord } from "../../packages/protocol/meeting-notes";
 import type { MeetingRecord } from "../../packages/protocol/meeting-record";
 import type { HumanTask } from "../../packages/protocol/human-tasks";
 import { en, translate, type TranslationKey } from "../../packages/i18n";
@@ -359,7 +360,8 @@ export function MeetingLibrary({
             : undefined;
         if (!alive.current || ticket !== generation.current) return;
         if (detail) {
-          setRecord(detail);
+          // The owner's names for the voices, as named on the web.
+          setRecord(namedMeetingRecord(detail));
           recordUpdatedAt.current = detail.meeting.updatedAt;
         }
       } catch (failure) {

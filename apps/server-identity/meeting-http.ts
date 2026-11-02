@@ -10,6 +10,8 @@ import {
   MeetingListSchema,
   MeetingDetailSchema,
   MeetingRenameSchema,
+  MeetingSpeakerSchema,
+  MeetingVoiceProfileSchema,
 } from "../../packages/protocol/meetings";
 import {
   HumanTaskId,
@@ -102,6 +104,25 @@ export async function meetingRoute(
     );
     return single(() => store.create(scope, input));
   }
+  // The owner's own voice fingerprint: whether there is one, and forgetting it.
+  if (route === "meetings/voice-profile") {
+    if (url.searchParams.size) throw new IdentityError(400, "invalid_payload");
+    if (req.method === "GET")
+      return single(() =>
+        MeetingVoiceProfileSchema.parse({
+          profile: MEETING_PROFILE,
+          createdAt: store.voiceProfiles.get(scope)?.createdAt ?? null,
+        }),
+      );
+    if (req.method === "DELETE")
+      return single(() => {
+        store.voiceProfiles.delete(scope);
+        return MeetingVoiceProfileSchema.parse({
+          profile: MEETING_PROFILE,
+          createdAt: null,
+        });
+      });
+  }
   const id = MeetingId.parse(rawId);
   if (route !== `meetings/${id}${operation ? "/" + operation : ""}`)
     throw new IdentityError(400, "invalid_payload");
@@ -140,6 +161,21 @@ export async function meetingRoute(
       JSON.parse((await bytes(req, 2048)).toString("utf8")),
     );
     return single(() => store.rename(scope, id, input.title));
+  }
+  if (operation === "speakers" && req.method === "POST") {
+    if (url.searchParams.size) throw new IdentityError(400, "invalid_payload");
+    const input = MeetingSpeakerSchema.parse(
+      JSON.parse((await bytes(req, 2048)).toString("utf8")),
+    );
+    // Cutting and fingerprinting the voice takes a while; outside the queue.
+    if (input.rememberVoice)
+      await processor.rememberVoice(
+        scope,
+        id,
+        input.voice,
+        AbortSignal.timeout(10 * 60_000),
+      );
+    return single(() => store.setSpeaker(scope, id, input));
   }
   if (operation === "audio" && req.method === "DELETE") {
     if (url.searchParams.size) throw new IdentityError(400, "invalid_payload");

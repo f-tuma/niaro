@@ -48,6 +48,7 @@ import {
 } from "./meeting-transcript";
 import { IdentityError } from "./error";
 import { MeetingAudioArchive } from "./meeting-audio-archive";
+import { VoiceProfiles } from "./meeting-voices";
 
 const digest = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -113,6 +114,7 @@ export class MeetingStore {
   readonly directory: string;
   readonly humanTasks: HumanTaskStore;
   readonly archive: MeetingAudioArchive;
+  readonly voiceProfiles: VoiceProfiles;
   constructor(
     private db: DatabaseSync,
     directory?: string,
@@ -137,6 +139,7 @@ export class MeetingStore {
     ) STRICT;`);
     this.humanTasks = new HumanTaskStore(db);
     this.archive = new MeetingAudioArchive(db, (meeting) => this.path(meeting));
+    this.voiceProfiles = new VoiceProfiles(db, owner);
     // Search ignores case and accents ("stastny" finds "Šťastný").
     db.function(FOLD_FUNCTION, { deterministic: true }, (value) =>
       typeof value === "string" ? fold(value) : null,
@@ -390,6 +393,33 @@ export class MeetingStore {
   rename(scope: Scope, id: string, title: string) {
     const meeting = this.get(scope, id);
     return this.save({ ...meeting, title: title.trim() });
+  }
+  /**
+   * Names a diarized voice, or marks it as the owner's own; every turn and
+   * mention of that voice in the meeting reads the new way. Marking another
+   * voice as the owner's clears the earlier one.
+   */
+  setSpeaker(
+    scope: Scope,
+    id: string,
+    input: { voice: number; name: string | null; self: boolean },
+  ) {
+    const meeting = this.get(scope, id);
+    if (meeting.status !== "ready")
+      throw new IdentityError(409, "meeting_processing_busy");
+    const voiceNames = { ...meeting.voiceNames };
+    if (input.name) voiceNames[String(input.voice)] = input.name;
+    else delete voiceNames[String(input.voice)];
+    const selfVoice = input.self
+      ? input.voice
+      : meeting.selfVoice === input.voice
+        ? undefined
+        : meeting.selfVoice;
+    return this.save({
+      ...meeting,
+      voiceNames: Object.keys(voiceNames).length ? voiceNames : undefined,
+      selfVoice,
+    });
   }
   /** Deletes only the sound of a processed meeting; notes and transcript stay. */
   deleteAudio(scope: Scope, id: string) {

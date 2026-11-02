@@ -71,6 +71,15 @@ export const MeetingSchema = MeetingCreateSchema.extend({
   processingAttempt: z.number().int().min(0).max(100).default(0),
   /** The owner deleted the sound; the record and transcript stay. */
   audioDeletedAt: z.iso.datetime().optional(),
+  /** Names the owner gave diarized voices, by voice number ("2": "Jana"). */
+  voiceNames: z
+    .record(
+      z.string().regex(/^(?:[1-9]|1\d|20)$/),
+      z.string().trim().min(1).max(80),
+    )
+    .optional(),
+  /** The voice the owner marked as their own; it reads as "Me". */
+  selfVoice: z.number().int().min(1).max(20).optional(),
   updatedAt: z.iso.datetime(),
 });
 export type Meeting = z.infer<typeof MeetingSchema>;
@@ -164,6 +173,26 @@ export const MeetingRenameSchema = z.strictObject({
   profile: z.literal(MEETING_PROFILE),
   title: z.string().trim().min(1).max(160),
 });
+/**
+ * Names one diarized voice of a meeting, or marks it as the owner's own
+ * (`self`). `rememberVoice` (only with `self`) also keeps a fingerprint of
+ * that voice so later meetings recognize it; the owner's explicit choice.
+ */
+export const MeetingSpeakerSchema = z
+  .strictObject({
+    profile: z.literal(MEETING_PROFILE),
+    voice: z.number().int().min(1).max(20),
+    name: z.string().trim().min(1).max(80).nullable(),
+    self: z.boolean(),
+    rememberVoice: z.boolean().default(false),
+  })
+  .refine((v) => !v.rememberVoice || v.self, "rememberVoice needs self");
+export const MeetingVoiceProfileSchema = z.strictObject({
+  profile: z.literal(MEETING_PROFILE),
+  /** When the owner's voice fingerprint was saved; null without one. */
+  createdAt: z.iso.datetime().nullable(),
+});
+export type MeetingVoiceProfile = z.infer<typeof MeetingVoiceProfileSchema>;
 export const MeetingDetailSchema = z.strictObject({
   profile: z.literal(MEETING_PROFILE),
   scope: ScopeSchema,
@@ -209,10 +238,39 @@ export function meetingSpeakerLabels(language: "en" | "cs") {
 export function meetingTurnLabel(
   turn: { speaker: "me" | "others" | "unknown"; voice?: number },
   labels: { self: string; others: string; voice: string; unknown?: string },
+  people?: MeetingPeople,
 ) {
   if (turn.speaker === "me") return labels.self;
-  if (turn.voice) return `${labels.voice} ${turn.voice}`;
+  if (turn.voice) return voiceLabel(turn.voice, labels, people);
   return turn.speaker === "others" ? labels.others : (labels.unknown ?? "");
+}
+/** What the owner said about a meeting's voices: names and their own. */
+export type MeetingPeople = Pick<Meeting, "voiceNames" | "selfVoice">;
+/** A diarized voice as people read it: its name, "Me", or "Speaker 2". */
+export function voiceLabel(
+  voice: number,
+  labels: { self: string; voice: string },
+  people?: MeetingPeople,
+) {
+  if (people?.selfVoice === voice) return labels.self;
+  return people?.voiceNames?.[String(voice)] ?? `${labels.voice} ${voice}`;
+}
+// "Speaker 2", "speaker 2", and Czech "Mluvčí 2" with its case endings
+// ("mluvčího 2"), as notes written from a labelled transcript refer to voices.
+const VOICE_MENTION =
+  /(?<![\p{L}\d])(?:speaker|mluvč\p{L}*)\s+([1-9]|1\d|20)(?!\d)/giu;
+/** Replaces mentions of named voices in notes or a transcript with their names. */
+export function nameVoices(
+  text: string,
+  labels: { self: string; voice: string },
+  people?: MeetingPeople,
+) {
+  if (!people?.selfVoice && !Object.keys(people?.voiceNames ?? {}).length)
+    return text;
+  return text.replace(VOICE_MENTION, (match, voice: string) => {
+    const named = voiceLabel(Number(voice), labels, people);
+    return named.startsWith(`${labels.voice} `) ? match : named;
+  });
 }
 // The app names a recording nobody named "Meeting · <date>" ("Schůzka · …"
 // in Czech; earlier builds wrote "Plan a meeting · …"). Only such titles may
