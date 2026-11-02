@@ -241,6 +241,7 @@ const styles = StyleSheet.create({
     gap: 6,
     minHeight: 44,
     flexWrap: "wrap",
+    alignContent: "center",
   },
   chevronOpen: { transform: [{ rotate: "90deg" }] },
   steps: {
