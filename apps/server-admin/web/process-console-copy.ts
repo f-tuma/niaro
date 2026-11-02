@@ -98,6 +98,21 @@ export const consoleEn = {
   tools: "Script tools",
   technical: "Technical details",
   noVersions: "No versions yet",
+  // NIAR-271: Generate test.
+  generate: "Generate test",
+  generated: "Test generated from this version. Check it, then run it.",
+  generateFailed: "The test couldn't be generated. Try again.",
+  gap_input_unsupported: "Its inputs are too complex to fill in. Write the test.",
+  gap_output_unsupported: "Its result is too complex to check. Write the test.",
+  gap_action_input_unsupported:
+    "An action's input is too complex to fill in. Write the test.",
+  gap_action_unavailable:
+    "An action it uses is off or not allowed for you. Turn it on, or write the test.",
+  gap_branch_loop: "Its conditions loop back. Write the test.",
+  gap_scenario_unsupported:
+    "Its agent steps can't be scripted automatically. Write the test.",
+  gap_limits_exceeded:
+    "Its limits are too small for a test run. Raise them, or write the test.",
 };
 export type ProcessConsoleCopy = typeof consoleEn;
 export const consoleCs: ProcessConsoleCopy = {
@@ -199,6 +214,21 @@ export const consoleCs: ProcessConsoleCopy = {
   tools: "Nástroje pro skripty",
   technical: "Technické podrobnosti",
   noVersions: "Zatím žádné verze",
+  // NIAR-271: Generate test.
+  generate: "Vytvořit test",
+  generated: "Test je vytvořený z této verze. Zkontroluj ho a spusť.",
+  generateFailed: "Test se nepodařilo vytvořit. Zkus to znovu.",
+  gap_input_unsupported: "Jeho vstupy jsou na vyplnění moc složité. Napiš test.",
+  gap_output_unsupported: "Jeho výsledek je na kontrolu moc složitý. Napiš test.",
+  gap_action_input_unsupported:
+    "Vstup jedné z akcí je na vyplnění moc složitý. Napiš test.",
+  gap_action_unavailable:
+    "Akce, kterou používá, je vypnutá nebo ti není povolená. Zapni ji, nebo napiš test.",
+  gap_branch_loop: "Jeho podmínky se vracejí zpět. Napiš test.",
+  gap_scenario_unsupported:
+    "Jeho kroky s agentem nejde naskriptovat automaticky. Napiš test.",
+  gap_limits_exceeded:
+    "Jeho limity jsou na testovací běh malé. Zvyš je, nebo napiš test.",
 };
 export function consoleProblem(code: string, copy: ProcessConsoleCopy): string {
   if (

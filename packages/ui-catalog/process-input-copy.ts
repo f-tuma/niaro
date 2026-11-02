@@ -40,6 +40,9 @@ const en = {
   errorInvalid: "Choose a supported value.",
   errorSize: "Inputs exceed the 64 KB limit.",
   root: "Inputs",
+  // NIAR-271: Run again with an earlier input.
+  errorChanged: "The earlier value no longer fits.",
+  errorDropped: "Some earlier values no longer apply and were left out.",
 } as const;
 const cs: Record<keyof typeof en, string> = {
   unavailable: "Formulář není dostupný. Obnov seznam.",
@@ -80,6 +83,9 @@ const cs: Record<keyof typeof en, string> = {
   errorInvalid: "Vyber podporovanou hodnotu.",
   errorSize: "Vstupy překračují limit 64 KB.",
   root: "Vstupy",
+  // NIAR-271: Run again with an earlier input.
+  errorChanged: "Dřívější hodnota už nesedí.",
+  errorDropped: "Některé dřívější hodnoty už neplatí a vynechaly se.",
 };
 export type ProcessInputCopyKey = keyof typeof en;
 export function processInputCopy(

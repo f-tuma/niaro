@@ -764,3 +764,23 @@ test("paginated history cannot publish evidence for another immutable artifact",
   assert(!c.getSnapshot().history.some((j) => j.testId === "zzTEST-wrong"));
   c.dispose();
 });
+
+// NIAR-271: Generate test.
+test("Generate test reads a suite or the reason for none over GET and never posts", async () => {
+  const f = await fixture(),
+    c = f.client();
+  await c.refresh();
+  const suite = c.getSnapshot().suite;
+  // This agent can write only through its own tool, so a person writes it.
+  assert.deepEqual(await c.generateTest(), { gap: "scenario_unsupported" });
+  assert.equal(c.getSnapshot().suite, suite);
+  assert.equal(f.posts().length, 0);
+  assert(
+    f.calls.some((call) =>
+      new URL(call.path, "http://TEST.local/").pathname.endsWith(
+        "/tests/native/generate",
+      ),
+    ),
+  );
+  c.dispose();
+});

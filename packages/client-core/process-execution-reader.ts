@@ -14,6 +14,8 @@ import {
   type ProcessStartTarget,
 } from "./process-commands";
 import { canonicalProcessJson } from "./process-command-digest";
+import { ProcessRuntimeResponseSchema } from "../protocol/process-coordinator";
+import type { ProcessInputValue } from "../protocol/process-start";
 
 /** Mobile resource limits fail closed; a partial list is never selectable.
  * These are client limits, not a claim that every registry-sized inventory fits.
@@ -219,6 +221,38 @@ export function parseProcessInputTarget(
   } catch {
     throw new ProcessReaderError("process_form_invalid");
   }
+}
+
+/** What an earlier run of this person was admitted with: its process and
+ * input. "Run again" only prefills a new form with it; it authorizes nothing. */
+export type ProcessRunInput = Readonly<{
+  parentRunId: string;
+  processId: string;
+  version: number;
+  input: Readonly<Record<string, ProcessInputValue>>;
+}>;
+export function parseProcessRunInput(
+  raw: unknown,
+  parentRunId: string,
+  scope: Scope,
+): ProcessRunInput {
+  if (!boundedProcessReaderJson(raw, 262144))
+    throw new ProcessReaderError("process_run_invalid");
+  const parsed = ProcessRuntimeResponseSchema.safeParse(raw);
+  if (
+    !parsed.success ||
+    !sameScope(parsed.data.scope, scope) ||
+    parsed.data.admission.status !== "admitted" ||
+    parsed.data.admission.parentRunId !== parentRunId
+  )
+    throw new ProcessReaderError("process_run_invalid");
+  const { admission } = parsed.data;
+  return deepFreezeProcessValue({
+    parentRunId,
+    processId: admission.processId,
+    version: admission.version,
+    input: admission.input,
+  });
 }
 
 const serverErrors = new Set([

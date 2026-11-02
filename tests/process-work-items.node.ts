@@ -849,7 +849,9 @@ test("a succeeded write survives failed output validation and is never reclassif
       ],
     );
     assert.match(work.context, /Dřívější zápis se podařil/);
-    assert.match(work.context, /Kód chyby/);
+    // The fixed sentence for its safe code, which the apps read as well.
+    assert.equal(work.native!.process!.failureCode, "process_output_invalid");
+    assert.match(work.context, /Jeho výsledek neodpovídal deklarovanému výstupu/);
     assert(
       !work.card!.nodes.some(
         (n) => n.type === "disclosure" && n.label === "Výstup procesu",

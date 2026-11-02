@@ -6,11 +6,13 @@ import type { WorkItem } from "../packages/protocol";
 import { translate } from "../packages/i18n";
 import {
   ProcessList,
+  RunSheet,
   runFailure,
   runStatusKey,
 } from "../apps/server-admin/web/app/processes-page";
 import { AccountPage } from "../apps/server-admin/web/app/account-page";
 import { menuCopy } from "../apps/server-admin/web/app/menu-copy";
+import { processFailure } from "../packages/protocol/process-failure";
 
 const mockApi = jest.fn();
 jest.mock("../apps/server-admin/web/lib/api", () => ({
@@ -181,11 +183,14 @@ describe("Processes", () => {
     const link = root.find((node) => node.type === "a");
     expect(link.props.href).toBe("/connections");
     expect(text(link)).toContain("Proces connect");
-    expect(text(link)).toContain(tr("process_connection_required"));
+    // The shared failure sentence, the same on the phone.
+    expect(text(link)).toContain(
+      processFailure("connection_required", "cs").sentence,
+    );
     const changed = root.find((node) => node.type === "button");
     expect(changed.props.disabled).toBe(true);
     expect(text(changed)).toContain(
-      "Jeho služby se změnily. Admin ho musí znovu otestovat.",
+      "Služba, kterou používá, se změnila, takže potřebuje nový test.",
     );
     expect(onOpen).not.toHaveBeenCalled();
   });
@@ -217,9 +222,112 @@ describe("Processes", () => {
       ),
     ).toBe("CRM odmítlo přístup.");
     expect(runFailure(run({ status: "failed" }))).toBeNull();
+    // A run with a safe failure code reads as the shared sentence.
+    expect(
+      runFailure(
+        run({
+          status: "failed",
+          result: "Proces selhal.",
+          native: {
+            process: { failureCode: "process_step_limit" },
+          } as WorkItem["native"],
+        }),
+        "cs",
+      ),
+    ).toBe("Potřeboval víc kroků, než mu limity dovolí.");
     expect(
       runFailure(run({ status: "succeeded", result: "Hotovo" })),
     ).toBeNull();
+  });
+});
+
+// NIAR-271: a run's sheet says why it stopped, with one next step and Run again.
+describe("Run sheet", () => {
+  const failed = (failureCode: string, processId = "process-1") =>
+    ({
+      id: "run-1",
+      title: "Nabídka",
+      context: "Proces selhal.",
+      conversationId: "chat-1",
+      status: "failed",
+      result: "Proces selhal.",
+      native: {
+        process: {
+          failureCode,
+          provenance: { processId },
+        },
+      },
+    }) as unknown as WorkItem;
+  const sheet = (work: WorkItem, patch: Record<string, unknown> = {}) =>
+    render(
+      <RunSheet
+        run={work}
+        copy={menuCopy.cs}
+        language="cs"
+        problem={null}
+        error={null}
+        busy={false}
+        disabled={false}
+        personal={false}
+        isAdmin={false}
+        onRunAgain={jest.fn()}
+        onClose={jest.fn()}
+        {...patch}
+      />,
+    );
+
+  test("a missing sign-in reads as the shared sentence with Sign in, and Run again starts nothing by itself", async () => {
+    const onRunAgain = jest.fn();
+    const { root } = await sheet(failed("connection_required"), {
+      onRunAgain,
+    });
+    const notice = root.find(
+      (node) => node.props["data-failure-code"] === "connection_required",
+    );
+    expect(text(notice)).toContain(
+      processFailure("connection_required", "cs").sentence,
+    );
+    const signIn = notice.find((node) => node.type === "a");
+    expect(signIn.props.href).toBe("/connections");
+    expect(text(signIn)).toBe(menuCopy.cs.processSignIn);
+    const again = byHost(root, "Button").find(
+      (node) => text(node) === menuCopy.cs.processRunAgain,
+    )!;
+    expect(onRunAgain).not.toHaveBeenCalled();
+    await act(async () => again.props.onClick());
+    expect(onRunAgain).toHaveBeenCalledTimes(1);
+  });
+
+  test("Retest leads to the person's own process; a member gets no action for a company process", async () => {
+    const own = await sheet(failed("source_changed"), { personal: true });
+    const link = own.root
+      .find((node) => node.props["data-failure-code"] === "source_changed")
+      .find((node) => node.type === "a");
+    expect(link.props.href).toBe("/processes/$processId");
+    expect(text(link)).toBe(menuCopy.cs.processRetest);
+    const company = await sheet(failed("source_changed"));
+    expect(
+      company.root
+        .find((node) => node.props["data-failure-code"] === "source_changed")
+        .findAll((node) => node.type === "a"),
+    ).toEqual([]);
+    const admin = await sheet(failed("process_step_limit", "p 2"), {
+      isAdmin: true,
+    });
+    expect(
+      admin.root
+        .find((node) => node.props["data-failure-code"] === "process_step_limit")
+        .find((node) => node.type === "a").props.href,
+    ).toBe("/admin/processes/p%202");
+  });
+
+  test("a Run again that can't open a form says why in the sheet", async () => {
+    const { root } = await sheet(failed("process_cancelled"), {
+      problem: "model_unavailable",
+    });
+    expect(text(root)).toContain(
+      processFailure("model_unavailable", "cs").sentence,
+    );
   });
 });
 

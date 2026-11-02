@@ -380,7 +380,6 @@ export const en = {
   process_service_unavailable: "The required service is unavailable.",
   process_model_unavailable: "The required model is unavailable.",
   process_source_changed: "Its services changed. An admin must retest it.",
-  process_source_changed_own: "Its services changed. Test it again.",
   process_connection_required: "Connect the required account first.",
   process_qualification_required: "Hasn't passed its checks yet.",
   process_budget_unavailable: "Usage limits aren't set. Ask your admin.",
@@ -952,6 +951,9 @@ export const en = {
   generativeSortBy: "Sort by {column}",
   generativeProgress: "{value} of {max}",
   generativeOther: "Other",
+  // NIAR-271: recovery without a model.
+  processRunAgain: "Run again",
+  processRunAgainUnavailable: "It can't start now. See Processes.",
 } as const;
 export type TranslationKey = keyof typeof en;
 export const cs: Record<TranslationKey, string> = {
@@ -1336,7 +1338,6 @@ export const cs: Record<TranslationKey, string> = {
   process_model_unavailable: "Potřebný model není dostupný.",
   process_source_changed:
     "Jeho služby se změnily. Admin ho musí znovu otestovat.",
-  process_source_changed_own: "Jeho služby se změnily. Otestuj ho znovu.",
   process_connection_required: "Nejprve připoj potřebný účet.",
   process_qualification_required: "Zatím neprošel kontrolami.",
   process_budget_unavailable:
@@ -1913,6 +1914,9 @@ export const cs: Record<TranslationKey, string> = {
   generativeSortBy: "Seřadit podle: {column}",
   generativeProgress: "{value} z {max}",
   generativeOther: "Ostatní",
+  // NIAR-271: recovery without a model.
+  processRunAgain: "Spustit znovu",
+  processRunAgainUnavailable: "Teď spustit nejde. Podívej se do Procesů.",
 };
 /** "12 messages" / "12 zpráv": a chat's message count in a list. */
 export function messageCount(language: Language, count: number) {

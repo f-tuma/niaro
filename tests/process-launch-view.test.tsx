@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react-native";
 import { processLaunchDetails } from "./helpers/process-launch-details";
 import { translate } from "../packages/i18n";
+import { processFailure } from "../packages/protocol/process-failure";
 import type { Language } from "../packages/protocol";
 import type {
   ProcessExecutionEntry,
@@ -244,7 +245,7 @@ test.each(["en", "cs"] as const)(
     expect(unavailable.props.accessibilityState.disabled).toBe(true);
     expect(
       screen.getByText(
-        `${tr("processesBlocked")}: ${tr("process_qualification_required")}`,
+        `${tr("processesBlocked")}: ${processFailure("qualification_required", language).sentence}`,
       ),
     ).toBeTruthy();
     expect(screen.getByText(blocked.description)).toBeTruthy();

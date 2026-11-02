@@ -14,6 +14,7 @@ import { menuCopy } from "../apps/server-admin/web/app/menu-copy";
 import { personalProcessRows } from "../apps/server-admin/web/app/personal-processes";
 import type { ProcessOfferResult } from "../packages/protocol/process-offer";
 import type { ProcessExecutionEntry } from "../packages/protocol/process-execution";
+import type { WorkItem } from "../packages/protocol";
 import { processLaunchFixture } from "./helpers/process-launch-client";
 
 const flush = async () => {
@@ -123,6 +124,102 @@ test("a changed offer asks for a new choice, and blocked processes never open", 
   expect(launcher.getSnapshot().reviewedInput).toBeNull();
   expect(h.inputRequests[0]!.language).toBe("cs");
   expect(recentRuns(session.getSnapshot())).toEqual([]);
+  launcher.dispose();
+  session.stop();
+});
+
+// NIAR-271: Run again.
+const earlierRun = (processId: string, id = "TEST-earlier") =>
+  ({
+    id,
+    status: "failed",
+    native: {
+      runId: id,
+      revision: 1,
+      process: { provenance: { processId } },
+    },
+  }) as unknown as WorkItem;
+
+test("Run again opens the current version's form with the earlier input and starts nothing", async () => {
+  const h = processLaunchFixture(),
+    session = h.open();
+  await session.start(false);
+  h.runs.set("TEST-earlier", {
+    processId: "TEST-process-A",
+    // Version 1 is active now; the earlier run may have used another one.
+    version: 3,
+    input: { name: "TEST earlier name" },
+  });
+  const launcher = new ProcessLauncher(
+    session,
+    "en",
+    "conversation-1",
+    null,
+    ids(),
+  );
+  await launcher.runAgain(earlierRun("TEST-process-A"));
+  await flush();
+  const model = launcher.getSnapshot();
+  expect(h.runReads).toEqual(["TEST-earlier"]);
+  // A fresh inventory decides the version, never the earlier run.
+  expect(h.inventoryRequests).toHaveLength(1);
+  expect(model.phase).toBe("editing");
+  expect(model.selected?.processId).toBe("TEST-process-A");
+  expect(model.selected?.version).toBe(1);
+  expect(h.inputRequests[0]).toMatchObject({
+    processId: "TEST-process-A",
+    version: 1,
+  });
+  expect(model.earlierInput).toEqual({ name: "TEST earlier name" });
+  // The form opens filled; only the person's Review and Start send it.
+  expect(model.reviewedInput).toBeNull();
+  expect(h.commands).toHaveLength(0);
+  launcher.review({ name: "TEST earlier name" });
+  await launcher.start();
+  await flush();
+  expect(h.commands).toHaveLength(1);
+  expect(JSON.parse(h.commands[0]!).input).toEqual({
+    name: "TEST earlier name",
+  });
+  launcher.dispose();
+  session.stop();
+});
+
+test("Run again of a process that can't start says why and opens no form", async () => {
+  const h = processLaunchFixture(),
+    session = h.open();
+  await session.start(false);
+  h.runs.set("TEST-blocked", {
+    processId: "TEST-process-C",
+    version: 2,
+    input: {},
+  });
+  h.runs.set("TEST-gone", {
+    processId: "TEST-process-retired",
+    version: 1,
+    input: {},
+  });
+  const launcher = new ProcessLauncher(
+    session,
+    "en",
+    "conversation-1",
+    null,
+    ids(),
+  );
+  await launcher.runAgain(earlierRun("TEST-process-C", "TEST-blocked"));
+  await flush();
+  expect(launcher.getSnapshot().problem).toBe("model_unavailable");
+  expect(launcher.getSnapshot().selected).toBeNull();
+  await launcher.runAgain(earlierRun("TEST-process-retired", "TEST-gone"));
+  await flush();
+  expect(launcher.getSnapshot().problem).toBe("process_not_active");
+  // A run that can't be read is an error, not a guess.
+  await launcher.runAgain(earlierRun("TEST-process-A", "TEST-unknown"));
+  await flush();
+  expect(launcher.getSnapshot().error).toBeTruthy();
+  expect(launcher.getSnapshot().selected).toBeNull();
+  expect(h.inputRequests).toHaveLength(0);
+  expect(h.commands).toHaveLength(0);
   launcher.dispose();
   session.stop();
 });

@@ -175,6 +175,12 @@ export const ProcessWorkSchema = z
       "cancelled",
     ]),
     detailsAvailable: z.boolean(),
+    /** Why the run stopped, as a safe code the apps read through
+     * `process-failure.ts`; only with details. */
+    failureCode: z
+      .string()
+      .regex(/^[A-Za-z0-9_.:-]{1,80}$/)
+      .optional(),
     output: ProcessOutputReferenceSchema.optional(),
     outputUnavailable: z.enum(["context", "invalid", "limit"]).optional(),
     outputSummary: z

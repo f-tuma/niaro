@@ -24,6 +24,7 @@ import type {
 } from "../../../../packages/protocol/process-execution";
 import type {
   MeetingProcessSource,
+  ProcessInputValue,
   ProcessStartCommand,
 } from "../../../../packages/protocol/process-start";
 import type { ProcessOfferResult } from "../../../../packages/protocol/process-offer";
@@ -58,6 +59,10 @@ export type LaunchModel = Readonly<{
   target: ProcessStartTarget | null;
   /** Prefilled (offer) or reviewed input; the form starts from it. */
   reviewedInput: ProcessFormInput | null;
+  /** Run again: the earlier run's input, checked against the current form. */
+  earlierInput: Readonly<Record<string, ProcessInputValue>> | null;
+  /** Why Run again can't open a form now: a safe code for `processFailure`. */
+  problem: string | null;
   submission: ProcessStartCommand | null;
   phase: LaunchPhase;
   loading: boolean;
@@ -73,6 +78,8 @@ const initialModel: LaunchModel = {
   request: null,
   target: null,
   reviewedInput: null,
+  earlierInput: null,
+  problem: null,
   submission: null,
   phase: "selection",
   loading: false,
@@ -270,6 +277,7 @@ export class ProcessLauncher {
     entry: ProcessExecutionEntry,
     offered = false,
     meeting?: MeetingLaunch,
+    earlierInput: LaunchModel["earlierInput"] = null,
   ) {
     if (entry.availability !== "ready" || !this.fresh()) return;
     const selected = this.model.inventory?.processes.find(
@@ -320,6 +328,8 @@ export class ProcessLauncher {
       request,
       target: null,
       reviewedInput: null,
+      earlierInput,
+      problem: null,
       submission: null,
       phase: "preparing",
       offered,
@@ -369,11 +379,72 @@ export class ProcessLauncher {
       request: null,
       target: null,
       reviewedInput: null,
+      earlierInput: null,
+      problem: null,
       submission: null,
       phase: "selection",
       offered: false,
+      // Closing ends any read in flight, a Run again's included.
+      loading: false,
       error: null,
     });
+  }
+
+  /**
+   * Run again: the ordinary form of the process's current active version,
+   * filled with what the earlier run was started with. It reads the run and
+   * a fresh inventory, then opens the form; nothing starts until the person
+   * reviews it and presses Start, and values the form no longer accepts show
+   * as field errors. A process that can't start now says why instead.
+   */
+  async runAgain(run: WorkItem) {
+    const processId = run.native?.process?.provenance.processId;
+    if (
+      !processId ||
+      !this.fresh() ||
+      this.model.loading ||
+      this.model.retrying ||
+      ["preparing", "sending"].includes(this.model.phase)
+    )
+      return;
+    const generation = this.invalidate();
+    const read = new AbortController();
+    this.reads.add(read);
+    this.commit({
+      ...initialModel,
+      inventory: this.model.inventory,
+      loading: true,
+    });
+    try {
+      const [earlier, inventory] = await Promise.all([
+        this.session.loadProcessRunInput(run.id, read.signal),
+        // The active version may have changed since the list was loaded.
+        this.session.loadProcessInventory(read.signal),
+      ]);
+      if (!this.owns(generation)) return;
+      this.commit({ inventory, loading: false });
+      const entry = inventory.processes.find(
+        (value) => value.processId === earlier.processId,
+      );
+      if (entry?.availability !== "ready") {
+        this.commit({
+          problem:
+            entry?.availability === "blocked"
+              ? entry.reason
+              : "process_not_active",
+        });
+        return;
+      }
+      await this.open(entry, false, undefined, earlier.input);
+    } catch (error) {
+      if (this.owns(generation))
+        this.commit({
+          loading: false,
+          error: launchErrorKey(error, "process_read_failed"),
+        });
+    } finally {
+      this.reads.delete(read);
+    }
   }
 
   review(input: ProcessFormInput) {

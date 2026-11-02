@@ -6,6 +6,7 @@ import {
   NativeTestDetailV2QuerySchema,
   PROCESS_NATIVE_TEST_DETAIL_PROFILE,
   NativeTestToolsQuerySchema,
+  NativeTestGenerateQuerySchema,
 } from "../../packages/protocol/process-native-testing";
 import type { CatalogContext } from "./catalog-controller";
 import type { createProcessNativeTesting } from "./process-native-testing-controller";
@@ -63,6 +64,9 @@ export async function handleProcessNativeTest(
   }
   if (path === "/tools" && method === "GET") {
     return testing.tools(context, NativeTestToolsQuerySchema.parse(query));
+  }
+  if (path === "/generate" && method === "GET") {
+    return testing.generate(context, NativeTestGenerateQuerySchema.parse(query));
   }
   throw new IdentityError(404, "not_found");
 }

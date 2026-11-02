@@ -17,6 +17,7 @@ import { presentServiceAnswer } from "./service-answer";
 import { readableName } from "../../packages/protocol/display-name";
 import { CardBuilder } from "../server-cards/builders";
 import { loopText } from "./loop-redaction";
+import { processFailure } from "../../packages/protocol/process-failure";
 import type { ProcessQuestionStore } from "./process-question-store";
 import { projectProcessApproval } from "./process-approval";
 
@@ -173,16 +174,18 @@ export function createProcessTaskProjection(
         "The agent needs your answer before it can continue.",
         "Agent potřebuje tvoji odpověď, aby mohl pokračovat.",
       );
-    if (journal.failure && detailsAvailable)
+    // The same fixed sentence the apps show beside the next step.
+    const failure =
+      journal.failure && detailsAvailable
+        ? processFailure(loopText(journal.failure.code, 160), language)
+        : undefined;
+    // The code stays visible for support; an unknown one is in the sentence.
+    if (failure)
       explanation +=
-        journal.failure.code === "process_step_limit"
-          ? say(
-              language,
-              " It needed more steps than allowed.",
-              " Potřeboval víc kroků, než je povoleno.",
-            )
-          : say(language, " Failure code: ", " Kód chyby: ") +
-            loopText(journal.failure.code, 160);
+        ` ${failure.sentence}` +
+        (failure.known
+          ? say(language, ` Code: ${failure.code}.`, ` Kód: ${failure.code}.`)
+          : "");
     if (!detailsAvailable)
       explanation += say(
         language,
@@ -217,6 +220,9 @@ export function createProcessTaskProjection(
       status,
       journalStatus: journal.status,
       detailsAvailable,
+      ...(failure && failure.code !== "unknown"
+        ? { failureCode: failure.code }
+        : {}),
       ...(output?.available
         ? { output: output.reference, outputSummary: output.summary }
         : output

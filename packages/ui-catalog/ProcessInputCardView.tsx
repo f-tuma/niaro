@@ -11,6 +11,7 @@ import {
   createProcessDraft,
   createProcessDraftFromInput,
   parseProcessInputCard,
+  processEarlierInputDraft,
   processPathKey,
   validateProcessDraft,
   type ProcessDraft,
@@ -25,6 +26,9 @@ export type ProcessInputCardViewProps = {
   disabled?: boolean;
   /** Validated original submitted input, used only when this immutable form mounts. */
   initialInput?: ProcessFormInput;
+  /** Run again: an earlier run's input, checked when the form mounts
+   * (without `initialInput`); what no longer fits shows as errors at once. */
+  earlierInput?: Readonly<Record<string, unknown>>;
   /** Local typed handoff only. The renderer owns no transport or start command. */
   onSubmit?: (input: ProcessFormInput) => void;
 };
@@ -52,24 +56,34 @@ function ProcessFormBody({
   language,
   disabled,
   initialInput,
+  earlierInput,
   onSubmit,
 }: ProcessInputCardViewProps) {
   const [initial] = useState(() => {
     let nextItem = 0;
-    const draft =
-      initialInput === undefined
-        ? createProcessDraft(card.form.inputSchema)
-        : createProcessDraftFromInput(
-            card.form.inputSchema,
-            initialInput,
-            () => `item-${nextItem++}`,
-            true,
-          );
-    return { draft, nextItem };
+    const itemId = () => `item-${nextItem++}`;
+    const prepared: {
+      draft: ProcessDraft | null;
+      issues: ProcessFormIssue[];
+    } =
+      initialInput !== undefined
+        ? {
+            draft: createProcessDraftFromInput(
+              card.form.inputSchema,
+              initialInput,
+              itemId,
+              true,
+            ),
+            issues: [],
+          }
+        : earlierInput !== undefined
+          ? processEarlierInputDraft(card.form.inputSchema, earlierInput, itemId)
+          : { draft: createProcessDraft(card.form.inputSchema), issues: [] };
+    return { ...prepared, nextItem };
   });
   const nextItemId = useRef(initial.nextItem);
   const [draft, setDraft] = useState(initial.draft);
-  const [issues, setIssues] = useState<ProcessFormIssue[]>([]);
+  const [issues, setIssues] = useState<ProcessFormIssue[]>(initial.issues);
   const inactive = !!disabled || !onSubmit || draft === null;
   const edit = (next: ProcessDraft) => {
     if (inactive) return;

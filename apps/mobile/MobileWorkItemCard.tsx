@@ -25,6 +25,8 @@ import {
 } from "../../packages/client-core/conversation-directory";
 import { translate, en, type TranslationKey } from "../../packages/i18n";
 import { ProcessOutputInspector } from "./ProcessOutputInspector";
+import { ProcessLaunch } from "./ProcessLaunch";
+import { processFailure } from "../../packages/protocol/process-failure";
 import {
   captureProcessNoticeOwner,
   selectProcessCommandNotice,
@@ -34,6 +36,9 @@ type Props = WorkItemCardProps & {
   session: ClientSession | null;
   conversationId: string;
   chatGeneration: number;
+  /** Opens where services are signed in to. A run that stopped for a
+   * missing sign-in offers Sign in only when this is given. */
+  onSignIn?: () => void;
 };
 const emptySnapshot: SessionState = {
   store: null,
@@ -82,6 +87,7 @@ function OwnedWorkItemCard({
   session,
   conversationId,
   chatGeneration,
+  onSignIn,
   ...props
 }: Props) {
   const state = useSyncExternalStore(
@@ -133,6 +139,18 @@ function OwnedWorkItemCard({
         if (owned.alive) setCancelling(false);
       });
   };
+  // NIAR-271: why a process run stopped, its one next step, and Run again.
+  const process = props.work.native?.process;
+  const failure =
+    process?.failureCode && ["failed", "cancelled"].includes(props.work.status)
+      ? processFailure(process.failureCode, props.language)
+      : null;
+  const canRunAgain = !!(
+    session &&
+    process &&
+    ["succeeded", "failed", "cancelled"].includes(props.work.status)
+  );
+  const [rerun, setRerun] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState(false);
   const tr = translate(props.language);
@@ -319,9 +337,41 @@ function OwnedWorkItemCard({
               }
               onPress={cancel}
             />
+          ) : canRunAgain ? (
+            <>
+              {failure?.action === "sign_in" && onSignIn ? (
+                <Button
+                  variant="quiet"
+                  size="small"
+                  label={tr("signIn")}
+                  onPress={onSignIn}
+                />
+              ) : null}
+              <Button
+                variant="quiet"
+                size="small"
+                label={tr("processRunAgain")}
+                disabled={rerun || props.blocked}
+                onPress={() => setRerun(true)}
+              />
+            </>
           ) : undefined
         }
       />
+      {rerun && session && process ? (
+        <ProcessLaunch
+          session={session}
+          language={props.language}
+          conversationId={conversationId}
+          chatGeneration={chatGeneration}
+          rerun={{
+            parentRunId: props.work.id,
+            processId: process.provenance.processId,
+          }}
+          showTitle={false}
+          onDone={() => setRerun(false)}
+        />
+      ) : null}
       {cancelError ? <Notice error>{tr(cancelError)}</Notice> : null}
       {retrying ? <Notice>{tr("retryingTask")}</Notice> : null}
       {retryError ? <Notice>{tr("retryTaskFailed")}</Notice> : null}

@@ -7,6 +7,8 @@ import {
   type NativeTestDetailV2Query,
   type NativeTestToolsQuery,
   type NativeTestRequest,
+  NativeTestGeneratedSchema,
+  type NativeTestGenerateQuery,
 } from "../../packages/protocol/process-native-testing";
 import { TestJsonSchema } from "../../packages/protocol/process-testing";
 import type { ServiceProcessStore, ProcessActor } from "./service-processes";
@@ -16,6 +18,7 @@ import type { CatalogContext } from "./catalog-controller";
 import { IdentityError } from "./error";
 import { processDigest } from "./process-validation";
 import { processNativeTools } from "./process-native-tools";
+import { defaultProcessSuite } from "./process-proposal-suite";
 import { NativeTestDiagnosticError } from "../server-agent/process-native-diagnostic";
 
 /** Internal adapter over the shared journal; never an activation or live-provider path. */
@@ -302,6 +305,47 @@ export function createProcessNativeTesting(
           query.genericModelId,
         );
         return processNativeTools(artifact, safe, query.genericModelId);
+      });
+    },
+    /** Prepares a suite from the frozen version; it never runs a test. */
+    async generate(context: CatalogContext, query: NativeTestGenerateQuery) {
+      return context.serial(async () => {
+        context.validateRequest?.();
+        const current = await context.actor(query);
+        context.validateRequest?.();
+        const actor = {
+          organizationId: query.organizationId,
+          workspaceId: query.workspaceId,
+          userId: current.userId,
+          role: current.role,
+        };
+        const artifact = registry.testArtifact(
+          actor,
+          query.processId,
+          query.version,
+        );
+        // The model the process itself names, as for processes from chat.
+        const definition = artifact.definition;
+        const genericModelId =
+          definition.kind === "agent"
+            ? definition.modelId
+            : definition.steps.find((step) => step.type === "agent")?.modelId;
+        const safe = catalog.processTestCatalog(
+          query.organizationId,
+          query.workspaceId,
+          actor,
+          artifact.sources,
+          genericModelId,
+        );
+        return NativeTestGeneratedSchema.parse({
+          organizationId: query.organizationId,
+          workspaceId: query.workspaceId,
+          profile: query.profile,
+          processId: query.processId,
+          version: artifact.version,
+          artifactDigest: artifact.digest,
+          generated: defaultProcessSuite(artifact, safe, genericModelId),
+        });
       });
     },
   };

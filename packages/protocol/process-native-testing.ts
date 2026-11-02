@@ -601,6 +601,40 @@ export const NativeTestToolsSchema = CatalogTarget.extend({
     .max(264),
 });
 export type NativeTestTools = z.infer<typeof NativeTestToolsSchema>;
+/**
+ * Generate test: a suite prepared from the frozen version and its pinned
+ * catalog, as for processes saved from chat. Reading it runs nothing; the
+ * person reviews it in the suite editor and starts the test.
+ */
+export const NativeTestGenerateQuerySchema = CatalogTarget.extend({
+  profile: z.literal(PROCESS_NATIVE_TEST_PROFILE),
+  processId: IdentityId,
+  version: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+export type NativeTestGenerateQuery = z.infer<
+  typeof NativeTestGenerateQuerySchema
+>;
+/** Why a suite can't be generated; the person writes the test instead. */
+export const NATIVE_TEST_GENERATE_GAPS = [
+  "input_unsupported",
+  "output_unsupported",
+  "action_input_unsupported",
+  "action_unavailable",
+  "branch_loop",
+  "scenario_unsupported",
+  "limits_exceeded",
+] as const;
+export const NativeTestGeneratedSchema = CatalogTarget.extend({
+  profile: z.literal(PROCESS_NATIVE_TEST_PROFILE),
+  processId: IdentityId,
+  version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  artifactDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  generated: z.union([
+    z.strictObject({ suite: NativeTestSuiteSchema }),
+    z.strictObject({ gap: z.enum(NATIVE_TEST_GENERATE_GAPS) }),
+  ]),
+});
+export type NativeTestGenerated = z.infer<typeof NativeTestGeneratedSchema>;
 export const NativeTestSummarySchema = CatalogTarget.extend({
   profile: NativeTestJobSchema.shape.profile,
   testId: NativeTestJobSchema.shape.testId,

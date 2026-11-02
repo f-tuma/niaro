@@ -26,6 +26,7 @@ import {
   ui,
 } from "../ui";
 import { ProcessInputCardView } from "./ProcessInputCardView";
+import { processFailure } from "../protocol/process-failure";
 import type { ProcessFormInput } from "./process-input-form";
 import { meetingProcessSourceOptions } from "../protocol/meeting-process-input";
 import { FieldRows } from "./FieldRows";
@@ -49,6 +50,8 @@ export type ProcessLaunchViewProps = {
     | "rejected";
   card: ProcessInputCard | null;
   reviewedInput: ProcessFormInput | null;
+  /** Run again: the earlier run's input, checked against the form. */
+  earlierInput?: Readonly<Record<string, unknown>> | null;
   error?: TranslationKey | null;
   notice?: TranslationKey | null;
   disabled: boolean;
@@ -81,17 +84,6 @@ export type ProcessLaunchViewProps = {
   };
 };
 
-const blockedReasons: Record<
-  Extract<ProcessExecutionEntry, { availability: "blocked" }>["reason"],
-  TranslationKey
-> = {
-  service_unavailable: "process_service_unavailable",
-  model_unavailable: "process_model_unavailable",
-  source_changed: "process_source_changed",
-  connection_required: "process_connection_required",
-  qualification_required: "process_qualification_required",
-  budget_unavailable: "process_budget_unavailable",
-};
 
 /** Top-level inputs as label-value rows; the exact JSON stays in Details. */
 function inputFields(input: unknown, language: Language) {
@@ -249,6 +241,7 @@ export function ProcessLaunchView(props: ProcessLaunchViewProps) {
             card={card}
             language={card.form.language}
             initialInput={props.reviewedInput ?? undefined}
+            earlierInput={props.earlierInput ?? undefined}
             disabled={props.disabled || !editing}
             onSubmit={(value) => {
               if (editing && !props.disabled) props.onReview(value);
@@ -404,7 +397,8 @@ function ProcessRow({
         ) : null}
         {blocked ? (
           <Text role="meta" style={{ color: t.color.status.warning }}>
-            {tr("processesBlocked")}: {tr(blockedReasons[entry.reason])}
+            {tr("processesBlocked")}:{" "}
+            {processFailure(entry.reason, language).sentence}
           </Text>
         ) : null}
       </View>

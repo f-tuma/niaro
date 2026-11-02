@@ -24,6 +24,7 @@ import {
   createProcessDraft,
   createProcessDraftFromInput,
   parseProcessInputCard,
+  processEarlierInputDraft,
   processPathKey,
   validateProcessDraft,
   type ProcessDraft,
@@ -53,6 +54,7 @@ export function ProcessInputForm({
   language,
   copy,
   initialInput,
+  earlierInput,
   disabled,
   onSubmit,
 }: {
@@ -63,6 +65,9 @@ export function ProcessInputForm({
   copy: MenuCopy;
   /** Validated earlier input, used only when this form mounts. */
   initialInput?: ProcessFormInput | null;
+  /** Run again: an earlier run's input, checked against this form when it
+   * mounts (without `initialInput`); what no longer fits shows as errors. */
+  earlierInput?: Readonly<Record<string, unknown>> | null;
   disabled: boolean;
   onSubmit(input: ProcessFormInput): void;
 }) {
@@ -72,13 +77,22 @@ export function ProcessInputForm({
   ) => processInputCopy(language, key, values);
   const parsed = useMemo(() => parseProcessInputCard(card), [card]);
   const schema = parsed?.form.inputSchema;
-  const [draft, setDraft] = useState<ProcessDraft | null>(() => {
-    if (!schema) return null;
-    return initialInput
-      ? createProcessDraftFromInput(schema, initialInput, itemId, true)
-      : createProcessDraft(schema);
+  const [initial] = useState<{
+    draft: ProcessDraft | null;
+    issues: ProcessFormIssue[];
+  }>(() => {
+    if (!schema) return { draft: null, issues: [] };
+    if (initialInput)
+      return {
+        draft: createProcessDraftFromInput(schema, initialInput, itemId, true),
+        issues: [],
+      };
+    if (earlierInput)
+      return processEarlierInputDraft(schema, earlierInput, itemId);
+    return { draft: createProcessDraft(schema), issues: [] };
   });
-  const [issues, setIssues] = useState<ProcessFormIssue[]>([]);
+  const [draft, setDraft] = useState<ProcessDraft | null>(initial.draft);
+  const [issues, setIssues] = useState<ProcessFormIssue[]>(initial.issues);
   if (!schema || !draft || schema.type !== "object" || draft.kind !== "object")
     return (
       <Alert variant="destructive">

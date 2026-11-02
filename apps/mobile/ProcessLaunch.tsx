@@ -22,6 +22,7 @@ import type {
 import type { MeetingRecord } from "../../packages/protocol/meeting-record";
 import type {
   MeetingProcessSource,
+  ProcessInputValue,
   ProcessStartCommand,
 } from "../../packages/protocol/process-start";
 import type { Language } from "../../packages/protocol";
@@ -55,13 +56,18 @@ type Owner = {
   meetingRecord?: MeetingRecord;
   selectedTask?: { id: string; revision: number };
   offer?: ProcessOfferResult;
+  rerun?: ProcessRerun;
 };
+/** Run again: the earlier run whose input fills the current form. */
+export type ProcessRerun = Readonly<{ parentRunId: string; processId: string }>;
 type Model = {
   inventory: Inventory | null;
   selected: ProcessExecutionEntry | null;
   request: ProcessInputRequest | null;
   target: ProcessStartTarget | null;
   reviewedInput: ProcessFormInput | null;
+  /** Run again: the earlier run's input, checked against the current form. */
+  earlierInput: Readonly<Record<string, ProcessInputValue>> | null;
   submission: ProcessStartCommand | null;
   sourceBindings: Partial<Record<string, MeetingProcessSource>>;
   phase: ProcessLaunchViewProps["phase"];
@@ -78,6 +84,8 @@ type Control = {
   model: Model;
   /** The chat offer opens once; later loads are an ordinary choice. */
   offerPending: boolean;
+  /** Run again opens once, too. */
+  rerunPending: boolean;
 };
 const initialModel = (notice: TranslationKey | null = null): Model => ({
   inventory: null,
@@ -85,6 +93,7 @@ const initialModel = (notice: TranslationKey | null = null): Model => ({
   request: null,
   target: null,
   reviewedInput: null,
+  earlierInput: null,
   submission: null,
   sourceBindings: {},
   phase: "selection",
@@ -120,6 +129,9 @@ type ProcessLaunchProps = {
   selectedTask?: { id: string; revision: number };
   /** A process the assistant offered in chat: open its prefilled form. */
   offer?: ProcessOfferResult;
+  /** Run again: open the current version's form with this run's input.
+   * Nothing starts until the person reviews it and presses Start. */
+  rerun?: ProcessRerun;
   showTitle?: boolean;
   onDone?: () => void;
 };
@@ -140,8 +152,12 @@ export function ProcessLaunch(props: ProcessLaunchProps) {
     binding.meetingRecord?.recordDigest !== props.meetingRecord?.recordDigest ||
     binding.selectedTask?.id !== props.selectedTask?.id ||
     binding.selectedTask?.revision !== props.selectedTask?.revision;
-  // A new or dismissed offer restarts the launcher without a warning.
-  if (changed || binding.offer !== props.offer)
+  // A new or dismissed offer or rerun restarts the launcher without a warning.
+  if (
+    changed ||
+    binding.offer !== props.offer ||
+    binding.rerun?.parentRunId !== props.rerun?.parentRunId
+  )
     setBinding({ ...props, revision: binding.revision + 1, notice: changed });
   return (
     <OwnedProcessLaunch
@@ -161,6 +177,7 @@ function OwnedProcessLaunch({
   meetingRecord,
   selectedTask,
   offer,
+  rerun,
   contextChanged,
   showTitle,
   onDone,
@@ -183,12 +200,14 @@ function OwnedProcessLaunch({
       meetingRecord,
       selectedTask,
       offer,
+      rerun,
     },
     generation: 0,
     alive: true,
     reads: new Set(),
     model,
     offerPending: !!offer,
+    rerunPending: !!rerun,
   });
   const commit = (owner: Control, update: Partial<Model>) => {
     if (control.current !== owner || !owner.alive) return;
@@ -237,7 +256,27 @@ function OwnedProcessLaunch({
       });
       const offered = owner.offerPending ? owner.owner.offer : undefined;
       owner.offerPending = false;
-      if (offered) {
+      const again = owner.rerunPending ? owner.owner.rerun : undefined;
+      owner.rerunPending = false;
+      if (again) {
+        const earlier = await owner.owner.session.loadProcessRunInput(
+          again.parentRunId,
+          read.signal,
+        );
+        if (!owns(owner, generation)) return;
+        // The current active version, never the earlier run's.
+        const entry = inventory.processes.find(
+          (value) =>
+            value.processId === earlier.processId &&
+            value.availability === "ready",
+        );
+        if (!entry) commit(owner, { error: "processRunAgainUnavailable" });
+        else {
+          select(entry);
+          commit(owner, { earlierInput: earlier.input });
+          await prepare();
+        }
+      } else if (offered) {
         // Only the exact offered version may open; a changed process is a new choice.
         const entry = inventory.processes.find(
           (value) =>
@@ -276,6 +315,7 @@ function OwnedProcessLaunch({
       request: null,
       target: null,
       reviewedInput: null,
+      earlierInput: null,
       submission: null,
       sourceBindings: {},
       phase: "selection",
@@ -403,8 +443,10 @@ function OwnedProcessLaunch({
     }
   };
   useEffect(() => {
-    // An offered process opens straight away; otherwise loading stays explicit.
-    if (control.current.owner.offer) void load();
+    // An offered process or Run again opens straight away; otherwise
+    // loading stays explicit.
+    if (control.current.owner.offer || control.current.owner.rerun)
+      void load();
     // load reads the current owner through control, not render closures.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -602,6 +644,7 @@ function OwnedProcessLaunch({
       phase={model.phase}
       card={model.target?.card ?? null}
       reviewedInput={model.reviewedInput}
+      earlierInput={model.earlierInput}
       error={
         state.pending?.type === "process.start" && !pending
           ? "process_command_changed"

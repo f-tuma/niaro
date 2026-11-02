@@ -56,6 +56,12 @@ export function processLaunchFixture() {
   const commands: string[] = [];
   const inputRequests: ProcessInputRequest[] = [];
   const inventoryRequests: string[] = [];
+  /** Earlier admitted runs by parent run id, for Run again reads. */
+  const runs = new Map<
+    string,
+    { processId: string; version: number; input: Record<string, unknown> }
+  >();
+  const runReads: string[] = [];
   let outcome: "accepted" | "rejected" | "unknown" = "accepted";
   let failClear = false;
   let offline = false;
@@ -183,6 +189,42 @@ export function processLaunchFixture() {
       inputRequests.push(request);
       return handlers.input(request);
     }
+    if (path.pathname.endsWith("/processes/runs")) {
+      const parentRunId = path.searchParams.get("parentRunId") ?? "";
+      runReads.push(parentRunId);
+      const run = runs.get(parentRunId);
+      if (!run) return launchResponse({ error: "process_not_found" }, 404);
+      const origin = {
+        type: "command",
+        conversationId: "conversation-1",
+        requestId: `TEST-request-${parentRunId}`,
+      };
+      return launchResponse({
+        profile: "agent-process-execution/1",
+        scope: credential().scope,
+        commandId: `TEST-command-${parentRunId}`,
+        admission: {
+          profile: "agent-process-start/1",
+          status: "admitted",
+          receiptId: `TEST-receipt-${parentRunId}`,
+          intentId: `TEST-intent-${parentRunId}`,
+          commandId: `TEST-command-${parentRunId}`,
+          idempotencyKey: `TEST-command-${parentRunId}`,
+          commandDigest: "d".repeat(64),
+          origin,
+          processId: run.processId,
+          version: run.version,
+          artifactDigest: "a".repeat(64),
+          formDigest: "e".repeat(64),
+          input: run.input,
+          inputDigest: "f".repeat(64),
+          compilerVersion: "niaro-native-workflow/3",
+          runId: `TEST-run-${parentRunId}`,
+          parentRunId,
+          createdAt: "2026-10-06T00:00:00.000Z",
+        },
+      });
+    }
     if (path.pathname.endsWith("/processes/commands")) {
       commands.push(String(init?.body));
       return handlers.command(
@@ -204,6 +246,8 @@ export function processLaunchFixture() {
     commands,
     inputRequests,
     inventoryRequests,
+    runs,
+    runReads,
     cards,
     cardFor,
     handlers,

@@ -285,3 +285,47 @@ export function validateProcessDraft(
     return { success: false, issues: [{ path: [], message: "errorSize" }] };
   return { success: true, input: admission.data, issues: [] };
 }
+
+/**
+ * "Run again": an earlier run's input on today's form. Values that still fit
+ * fill their fields. A value that no longer fits, an earlier field the form
+ * no longer has and a required field without a value each come back as an
+ * issue to show at once, so a changed form is never sent unnoticed.
+ */
+export function processEarlierInputDraft(
+  schema: ProcessData,
+  earlier: Readonly<Record<string, unknown>>,
+  itemId: () => string,
+): { draft: ProcessDraft | null; issues: ProcessFormIssue[] } {
+  if (schema.type !== "object") return { draft: null, issues: [] };
+  const fitting: ProcessFormInput = {};
+  const issues: ProcessFormIssue[] = [];
+  let dropped = false;
+  for (const [field, value] of Object.entries(earlier)) {
+    const property = Object.hasOwn(schema.properties, field)
+      ? schema.properties[field]
+      : undefined;
+    if (!property) dropped = true;
+    else if (processValueSchema(property).safeParse(value).success)
+      // Defined, not assigned: a "__proto__" key stays a plain field.
+      Object.defineProperty(fitting, field, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    else issues.push({ path: [field], message: "errorChanged" });
+  }
+  const draft = createProcessDraftFromInput(schema, fitting, itemId, true);
+  if (!draft) return { draft: null, issues: [] };
+  const checked = validateProcessDraft(schema, draft);
+  for (const issue of checked.issues)
+    if (
+      !issues.some(
+        (current) => processPathKey(current.path) === processPathKey(issue.path),
+      )
+    )
+      issues.push(issue);
+  if (dropped) issues.push({ path: [], message: "errorDropped" });
+  return { draft, issues };
+}

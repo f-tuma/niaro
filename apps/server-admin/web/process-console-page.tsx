@@ -14,6 +14,7 @@ import {
   History,
   MessageSquare,
   Power,
+  Sparkles,
   Trash2,
   Workflow,
 } from "lucide-react";
@@ -105,7 +106,12 @@ import {
   ProcessDefinitionSummary,
 } from "./process-design-review";
 import { designEn, designCs } from "./process-design-copy";
-import { consoleEn, consoleCs, consoleProblem } from "./process-console-copy";
+import {
+  consoleEn,
+  consoleCs,
+  consoleProblem,
+  type ProcessConsoleCopy,
+} from "./process-console-copy";
 
 export function ProcessConsolePage() {
   const admin = useAdmin(),
@@ -199,6 +205,18 @@ const testTone: Record<string, Tone> = {
   failed: "danger",
   interrupted: "warning",
 };
+/** Generate test's outcome: a suite in the editor, a gap, or a failure. */
+type Generation =
+  | { kind: "busy" | "done" | "failed" }
+  | { kind: "gap"; gap: string };
+function generationText(generation: Generation, copy: ProcessConsoleCopy) {
+  if (generation.kind === "done") return copy.generated;
+  if (generation.kind !== "gap") return copy.generateFailed;
+  const key = `gap_${generation.gap}`;
+  return Object.hasOwn(copy, key)
+    ? copy[key as keyof ProcessConsoleCopy]
+    : copy.generateFailed;
+}
 function Workspace({
   client,
   serviceName,
@@ -227,6 +245,8 @@ function Workspace({
     ),
     [importText, setImportText] = useState(""),
     [suiteError, setSuiteError] = useState(false),
+    // NIAR-271: Generate test's outcome, shown above the editor.
+    [generation, setGeneration] = useState<Generation | null>(null),
     [deleting, setDeleting] = useState(false),
     [deleteFailed, setDeleteFailed] = useState(false);
   const navigate = useNavigate();
@@ -329,6 +349,22 @@ function Workspace({
     unfrozen && !!artifact && artifact.version === p?.latestVersion;
   const isRetest =
     !freezeFirst && !!artifact && p?.activeVersion === artifact.version;
+  const generateTest = async () => {
+    setGeneration({ kind: "busy" });
+    setSuiteError(false);
+    try {
+      const generated = await client.generateTest();
+      setGeneration(
+        !generated
+          ? null
+          : "gap" in generated
+            ? { kind: "gap", gap: generated.gap }
+            : { kind: "done" },
+      );
+    } catch {
+      setGeneration({ kind: "failed" });
+    }
+  };
   const runTest = () => {
     if (freezeFirst && p) {
       open({ kind: "freezeTest", revision: p.revision });
@@ -706,17 +742,38 @@ function Workspace({
                       </div>
                     }
                     actions={
-                      <Button
-                        variant={
-                          (next === "test" || freezeFirst) && runnable
-                            ? "default"
-                            : "outline"
-                        }
-                        disabled={!runnable}
-                        onClick={runTest}
-                      >
-                        {copy.run}
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          disabled={
+                            client.blocked ||
+                            state.dispatching ||
+                            generation?.kind === "busy"
+                          }
+                          onClick={() => void generateTest()}
+                        >
+                          {generation?.kind === "busy" ? (
+                            <Spinner data-icon="inline-start" />
+                          ) : (
+                            <Sparkles
+                              data-icon="inline-start"
+                              aria-hidden="true"
+                            />
+                          )}
+                          {copy.generate}
+                        </Button>
+                        <Button
+                          variant={
+                            (next === "test" || freezeFirst) && runnable
+                              ? "default"
+                              : "outline"
+                          }
+                          disabled={!runnable}
+                          onClick={runTest}
+                        >
+                          {copy.run}
+                        </Button>
+                      </>
                     }
                   >
                     <div className="flex flex-col gap-4">
@@ -745,6 +802,20 @@ function Workspace({
                         <Alert variant="destructive">
                           <AlertDescription>
                             {copy.invalidSuite}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      {generation && generation.kind !== "busy" && (
+                        <Alert
+                          variant={
+                            generation.kind === "failed"
+                              ? "destructive"
+                              : "default"
+                          }
+                          data-generated={generation.kind}
+                        >
+                          <AlertDescription>
+                            {generationText(generation, copy)}
                           </AlertDescription>
                         </Alert>
                       )}

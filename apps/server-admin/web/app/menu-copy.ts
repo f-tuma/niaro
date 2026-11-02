@@ -189,6 +189,11 @@ const en = {
   actionWrites: "Changes something",
   actionWritesHint: "Asks you first, unless you say otherwise.",
   actionRemove: "Remove action",
+  // NIAR-271: recovery without a model.
+  processRunAgain: "Run again",
+  processSignIn: "Sign in",
+  processRetest: "Retest",
+  processEditDesign: "Edit",
 };
 export type MenuCopy = typeof en;
 const cs: MenuCopy = {
@@ -372,6 +377,11 @@ const cs: MenuCopy = {
   actionWrites: "Něco mění",
   actionWritesHint: "Nejdřív se tě zeptá, pokud neřekneš jinak.",
   actionRemove: "Odebrat akci",
+  // NIAR-271: recovery without a model.
+  processRunAgain: "Spustit znovu",
+  processSignIn: "Přihlásit se",
+  processRetest: "Otestovat znovu",
+  processEditDesign: "Upravit",
 };
 export const menuCopy = { en, cs };
 export function useMenuCopy(): MenuCopy {

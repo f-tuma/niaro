@@ -24,6 +24,8 @@ import {
   NativeTestListSchema,
   NativeTestDetailV2Schema,
   NativeTestToolsSchema,
+  NativeTestGeneratedSchema,
+  type NativeTestGenerated,
   type NativeTestTools,
   type NativeTestRequest,
   type NativeTestJob,
@@ -391,6 +393,35 @@ export class ProcessConsoleClient {
         diagnostic: null,
       });
     }
+  }
+  /**
+   * Generate test: asks the server for a suite prepared from the selected
+   * version and puts it in the editor. It only reads; the person reviews the
+   * suite and starts the test. A gap says why none could be made.
+   */
+  async generateTest(): Promise<NativeTestGenerated["generated"] | null> {
+    const artifact = this.artifact;
+    if (!artifact || this.blocked || this.posting || this.state.pending)
+      return null;
+    const value = NativeTestGeneratedSchema.parse(
+      await this.get("/tests/native/generate", {
+        profile: PROCESS_NATIVE_TEST_PROFILE,
+        processId: this.scope.processId,
+        version: artifact.version,
+      }),
+    );
+    if (
+      !this.scoped(value) ||
+      value.processId !== this.scope.processId ||
+      value.version !== artifact.version ||
+      value.artifactDigest !== artifact.digest
+    )
+      throw new SyntaxError("Generated suite binding mismatch");
+    // The editor may have moved on to another version meanwhile.
+    if (this.artifact?.digest !== artifact.digest) return null;
+    if ("suite" in value.generated)
+      this.setSuite(suiteToDraft(value.generated.suite));
+    return value.generated;
   }
   useOriginalSuite() {
     if (this.state.original && !this.blocked)

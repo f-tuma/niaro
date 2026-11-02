@@ -12,6 +12,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  RotateCcw,
   Workflow,
 } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
@@ -81,7 +82,10 @@ import {
   sessionFresh,
   type LaunchModel,
 } from "./process-launch";
-import { processBlockedKey } from "./process-problems";
+import {
+  processFailure,
+  type ProcessFailureCopy,
+} from "../../../../packages/protocol/process-failure";
 
 /** A run's state in a word; a finished run reads "Completed", as in the chat. */
 export function runStatusKey(status: WorkItem["status"]): TranslationKey {
@@ -90,10 +94,22 @@ export function runStatusKey(status: WorkItem["status"]): TranslationKey {
     : (status as TranslationKey);
 }
 
-/** Why a failed run stopped, in its result's first line. */
-export function runFailure(run: WorkItem) {
+/** Why a run stopped: the shared sentence for its safe code, or else the
+ * first line of a failed run's result. */
+export function runFailure(run: WorkItem, language: "en" | "cs" = "en") {
+  const code = run.native?.process?.failureCode;
+  if (code && ["failed", "cancelled"].includes(run.status))
+    return processFailure(code, language).sentence;
   if (run.status !== "failed" || !run.result) return null;
   return run.result.trim().split("\n", 1)[0]?.trim() || null;
+}
+
+/** A finished, failed or stopped process run can be run again. */
+export function canRunAgain(run: WorkItem) {
+  return (
+    !!run.native?.process &&
+    ["succeeded", "failed", "cancelled"].includes(run.status)
+  );
 }
 
 /** How a run's state reads at a glance. */
@@ -158,6 +174,9 @@ function Launcher({ session }: { session: ClientSession }) {
       void launcher.load();
   }, [fresh, launcher, model.inventory, model.loading, model.error]);
   const [run, setRun] = useState<WorkItem | null>(null);
+  // Run again opens the launch sheet; the run's sheet steps aside for it.
+  const [rerunning, setRerunning] = useState(false);
+  if (rerunning && run && model.selected) setRun(null);
   const recovery = pendingStart(state);
   const runs = recentRuns(state);
   const groups = groupProcesses(model.inventory?.processes ?? []);
@@ -268,7 +287,7 @@ function Launcher({ session }: { session: ClientSession }) {
           </AlertAction>
         </Alert>
       )}
-      {model.error && !sheetOpen && (
+      {model.error && !sheetOpen && !run && (
         <Alert variant="destructive">
           <AlertDescription>{tr(model.error)}</AlertDescription>
           <AlertAction>
@@ -394,8 +413,10 @@ function Launcher({ session }: { session: ClientSession }) {
                   </ItemMedia>
                   <ItemContent>
                     <ItemTitle>{work.title}</ItemTitle>
-                    {runFailure(work) ? (
-                      <ItemDescription>{runFailure(work)}</ItemDescription>
+                    {runFailure(work, language) ? (
+                      <ItemDescription>
+                        {runFailure(work, language)}
+                      </ItemDescription>
                     ) : (
                       work.native?.process?.startedAt && (
                         <ItemDescription>
@@ -437,7 +458,27 @@ function Launcher({ session }: { session: ClientSession }) {
         run={run}
         copy={copy}
         language={language}
-        onClose={() => setRun(null)}
+        problem={rerunning ? null : model.problem}
+        error={rerunning ? null : model.error}
+        busy={rerunning || model.loading}
+        disabled={!fresh || model.retrying}
+        personal={
+          !!run &&
+          personal.some(
+            (p) => p.id === run.native?.process?.provenance.processId,
+          )
+        }
+        isAdmin={isAdmin}
+        onRunAgain={() => {
+          if (!run) return;
+          setRerunning(true);
+          void launcher.runAgain(run).finally(() => setRerunning(false));
+        }}
+        onClose={() => {
+          setRun(null);
+          // A Run again still reading, or its reason, ends with the sheet.
+          if (!model.selected) launcher.close();
+        }}
       />
     </MenuPage>
   );
@@ -472,7 +513,6 @@ export function ProcessList({
   isAdmin?: boolean;
   onOpen(entry: ProcessExecutionEntry): void;
 }) {
-  const tr = translate(language);
   return (
     <Card variant="list">
       {entries.map((entry) => {
@@ -505,7 +545,7 @@ export function ProcessList({
               {(blocked || entry.description) && (
                 <ItemDescription>
                   {blocked
-                    ? tr(processBlockedKey(entry.reason))
+                    ? processFailure(entry.reason, language).sentence
                     : entry.description}
                 </ItemDescription>
               )}
@@ -570,7 +610,6 @@ function PersonalList({
   disabled: boolean;
   onStart(entry: ProcessExecutionEntry): void;
 }) {
-  const tr = translate(language);
   const label: Record<PersonalProcessState, string> = {
     draft: copy.processStateDraft,
     tested: copy.processStateTested,
@@ -611,12 +650,7 @@ function PersonalList({
               </ItemTitle>
               {p.reason && (
                 <ItemDescription>
-                  {/* Their own process: the person retests it themselves. */}
-                  {tr(
-                    p.reason === "source_changed"
-                      ? "process_source_changed_own"
-                      : processBlockedKey(p.reason),
-                  )}
+                  {processFailure(p.reason, language).sentence}
                 </ItemDescription>
               )}
             </ItemContent>
@@ -737,6 +771,7 @@ export function LaunchSheet({
                   language={language}
                   copy={copy}
                   initialInput={model.reviewedInput}
+                  earlierInput={model.earlierInput}
                   disabled={disabled}
                   onSubmit={onReview}
                 />
@@ -846,19 +881,44 @@ function ReviewedInput({
   );
 }
 
-/** A recent run: its state and the chat it continues in. */
-function RunSheet({
+/** A recent run: its state, why it stopped with the next step, Run again,
+ * and the chat it continues in. */
+export function RunSheet({
   run,
   copy,
   language,
+  problem,
+  error,
+  busy,
+  disabled,
+  personal,
+  isAdmin,
+  onRunAgain,
   onClose,
 }: {
   run: WorkItem | null;
   copy: MenuCopy;
   language: "en" | "cs";
+  /** Why Run again can't open a form now, as a safe code. */
+  problem: string | null;
+  error: TranslationKey | null;
+  busy: boolean;
+  disabled: boolean;
+  /** The run's process is the person's own: they test and edit it. */
+  personal: boolean;
+  isAdmin: boolean;
+  onRunAgain(): void;
   onClose(): void;
 }) {
   const tr = translate(language);
+  const code = run?.native?.process?.failureCode;
+  const failure =
+    run && code && ["failed", "cancelled"].includes(run.status)
+      ? processFailure(code, language)
+      : null;
+  const blocked = problem ? processFailure(problem, language) : null;
+  const processId = run?.native?.process?.provenance.processId ?? "";
+  const rerun = !!run && canRunAgain(run);
   return (
     <Sheet
       open={!!run}
@@ -901,11 +961,45 @@ function RunSheet({
                     : []),
                 ]}
               />
-              {run.result && (
+              {[failure, blocked].map(
+                (item, index) =>
+                  item && (
+                    <FailureNotice
+                      key={index}
+                      failure={item}
+                      processId={processId}
+                      personal={personal}
+                      isAdmin={isAdmin}
+                      copy={copy}
+                      onClose={onClose}
+                    />
+                  ),
+              )}
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{tr(error)}</AlertDescription>
+                </Alert>
+              )}
+              {/* The notice above already carries the result's sentence. */}
+              {run.result && !failure && (
                 <p className="text-sm whitespace-pre-wrap">{run.result}</p>
               )}
             </div>
             <SheetFooter>
+              {rerun && (
+                <Button
+                  variant="outline"
+                  disabled={disabled || busy}
+                  onClick={onRunAgain}
+                >
+                  {busy ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <RotateCcw data-icon="inline-start" aria-hidden="true" />
+                  )}
+                  {copy.processRunAgain}
+                </Button>
+              )}
               <Button asChild>
                 <Link
                   to="/chat/$conversationId"
@@ -921,5 +1015,66 @@ function RunSheet({
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * One fixed sentence for a safe code, with its one next step where this
+ * person can take it. Run again lives in the sheet's footer, not here.
+ */
+function FailureNotice({
+  failure,
+  processId,
+  personal,
+  isAdmin,
+  copy,
+  onClose,
+}: {
+  failure: ProcessFailureCopy;
+  processId: string;
+  personal: boolean;
+  isAdmin: boolean;
+  copy: MenuCopy;
+  onClose(): void;
+}) {
+  const fix = failure.action === "retest" || failure.action === "edit";
+  const label =
+    failure.action === "sign_in"
+      ? copy.processSignIn
+      : failure.action === "retest"
+        ? copy.processRetest
+        : copy.processEditDesign;
+  const action =
+    failure.action === "sign_in" ? (
+      <Link to="/connections" onClick={onClose}>
+        {label}
+      </Link>
+    ) : fix && personal ? (
+      <Link
+        to="/processes/$processId"
+        params={{ processId }}
+        state={
+          failure.action === "retest"
+            ? (previous) => ({ ...previous, processTab: "tests" })
+            : undefined
+        }
+        onClick={onClose}
+      >
+        {label}
+      </Link>
+    ) : fix && isAdmin && processId ? (
+      <a href={`/admin/processes/${encodeURIComponent(processId)}`}>{label}</a>
+    ) : null;
+  return (
+    <Alert data-failure-code={failure.code}>
+      <AlertDescription>{failure.sentence}</AlertDescription>
+      {action && (
+        <AlertAction>
+          <Button asChild variant="outline" size="sm">
+            {action}
+          </Button>
+        </AlertAction>
+      )}
+    </Alert>
   );
 }

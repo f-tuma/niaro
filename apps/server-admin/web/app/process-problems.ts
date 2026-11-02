@@ -32,10 +32,6 @@ export function processProblemKey(
   return code && Object.hasOwn(problems, code) ? problems[code] : undefined;
 }
 
-export function processBlockedKey(reason: ProcessBlockedReason) {
-  return blocked[reason];
-}
-
 /** The process's services changed since it was tested; it needs a new test. */
 export const processSourceChanged = (code: string | undefined) =>
   code === "source_changed" || code === "process_sources_changed";

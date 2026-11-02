@@ -182,6 +182,8 @@ import {
   freezeProcessInputSelection,
   parseProcessInputTarget,
   processReaderServerError,
+  parseProcessRunInput,
+  type ProcessRunInput,
   type ProcessExecutionList,
   type ReadyProcessExecutionEntry,
 } from "./process-execution-reader";
@@ -2651,6 +2653,35 @@ export class ClientSession {
         error,
         signal,
         "process_form_invalid",
+        "process_input_limit",
+      );
+    }
+  }
+  /**
+   * Passive read of an earlier run's admitted input for "Run again". It never
+   * sends a command: the person still reviews the form and presses Start.
+   */
+  async loadProcessRunInput(
+    parentRunId: string,
+    signal?: AbortSignal,
+  ): Promise<ProcessRunInput> {
+    this.assertProcessRead(signal);
+    try {
+      const { response, value } = await this.json(
+        `processes/runs?profile=${encodeURIComponent(PROCESS_EXECUTION_PROFILE)}&parentRunId=${encodeURIComponent(parentRunId)}`,
+        { signal },
+        8000,
+        PROCESS_INPUT_RESPONSE_BYTES,
+        PROCESS_INPUT_RESPONSE_BYTES,
+      );
+      this.assertProcessRead(signal);
+      if (!response.ok) throw processReaderServerError(value);
+      return parseProcessRunInput(value, parentRunId, this.credential.scope);
+    } catch (error) {
+      throw this.processReadError(
+        error,
+        signal,
+        "process_run_invalid",
         "process_input_limit",
       );
     }
