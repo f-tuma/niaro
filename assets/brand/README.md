@@ -1,11 +1,12 @@
 # Niaro logo
 
-Approved logo geometry, frozen on 2026-10-30 (NIAR-253). The three
-canonical SVGs live in `source/`: main mark, optical micro mark, and outlined
-lockup. Their eyes and mouth are real transparent holes. The only normalization
-removes non-rendering root accessibility metadata and wraps the original children
-in `g#logo`, which the Vardum passive SVG renderer requires for adaptive color.
-All path data, transforms, canvas and default ink remain unchanged.
+Approved logo geometry, frozen on 2026-10-30 (NIAR-253); eyes revised on
+2026-11-02 from notched domes to soft rounded squares for a friendlier, more
+inviting face (body and mouth unchanged). The three canonical SVGs live in
+`source/`: main mark, optical micro mark, and outlined lockup. Their eyes and mouth
+are real transparent holes. The original children are wrapped in `g#logo`, which
+the Vardum passive SVG renderer requires for adaptive color; the root carries no
+non-rendering accessibility metadata.
 
 [delivery.json](delivery.json) records approved and normalized SHA-256 hashes,
 asset/version IDs, recipes, output paths and immutable delivery links. These links

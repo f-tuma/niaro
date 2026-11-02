@@ -6,24 +6,24 @@
   "items": {
     "a1beac11-9822-4486-941c-3698b75be98e": {
       "path": "source/lockup.svg",
-      "versionId": "fcb52e59-5108-4d6a-a2d6-b291d54b5936",
-      "fingerprint": "fcb52e59-5108-4d6a-a2d6-b291d54b5936:",
-      "downloadUrl": "https://vardum.com/w/niaro/__v/fcb52e59-5108-4d6a-a2d6-b291d54b5936/brand/logo/lockup",
-      "checksum": "1c4721c7ef15002cfef3165458fede901c2ef64f74ed44186a47dad3c089c3b8"
+      "versionId": "5f9e2f8b-0096-4efb-a8c9-679b92cc0d09",
+      "fingerprint": "5f9e2f8b-0096-4efb-a8c9-679b92cc0d09:",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/5f9e2f8b-0096-4efb-a8c9-679b92cc0d09/brand/logo/lockup",
+      "checksum": "0721e31e239e41d45b02b57a2a86203fadd57d5f1b7b3be973a95129a41c1cfc"
     },
     "4be75774-7b93-48c1-88c6-da3d09ee20fd": {
       "path": "source/logo.svg",
-      "versionId": "e48c5905-9965-4d79-a9b8-b440da49fbeb",
-      "fingerprint": "e48c5905-9965-4d79-a9b8-b440da49fbeb:",
-      "downloadUrl": "https://vardum.com/w/niaro/__v/e48c5905-9965-4d79-a9b8-b440da49fbeb/brand/logo/mark",
-      "checksum": "a69b903289f019c1e1ceba77713eb8aa7bce719b6de3a3f1f8ff456d1c3913b8"
+      "versionId": "b1237942-0f71-4c4e-8432-d80983bd828f",
+      "fingerprint": "b1237942-0f71-4c4e-8432-d80983bd828f:",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/b1237942-0f71-4c4e-8432-d80983bd828f/brand/logo/mark",
+      "checksum": "09faf2257d59ce34e352b20b4350d0d178f801166ba3a59cd33ccd2007904ed5"
     },
     "3a8de1b1-faca-4656-a757-900518b467e4": {
       "path": "source/micro.svg",
-      "versionId": "18520c76-a771-4351-a778-70f50387632a",
-      "fingerprint": "18520c76-a771-4351-a778-70f50387632a:",
-      "downloadUrl": "https://vardum.com/w/niaro/__v/18520c76-a771-4351-a778-70f50387632a/brand/logo/micro",
-      "checksum": "26f6de0e95e64712da4a211e6c6de75bd3bdfdf7c4e21a8d14b9306a17a1b4b0"
+      "versionId": "856c2463-f3b9-4646-84ac-d965dedde3e6",
+      "fingerprint": "856c2463-f3b9-4646-84ac-d965dedde3e6:",
+      "downloadUrl": "https://vardum.com/w/niaro/__v/856c2463-f3b9-4646-84ac-d965dedde3e6/brand/logo/micro",
+      "checksum": "fe6f4b8f5ba7efde2184959bb759e40c0e73f1392ac7cf5f4c6516e3869fb150"
     }
   }
 }
