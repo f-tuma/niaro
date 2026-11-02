@@ -172,7 +172,7 @@ test("registration is explicit, guarded, same-origin and credentials remain serv
     assert.equal(network.requests[0]!.url, discovery.registration_endpoint);
     assert.equal(
       (network.requests[0]!.body as Record<string, unknown>).client_name,
-      "Agent Server",
+      "Niaro",
     );
     const config = store.commitRegistration(snapshot, client, target);
     assert.equal(config.revision, 3);

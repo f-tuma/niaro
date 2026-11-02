@@ -286,7 +286,7 @@ export function Brand() {
       >
         <Terminal className="size-4" />
       </span>
-      Agent Client
+      Niaro
     </span>
   );
 }
@@ -320,7 +320,7 @@ function WorkspaceSwitcher() {
                 <Terminal className="size-3.5" />
               </span>
               <span className="grid flex-1 text-left leading-tight">
-                <span className="truncate font-semibold">Agent Client</span>
+                <span className="truncate font-semibold">Niaro</span>
                 <span className="truncate text-xs text-muted-foreground">
                   {data.server.name}
                 </span>

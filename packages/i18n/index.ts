@@ -793,7 +793,7 @@ export const en = {
   operation_result_unknown: "Operation result is unknown",
   operationUnknownHint:
     "The result needs checking. A new operation will not be started automatically.",
-  appName: "Agent Client",
+  appName: "Niaro",
   chat: "Chat",
   meetings: "Meetings",
   tasks: "Tasks",
@@ -1749,7 +1749,7 @@ export const cs: Record<TranslationKey, string> = {
   operation_result_unknown: "Výsledek operace není známý",
   operationUnknownHint:
     "Výsledek je potřeba ověřit. Nová operace se automaticky nespustí.",
-  appName: "Agent Client",
+  appName: "Niaro",
   chat: "Chat",
   meetings: "Schůzky",
   tasks: "Úlohy",

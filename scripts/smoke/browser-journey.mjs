@@ -303,11 +303,18 @@ export async function browserJourney(report, { base, accounts, outputDir }) {
           await owner.page
             .getByTestId("hub-tasks")
             .waitFor({ timeout: 30_000 });
+          // Administration is an item of the account menu, there only when open.
+          await owner.page.getByRole("button", { name: "Account" }).click();
           const adminLink = owner.page.locator('a[href="/admin/"]');
+          await adminLink
+            .first()
+            .waitFor({ timeout: 5_000 })
+            .catch(() => {});
           assert.ok(
             (await adminLink.count()) > 0,
             "the owner's menu links to administration",
           );
+          await owner.page.keyboard.press("Escape");
           await owner.page.goto("/admin/");
           await settled(owner.page);
           await shot(owner.page, "owner-admin-landing");

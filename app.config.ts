@@ -3,7 +3,7 @@ const development = process.env.AGENT_CLIENT_DEVELOPMENT === "1";
 const audioSpike = process.env.AUDIO_SPIKE === "1";
 const microphonePermission = audioSpike
   ? "Allow the isolated audio test to record after you press Start."
-  : "Allow Agent Client to record a voice request or meeting only after you press Record.";
+  : "Allow Niaro to record a voice request or meeting only after you press Record.";
 const config: ExpoConfig = {
   name: audioSpike ? "Agent Client Audio Spike" : "Niaro",
   slug: audioSpike ? "agent-client-audio" : "agent-client",
@@ -52,9 +52,9 @@ const config: ExpoConfig = {
       "expo-image-picker",
       {
         photosPermission:
-          "Allow Agent Client to import a photo only after you choose Photos.",
+          "Allow Niaro to import a photo only after you choose Photos.",
         cameraPermission:
-          "Allow Agent Client to take a photo only after you choose Camera.",
+          "Allow Niaro to take a photo only after you choose Camera.",
         microphonePermission,
       },
     ],

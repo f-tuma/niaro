@@ -274,7 +274,7 @@ export async function registerOAuthClient(
       url: metadata.registrationEndpoint,
       method: "POST",
       body: {
-        client_name: "Agent Server",
+        client_name: "Niaro",
         redirect_uris: [request.redirectUri],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],

@@ -572,7 +572,7 @@ async function createIdentityAuth(
   if (!kysely) throw Error("SQLite adapter unavailable");
   const authOptions = {
     ...bridge.options,
-    appName: "Agent Server",
+    appName: "Niaro",
     baseURL: baseURL,
     basePath: "/admin/auth",
     secret,

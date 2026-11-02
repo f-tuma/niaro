@@ -62,6 +62,12 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       # Optional: the token the diarizer service expects (its DIARIZER_TOKEN).
       NIARO_DIARIZATION_TOKEN: ${DIARIZER_TOKEN:-}
+      # Attachments in chat; they need object storage (NIARO_S3_*).
+      NIARO_ATTACHMENTS_ENABLED: ${NIARO_ATTACHMENTS_ENABLED:-false}
+      # Optional: installed connectors' runtime (auto, docker, process) and
+      # 0 to make plugin files read-only in administration.
+      NIARO_HOSTED_RUNTIME: ${NIARO_HOSTED_RUNTIME:-}
+      NIARO_PLUGIN_EDITING: ${NIARO_PLUGIN_EDITING:-}
       # Optional: the converter that reads attachments (profile "documents"),
       # http://converter:8000, and the token it expects (its CONVERTER_TOKEN).
       NIARO_CONVERTER_URL: ${NIARO_CONVERTER_URL:-}

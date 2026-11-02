@@ -581,7 +581,7 @@ const probes = new WeakMap<ServiceCatalogStore, Map<string, Promise<void>>>();
  * it names or the service origin), and when it finds some and nobody set up
  * personal sign-in yet, requires the person's own account for every action
  * through the service's own OAuth with the scopes the metadata advertises
- * (Twenty: api profile), registering Agent Server as a client when the
+ * (Twenty: api profile), registering Niaro as a client when the
  * metadata has a registration endpoint. Idempotent: an existing client,
  * discovered metadata or settings an administrator already changed stay;
  * a service that is not MCP, or signs in through an organization method, is
