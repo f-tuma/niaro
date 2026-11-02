@@ -96,7 +96,7 @@ When detection switches a service to personal sign-in and its access gate was ne
 
 ### Requirement: Personal sign-in from the app
 
-The mobile app SHALL start a personal sign-in with `POST /v1/{workspace}/services/start`, follow it with `status` and `cancel`, and open `/admin/service-connect#…` in the system browser. The browser SHALL sign in to the server as the same person (linking the sign-in method first when needed) before redirecting to the provider. After consent the page SHALL exchange the code once and return through `agentclient://service-connected`. Only the owner SHALL sign in to an own service.
+The mobile app SHALL start a personal sign-in with `POST /v1/{workspace}/services/start`, follow it with `status` and `cancel`, and open `/admin/service-connect#…` in the system browser. The browser SHALL sign in to the server as the same person (linking the sign-in method first when needed) before redirecting to the provider. After consent the page SHALL exchange the code once and return through `niaro://service-connected`. Only the owner SHALL sign in to an own service.
 
 #### Scenario: Different person in the browser
 

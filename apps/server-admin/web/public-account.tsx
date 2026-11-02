@@ -184,9 +184,9 @@ function SignInAndInvite() {
       );
     setDone(true);
     window.history.replaceState(null, "", window.location.pathname);
-    if (result.target === "agentclient://auth")
+    if (result.target === "niaro://auth")
       window.location.assign(
-        `agentclient://auth?code=${encodeURIComponent(result.code)}&state=${encodeURIComponent(result.state)}`,
+        `niaro://auth?code=${encodeURIComponent(result.code)}&state=${encodeURIComponent(result.state)}`,
       );
     else if (window.opener) {
       window.opener.postMessage(

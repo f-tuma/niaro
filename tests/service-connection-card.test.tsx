@@ -337,7 +337,7 @@ test("the app link from the browser checks the attempt at once", async () => {
   listeners[0]!({ url: "https://elsewhere.example.test/" });
   await flush();
   expect(serviceConnection).toHaveBeenCalledTimes(2);
-  listeners[0]!({ url: "agentclient://service-connected" });
+  listeners[0]!({ url: "niaro://service-connected" });
   await flush();
   expect(serviceConnection).toHaveBeenLastCalledWith(
     "status",

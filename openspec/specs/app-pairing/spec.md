@@ -22,7 +22,7 @@ The app SHALL ask the person only for the server address and SHALL sign in throu
 
 ### Requirement: Browser consent chooses the workspace
 
-On `/account/login` the person SHALL sign in to the server (password or a linked sign-in method) and choose one of their workspaces. Consent (`POST /admin/api/identity/app/consent`) SHALL require a browser session with access to that workspace and SHALL issue a one-use authorization code valid for one minute, returned with the original `state`. Native apps SHALL receive it through `agentclient://auth`; a web app only on an origin allowed by the server's CORS configuration.
+On `/account/login` the person SHALL sign in to the server (password or a linked sign-in method) and choose one of their workspaces. Consent (`POST /admin/api/identity/app/consent`) SHALL require a browser session with access to that workspace and SHALL issue a one-use authorization code valid for one minute, returned with the original `state`. Native apps SHALL receive it through `niaro://auth`; a web app only on an origin allowed by the server's CORS configuration.
 
 #### Scenario: Consent without workspace access
 

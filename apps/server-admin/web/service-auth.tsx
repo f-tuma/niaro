@@ -868,7 +868,7 @@ export function ServiceConnect() {
         setDone(true);
         // Hand a phone back to the app; a browser client notices by polling.
         if (z.object({ app: z.boolean() }).safeParse(value).data?.app)
-          window.location.assign("agentclient://service-connected");
+          window.location.assign("niaro://service-connected");
       } else {
         const nextURL = new URL(
           z.object({ authorizationUrl: z.url() }).parse(value).authorizationUrl,

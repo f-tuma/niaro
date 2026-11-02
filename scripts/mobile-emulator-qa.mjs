@@ -35,7 +35,7 @@ try {
     `EXPO_NO_DOTENV=1 AGENT_CLIENT_DEVELOPMENT=1 EXPO_PUBLIC_ALLOW_INSECURE_FIXTURES=1 NATIVE_JOURNEYS_QA=1 EXPO_PUBLIC_QA_BOOTSTRAP=http://127.0.0.1:${bootstrapPort}/bootstrap pnpm exec expo start --dev-client --localhost --port 8087`,
   );
   console.log(
-    "Open exp+agent-client://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8087 in the emulator.",
+    "Open exp+niaro://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8087 in the emulator.",
   );
   for (const signal of ["SIGINT", "SIGTERM"])
     process.once(signal, () => {

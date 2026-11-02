@@ -328,7 +328,7 @@ test("App PKCE login and invitation-only public onboarding", async (t) => {
         ...target,
       });
       assert.equal(consent.status, 200);
-      assert.equal(consent.data.target, "agentclient://auth");
+      assert.equal(consent.data.target, "niaro://auth");
       return { verifier, state, code: consent.data.code };
     };
     await t.test(

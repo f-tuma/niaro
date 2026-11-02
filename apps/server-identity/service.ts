@@ -1410,7 +1410,7 @@ export class IdentityService {
     return this.serial(() =>
       this.transaction(async () =>
         action === "start"
-          ? this.appLogins.start(input, webOrigin ?? "agentclient://auth")
+          ? this.appLogins.start(input, webOrigin ?? "niaro://auth")
           : this.appLogins.exchange(input, (grant) =>
               this.mobile.issueApp(grant),
             ),

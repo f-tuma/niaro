@@ -15,7 +15,7 @@ const platform: ConnectionPlatform = {
   open: (url) => Linking.openURL(url),
   onReturn: (listener) =>
     Linking.addEventListener("url", ({ url }) => {
-      if (url.startsWith("agentclient://service-connected")) listener();
+      if (url.startsWith("niaro://service-connected")) listener();
     }),
 };
 

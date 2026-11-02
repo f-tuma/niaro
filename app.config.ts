@@ -6,15 +6,15 @@ const microphonePermission = audioSpike
   : "Allow Niaro to record a voice request or meeting only after you press Record.";
 const config: ExpoConfig = {
   name: audioSpike ? "Agent Client Audio Spike" : "Niaro",
-  slug: audioSpike ? "agent-client-audio" : "agent-client",
+  slug: audioSpike ? "agent-client-audio" : "niaro",
   version: "0.1.0",
-  scheme: audioSpike ? "agentclient-audio" : "agentclient",
+  scheme: audioSpike ? "agentclient-audio" : "niaro",
   userInterfaceStyle: "dark",
   icon: "./assets/application/icon.png",
   ios: {
     bundleIdentifier: audioSpike
       ? "dev.agentclient.demo.audio"
-      : "dev.agentclient.demo",
+      : "dev.f-tuma.niaro",
     supportsTablet: true,
     infoPlist: {
       CFBundleLocalizations: ["en", "cs"],
@@ -24,7 +24,8 @@ const config: ExpoConfig = {
     },
   },
   android: {
-    package: audioSpike ? "dev.agentclient.demo.audio" : "dev.agentclient.demo",
+    // Android packages allow no hyphen; the usual stand-in is an underscore.
+    package: audioSpike ? "dev.agentclient.demo.audio" : "dev.f_tuma.niaro",
     adaptiveIcon: {
       foregroundImage: "./assets/application/mark.png",
       monochromeImage: "./assets/application/mark.png",

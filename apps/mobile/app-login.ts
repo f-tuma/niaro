@@ -67,7 +67,7 @@ export function authorizeApp(
     } else {
       subscription = Linking.addEventListener("url", (event) => {
         const target = new URL(event.url);
-        if (target.protocol === "agentclient:" && target.hostname === "auth")
+        if (target.protocol === "niaro:" && target.hostname === "auth")
           receive(
             target.searchParams.get("code"),
             target.searchParams.get("state"),
