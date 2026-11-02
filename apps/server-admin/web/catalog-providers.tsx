@@ -1578,6 +1578,7 @@ function RoutingForm({ state }: { state: CatalogState }) {
         {routing.speech.method === "reader" && (
           <SettingRow
             label={copy.speechRetention}
+            meta={copy.speechRetentionMeta}
             htmlFor="speech-retention"
             disabled={state.busy}
           >

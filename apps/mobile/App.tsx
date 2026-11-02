@@ -2827,12 +2827,16 @@ export function Workspace({
             ) : null}
             {speech.state.phase === "error" ? (
               <ActionToast
-                message={tr("spoken_replies_failed")}
-                description={tr(
+                message={tr(
                   speech.state.error === "speech_privacy_unavailable"
-                    ? "speech_privacy_unavailable"
+                    ? "speech_privacy_short"
                     : "spoken_replies_failed",
                 )}
+                description={
+                  speech.state.error === "speech_privacy_unavailable"
+                    ? tr("speech_privacy_unavailable")
+                    : undefined
+                }
                 actionLabel={tr("close")}
                 onAction={speech.player.stop}
               />

@@ -433,7 +433,7 @@ export const en = {
   browser_login_expired: "Sign-in expired. Start again.",
   browser_login_denied: "Sign-in was declined.",
   speech_privacy_unavailable:
-    "This reader is blocked by the server's privacy settings.",
+    "The voice model refuses the server's zero data retention setting. Your administrator can choose another model.",
   speech_play: "Read reply aloud",
   outputVoice: "Output voice",
   outputVoiceDefault: "Server default",
@@ -452,6 +452,7 @@ export const en = {
   spoken_replies: "Spoken replies",
   feedback_sounds: "Sounds and haptics",
   spoken_replies_failed: "Voice unavailable. Your reply is in chat.",
+  speech_privacy_short: "No voice: zero data retention refused.",
   spoken_replies_hint: "Read replies aloud after you speak.",
   spoken_replies_cloud: "Cloud voice",
   spoken_replies_loading: "Checking…",
@@ -1385,7 +1386,7 @@ export const cs: Record<TranslationKey, string> = {
   browser_login_expired: "Přihlášení vypršelo. Začni znovu.",
   browser_login_denied: "Přihlášení bylo odmítnuto.",
   speech_privacy_unavailable:
-    "Tento předčítač blokuje nastavení soukromí serveru.",
+    "Hlasový model nesplňuje nastavení serveru o nulovém uchovávání dat. Správce může zvolit jiný model.",
   speech_play: "Přečíst odpověď",
   outputVoice: "Výstupní hlas",
   outputVoiceDefault: "Výchozí na serveru",
@@ -1404,6 +1405,7 @@ export const cs: Record<TranslationKey, string> = {
   spoken_replies: "Hlasové odpovědi",
   feedback_sounds: "Zvuky a vibrace",
   spoken_replies_failed: "Hlas není dostupný. Odpověď najdeš v chatu.",
+  speech_privacy_short: "Bez hlasu: model odmítl nulové uchovávání dat.",
   spoken_replies_hint: "Po hlasovém dotazu odpověď přečíst nahlas.",
   spoken_replies_cloud: "Hlas z cloudu",
   spoken_replies_loading: "Ověřuji…",

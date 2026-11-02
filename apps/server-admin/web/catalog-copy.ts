@@ -224,6 +224,8 @@ const en = {
   speechDirect: "Text-to-speech",
   speechVoice: "Voice ID",
   speechRetention: "Require zero data retention",
+  speechRetentionMeta:
+    "If no provider of this model keeps zero retention, replies are not read aloud and people see a privacy notice. Choose another model or turn this off.",
   noCapabilityModels: "Add a compatible model",
   transcriptionModel: "Speech-to-text",
   voiceMethod: "Mode",
@@ -533,6 +535,8 @@ const cs: Record<keyof typeof en, string> = {
   speechDirect: "Text na řeč",
   speechVoice: "ID hlasu",
   speechRetention: "Vyžadovat nulové uchovávání dat",
+  speechRetentionMeta:
+    "Když žádný poskytovatel tohoto modelu nulové uchovávání nenabízí, odpovědi se nečtou nahlas a lidé uvidí upozornění na soukromí. Zvol jiný model, nebo tuto volbu vypni.",
   noCapabilityModels: "Přidat kompatibilní model",
   transcriptionModel: "Převod řeči na text",
   voiceMethod: "Režim",
