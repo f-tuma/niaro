@@ -14,7 +14,7 @@ const config: ExpoConfig = {
   ios: {
     bundleIdentifier: audioSpike
       ? "dev.agentclient.demo.audio"
-      : "dev.f-tuma.niaro",
+      : "dev.ftuma.niaro",
     supportsTablet: true,
     infoPlist: {
       CFBundleLocalizations: ["en", "cs"],
@@ -24,8 +24,7 @@ const config: ExpoConfig = {
     },
   },
   android: {
-    // Android packages allow no hyphen; the usual stand-in is an underscore.
-    package: audioSpike ? "dev.agentclient.demo.audio" : "dev.f_tuma.niaro",
+    package: audioSpike ? "dev.agentclient.demo.audio" : "dev.ftuma.niaro",
     adaptiveIcon: {
       foregroundImage: "./assets/application/mark.png",
       monochromeImage: "./assets/application/mark.png",
