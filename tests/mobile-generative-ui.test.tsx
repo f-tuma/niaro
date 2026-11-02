@@ -15,6 +15,7 @@ import { GENERATIVE_UI_COMPONENTS } from "../packages/openui-library/spec";
 import { translate } from "../packages/i18n";
 
 jest.mock("../apps/mobile/voice-capture", () => ({
+  ensureMicrophone: jest.fn(async () => true),
   createVoiceCapture: () => ({ supported: () => false }),
 }));
 jest.mock("@react-native-async-storage/async-storage", () => ({

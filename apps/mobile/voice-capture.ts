@@ -27,6 +27,16 @@ function base64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
+/**
+ * Asks for the microphone before a recording starts, so the system dialog
+ * (which backgrounds the app on Android) never interrupts capture itself.
+ * Resolves to whether the microphone may be used.
+ */
+export async function ensureMicrophone() {
+  const current = await getRecordingPermissionsAsync();
+  if (current.granted) return true;
+  return (await requestRecordingPermissionsAsync()).granted;
+}
 /** Raw microphone samples feed the spectrum, voicing and a WAV upload. Nothing is
  * written to disk and nothing is analysed outside an active recording. */
 export function createVoiceCapture(): VoiceCapture {

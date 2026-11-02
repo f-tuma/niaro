@@ -28,6 +28,7 @@ jest.mock("../apps/mobile/app-login", () => ({
   authorizeApp: jest.fn(),
 }));
 jest.mock("../apps/mobile/voice-capture", () => ({
+  ensureMicrophone: jest.fn(async () => true),
   createVoiceCapture: jest.fn(),
 }));
 jest.mock("expo-crypto", () => ({ randomUUID: () => "TEST-reviewed-answer" }));

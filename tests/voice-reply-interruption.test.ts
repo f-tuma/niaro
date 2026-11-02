@@ -10,6 +10,7 @@ import { voiceCapabilities } from "../packages/protocol/voice";
 import type { Command } from "../packages/protocol";
 
 jest.mock("../apps/mobile/voice-capture", () => ({
+  ensureMicrophone: jest.fn(async () => true),
   createVoiceCapture: jest.fn(),
 }));
 jest.mock("../apps/mobile/feedback", () => ({ feedback: () => 0 }));

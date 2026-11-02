@@ -59,6 +59,7 @@ jest.mock("../modules/meeting-notification", () => ({
   },
 }));
 jest.mock("../apps/mobile/voice-capture", () => ({
+  ensureMicrophone: jest.fn(async () => true),
   createVoiceCapture: jest.fn(),
 }));
 jest.mock("@react-native-async-storage/async-storage", () => ({

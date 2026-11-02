@@ -281,10 +281,13 @@ export function MeetingLibrary({
   if (recordingEntryId && local.phase === "idle" && !startingRecording)
     setRecordingEntryId(null);
   const recordingVisibilityGeneration = useRef(0);
+  /** Leaving the tab only; a system dialog hiding the app does not count. */
+  const tabGeneration = useRef(0);
   const wasVisible = useRef(visible);
   useLayoutEffect(() => {
     if (wasVisible.current && !visible) {
       recordingVisibilityGeneration.current++;
+      tabGeneration.current++;
       if (capture?.getSnapshot().phase === "preparing")
         capture.cancelPreparing();
     }
@@ -609,6 +612,7 @@ export function MeetingLibrary({
   const startRecording = async () => {
     if (recordingStartPending.current || busy) return;
     const visibilityGeneration = recordingVisibilityGeneration.current;
+    const tab = tabGeneration.current;
     recordingStartPending.current = true;
     setStartingRecording(true);
     setStopFailedLive(false);
@@ -627,10 +631,30 @@ export function MeetingLibrary({
         }
       }
       if (
-        alive.current &&
-        visible &&
-        visibilityGeneration === recordingVisibilityGeneration.current
-      ) {
+        !alive.current ||
+        !visible ||
+        visibilityGeneration !== recordingVisibilityGeneration.current
+      )
+        return;
+      // Permissions before the start: their system dialogs hide the app,
+      // which cancels a start already preparing (the first meeting failed).
+      if (capture?.requestPermission) {
+        if (!(await capture.requestPermission()))
+          throw new Error("meeting_permission_denied");
+        if (
+          AppState.currentState === "background" ||
+          AppState.currentState === "inactive"
+        )
+          await new Promise<void>((resolve) => {
+            const subscription = AppState.addEventListener("change", (next) => {
+              if (next !== "active") return;
+              subscription.remove();
+              resolve();
+            });
+          });
+      }
+      // Leaving Meetings meanwhile ends the request; coming back never revives it.
+      if (alive.current && visible && tab === tabGeneration.current) {
         const id = randomUUID();
         setRecordingEntryId(id);
         await capture?.start(id, automaticTitle(), language);

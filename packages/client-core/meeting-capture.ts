@@ -129,6 +129,14 @@ export class MeetingCapture {
     this.active = true;
     this.generation++;
   }
+  /**
+   * Asks for the microphone (and on Android notifications) before a start.
+   * The system dialogs hide the app, which invalidates a start in progress;
+   * asked first, the start that follows finds them granted.
+   */
+  requestPermission() {
+    return this.ports.permission();
+  }
   /** Invalidates a start that has not reached the native recorder yet. */
   cancelPreparing() {
     if (this.state.phase !== "preparing") return;

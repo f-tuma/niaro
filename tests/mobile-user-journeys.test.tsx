@@ -41,6 +41,7 @@ const mockSpeech = {
   enabled: false,
 };
 jest.mock("../apps/mobile/voice-capture", () => ({
+  ensureMicrophone: jest.fn(async () => true),
   createVoiceCapture: jest.fn(),
 }));
 jest.mock("../apps/mobile/ReplySpeech", () => ({
@@ -160,8 +161,14 @@ test.each(["permission", "prepare"] as const)(
       fireEvent.press(screen.getByRole("button", { name: en.meetingRecord }));
       for (let i = 0; i < 20; i++) await Promise.resolve();
     });
-    expect(f.capture.getSnapshot().phase).toBe("preparing");
-    expect(f.coordinator.current()).toBe("recording");
+    // Permissions are asked before the capture prepares (their dialog hides
+    // the app), so only a prepare in progress holds the recorder.
+    expect(f.capture.getSnapshot().phase).toBe(
+      stage === "prepare" ? "preparing" : "idle",
+    );
+    expect(f.coordinator.current()).toBe(
+      stage === "prepare" ? "recording" : null,
+    );
     view.rerender(
       <MeetingLibrary session={f.session} language="en" visible={false} />,
     );

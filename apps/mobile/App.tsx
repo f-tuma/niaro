@@ -1,4 +1,5 @@
 import { fetch as expoFetch } from "expo/fetch";
+import { ensureMicrophone } from "./voice-capture";
 import {
   PetProfile,
   PetTopBarActions,
@@ -324,6 +325,8 @@ export function Workspace({
   spokenReplies: boolean;
 }) {
   const sessionOwner = useRef(session);
+  /** Granted microphone, so a tap opens the composer without asking again. */
+  const microphoneReady = useRef(false);
   useLayoutEffect(() => {
     sessionOwner.current = session;
   }, [session]);
@@ -1878,6 +1881,41 @@ export function Workspace({
         });
       return;
     }
+    // The microphone is asked for before the composer opens: its system
+    // dialog backgrounds the app and would otherwise cancel the recording.
+    if (!microphoneReady.current) {
+      const requestedSession = session;
+      void ensureMicrophone()
+        .then((granted) => {
+          if (sessionOwner.current !== requestedSession) return;
+          if (!granted) {
+            setReplyError("voice_permission");
+            return;
+          }
+          microphoneReady.current = true;
+          // The app is in front again after the dialog; continue the tap.
+          const resume = () => {
+            if (
+              AppState.currentState !== "background" &&
+              AppState.currentState !== "inactive"
+            )
+              openVoice();
+            else {
+              const subscription = AppState.addEventListener(
+                "change",
+                (next) => {
+                  if (next !== "active") return;
+                  subscription.remove();
+                  openVoice();
+                },
+              );
+            }
+          };
+          resume();
+        })
+        .catch(() => setReplyError("voice_permission"));
+      return;
+    }
     // Recording is a local draft; only submission waits for the current command.
     if (
       voiceRef.current ||
@@ -2683,7 +2721,17 @@ export function Workspace({
                         !referencedWork.has(w.id) &&
                         (!!w.native?.process ||
                           !isTerminalNativeWork(w) ||
-                          openedWork.has(w.id)),
+                          openedWork.has(w.id)) &&
+                        // The run of the message being answered is the
+                        // Thinking line, not a "waiting for server" card.
+                        !(
+                          state.pending?.type === "message.send" &&
+                          state.pending.conversationId === conversationId &&
+                          !w.native?.process &&
+                          ["queued", "running", "waiting_system"].includes(
+                            w.status,
+                          )
+                        ),
                     )
                     .map((w) => (
                       <View
