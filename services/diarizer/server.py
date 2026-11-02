@@ -56,7 +56,9 @@ def load() -> None:
     import torch
     from pyannote.audio import Pipeline
 
-    torch.set_num_threads(max(1, int(os.environ.get("DIARIZER_THREADS", "0")) or (os.cpu_count() or 2)))
+    # More threads than about eight only contend: on a 20-core host 8 threads
+    # diarized 300 s of sound in 100 s, all 20 in 157 s.
+    torch.set_num_threads(max(1, int(os.environ.get("DIARIZER_THREADS", "0")) or min(8, os.cpu_count() or 2)))
     if not HF_TOKEN:
         state["error"] = "HF_TOKEN is not set: accept the model's terms on Hugging Face and set the token"
         log.error("model not loaded: %s", state["error"])

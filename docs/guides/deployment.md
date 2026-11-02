@@ -419,7 +419,7 @@ transcripts. Behavior: [meetings](../../openspec/specs/meetings/spec.md).
    HF_TOKEN=hf_...
    DIARIZER_TOKEN=<random shared secret>
    # Optional
-   DIARIZER_THREADS=0      # CPU threads, 0 = all
+   DIARIZER_THREADS=0      # CPU threads, 0 = up to 8 (more only contend)
    DIARIZER_MEMORY=4g      # container memory limit
    ```
 

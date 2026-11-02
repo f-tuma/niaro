@@ -182,6 +182,8 @@ function twoTrack() {
 async function processTwoTrack(
   processor: MeetingProcessor,
   store: MeetingStore,
+  /** Awaited before each chunk is transcribed. */
+  beforeTranscription: () => Promise<void> = async () => {},
 ) {
   const bytes = twoTrack();
   const id = randomUUID();
@@ -206,7 +208,7 @@ async function processTwoTrack(
       meetingTranscriber: {
         model: "TEST/STT",
         transcribe: async (input) =>
-          input.requestId.endsWith("-me")
+          ((await beforeTranscription()) ?? input.requestId.endsWith("-me"))
             ? {
                 text: "Pošlu nabídku.",
                 segments: [{ start: 1, end: 3, text: "Pošlu nabídku." }],
@@ -295,6 +297,38 @@ test("with the diarizer on, the others' channel is sent as mono 16 kHz WAV and i
       meetingNotes(record).utterances.map((u) => u.voice),
       [undefined, 1, 2],
     );
+  } finally {
+    await processor.close();
+    await service.close();
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the diarizer gets the sound while the chunks are still being transcribed", async () => {
+  const root = mkdtempSync(join(tmpdir(), "niaro-diarization-test-"));
+  const db = new DatabaseSync(join(root, "identity.sqlite"));
+  db.exec("PRAGMA foreign_keys=ON");
+  const store = new MeetingStore(db);
+  const service = await fakeDiarizer(() => [
+    200,
+    { model: "TEST/model", speakers: 1, segments: [] },
+  ]);
+  const processor = new MeetingProcessor(store, {
+    retryDelaysMs: [1, 1],
+    diarization: { enabled: true, url: service.url, token: "TEST-token" },
+  });
+  let diarizedDuringTranscription = false;
+  try {
+    const { status } = await processTwoTrack(processor, store, async () => {
+      // Transcription holds until the diarizer has its request (or 5 s pass).
+      const until = Date.now() + 5000;
+      while (!service.requests.length && Date.now() < until)
+        await new Promise((r) => setTimeout(r, 20));
+      diarizedDuringTranscription ||= service.requests.length > 0;
+    });
+    assert.equal(status, "ready");
+    assert(diarizedDuringTranscription);
   } finally {
     await processor.close();
     await service.close();

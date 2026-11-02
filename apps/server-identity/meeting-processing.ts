@@ -35,6 +35,7 @@ import { IdentityError } from "./error";
 import {
   assignVoices,
   diarize,
+  type Diarization,
   type DiarizerConfig,
 } from "./meeting-diarization";
 import { MeetingStore } from "./meeting-store";
@@ -801,7 +802,6 @@ export class MeetingProcessor {
   ) {
     const { scope, run } = access;
     const id = meeting.id;
-    const transcriber = access.meetingTranscriber!;
     const split = meeting.speakerChannels === "self-others";
     // A meeting keeps the chunk size it started with: saved chunks of an
     // earlier size would otherwise be paid for again after a settings change.
@@ -811,6 +811,68 @@ export class MeetingProcessor {
     const speakers: MeetingUtterance["speaker"][] = split
       ? ["me", "others"]
       : ["unknown"];
+    const voiced = split ? "others" : "unknown";
+    // On one track the person recording is among the voices; their saved
+    // fingerprint, if they chose to keep one, finds them.
+    const profile = split
+      ? undefined
+      : this.store.voiceProfiles.get(meeting.scope);
+    // Who spoke when needs only the sound, so the diarizer works while the
+    // chunks are transcribed; a failed transcription stops it.
+    const voicing = new AbortController();
+    const stopVoicing = () => voicing.abort();
+    signal.addEventListener("abort", stopVoicing, { once: true });
+    const diarization = this.diarize(
+      track,
+      directory,
+      AbortSignal.any([signal, voicing.signal]),
+      !!profile,
+    );
+    try {
+      return await this.transcribeAndVoice(
+        access,
+        meeting,
+        duration,
+        decode,
+        signal,
+        { directory, size, split, speakers, voiced, profile, diarization },
+      );
+    } finally {
+      signal.removeEventListener("abort", stopVoicing);
+      voicing.abort();
+    }
+  }
+  private async transcribeAndVoice(
+    access: MeetingProcessingAccess,
+    meeting: Meeting,
+    duration: number,
+    decode: (
+      from: number,
+      length: number,
+      name: string,
+    ) => Promise<Float32Array[]>,
+    signal: AbortSignal,
+    {
+      directory,
+      size,
+      split,
+      speakers,
+      voiced,
+      profile,
+      diarization,
+    }: {
+      directory: string;
+      size: number;
+      split: boolean;
+      speakers: MeetingUtterance["speaker"][];
+      voiced: MeetingUtterance["speaker"];
+      profile: VoiceProfile | undefined;
+      diarization: Promise<Diarization | null>;
+    },
+  ) {
+    const { scope, run } = access;
+    const id = meeting.id;
+    const transcriber = access.meetingTranscriber!;
     const count = Math.ceil(duration / size);
     const results = new Map<string, MeetingChunkResult>();
     const key = (index: number, speaker: string) =>
@@ -944,13 +1006,10 @@ export class MeetingProcessor {
     const language = [...languages].sort((a, b) => b[1] - a[1])[0]?.[0];
     utterances = await this.voices(
       utterances,
-      split ? "others" : "unknown",
-      track,
-      directory,
+      voiced,
+      diarization,
       signal,
-      // On one track the person recording is among the voices; their saved
-      // fingerprint, if they chose to keep one, finds them.
-      split ? undefined : this.store.voiceProfiles.get(meeting.scope),
+      profile,
     );
     const segments = minuteSegments(utterances, duration, {
       language: meeting.language,
@@ -967,17 +1026,18 @@ export class MeetingProcessor {
    * them. Diarization only adds detail: when the service is missing, busy
    * or failing, the meeting goes on without voices.
    */
-  private async voices(
-    utterances: MeetingUtterance[],
-    speaker: MeetingUtterance["speaker"],
+  /**
+   * Starts the diarizer on the track, one meeting at a time. Null when it is
+   * off or fails; it only ever adds detail.
+   */
+  private diarize(
     track: (path: string) => Promise<void>,
     directory: string,
     signal: AbortSignal,
-    profile?: VoiceProfile,
-  ) {
+    embeddings: boolean,
+  ): Promise<Diarization | null> {
     const config = this.diarization;
-    if (!config?.enabled || !utterances.some((t) => t.speaker === speaker))
-      return utterances;
+    if (!config?.enabled) return Promise.resolve(null);
     const wav = join(directory, "diarization.wav");
     const turn = this.diarizing.then(async () => {
       try {
@@ -985,15 +1045,33 @@ export class MeetingProcessor {
         await track(wav);
         return await diarize(config, wav, signal, {
           maxSpeakers: 20,
-          embeddings: !!profile,
+          embeddings,
         });
       } finally {
         await rm(wav, { force: true });
       }
     });
     this.diarizing = turn.catch(() => {});
+    return turn.catch((error: unknown) => {
+      if (!signal.aborted)
+        console.warn(
+          `Meeting diarization failed: ${error instanceof Error ? error.message : "unknown"}`,
+        );
+      return null;
+    });
+  }
+  private async voices(
+    utterances: MeetingUtterance[],
+    speaker: MeetingUtterance["speaker"],
+    pending: Promise<Diarization | null>,
+    signal: AbortSignal,
+    profile?: VoiceProfile,
+  ) {
+    if (!utterances.some((t) => t.speaker === speaker)) return utterances;
     try {
-      const diarization = await turn;
+      const diarization = await pending;
+      signal.throwIfAborted();
+      if (!diarization) return utterances;
       // The other voices' fingerprints are compared here and dropped.
       return assignVoices(
         utterances,
