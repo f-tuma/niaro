@@ -522,7 +522,8 @@ export function MeetingDetail({
               const taskId = record.humanTaskIds[task.index];
               return (
                 <Item key={taskId ?? task.index} variant="row" size="row">
-                  <ItemContent>
+                  {/* In the narrow side column the action wraps below the text. */}
+                  <ItemContent className="basis-56">
                     <ItemTitle>{task.text}</ItemTitle>
                     <ItemDescription>
                       <span className="flex flex-wrap items-center gap-x-3 gap-y-1">

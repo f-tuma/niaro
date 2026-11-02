@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { Readable } from "node:stream";
 import { z } from "zod";
+import { longPost } from "./long-post";
 import type { MeetingUtterance } from "../../packages/protocol/meetings";
 
 /**
@@ -86,20 +86,17 @@ export async function diarize(
   const url = endpoint(config, "diarize");
   if (options.maxSpeakers)
     url.searchParams.set("maxSpeakers", String(options.maxSpeakers));
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      ...headers(config),
-      "Content-Type": "audio/wav",
-      "Content-Length": String(size),
-    },
-    body: Readable.toWeb(createReadStream(wav)) as ReadableStream,
-    // Node streams a request body only half-duplex.
-    duplex: "half",
-    signal: AbortSignal.any([signal, AbortSignal.timeout(60 * 60_000)]),
-  } as RequestInit & { duplex: "half" });
-  if (!response.ok) throw new Error(`diarization_http_${response.status}`);
-  return DiarizationSchema.parse(await response.json());
+  // A long meeting can take the diarizer many minutes on the CPU.
+  const response = await longPost(
+    url,
+    { ...headers(config), "Content-Type": "audio/wav" },
+    { stream: createReadStream(wav), size },
+    AbortSignal.any([signal, AbortSignal.timeout(60 * 60_000)]),
+    64 * 1024 * 1024,
+  );
+  if (response.status !== 200)
+    throw new Error(`diarization_http_${response.status}`);
+  return DiarizationSchema.parse(JSON.parse(response.body));
 }
 
 /**

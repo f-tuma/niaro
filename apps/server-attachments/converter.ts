@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
-import http from "node:http";
-import https from "node:https";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
+import { longPost } from "../server-identity/long-post";
 
 /**
  * The optional converter service (services/converter): the text of an
@@ -92,12 +91,21 @@ export async function convertDocument(
   signal: AbortSignal,
 ): Promise<Conversion> {
   for (;;) {
-    const response = await post(
-      endpoint(config, `convert?name=${encodeURIComponent(name)}`),
-      { ...headers(config), "Content-Type": "application/octet-stream" },
-      bytes,
-      signal,
-    );
+    let response: { status: number; body: string };
+    try {
+      response = await longPost(
+        endpoint(config, `convert?name=${encodeURIComponent(name)}`),
+        { ...headers(config), "Content-Type": "application/octet-stream" },
+        { bytes },
+        signal,
+        MAX_RESPONSE,
+      );
+    } catch (error) {
+      signal.throwIfAborted();
+      throw new ConverterUnavailable(
+        error instanceof Error ? error.message.slice(0, 60) : "unreachable",
+      );
+    }
     if (response.status === 503) {
       await sleep(2_000, undefined, { signal });
       continue;
@@ -106,54 +114,6 @@ export async function convertDocument(
       throw new ConverterUnavailable(`http_${response.status}`);
     return ConversionSchema.parse(JSON.parse(response.body));
   }
-}
-
-/**
- * One POST with node:http rather than fetch: a long document can take the
- * converter minutes before it answers, past fetch's fixed header timeout.
- */
-function post(
-  url: URL,
-  head: Record<string, string>,
-  body: Uint8Array,
-  signal: AbortSignal,
-): Promise<{ status: number; body: string }> {
-  return new Promise((resolve, reject) => {
-    const request = (url.protocol === "https:" ? https : http).request(
-      url,
-      {
-        method: "POST",
-        headers: { ...head, "Content-Length": String(body.byteLength) },
-        signal,
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        let size = 0;
-        response.on("data", (chunk: Buffer) => {
-          size += chunk.length;
-          if (size > MAX_RESPONSE) {
-            response.destroy();
-            reject(new ConverterUnavailable("response_too_large"));
-          } else chunks.push(chunk);
-        });
-        response.on("end", () =>
-          resolve({
-            status: response.statusCode ?? 0,
-            body: Buffer.concat(chunks).toString("utf8"),
-          }),
-        );
-        response.on("error", reject);
-      },
-    );
-    request.on("error", (error) =>
-      reject(
-        signal.aborted
-          ? signal.reason
-          : new ConverterUnavailable(error.name || "unreachable"),
-      ),
-    );
-    request.end(body);
-  });
 }
 
 const READING = {
