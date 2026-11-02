@@ -459,12 +459,19 @@ sits on an internal network with no way out, holds no credentials and reads
 each file in a child process with time and memory limits. Needs
 [object storage](object-storage.md) and `NIARO_ATTACHMENTS_ENABLED=true`.
 
-Two images share one API:
+Two images share one API. In both, [pdf-inspector](https://github.com/firecrawl/pdf-inspector)
+(MIT) reads the PDF pages that have their own text in milliseconds; set
+`CONVERTER_PDF_FAST=0` to turn that off.
 
-| Engine            | Build                              | Memory                                                 | Speed (2 CPUs)                              | Notes                                                          |
-| ----------------- | ---------------------------------- | ------------------------------------------------------ | ------------------------------------------- | -------------------------------------------------------------- |
-| Docling (default) | `Dockerfile.docling`, about 4.4 GB | `CONVERTER_MEMORY=3g`; a 100-page scan peaks at 1.5 GB | a page in about 1 s, 100 pages in 2 minutes | tables come out as tables; pictures on text pages are read too |
-| MarkItDown        | `Dockerfile`, about 0.8 GB         | 0.5 GB is enough                                       | a text PDF at once, a scanned page in 0.5 s | PDF tables come out as loose lines of text                     |
+| Engine            | Build                              | Memory                                                 | Speed (2 CPUs)                                                           | Notes                                                                                        |
+| ----------------- | ---------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Docling (default) | `Dockerfile.docling`, about 4.4 GB | `CONVERTER_MEMORY=3g`; a 100-page scan peaks at 1.5 GB | text pages at once; pages with tables, scans and pictures about 1 s each | Docling reads tables, scans and mixed pages; every table in the test files came out whole    |
+| MarkItDown        | `Dockerfile`, about 0.8 GB         | 0.5 GB is enough                                       | text and tables at once, a scanned page in 0.5 s                         | pdf-inspector's tables can drop a column across pages; scanned tables come out as plain text |
+
+On the synthetic test files (`tests/fixtures/documents`, compared with
+`services/converter/compare.py`), Docling kept 17 of 17 hard table rows whole
+(no lines, merged header, three-page price list, multi-line cells, a scanned
+invoice) and MarkItDown 9.
 
 1. Add to `.env` (or Dokploy **Environment**):
 

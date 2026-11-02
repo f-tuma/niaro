@@ -1,0 +1,138 @@
+{
+ "cases": [
+  {
+   "file": "borderless-invoice.pdf",
+   "rows": [
+    [
+     "Položka",
+     "Množství",
+     "Jednotka",
+     "Cena za jednotku",
+     "Celkem"
+    ],
+    [
+     "Montáž rozvaděče",
+     "1",
+     "ks",
+     "12 450,00",
+     "12 450,00"
+    ],
+    [
+     "Kabel CYKY 3x2,5",
+     "120",
+     "m",
+     "38,90",
+     "4 668,00"
+    ],
+    [
+     "Jistič B16",
+     "8",
+     "ks",
+     "214,50",
+     "1 716,00"
+    ],
+    [
+     "Revize elektroinstalace",
+     "1",
+     "ks",
+     "3 900,00",
+     "3 900,00"
+    ]
+   ]
+  },
+  {
+   "file": "merged-header.pdf",
+   "rows": [
+    [
+     "Morava",
+     "1 120",
+     "1 340",
+     "1 410",
+     "1 505"
+    ],
+    [
+     "Čechy",
+     "2 870",
+     "2 990",
+     "3 105",
+     "3 260"
+    ]
+   ]
+  },
+  {
+   "file": "multipage-pricelist.pdf",
+   "rows": [
+    [
+     "P-1000",
+     "Šroub M4x10 pozinkovaný",
+     "3,00"
+    ],
+    [
+     "P-1059",
+     "Šroub M7x39 pozinkovaný",
+     "386,59"
+    ],
+    [
+     "P-1138",
+     "Šroub M6x28 pozinkovaný",
+     "609,38"
+    ]
+   ]
+  },
+  {
+   "file": "multiline-cells.pdf",
+   "rows": [
+    [
+     "1",
+     "Dodávka oken musí proběhnout před zahájením fasádních prací, jinak se posouvá termín kolaudace.",
+     "Jana Nováková"
+    ],
+    [
+     "2",
+     "Zhotovitel doloží revizní zprávy všech zařízení nejpozději při předání stavby.",
+     "Petr Svoboda"
+    ]
+   ]
+  },
+  {
+   "file": "scanned-invoice.pdf",
+   "rows": [
+    [
+     "Položka",
+     "Množství",
+     "Jednotka",
+     "Cena za jednotku",
+     "Celkem"
+    ],
+    [
+     "Montáž rozvaděče",
+     "1",
+     "ks",
+     "12 450,00",
+     "12 450,00"
+    ],
+    [
+     "Kabel CYKY 3x2,5",
+     "120",
+     "m",
+     "38,90",
+     "4 668,00"
+    ],
+    [
+     "Jistič B16",
+     "8",
+     "ks",
+     "214,50",
+     "1 716,00"
+    ],
+    [
+     "Revize elektroinstalace",
+     "1",
+     "ks",
+     "3 900,00",
+     "3 900,00"
+    ]
+   ]
+  }
+ ]
+}

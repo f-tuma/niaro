@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 
-from common import OCR_LANGUAGES, Refused, pdf_raster_pages, prepare_image
+from common import OCR_LANGUAGES, Refused, fast_pdf_pages, pdf_raster_pages, prepare_image
 
 SCRATCH = "/tmp/input"
 PDF_CHUNK = 5
@@ -97,19 +97,31 @@ class Engine:
 
 
     def pdf(self, path: str, pages: int, raster: set[int]):
-        """Docling keeps every page of a document in memory until the end, so
-        long PDFs go through in chunks of pages; each chunk's memory is
-        reused by the next."""
+        """Text pages without tables come from pdf-inspector at once; the
+        rest (tables, scans, pictures) go through Docling in chunks of
+        pages, since Docling keeps a whole document in memory until the end
+        and each chunk's memory is reused by the next."""
         import gc
 
         from docling.datamodel.base_models import ConversionStatus
 
-        blocks, warnings = [], []
-        for start in range(1, pages + 1, PDF_CHUNK):
-            end = min(pages, start + PDF_CHUNK - 1)
+        fast = fast_pdf_pages(path, tables=False)
+        found: dict[int, dict] = {
+            number: {"source": f"page {number}", "text": text, "method": "native"}
+            for number, text in fast.items()
+        }
+        rest = [number for number in range(1, pages + 1) if number not in fast]
+        runs: list[tuple[int, int]] = []
+        for number in rest:
+            if runs and runs[-1][1] == number - 1 and number - runs[-1][0] < PDF_CHUNK:
+                runs[-1] = (runs[-1][0], number)
+            else:
+                runs.append((number, number))
+        warnings = []
+        for start, end in runs:
             result = self.converter.convert(path, raises_on_error=False, page_range=(start, end))
             if result.status == ConversionStatus.FAILURE:
-                if start == 1:
+                if not found and start == rest[0]:
                     raise Refused("malformed")
                 warnings.append("pages_failed")
                 continue
@@ -118,14 +130,14 @@ class Engine:
                 if number not in document.pages:
                     warnings.append("pages_failed")
                     continue
-                blocks.append({
+                found[number] = {
                     "source": f"page {number}",
                     "text": document.export_to_markdown(page_no=number),
                     "method": "ocr" if number in raster else "native",
-                })
+                }
             del result, document
             gc.collect()
-        return blocks, warnings, pages
+        return [found[number] for number in sorted(found)], warnings, pages
 
 
 def sheet_names(document) -> dict[int, str]:

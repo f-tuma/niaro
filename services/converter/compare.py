@@ -27,11 +27,28 @@ def normal(text: str) -> str:
 
 def expected(case: dict) -> list[str]:
     strings = list(case.get("fields", []))
+    for row in case.get("rows", []):
+        strings += [c for c in row if c]
     for row in case.get("table", []):
         strings += [c for c in row if c]
     for check in case.get("source_assertions", []):
         strings += check.get("contains", [])
     return strings
+
+
+def row_found(row: list[str], lines: list[str]) -> bool:
+    """A table row survives when its cells sit on one output line, in order."""
+    cells = [normal(c) for c in row if str(c).strip()]
+    for line in lines:
+        at = 0
+        for cell in cells:
+            at = line.find(cell, at)
+            if at < 0:
+                break
+            at += len(cell)
+        else:
+            return True
+    return False
 
 
 def convert(url: str, body: bytes, name: str, token: str) -> tuple[dict, float]:
@@ -58,8 +75,8 @@ def main() -> None:
     cases = json.loads((folder / "manifest.json").read_text())
     cases = cases["cases"] if isinstance(cases, dict) else cases
     token = os.environ.get("CONVERTER_TOKEN", "")
-    totals = {name: [0, 0, 0.0] for name, _ in services}
-    print(f"{'file':28}" + "".join(f"{name:>34}" for name, _ in services))
+    totals = {name: [0, 0, 0.0, 0, 0] for name, _ in services}
+    print(f"{'file':28}" + "".join(f"{name:>40}" for name, _ in services))
     for case in cases:
         path = folder / case["file"]
         if not path.exists():
@@ -77,18 +94,23 @@ def main() -> None:
                 continue
             text = normal("\n".join(b["text"] for b in result["blocks"]))
             found = sum(1 for s in want if normal(s) in text)
+            lines = [normal(l) for b in result["blocks"] for l in b["text"].splitlines()]
+            rows = case.get("rows") or case.get("table") or []
+            whole = sum(1 for r in rows if row_found(r, lines))
+            totals[name][3] += whole
+            totals[name][4] += len(rows)
             totals[name][0] += found
             totals[name][1] += len(want)
             totals[name][2] = max(totals[name][2], seconds)
             memory = peak(container)
             status = result["status"] if result["status"] != "failed" else f"failed:{result['reason']}"
-            cell = f"{found}/{len(want)} {status[:18]} {seconds:5.1f}s"
+            cell = f"{found}/{len(want)}{f' r{whole}/{len(rows)}' if rows else ''} {status[:14]} {seconds:5.1f}s"
             if memory:
                 cell += f" {memory / 2**20:4.0f}M"
-            row += f"{cell:>34}"
+            row += f"{cell:>40}"
         print(row, flush=True)
-    for name, (found, total, slowest) in totals.items():
-        print(f"{name}: {found}/{total} expected strings, slowest {slowest:.1f} s")
+    for name, (found, total, slowest, whole, rows) in totals.items():
+        print(f"{name}: {found}/{total} expected strings, {whole}/{rows} table rows whole, slowest {slowest:.1f} s")
 
 
 if __name__ == "__main__":

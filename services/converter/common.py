@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import re
 import subprocess
 
@@ -90,3 +91,31 @@ def pdf_raster_pages(path: str) -> tuple[int, set[int]]:
         return len(document), raster
     finally:
         document.close()
+
+
+def fast_pdf_pages(path: str, tables: bool) -> dict[int, str]:
+    """Markdown of the PDF pages pdf-inspector reads on its own, by page
+    number from 1: pages with a text layer it trusts, no picture to OCR, and
+    (unless `tables`) no table, since its tables can lose columns. Every
+    other page is left to the engine. It takes milliseconds per page."""
+    if os.environ.get("CONVERTER_PDF_FAST", "1") == "0":
+        return {}
+    try:
+        import pdf_inspector
+    except ImportError:
+        return {}
+    try:
+        result = pdf_inspector.extract_pages_markdown(path)
+    except Exception:
+        return {}
+    _, raster = pdf_raster_pages(path)
+    with_tables = set(result.pages_with_tables)  # numbered from 1
+    pages = {}
+    for page in result.pages:  # numbered from 0
+        number = page.page + 1
+        if page.needs_ocr or number in raster or not page.markdown.strip():
+            continue
+        if not tables and number in with_tables:
+            continue
+        pages[number] = page.markdown
+    return pages

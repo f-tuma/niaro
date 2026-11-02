@@ -3,3 +3,5 @@
 # OCR is Tesseract (Apache-2.0) from Debian.
 docling==2.145.0
 pypdfium2==5.14.0
+# Text pages of PDFs in milliseconds (MIT, Rust); see common.fast_pdf_pages.
+pdf-inspector==1.25.2

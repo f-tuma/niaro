@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 
-from common import Refused, ocr, pdf_raster_pages, prepare_image
+from common import Refused, fast_pdf_pages, ocr, pdf_raster_pages, prepare_image
 
 SCRATCH = "/tmp/input"
 
@@ -46,13 +46,19 @@ class Engine:
         if pages > self.max_pages:
             raise Refused("page_limit")
         blocks, warnings = [], []
+        # pdf-inspector keeps tables as tables, which pdfminer's text does not.
+        fast = fast_pdf_pages(path, tables=True)
         try:
-            layouts = list(extract_pages(path))
+            layouts = list(extract_pages(path)) if len(fast) < pages else []
         except PDFPasswordIncorrect:
             raise Refused("protected")
         document = None
-        for number, layout in enumerate(layouts, 1):
+        for number in range(1, pages + 1):
             source = f"page {number}"
+            if number in fast:
+                blocks.append({"source": source, "text": fast[number], "method": "native"})
+                continue
+            layout = layouts[number - 1] if number <= len(layouts) else []
             text = "".join(item.get_text() for item in layout if isinstance(item, LTTextContainer)).strip()
             if text:
                 blocks.append({"source": source, "text": text, "method": "native"})
