@@ -98,7 +98,7 @@ async function closeProcessPanel(language: Language) {
   await act(async () => {
     fireEvent.press(screen.getByRole("button", { name: tr("close") }));
     await flush();
-  });  // Processes open from Library; the chat is one tab away.
+  }); // Processes open from Library; the chat is one tab away.
   await act(async () => {
     fireEvent.press(screen.getByRole("tab", { name: tr("chat") }));
     await flush();
@@ -217,7 +217,7 @@ test.each(
       await act(async () => {
         fireEvent.press(
           screen.getByRole("tab", {
-            name: language === "cs" ? "Práce" : "Work",
+            name: language === "cs" ? "Úkoly" : "Tasks",
           }),
         );
         await flush();

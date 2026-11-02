@@ -9,16 +9,18 @@ import {
 } from "@admin/components/ui/tooltip";
 import { useToast } from "@admin/components/ui/toast";
 import { useChatCopy } from "./chat-copy";
-import type { Language } from "../../../../packages/protocol";
+import {
+  dayLabel,
+  messageMoment,
+  messageTime,
+} from "../../../../packages/client-core/chat-days";
 
-const locale = (language: Language) => (language === "cs" ? "cs-CZ" : "en-GB");
-const startOfDay = (value: Date) =>
-  new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+// The days of a chat are computed once for both clients.
+export { messageDays } from "../../../../packages/client-core/chat-days";
 
 /** When a message was sent: the time, with the full date on hover. */
 function MessageTime({ at }: { at: string }) {
   const { language } = useChatCopy();
-  const date = new Date(at);
   return (
     <Tooltip delay="name">
       <TooltipTrigger asChild>
@@ -26,62 +28,21 @@ function MessageTime({ at }: { at: string }) {
           dateTime={at}
           className="self-center px-1 text-xs text-muted-foreground tabular-nums"
         >
-          {date.toLocaleTimeString(locale(language), {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          {messageTime(at, language)}
         </time>
       </TooltipTrigger>
-      <TooltipContent>
-        {date.toLocaleString(locale(language), {
-          dateStyle: "full",
-          timeStyle: "short",
-        })}
-      </TooltipContent>
+      <TooltipContent>{messageMoment(at, language)}</TooltipContent>
     </Tooltip>
   );
-}
-
-/**
- * For each message, the day it starts when that differs from the timed
- * message before it (for the first one, from today). Messages without a time
- * never start one, so a chat from before message times shows no dividers.
- */
-export function messageDays(
-  messages: readonly { createdAt?: string }[],
-  now = new Date(),
-) {
-  let previous = startOfDay(now);
-  return messages.map(({ createdAt }) => {
-    if (!createdAt) return undefined;
-    const day = startOfDay(new Date(createdAt));
-    if (day === previous) return undefined;
-    previous = day;
-    return day;
-  });
 }
 
 /** A quiet divider between the days of a chat. */
 export function DaySeparator({ day }: { day: number }) {
   const { tr, language } = useChatCopy();
-  const today = startOfDay(new Date());
-  const date = new Date(day);
-  // Calendar days, not 24-hour spans: a daylight-saving night is 23 or 25 hours.
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const label =
-    day === today
-      ? tr("chatsToday")
-      : day === yesterday.getTime()
-        ? tr("chatsYesterday")
-        : date.toLocaleDateString(locale(language), {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-            ...(date.getFullYear() === new Date().getFullYear()
-              ? {}
-              : { year: "numeric" }),
-          });
+  const label = dayLabel(day, language, {
+    today: tr("chatsToday"),
+    yesterday: tr("chatsYesterday"),
+  });
   return (
     <div
       role="separator"

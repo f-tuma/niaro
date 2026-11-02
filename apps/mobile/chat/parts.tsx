@@ -1,13 +1,18 @@
-import React, { createContext, useContext } from "react";
-import { Linking, View } from "react-native";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { Linking, Pressable, StyleSheet, View } from "react-native";
 import type { ClientSession } from "../../../packages/client-core/session";
 import type { Language, WorkItem } from "../../../packages/protocol";
 import type { ProcessOfferResult } from "../../../packages/protocol/process-offer";
 import { processProposalWebUrl } from "../../../packages/protocol/process-proposal";
 import { cardDocumentText } from "../../../packages/protocol/card-document";
 import { translate } from "../../../packages/i18n";
+import {
+  dayLabel,
+  messageMoment,
+  messageTime,
+} from "../../../packages/client-core/chat-days";
 import { tokens as t } from "../../../packages/design-tokens";
-import { Button, Icon, Row, Text } from "../../../packages/ui";
+import { Button, Icon, Row, Text, type IconName } from "../../../packages/ui";
 import { MarkdownText } from "../../../packages/ui-catalog/MarkdownText";
 import { GenerativeUiView } from "../../../packages/ui-catalog/GenerativeUiView";
 import { ProcessOfferCard } from "../../../packages/ui-catalog/ProcessOfferCard";
@@ -17,6 +22,7 @@ import { splitDraft } from "../../../packages/openui-library/program";
 import { chrome as styles, AssistantMessage } from "../ScreenChrome";
 import { ServiceConnection } from "../ServiceConnection";
 import { MobileMessageAttachments } from "../AttachmentControls";
+import { copyText } from "../clipboard";
 import type { ChatMessage, ThreadEntry, ThreadPart } from "./thread";
 
 /**
@@ -45,6 +51,16 @@ export type MobileChat = {
   work: (id: string) => WorkItem | undefined;
   /** Scrolls to a work card opened from Tasks once it is laid out. */
   locateWork: (id: string, y: number) => void;
+  /** **Edit**: the request back in the composer; nothing is sent. */
+  edit: (message: ChatMessage) => void;
+  /** **Again**: the request sent once more as a new message. */
+  again: (request: ChatMessage) => void;
+  /** Files wait in the composer; Again would take them along. */
+  againBlocked: boolean;
+  /** The message a search opened, outlined for a moment. */
+  highlight?: string;
+  /** Scrolls to the message a search opened once it is laid out. */
+  locateMessage: (id: string, y: number) => void;
 };
 const MobileChatContext = createContext<MobileChat | null>(null);
 export const MobileChatProvider = MobileChatContext.Provider;
@@ -84,47 +100,59 @@ export function AnswerBody({
   );
 }
 
-function UserPart({ entry: { message: m } }: PartProps) {
+function UserPart({ entry }: PartProps) {
+  const m = entry.message;
   const chat = useMobileChat();
   const tr = translate(chat.language);
   const editable = !chat.readOnly && !chat.busy && chat.online;
   return (
-    <View
-      style={[styles.message, m.attachments?.length ? { width: "85%" } : null]}
-    >
-      {m.humanTask ? (
-        <Row
-          accessible
-          accessibilityLabel={`${tr("humanTaskAttached")}: ${m.humanTask.title}`}
-          style={{ gap: 6 }}
-        >
-          <Icon name="tasks" size={14} color={t.color.text.secondary} />
-          <Text
-            role="caption"
-            tone="secondary"
-            numberOfLines={1}
-            style={{ flexShrink: 1 }}
+    <View style={{ gap: 2 }}>
+      <View
+        style={[
+          styles.message,
+          m.attachments?.length ? { width: "85%" } : null,
+        ]}
+      >
+        {m.humanTask ? (
+          <Row
+            accessible
+            accessibilityLabel={`${tr("humanTaskAttached")}: ${m.humanTask.title}`}
+            style={{ gap: 6 }}
           >
-            {m.humanTask.title}
-          </Text>
-        </Row>
-      ) : null}
-      {m.text ? <Text selectable>{m.text}</Text> : null}
-      {chat.session && m.attachments?.length ? (
-        <MobileMessageAttachments
-          session={chat.session}
-          language={chat.language}
-          files={m.attachments}
-          processing={m.processing}
-          onEdit={editable ? () => chat.reuseAttachments(m, false) : undefined}
-          onAgain={editable ? () => chat.reuseAttachments(m, true) : undefined}
-        />
-      ) : null}
+            <Icon name="tasks" size={14} color={t.color.text.secondary} />
+            <Text
+              role="caption"
+              tone="secondary"
+              numberOfLines={1}
+              style={{ flexShrink: 1 }}
+            >
+              {m.humanTask.title}
+            </Text>
+          </Row>
+        ) : null}
+        {m.text ? <Text selectable>{m.text}</Text> : null}
+        {chat.session && m.attachments?.length ? (
+          <MobileMessageAttachments
+            session={chat.session}
+            language={chat.language}
+            files={m.attachments}
+            processing={m.processing}
+            onEdit={
+              editable ? () => chat.reuseAttachments(m, false) : undefined
+            }
+            onAgain={
+              editable ? () => chat.reuseAttachments(m, true) : undefined
+            }
+          />
+        ) : null}
+      </View>
+      <MessageMeta entry={entry} align="end" />
     </View>
   );
 }
 
-function ConnectionPart({ entry: { message: m } }: PartProps) {
+function ConnectionPart({ entry }: PartProps) {
+  const m = entry.message;
   const chat = useMobileChat();
   if (m.result?.type !== "service.connection") return null;
   return (
@@ -141,11 +169,13 @@ function ConnectionPart({ entry: { message: m } }: PartProps) {
           onContinue={chat.continueWith}
         />
       ) : null}
+      <MessageMeta entry={entry} align="start" />
     </AssistantMessage>
   );
 }
 
-function OfferPart({ entry: { message: m, request, current } }: PartProps) {
+function OfferPart({ entry }: PartProps) {
+  const { message: m, request, current } = entry;
   const chat = useMobileChat();
   if (m.result?.type !== "process.offer") return null;
   const offer = m.result;
@@ -159,12 +189,14 @@ function OfferPart({ entry: { message: m, request, current } }: PartProps) {
         onReview={() => chat.reviewOffer(offer)}
         onDecline={() => request?.text && chat.declineOffer(request.text)}
       />
+      <MessageMeta entry={entry} align="start" />
     </AssistantMessage>
   );
 }
 
 /** A process drafted in chat is reviewed and saved in the web app. */
-function ProposalPart({ entry: { message: m } }: PartProps) {
+function ProposalPart({ entry }: PartProps) {
+  const m = entry.message;
   const chat = useMobileChat();
   if (m.result?.type !== "process.proposal") return null;
   const tr = translate(chat.language);
@@ -185,12 +217,14 @@ function ProposalPart({ entry: { message: m } }: PartProps) {
           onPress={() => void Linking.openURL(web).catch(() => {})}
         />
       ) : null}
+      <MessageMeta entry={entry} align="start" />
     </AssistantMessage>
   );
 }
 
 /** A skill drafted in chat is saved in the web app; here it is only named. */
-function SkillPart({ entry: { message: m } }: PartProps) {
+function SkillPart({ entry }: PartProps) {
+  const m = entry.message;
   const chat = useMobileChat();
   if (m.result?.type !== "skill.proposal") return null;
   const tr = translate(chat.language);
@@ -200,23 +234,27 @@ function SkillPart({ entry: { message: m } }: PartProps) {
       <Text role="caption" tone="secondary">
         {`${tr("skillProposalTitle")}: ${m.result.name}. ${tr("skillProposalMobile")}`}
       </Text>
+      <MessageMeta entry={entry} align="start" />
     </AssistantMessage>
   );
 }
 
 /** Answers no longer compose cards; a stored one reads as its text. */
-function DocumentPart({ entry: { message: m } }: PartProps) {
+function DocumentPart({ entry }: PartProps) {
+  const m = entry.message;
   if (m.result?.type !== "card.document") return null;
   return (
     <AssistantMessage>
       <AnswerBody message={m} />
       <Text selectable>{cardDocumentText(m.result.document)}</Text>
+      <MessageMeta entry={entry} align="start" />
     </AssistantMessage>
   );
 }
 
 /** A write waiting for the person's decision. */
-function ApprovalPart({ entry: { message: m } }: PartProps) {
+function ApprovalPart({ entry }: PartProps) {
+  const m = entry.message;
   const chat = useMobileChat();
   if (m.result?.type !== "service.action") return null;
   const result = m.result;
@@ -229,6 +267,7 @@ function ApprovalPart({ entry: { message: m } }: PartProps) {
         disabled={chat.busy || !chat.online || chat.readOnly}
         onDecide={(approved) => chat.decide(result.operationId, approved)}
       />
+      <MessageMeta entry={entry} align="start" />
     </AssistantMessage>
   );
 }
@@ -250,19 +289,19 @@ function WorkPart({ entry: { message: m } }: PartProps) {
   const work = m.workItemId ? chat.work(m.workItemId) : undefined;
   if (!work) return null;
   return (
-    <View onLayout={(e) => chat.locateWork(work.id, e.nativeEvent.layout.y)}>
-      <AssistantMessage>
-        <AnswerBody message={m} text={false} />
-        {chat.renderWork(work)}
-      </AssistantMessage>
-    </View>
+    <AssistantMessage>
+      <AnswerBody message={m} text={false} />
+      {chat.renderWork(work)}
+    </AssistantMessage>
   );
 }
 
-function AnswerPart({ entry: { message: m } }: PartProps) {
+function AnswerPart({ entry }: PartProps) {
+  const m = entry.message;
   return (
     <AssistantMessage>
       <AnswerBody message={m} />
+      <MessageMeta entry={entry} align="start" />
     </AssistantMessage>
   );
 }
@@ -284,10 +323,197 @@ export const threadParts: Record<ThreadPart, React.ComponentType<PartProps>> = {
   work: WorkPart,
 };
 
+/**
+ * One stored message: the day it starts, then its part. The wrapper reports
+ * where the message is, for a search jump and for work opened from Tasks.
+ */
 export function ThreadMessage({ entry }: PartProps) {
+  const chat = useMobileChat();
+  if (entry.part === "hidden") return null;
   const Part = threadParts[entry.part];
-  return <Part entry={entry} />;
+  const m = entry.message;
+  const highlighted = chat.highlight === m.id;
+  return (
+    <>
+      {entry.day !== undefined ? <DaySeparator day={entry.day} /> : null}
+      <View
+        testID={highlighted ? "message-highlight" : undefined}
+        onLayout={(e) => {
+          const y = e.nativeEvent.layout.y;
+          chat.locateMessage(m.id, y);
+          if (entry.part === "work" && m.workItemId)
+            chat.locateWork(m.workItemId, y);
+        }}
+      >
+        <Part entry={entry} />
+        {highlighted ? (
+          <View pointerEvents="none" style={meta.highlight} />
+        ) : null}
+      </View>
+    </>
+  );
 }
+
+/** A quiet divider where a new calendar day starts. */
+function DaySeparator({ day }: { day: number }) {
+  const chat = useMobileChat();
+  const tr = translate(chat.language);
+  const label = dayLabel(day, chat.language, {
+    today: tr("chatsToday"),
+    yesterday: tr("chatsYesterday"),
+  });
+  return (
+    <Row
+      testID="day-separator"
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={label}
+      style={{ gap: 12 }}
+    >
+      <View style={meta.rule} />
+      <Text role="meta" tone="secondary">
+        {label}
+      </Text>
+      <View style={meta.rule} />
+    </Row>
+  );
+}
+
+function MetaAction({
+  icon,
+  label,
+  disabled = false,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      hitSlop={4}
+      style={({ pressed }) => [
+        meta.action,
+        pressed && { backgroundColor: t.color.pressed },
+        disabled && { opacity: 0.4 },
+      ]}
+    >
+      <Icon name={icon} size={18} color={t.color.text.secondary} />
+    </Pressable>
+  );
+}
+
+/**
+ * Quiet actions under a message, always visible on a touch screen: the time,
+ * Copy (the message as written, an answer's Markdown too), Edit on the latest
+ * request and Again on the latest answer. History never changes.
+ */
+function MessageMeta({
+  entry,
+  align,
+}: {
+  entry: ThreadEntry;
+  align: "start" | "end";
+}) {
+  const chat = useMobileChat();
+  const tr = translate(chat.language);
+  const m = entry.message;
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const text = m.text.trim() ? m.text : "";
+  // A request with files offers Edit and Again on its files already.
+  const edit = entry.editable && m.role === "user" && !m.attachments?.length;
+  const again = entry.again;
+  const disabled = chat.busy || !chat.online || chat.readOnly;
+  if (!text && !m.createdAt) return null;
+  return (
+    <Row
+      testID="message-meta"
+      style={[
+        { gap: 2 },
+        align === "end"
+          ? { alignSelf: "flex-end" }
+          : { alignSelf: "flex-start" },
+      ]}
+    >
+      {m.createdAt ? (
+        <Text
+          role="meta"
+          tone="secondary"
+          accessibilityLabel={messageMoment(m.createdAt, chat.language)}
+          style={meta.time}
+        >
+          {messageTime(m.createdAt, chat.language)}
+        </Text>
+      ) : null}
+      {text ? (
+        <MetaAction
+          icon={copied ? "check" : "copy"}
+          label={tr(copied ? "messageCopied" : "messageCopy")}
+          onPress={() =>
+            void copyText(text).then((done) => {
+              if (done) setCopied(true);
+            })
+          }
+        />
+      ) : null}
+      {edit ? (
+        <MetaAction
+          icon="edit"
+          label={tr("messageEdit")}
+          disabled={disabled}
+          onPress={() => chat.edit(m)}
+        />
+      ) : null}
+      {again ? (
+        <MetaAction
+          icon="refresh"
+          label={tr("messageAgain")}
+          disabled={disabled || chat.againBlocked}
+          onPress={() => chat.again(again)}
+        />
+      ) : null}
+    </Row>
+  );
+}
+const meta = StyleSheet.create({
+  action: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  time: { paddingHorizontal: 4, fontVariant: ["tabular-nums"] },
+  rule: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: t.color.hairline,
+  },
+  // A search hit is outlined for a moment, without moving anything.
+  highlight: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    margin: -6,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: t.color.action.link,
+    opacity: 0.5,
+  },
+});
 
 /**
  * The answer while it is written. It is not the answer yet: the stored

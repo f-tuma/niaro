@@ -23,6 +23,7 @@ import {
   type Language,
 } from "../../packages/protocol";
 import { conversationTitle } from "../../packages/client-core/conversation-title";
+import { groupChatsByDay } from "../../packages/client-core/chat-days";
 import { translate, type TranslationKey } from "../../packages/i18n";
 import {
   chatChangeError,
@@ -528,7 +529,11 @@ function OpenChatHistory({
                   {tr("loading")}
                 </Text>
               ) : null}
-              {groupByDay(recent, language).map((group) => (
+              {groupChatsByDay(recent, language, {
+                today: tr("chatsToday"),
+                yesterday: tr("chatsYesterday"),
+                lastWeek: tr("chatsLastWeek"),
+              }).map((group) => (
                 <React.Fragment key={group.label}>
                   <SectionHeader>{group.label}</SectionHeader>
                   {group.conversations.map((conversation) => (
@@ -673,38 +678,6 @@ function chatDate(conversation: ConversationSummary, language: Language) {
         language === "cs" ? "cs-CZ" : "en-GB",
         { day: "numeric", month: "short" },
       );
-}
-/** Today, Yesterday, Previous 7 days, then by month; input stays newest first. */
-function groupByDay(
-  conversations: ConversationSummary[],
-  language: Language,
-): { label: string; conversations: ConversationSummary[] }[] {
-  const tr = translate(language);
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const day = 86_400_000;
-  const groups: { label: string; conversations: ConversationSummary[] }[] = [];
-  for (const conversation of conversations) {
-    const at = new Date(conversation.updatedAt);
-    const age = startOfToday.getTime() - at.getTime();
-    const label =
-      age <= 0
-        ? tr("chatsToday")
-        : age <= day
-          ? tr("chatsYesterday")
-          : age <= 7 * day
-            ? tr("chatsLastWeek")
-            : at.toLocaleDateString(language === "cs" ? "cs-CZ" : "en-GB", {
-                month: "long",
-                ...(at.getFullYear() === startOfToday.getFullYear()
-                  ? {}
-                  : { year: "numeric" }),
-              });
-    const last = groups.at(-1);
-    if (last?.label === label) last.conversations.push(conversation);
-    else groups.push({ label, conversations: [conversation] });
-  }
-  return groups;
 }
 /**
  * The long-press menu: the chat lifts above a dimmed menu and its actions

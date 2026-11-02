@@ -17,6 +17,9 @@ import {
   type ChatSearchFilter,
 } from "../../packages/client-core/chat-search";
 import { conversationTitle } from "../../packages/client-core/conversation-title";
+import { groupChatsByDay } from "../../packages/client-core/chat-days";
+import type { MeetingList } from "../../packages/protocol/meetings";
+import { meetingTime } from "../../packages/ui-catalog/meeting-format";
 import type { ConversationSummary, Language } from "../../packages/protocol";
 import type { ChatSearchResult } from "../../packages/protocol/chat-search";
 import { translate } from "../../packages/i18n";
@@ -115,8 +118,37 @@ type FoundRow = {
   snippet?: { text: string; ranges: readonly (readonly [number, number])[] };
   at: string;
   archived: boolean;
-  open: ConversationSummary;
+  /** A chat row opens this chat (at `messageId` when a message matched). */
+  open?: ConversationSummary;
+  messageId?: string;
+  /** A meeting row opens the meeting instead. */
+  meetingId?: string;
 };
+
+/** Meetings whose name, summary or transcript matched, as rows (at most 5). */
+export function meetingRows(list: MeetingList): FoundRow[] {
+  const matches = new Map(
+    (list.matches ?? []).map((match) => [match.meetingId, match]),
+  );
+  return list.meetings.slice(0, 5).map((meeting) => {
+    const match = matches.get(meeting.id);
+    return {
+      id: `meeting:${meeting.id}`,
+      title: meeting.title,
+      titleRanges: [],
+      snippet:
+        match && match.field !== "title"
+          ? {
+              text: `${match.at !== null ? meetingTime(match.at) + " " : ""}${match.snippet}`,
+              ranges: [],
+            }
+          : undefined,
+      at: meeting.recordedAt,
+      archived: false,
+      meetingId: meeting.id,
+    };
+  });
+}
 
 /**
  * Search in the person's chats, reached from the menu. Without words it
@@ -128,12 +160,15 @@ export function ChatSearchScreen({
   online,
   onClose,
   onOpen,
+  onOpenMeeting,
 }: {
   session: ClientSession;
   language: Language;
   online: boolean;
   onClose: () => void;
-  onOpen: (conversation: ConversationSummary) => void;
+  /** Opens a chat; at the matched message when there is one. */
+  onOpen: (conversation: ConversationSummary, messageId?: string) => void;
+  onOpenMeeting?: (meetingId: string) => void;
 }) {
   const c = copy[language];
   const tr = translate(language);
@@ -156,10 +191,12 @@ export function ChatSearchScreen({
   const [state, setState] = useState<{
     key: string;
     rows: FoundRow[];
+    /** Under All, matching meetings follow as their own group. */
+    meetings: FoundRow[];
     next: string | null;
     error?: string;
     loading: boolean;
-  }>({ key: "", rows: [], next: null, loading: true });
+  }>({ key: "", rows: [], meetings: [], next: null, loading: true });
   const reads = useRef(0);
   const titleOf = (title: string) =>
     conversationTitle(title) || tr("untitledChat");
@@ -169,7 +206,17 @@ export function ChatSearchScreen({
     try {
       let rows: FoundRow[];
       let next: string | null;
+      let meetings: Promise<FoundRow[]> = Promise.resolve([]);
       if (words) {
+        // An older server has no meeting search: the group stays empty.
+        if (
+          filter === "all" &&
+          !after &&
+          typeof session.readMeetings === "function"
+        )
+          meetings = session
+            .readMeetings({ query: words })
+            .then(meetingRows, () => []);
         const page = await session.searchConversations(words, {
           ...chatSearchOptions(filter),
           after,
@@ -188,6 +235,7 @@ export function ChatSearchScreen({
             at: best?.createdAt ?? result.conversation.updatedAt,
             archived: result.conversation.archived,
             open: summaryOf(result),
+            messageId: best?.messageId,
           };
         });
         next = page.nextAfter;
@@ -209,10 +257,12 @@ export function ChatSearchScreen({
           }));
         next = page.nextAfter;
       }
+      const found = await meetings;
       if (owner !== reads.current) return;
       setState((current) => ({
         key,
         rows: after ? [...current.rows, ...rows] : rows,
+        meetings: after ? current.meetings : found,
         next,
         loading: false,
       }));
@@ -233,6 +283,25 @@ export function ChatSearchScreen({
     void readPage.current(null);
   }, [key]);
   const shown = state.key === key || state.rows.length ? state.rows : [];
+  const meetings = state.key === key ? state.meetings : [];
+  // Without words, recent chats by day, as on the web.
+  const groups: { label?: string; rows: FoundRow[] }[] = words
+    ? [{ rows: shown }]
+    : groupChatsByDay(
+        shown.map((row) => ({ ...row, updatedAt: row.at })),
+        language,
+        {
+          today: tr("chatsToday"),
+          yesterday: tr("chatsYesterday"),
+          lastWeek: tr("chatsLastWeek"),
+        },
+      ).map((group) => ({ label: group.label, rows: group.conversations }));
+  if (meetings.length)
+    groups.push({ label: tr("searchMeetings"), rows: meetings });
+  const open = (row: FoundRow) => {
+    if (row.meetingId) onOpenMeeting?.(row.meetingId);
+    else if (row.open) onOpen(row.open, row.messageId);
+  };
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <SafeAreaView
@@ -309,67 +378,91 @@ export function ChatSearchScreen({
                 />
               ) : null}
             </View>
-          ) : !shown.length && !state.loading ? (
+          ) : !shown.length && !meetings.length && !state.loading ? (
             <EmptyState
               icon="search"
               title={words ? c.noResults : c.noChats}
               hint={words ? c.noResultsHint : undefined}
             />
           ) : null}
-          {shown.map((row) => (
-            <Pressable
-              key={row.id}
-              testID="chat-search-result"
-              accessibilityRole="button"
-              accessibilityLabel={row.title}
-              onPress={() => onOpen(row.open)}
-              style={({ pressed }) => ({
-                paddingHorizontal: 20,
-                paddingVertical: 12,
-                gap: 2,
-                backgroundColor: pressed ? t.color.pressed : "transparent",
-              })}
-            >
-              <Row
-                style={{
-                  gap: 8,
-                  ...(largeText
-                    ? ({
-                        flexDirection: "column",
-                        alignItems: "stretch",
-                      } as const)
-                    : {}),
-                }}
-              >
+          {groups.map((group, index) => (
+            <React.Fragment key={group.label ?? index}>
+              {group.label ? (
                 <Text
-                  numberOfLines={largeText ? 2 : 1}
+                  role="section"
+                  tone="secondary"
+                  accessibilityRole="header"
                   style={{
-                    flex: largeText ? undefined : 1,
-                    minWidth: 0,
-                    fontWeight: "600",
+                    paddingHorizontal: 20,
+                    paddingTop: 16,
+                    paddingBottom: 4,
                   }}
                 >
-                  <Marked text={row.title} ranges={row.titleRanges} />
-                </Text>
-                <Row style={{ gap: 8, flexWrap: "wrap" }}>
-                  {row.archived ? (
-                    <Text role="caption" tone="secondary">
-                      {c.archived}
-                    </Text>
-                  ) : null}
-                  <Text role="caption" tone="secondary">
-                    {searchDateLabel(row.at, language, {
-                      yesterday: tr("chatsYesterday"),
-                    })}
-                  </Text>
-                </Row>
-              </Row>
-              {row.snippet ? (
-                <Text role="caption" tone="secondary" numberOfLines={2}>
-                  <Marked text={row.snippet.text} ranges={row.snippet.ranges} />
+                  {group.label}
                 </Text>
               ) : null}
-            </Pressable>
+              {group.rows.map((row) => (
+                <Pressable
+                  key={row.id}
+                  testID={
+                    row.meetingId ? "chat-search-meeting" : "chat-search-result"
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={row.title}
+                  disabled={!!row.meetingId && !onOpenMeeting}
+                  onPress={() => open(row)}
+                  style={({ pressed }) => ({
+                    paddingHorizontal: 20,
+                    paddingVertical: 12,
+                    gap: 2,
+                    backgroundColor: pressed ? t.color.pressed : "transparent",
+                  })}
+                >
+                  <Row
+                    style={{
+                      gap: 8,
+                      ...(largeText
+                        ? ({
+                            flexDirection: "column",
+                            alignItems: "stretch",
+                          } as const)
+                        : {}),
+                    }}
+                  >
+                    <Text
+                      numberOfLines={largeText ? 2 : 1}
+                      style={{
+                        flex: largeText ? undefined : 1,
+                        minWidth: 0,
+                        fontWeight: "600",
+                      }}
+                    >
+                      <Marked text={row.title} ranges={row.titleRanges} />
+                    </Text>
+                    <Row style={{ gap: 8, flexWrap: "wrap" }}>
+                      {row.archived ? (
+                        <Text role="caption" tone="secondary">
+                          {c.archived}
+                        </Text>
+                      ) : null}
+                      <Text role="caption" tone="secondary">
+                        {searchDateLabel(row.at, language, {
+                          yesterday: tr("chatsYesterday"),
+                        })}
+                      </Text>
+                    </Row>
+                  </Row>
+                  {row.snippet ? (
+                    <Text role="caption" tone="secondary" numberOfLines={2}>
+                      <Marked
+                        text={row.snippet.text}
+                        ranges={row.snippet.ranges}
+                      />
+                    </Text>
+                  ) : null}
+                </Pressable>
+              ))}
+            </React.Fragment>
           ))}
           {state.next && !state.error ? (
             <View style={{ padding: 16, alignItems: "center" }}>

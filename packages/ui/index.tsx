@@ -85,6 +85,7 @@ import UsersRound from "lucide-react-native/icons/users-round";
 import Bookmark from "lucide-react-native/icons/bookmark";
 import Palette from "lucide-react-native/icons/palette";
 import Moon from "lucide-react-native/icons/moon";
+import Copy from "lucide-react-native/icons/copy";
 import { tokens as t } from "../design-tokens";
 import { useCompanionTypography } from "./typography";
 import { Entrance, MotionPressable } from "./motion";
@@ -559,6 +560,7 @@ const icons = {
   bookmark: Bookmark,
   palette: Palette,
   moon: Moon,
+  copy: Copy,
 } as const;
 export type IconName = keyof typeof icons;
 export function Icon({

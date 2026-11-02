@@ -121,9 +121,9 @@ test("tab bar navigates only on a tap and shows waiting work", () => {
     screen.getByRole("tab", { name: "Chat" }).props.accessibilityState.selected,
   ).toBe(true);
   expect(
-    screen.getByRole("tab", { name: "Práce" }).props.accessibilityValue,
+    screen.getByRole("tab", { name: "Úkoly" }).props.accessibilityValue,
   ).toEqual({ text: "3" });
-  fireEvent.press(screen.getByRole("tab", { name: "Práce" }));
+  fireEvent.press(screen.getByRole("tab", { name: "Úkoly" }));
   expect(navigate).toHaveBeenCalledWith("tasks");
   fireEvent.press(screen.getByRole("tab", { name: "Knihovna" }));
   expect(navigate).toHaveBeenLastCalledWith("library");

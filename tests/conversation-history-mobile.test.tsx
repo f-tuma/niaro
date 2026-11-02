@@ -1466,6 +1466,6 @@ test("the chat panel holds chats only; sections live in the tabs", async () => {
   await act(flush);
   expect(screen.getByText("New chat")).toBeTruthy();
   expect(screen.getByText("Search")).toBeTruthy();
-  for (const section of ["Work", "Library", "Processes", "You and Niaro"])
+  for (const section of ["Tasks", "Library", "Processes", "You and Niaro"])
     expect(screen.queryByText(section)).toBeNull();
 });

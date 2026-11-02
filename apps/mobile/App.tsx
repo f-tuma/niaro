@@ -13,6 +13,10 @@ import {
   MobileMentionSheet,
 } from "./MobileMentions";
 import type { MessageMention } from "../../packages/protocol/mentions";
+import {
+  mentionsInText,
+  messageMentions,
+} from "../../packages/client-core/mentions";
 import { VoiceServiceCard } from "../../packages/ui-catalog/VoiceServiceCard";
 import type { VoiceCapabilities } from "../../packages/protocol/voice";
 import {
@@ -479,6 +483,12 @@ export function Workspace({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState(false);
   const historyRead = useRef<AbortController | undefined>(undefined);
+  /** The message a search result opens: read until shown, then outlined. */
+  const messageTarget = useRef<
+    { conversationId: string; messageId: string; pages: number } | undefined
+  >(undefined);
+  const scrollToMessage = useRef<string | undefined>(undefined);
+  const [highlight, setHighlight] = useState<string>();
   const historyReadGeneration = useRef(0);
   const historySilent = useRef(false);
   const [tab, setTab] = useState<TaskTab>("open");
@@ -800,6 +810,9 @@ export function Workspace({
       setHeldReply(undefined);
       setAnswerCaption(undefined);
       focusWork.current = undefined;
+      messageTarget.current = undefined;
+      scrollToMessage.current = undefined;
+      setHighlight(undefined);
       historyRead.current?.abort();
       historyReadGeneration.current++;
       historySelectionRef.current = undefined;
@@ -860,8 +873,20 @@ export function Workspace({
     },
     [session, historyAfter],
   );
-  const openHistoryConversation = (selected: ConversationSummary) => {
+  const openHistoryConversation = (
+    selected: ConversationSummary,
+    messageId?: string,
+  ) => {
     switchConversation(selected.id);
+    if (messageId) {
+      // Older pages are read until the message is there (see below).
+      messageTarget.current = {
+        conversationId: selected.id,
+        messageId,
+        pages: 0,
+      };
+      nearBottom.current = false;
+    }
     setContinuedConversations((current) => ({
       ...current,
       [selected.id]: true,
@@ -871,6 +896,41 @@ export function Workspace({
     void readHistory(selected);
     if (!selected.readOnly) void session?.refresh();
   };
+  useEffect(() => {
+    const target = messageTarget.current;
+    if (
+      !target ||
+      historyLoading ||
+      !historySelection ||
+      target.conversationId !== historySelection.id ||
+      target.conversationId !== conversationRef.current
+    )
+      return;
+    if (historyMessages.some((message) => message.id === target.messageId)) {
+      messageTarget.current = undefined;
+      scrollToMessage.current = target.messageId;
+      setHighlight(target.messageId);
+      return;
+    }
+    if (historyError || !historyAfter || target.pages >= 25) {
+      messageTarget.current = undefined;
+      return;
+    }
+    target.pages++;
+    void readHistory(historySelection, true);
+  }, [
+    historyMessages,
+    historyAfter,
+    historyLoading,
+    historyError,
+    historySelection,
+    readHistory,
+  ]);
+  useEffect(() => {
+    if (!highlight) return;
+    const timer = setTimeout(() => setHighlight(undefined), 2500);
+    return () => clearTimeout(timer);
+  }, [highlight]);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<TranslationKey>();
   /** The archived chat open here returns to the menu and can go on. */
@@ -1052,7 +1112,12 @@ export function Workspace({
     value = draft,
     replyContext: VoiceReplyContext | null | undefined = context,
     draftOwnerRevision = draftRevision.current,
-    options: { withoutProcess?: true; mentions?: MessageMention[] } = {},
+    options: {
+      withoutProcess?: true;
+      mentions?: MessageMention[];
+      /** Again: the composer's draft and attached task stay where they are. */
+      detached?: true;
+    } = {},
   ) => {
     // A new attempt replaces the previous failure; a new one is set below.
     setReplyError(null);
@@ -1088,7 +1153,9 @@ export function Workspace({
     const generation = contextGeneration.current;
     const submittedDraftRevision = draftOwnerRevision;
     const task =
-      !replyContext && attachedTask?.conversationId === conversationId
+      !replyContext &&
+      !options.detached &&
+      attachedTask?.conversationId === conversationId
         ? attachedTask.task
         : undefined;
     let command;
@@ -1586,6 +1653,7 @@ export function Workspace({
     heldReply,
     anchors: workMessageAnchors,
     referencedWork,
+    readOnly: !!historySelection?.readOnly,
   });
   const trailing = trailingWork({
     work,
@@ -1627,6 +1695,52 @@ export function Workspace({
     renderWork: (w) => renderWork(w),
     work: (id) => work.find((w) => w.id === id),
     locateWork,
+    edit: (message) => {
+      if (!session || busy || !online || historySelection?.readOnly) return;
+      if (message.attachments?.length) {
+        reuseAttachmentMessage(message, false);
+        return;
+      }
+      closeVoice();
+      // Edit makes a new message; the one in the chat stays as it was.
+      setContext(undefined);
+      setDraft(message.text);
+      requestAnimationFrame(() => composerInput.current?.focus());
+    },
+    again: (request) => {
+      if (
+        !session ||
+        busy ||
+        !online ||
+        historySelection?.readOnly ||
+        attachments.state.entries.length
+      )
+        return;
+      if (request.attachments?.length) {
+        reuseAttachmentMessage(request, true);
+        return;
+      }
+      // -1 owns no draft: whatever the person is typing stays.
+      submitMessage(request.text, null, -1, {
+        detached: true,
+        mentions: messageMentions(
+          request.text,
+          mentionsInText(request.text, mentions.directory),
+        ),
+      });
+    },
+    againBlocked: attachments.state.entries.length > 0,
+    highlight,
+    locateMessage: (id, y) => {
+      if (scrollToMessage.current !== id) return;
+      scrollToMessage.current = undefined;
+      requestAnimationFrame(() =>
+        scroll.current?.scrollTo({
+          y: Math.max(0, profileContentTop.current + y - 8),
+          animated: false,
+        }),
+      );
+    },
   };
   const hasConversation = messages.length > 0 || work.length > 0;
   const pendingMessage = selectPendingChatMessage(state, conversationId);
@@ -2049,7 +2163,7 @@ export function Workspace({
                   : section === "library"
                     ? companionCopy(language).library
                     : section === "tasks"
-                      ? companionCopy(language).work
+                      ? companionCopy(language).tasks
                       : tr(section === "more" ? "settingsTitle" : section)
               }
               subtitle={statusLine}
@@ -2726,9 +2840,14 @@ export function Workspace({
           language={language}
           online={online}
           onClose={() => setSearchOpen(false)}
-          onOpen={(conversation) => {
+          onOpen={(conversation, messageId) => {
             setSearchOpen(false);
-            openHistoryConversation(conversation);
+            openHistoryConversation(conversation, messageId);
+          }}
+          onOpenMeeting={(id) => {
+            setSearchOpen(false);
+            changeSection("meetings");
+            setMeetingId(id);
           }}
         />
       ) : null}
@@ -2887,6 +3006,7 @@ export default function App() {
           attachments: true,
           attachmentId: randomUUID,
           messageResults: MOBILE_MESSAGE_RESULTS,
+          messageTimes: true,
           generativeUi: true,
           // Expo's fetch streams the body; the pet follows the web live.
           streamRequest: expoFetch as unknown as typeof fetch,

@@ -65,11 +65,11 @@ import { conversationTitle } from "../../../../packages/client-core/conversation
 import type { KeyValueStorage } from "../../../../packages/client-core/preferences";
 import { runningChat } from "../../../../packages/client-core/chat-view";
 import type { ClientSession } from "../../../../packages/client-core/session";
+import { groupChatsByDay } from "../../../../packages/client-core/chat-days";
 import {
   archivableConversation,
   type ConversationHistoryPage,
   type ConversationSummary,
-  type Language,
 } from "../../../../packages/protocol";
 import { useApp } from "./context";
 import { chatChangeError, useChatCopy, type ChatCopy } from "./chat-copy";
@@ -113,51 +113,8 @@ export function searchChats<T extends { id: string }>(
   });
 }
 
-const capitalize = (text: string) =>
-  text.charAt(0).toLocaleUpperCase() + text.slice(1);
-
-/** Today, Yesterday, Previous 7 days, then by month; input stays newest first. */
-export function groupChatsByDay(
-  conversations: ConversationSummary[],
-  language: Language,
-  labels: { today: string; yesterday: string; lastWeek: string },
-  now = new Date(),
-) {
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
-  // Calendar days, not 24-hour spans: a daylight-saving night is 23 or 25 hours.
-  const daysAgo = (n: number) => {
-    const date = new Date(startOfToday);
-    date.setDate(date.getDate() - n);
-    return date.getTime();
-  };
-  const startOfYesterday = daysAgo(1),
-    startOfLastWeek = daysAgo(7);
-  const groups: { label: string; conversations: ConversationSummary[] }[] = [];
-  for (const conversation of conversations) {
-    const date = new Date(conversation.updatedAt);
-    const at = date.getTime();
-    const label =
-      at >= startOfToday.getTime()
-        ? labels.today
-        : at >= startOfYesterday
-          ? labels.yesterday
-          : at >= startOfLastWeek
-            ? labels.lastWeek
-            : capitalize(
-                date.toLocaleDateString(language === "cs" ? "cs-CZ" : "en-GB", {
-                  month: "long",
-                  ...(date.getFullYear() === startOfToday.getFullYear()
-                    ? {}
-                    : { year: "numeric" }),
-                }),
-              );
-    const last = groups.at(-1);
-    if (last?.label === label) last.conversations.push(conversation);
-    else groups.push({ label, conversations: [conversation] });
-  }
-  return groups;
-}
+// Today, Yesterday, Previous 7 days, then months: shared with the phone.
+export { groupChatsByDay };
 
 /** The name a chat is shown under, in the sidebar and in its own header. */
 export function useChatTitle() {

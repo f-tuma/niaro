@@ -2,7 +2,7 @@ import type { Language } from "../../packages/protocol";
 
 const copy = {
   cs: {
-    work: "Práce",
+    tasks: "Úkoly",
     library: "Knihovna",
     composer: "Napiš nebo mluv…",
     composerLargeText: "Napiš…",
@@ -16,7 +16,7 @@ const copy = {
     stopSpeech: "Zastavit čtení",
   },
   en: {
-    work: "Work",
+    tasks: "Tasks",
     library: "Library",
     composer: "Type or speak…",
     composerLargeText: "Write…",

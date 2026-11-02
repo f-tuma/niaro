@@ -5,6 +5,7 @@ import type {
 } from "../../../packages/protocol";
 import { isTerminalNativeWork } from "../../../packages/client-core/store";
 import type { SessionState } from "../../../packages/client-core/session";
+import { messageDays } from "../../../packages/client-core/chat-days";
 
 /**
  * The phone's thread projection: which stored messages the chat shows and
@@ -36,6 +37,12 @@ export type ThreadEntry = {
   request?: ChatMessage;
   /** For an offer: it is the newest message of the chat. */
   current: boolean;
+  /** The calendar day this message starts (a divider precedes it). */
+  day?: number;
+  /** The latest request: **Edit** puts it back in the composer. */
+  editable?: boolean;
+  /** For the latest answer: the request **Again** sends once more. */
+  again?: ChatMessage;
 };
 
 /**
@@ -68,11 +75,52 @@ export function projectThread({
   heldReply,
   anchors,
   referencedWork,
+  readOnly = false,
+  now = new Date(),
 }: {
   messages: readonly ChatMessage[];
   /** The chat's work shown here, each with its own card. */
   work: readonly WorkItem[];
   /** A spoken reply's command: its answer appears together with the audio. */
+  heldReply?: string;
+  anchors: ReadonlyMap<string, string>;
+  referencedWork: Set<string>;
+  /** An archived chat: no Edit and no Again. */
+  readOnly?: boolean;
+  now?: Date;
+}): ThreadEntry[] {
+  const entries = parts({ messages, work, heldReply, anchors, referencedWork });
+  const shown = entries.filter((entry) => entry.part !== "hidden");
+  const days = messageDays(
+    shown.map((entry) => entry.message),
+    now,
+  );
+  shown.forEach((entry, index) => {
+    if (days[index] !== undefined) entry.day = days[index];
+  });
+  if (!readOnly) {
+    const request = shown.findLast((entry) => entry.message.role === "user");
+    if (request) request.editable = true;
+    const last = shown.at(-1);
+    if (
+      last &&
+      last.message.role === "assistant" &&
+      last.message.id === messages.at(-1)?.id
+    )
+      last.again = messages.findLast((message) => message.role === "user");
+  }
+  return entries;
+}
+
+function parts({
+  messages,
+  work,
+  heldReply,
+  anchors,
+  referencedWork,
+}: {
+  messages: readonly ChatMessage[];
+  work: readonly WorkItem[];
   heldReply?: string;
   anchors: ReadonlyMap<string, string>;
   referencedWork: Set<string>;

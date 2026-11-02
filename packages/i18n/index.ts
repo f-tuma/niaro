@@ -216,6 +216,15 @@ export const en = {
   pinChat: "Pin chat",
   unpinChat: "Unpin chat",
   chatOptions: "Chat options",
+  // NIAR-269 (phone chat): kept together for merging.
+  messageCopy: "Copy",
+  messageCopied: "Copied",
+  messageEdit: "Edit",
+  messageAgain: "Again",
+  searchMeetings: "Meetings",
+  attachmentWait: "Wait for the attachment",
+  attachmentFailedSend: "An attachment failed",
+  // end NIAR-269
   renameChat: "Rename",
   chatName: "Chat name",
   deleteChat: "Delete",
@@ -1178,6 +1187,15 @@ export const cs: Record<TranslationKey, string> = {
   pinChat: "Připnout chat",
   unpinChat: "Odepnout chat",
   chatOptions: "Možnosti chatu",
+  // NIAR-269 (phone chat): kept together for merging.
+  messageCopy: "Kopírovat",
+  messageCopied: "Zkopírováno",
+  messageEdit: "Upravit",
+  messageAgain: "Znovu",
+  searchMeetings: "Schůzky",
+  attachmentWait: "Počkej na přílohu",
+  attachmentFailedSend: "Příloha se nenahrála",
+  // end NIAR-269
   renameChat: "Přejmenovat",
   chatName: "Název chatu",
   deleteChat: "Smazat",

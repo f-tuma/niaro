@@ -421,7 +421,7 @@ export function Navigation({
             : destination.id === "meetings"
               ? tr("meetings")
               : companionCopy(language)[
-                  destination.id === "tasks" ? "work" : "library"
+                  destination.id === "tasks" ? "tasks" : "library"
                 ];
         const waiting = destination.id === "tasks" ? count : 0;
         return (
@@ -1003,6 +1003,7 @@ export function Composer({
   references,
   hasAttachments = false,
   sendBlocked = false,
+  sendBlockedReason,
   onStop,
   stopLabel,
   stopDisabled = false,
@@ -1027,6 +1028,8 @@ export function Composer({
   hasAttachments?: boolean;
   /** Transfer readiness gates Send while draft text remains editable. */
   sendBlocked?: boolean;
+  /** Why Send waits: shown above the input and read as Send's label. */
+  sendBlockedReason?: string;
   /** While an answer runs, Stop takes the microphone's place. */
   onStop?: () => void;
   stopLabel?: string;
@@ -1157,7 +1160,9 @@ export function Composer({
           <ComposerAction
             filled
             icon="arrow"
-            label={tr("send")}
+            label={
+              sendBlocked && sendBlockedReason ? sendBlockedReason : tr("send")
+            }
             loading={sending}
             disabled={disabled || sendBlocked}
             onPress={() => {
@@ -1178,6 +1183,16 @@ export function Composer({
       ]}
     >
       {references}
+      {sendBlocked && sendBlockedReason ? (
+        <Text
+          testID="composer-send-reason"
+          role="caption"
+          tone="secondary"
+          style={{ paddingHorizontal: 8, paddingTop: 4 }}
+        >
+          {sendBlockedReason}
+        </Text>
+      ) : null}
       <View
         testID="composer-input-row"
         onLayout={(event) => {

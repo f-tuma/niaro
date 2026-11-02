@@ -114,15 +114,19 @@ test("the mobile search lists recent chats, searches as one types and opens the 
   // Server text stays text; only the ranges are bold.
   expect(screen.getByText("<i>schůzku</i>", { exact: false })).toBeTruthy();
   fireEvent.press(row);
-  expect(onOpen).toHaveBeenCalledWith({
-    id: "archived-4",
-    revision: 1,
-    title: "Schůzka s Petrem",
-    createdAt: "2026-09-01T09:00:00.000Z",
-    updatedAt: "2026-09-01T09:00:00.000Z",
-    messageCount: 1,
-    readOnly: true,
-  });
+  // The chat opens at the message that matched.
+  expect(onOpen).toHaveBeenCalledWith(
+    {
+      id: "archived-4",
+      revision: 1,
+      title: "Schůzka s Petrem",
+      createdAt: "2026-09-01T09:00:00.000Z",
+      updatedAt: "2026-09-01T09:00:00.000Z",
+      messageCount: 1,
+      readOnly: true,
+    },
+    "m-1",
+  );
 
   fireEvent.press(screen.getByRole("tab", { name: "Odpovědi" }));
   await act(flush);
