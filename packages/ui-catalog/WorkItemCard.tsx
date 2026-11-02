@@ -71,6 +71,8 @@ export type WorkItemCardProps = {
   onProcessDecision?: (approved: boolean) => void;
   /** Trusted client detail control; never supplied by a server card document. */
   processOutputDetail?: React.ReactNode;
+  /** The card's own secondary action, e.g. Cancel, at its bottom right. */
+  footer?: React.ReactNode;
 };
 export function WorkItemCard({
   work,
@@ -97,6 +99,7 @@ export function WorkItemCard({
   retryUnavailable = false,
   onProcessDecision,
   processOutputDetail,
+  footer,
 }: WorkItemCardProps) {
   const tr = translate(language);
   // Catalog v1 supports only these validated types and variants, never server styles/code.
@@ -131,6 +134,18 @@ export function WorkItemCard({
     process.journalStatus === "waiting" &&
     process.detailsAvailable &&
     process.journalRevision !== undefined;
+  const reply =
+    (canReplyToProcess || input?.status === "open" || work.native?.question) &&
+    onReply &&
+    !choices ? (
+      <Button
+        variant="quiet"
+        icon="chat"
+        label={tr("replyInChat")}
+        onPress={onReply}
+        disabled={!!process && (!!stale || !!blocked)}
+      />
+    ) : null;
   return (
     <Surface
       testID={`work-${work.id}`}
@@ -331,20 +346,17 @@ export function WorkItemCard({
       retryUnavailable ? (
         <Notice>{tr("retrySourceUnavailable")}</Notice>
       ) : null}
-      {(canReplyToProcess ||
-        input?.status === "open" ||
-        work.native?.question) &&
-      onReply &&
-      !choices ? (
-        <Button
-          variant="quiet"
-          icon="chat"
-          label={tr("replyInChat")}
-          onPress={onReply}
-          disabled={!!process && (!!stale || !!blocked)}
-        />
-      ) : null}
       {processOutputDetail}
+      {reply && footer ? (
+        <Row style={{ justifyContent: "space-between", gap: 8 }}>
+          {reply}
+          {footer}
+        </Row>
+      ) : footer ? (
+        <Row style={{ justifyContent: "flex-end" }}>{footer}</Row>
+      ) : (
+        reply
+      )}
     </Surface>
   );
 }

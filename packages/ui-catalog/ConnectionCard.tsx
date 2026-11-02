@@ -112,8 +112,9 @@ export function ConnectionCard(p: ConnectionCardProps) {
           ) : null}
           <ListRow
             icon="edit"
-            label={tr(configure ? "cancel" : "connectionSettings")}
-            chevron={!configure}
+            label={tr("connectionSettings")}
+            expanded={configure}
+            chevron={false}
             onPress={() => {
               if (configure) p.onAddress(savedAddress);
               else setSavedAddress(p.address);
@@ -156,6 +157,20 @@ export function ConnectionCard(p: ConnectionCardProps) {
             disabled={busy || !p.address.trim() || !p.onBrowserSignIn}
             onPress={p.onBrowserSignIn ?? (() => {})}
           />
+          {/* Cancel sits under the action it cancels, as in the sheets. */}
+          {p.status === "pairing" || (configure && p.identity) ? (
+            <Button
+              variant="quiet"
+              label={tr("cancel")}
+              onPress={() => {
+                if (p.status === "pairing") p.onDisconnect();
+                else {
+                  p.onAddress(savedAddress);
+                  setConfigure(false);
+                }
+              }}
+            />
+          ) : null}
           {p.error &&
           !(p.status === "expired" && p.error === "auth_expired") ? (
             <Notice error>{tr(p.error)}</Notice>
@@ -166,13 +181,7 @@ export function ConnectionCard(p: ConnectionCardProps) {
           <Notice error>{tr(p.error)}</Notice>
         </ListBlock>
       ) : null}
-      {p.status === "pairing" ? (
-        <ListRow
-          label={tr("cancel")}
-          chevron={false}
-          onPress={p.onDisconnect}
-        />
-      ) : p.identity ? (
+      {p.status !== "pairing" && p.identity ? (
         <ListRow
           icon="logout"
           label={tr("signOut")}

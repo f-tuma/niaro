@@ -70,6 +70,10 @@ test("connected settings tuck pairing away and expose errors without hiding conn
   fireEvent.press(screen.getByRole("button", { name: "Change connection" }));
   expect(screen.getByLabelText("Server address")).toBeTruthy();
   expect(p.onPair).not.toHaveBeenCalled();
+  // Cancel sits under the sign-in action and restores the saved address.
+  fireEvent.press(screen.getByRole("button", { name: "Cancel" }));
+  expect(p.onAddress).toHaveBeenLastCalledWith(p.address);
+  expect(screen.queryByLabelText("Server address")).toBeNull();
 });
 test("legacy polling codes are never exposed by the new login card", () => {
   const p = props();

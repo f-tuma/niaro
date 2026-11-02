@@ -147,14 +147,22 @@ test.each(["en", "cs"] as const)(
     expect(screen.getAllByRole("button")).toHaveLength(1);
   },
 );
-test("server-reported failure leaves future work pending", () => {
+test("a failed step stays in the details while the line keeps thinking", () => {
   const activity = requestActivity();
   activity.status = "failed";
   activity.steps[1]!.status = "failed";
   render(<RequestProgressCard activity={activity} language="en" />);
+  expect(screen.queryByText("Request interrupted")).toBeNull();
+  expect(screen.getByText("Thinking")).toBeTruthy();
   expand();
-  expect(screen.getByText("Request interrupted")).toBeTruthy();
+  expect(screen.getByText(/· Stopped$/)).toBeTruthy();
   expect(screen.getByText(/· Next$/)).toBeTruthy();
+});
+test("only the request failing changes the line", () => {
+  render(
+    <RequestProgressCard activity={requestActivity()} language="en" failed />,
+  );
+  expect(screen.getByText("Request interrupted")).toBeTruthy();
   expect(
     screen.queryByTestId("progress-thinking", {
       includeHiddenElements: true,
@@ -267,7 +275,7 @@ test.each(["en", "cs"] as const)(
     expect(screen.getAllByTestId(/^progress-step-/)).toHaveLength(3);
   },
 );
-test.each(["failed", "succeeded", "unavailable"] as const)(
+test.each(["succeeded", "unavailable"] as const)(
   "workflow %s does not retain a running indicator",
   (state) => {
     const workflow: ActivityWorkflow = { step: 2, stage: "execute" };

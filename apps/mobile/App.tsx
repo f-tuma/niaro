@@ -2762,16 +2762,6 @@ export function Workspace({
                         activity={state.activity}
                         connection={state.activityConnection}
                         failed={!!state.error?.startsWith("model_")}
-                        interruptAvailable={!!state.pending}
-                        onInterrupt={() => {
-                          void session?.interruptPending();
-                        }}
-                        interruptLabel={
-                          state.error === "requestInterruptFailed"
-                            ? tr("progressInterruptRetry")
-                            : tr("progressInterrupt")
-                        }
-                        interruptDisabled={!online}
                         onRetry={
                           canRetryPending(state)
                             ? () => {
@@ -2957,6 +2947,20 @@ export function Workspace({
                   sending={Object.values(state.commandStates).includes(
                     "sending",
                   )}
+                  onStop={
+                    state.pending?.type === "message.send" &&
+                    state.pending.conversationId === conversationId
+                      ? () => {
+                          void session?.interruptPending();
+                        }
+                      : undefined
+                  }
+                  stopLabel={
+                    state.error === "requestInterruptFailed"
+                      ? tr("progressInterruptRetry")
+                      : tr("progressInterrupt")
+                  }
+                  stopDisabled={!online}
                   voice={
                     meetingRecording || attachments.state.entries.length > 0
                       ? "disabled"

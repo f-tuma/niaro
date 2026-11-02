@@ -587,7 +587,7 @@ test("an accepted response cannot clear a newer edit bound to the same old quest
   ).toBeTruthy();
 });
 
-test("settling an ordinary chat command does not invalidate microphone capture without a reply context", async () => {
+test("a running chat command offers Stop in the microphone's place until it settles", async () => {
   const f = fixture();
   await f.openReply();
   fireEvent.press(screen.getByRole("button", { name: f.tr("clearContext") }));
@@ -597,16 +597,22 @@ test("settling an ordinary chat command does not invalidate microphone capture w
   );
   fireEvent.press(screen.getByRole("button", { name: f.tr("send") }));
   const old = f.getState().pending!;
-  await act(async () => {
-    fireEvent.press(screen.getByRole("button", { name: f.tr("voice_reply") }));
-    await flush();
-  });
+  expect(
+    screen.getByRole("button", { name: f.tr("progressInterrupt") }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: f.tr("voice_reply") }),
+  ).toBeNull();
   await act(async () => {
     f.publish({
       pending: null,
       commandStates: { [commandTarget(old)]: "accepted" },
     });
     f.delivery.resolve();
+    await flush();
+  });
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: f.tr("voice_reply") }));
     await flush();
   });
   await act(async () => {

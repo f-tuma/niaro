@@ -18,7 +18,7 @@ import {
   WorkItemCard,
   type WorkItemCardProps,
 } from "../../packages/ui-catalog/WorkItemCard";
-import { Button, Notice, Row } from "../../packages/ui";
+import { Button, Notice } from "../../packages/ui";
 import {
   isCancellableWork,
   workCancelError,
@@ -307,19 +307,21 @@ function OwnedWorkItemCard({
             ? sameDecision.phase
             : props.approvalState
         }
+        footer={
+          cancellable ? (
+            <Button
+              variant="quiet"
+              size="small"
+              label={tr("cancelWork")}
+              loading={cancelling}
+              disabled={
+                props.blocked || props.stale || state.status !== "online"
+              }
+              onPress={cancel}
+            />
+          ) : undefined
+        }
       />
-      {cancellable ? (
-        <Row style={{ justifyContent: "flex-end" }}>
-          <Button
-            variant="quiet"
-            size="small"
-            label={tr("cancelWork")}
-            loading={cancelling}
-            disabled={props.blocked || props.stale || state.status !== "online"}
-            onPress={cancel}
-          />
-        </Row>
-      ) : null}
       {cancelError ? <Notice error>{tr(cancelError)}</Notice> : null}
       {retrying ? <Notice>{tr("retryingTask")}</Notice> : null}
       {retryError ? <Notice>{tr("retryTaskFailed")}</Notice> : null}

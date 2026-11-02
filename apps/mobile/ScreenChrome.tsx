@@ -889,6 +889,7 @@ function ComposerAction({
   filled,
   disabled = false,
   loading = false,
+  danger = false,
 }: {
   label: string;
   icon: IconName;
@@ -896,6 +897,8 @@ function ComposerAction({
   filled: boolean;
   disabled?: boolean;
   loading?: boolean;
+  /** Stops what is running, in the meeting recorder's red. */
+  danger?: boolean;
 }) {
   const inactive = disabled || loading;
   return (
@@ -909,15 +912,19 @@ function ComposerAction({
       style={({ pressed }) => [
         chrome.composerAction,
         {
-          backgroundColor: filled
-            ? inactive && !loading
-              ? t.color.text.disabled
+          backgroundColor: danger
+            ? pressed
+              ? t.color.action.dangerPressed
+              : t.color.action.dangerSoft
+            : filled
+              ? inactive && !loading
+                ? t.color.text.disabled
+                : pressed
+                  ? t.color.action.pressed
+                  : t.color.action.primary
               : pressed
-                ? t.color.action.pressed
-                : t.color.action.primary
-            : pressed
-              ? t.color.pressed
-              : "transparent",
+                ? t.color.pressed
+                : "transparent",
         },
       ]}
     >
@@ -927,7 +934,13 @@ function ComposerAction({
         <Icon
           name={icon}
           size={22}
-          color={filled ? t.color.text.inverse : t.color.text.secondary}
+          color={
+            danger
+              ? t.color.action.danger
+              : filled
+                ? t.color.text.inverse
+                : t.color.text.secondary
+          }
         />
       )}
     </MotionPressable>
@@ -990,6 +1003,9 @@ export function Composer({
   references,
   hasAttachments = false,
   sendBlocked = false,
+  onStop,
+  stopLabel,
+  stopDisabled = false,
 }: {
   language: Language;
   value: string;
@@ -1011,6 +1027,10 @@ export function Composer({
   hasAttachments?: boolean;
   /** Transfer readiness gates Send while draft text remains editable. */
   sendBlocked?: boolean;
+  /** While an answer runs, Stop takes the microphone's place. */
+  onStop?: () => void;
+  stopLabel?: string;
+  stopDisabled?: boolean;
 }) {
   const tr = translate(language);
   const [inputHeight, setInputHeight] = useState(44);
@@ -1019,7 +1039,7 @@ export function Composer({
   const { fontScale, width: windowWidth } = useWindowDimensions();
   const [rowWidth, setRowWidth] = useState<number | null>(null);
   const actionCount =
-    Number(!!onAttach) + Number(voice !== "hidden") + Number(typed);
+    Number(!!onAttach) + Number(voice !== "hidden" || !!onStop) + Number(typed);
   const availableWidth =
     rowWidth ?? Math.max(0, windowWidth - 2 * t.spacing.screenGutter - 14);
   const stacked =
@@ -1101,7 +1121,7 @@ export function Composer({
     />
   );
   const rightActions =
-    voice !== "hidden" || typed ? (
+    voice !== "hidden" || typed || onStop ? (
       <View
         key="right"
         style={{
@@ -1113,7 +1133,16 @@ export function Composer({
         }}
       >
         {/* Voice stays one tap away; with text it steps back for Send. */}
-        {voice !== "hidden" ? (
+        {onStop ? (
+          <ComposerAction
+            filled
+            danger
+            icon="stop"
+            label={stopLabel ?? tr("progressInterrupt")}
+            disabled={stopDisabled}
+            onPress={onStop}
+          />
+        ) : voice !== "hidden" ? (
           <ComposerAction
             filled={!typed && voice === "ready"}
             icon="mic"

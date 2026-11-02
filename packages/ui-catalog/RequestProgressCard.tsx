@@ -99,16 +99,17 @@ export function RequestProgressCard({
   const tr = translate(language);
   const [open, setOpen] = useState(false);
   const unknown = interrupted || connection === "unavailable";
-  const stopped = unknown || failed || activity?.status === "failed";
+  // A failed step the assistant recovers from stays in the details; only the
+  // request itself failing changes the line.
+  const stopped = unknown || failed;
   const live = !stopped && (voice || activity?.status !== "succeeded");
-  const title =
-    failed || activity?.status === "failed"
-      ? "progressFailed"
-      : unknown
-        ? "progressUnknown"
-        : voice
-          ? "progressVoice"
-          : "progressThinking";
+  const title = failed
+    ? "progressFailed"
+    : unknown
+      ? "progressUnknown"
+      : voice
+        ? "progressVoice"
+        : "progressThinking";
   const labels = {
     understanding: "progressUnderstanding",
     crm: "progressCrm",
