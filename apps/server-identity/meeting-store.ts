@@ -24,6 +24,7 @@ import {
   writeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import type { Readable } from "node:stream";
 import type { DatabaseSync } from "node:sqlite";
 import type { Scope } from "../../packages/protocol";
 import {
@@ -46,6 +47,7 @@ import {
   type MeetingChunkResult,
 } from "./meeting-transcript";
 import { IdentityError } from "./error";
+import { MeetingAudioArchive } from "./meeting-audio-archive";
 
 const digest = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -110,6 +112,7 @@ export function meetingTaskDetail(
 export class MeetingStore {
   readonly directory: string;
   readonly humanTasks: HumanTaskStore;
+  readonly archive: MeetingAudioArchive;
   constructor(
     private db: DatabaseSync,
     directory?: string,
@@ -133,6 +136,7 @@ export class MeetingStore {
       segment INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(id,segment)
     ) STRICT;`);
     this.humanTasks = new HumanTaskStore(db);
+    this.archive = new MeetingAudioArchive(db, (meeting) => this.path(meeting));
     // Search ignores case and accents ("stastny" finds "Šťastný").
     db.function(FOLD_FUNCTION, { deterministic: true }, (value) =>
       typeof value === "string" ? fold(value) : null,
@@ -395,21 +399,46 @@ export class MeetingStore {
       throw new IdentityError(409, "meeting_processing_busy");
     if (existsSync(this.path(meeting))) unlinkSync(this.path(meeting));
     this.db.prepare("DELETE FROM niaro_meeting_block WHERE id=?").run(id);
-    return this.save({ ...meeting, audioDeletedAt: new Date().toISOString() });
+    const next = this.save({
+      ...meeting,
+      audioDeletedAt: new Date().toISOString(),
+    });
+    this.archive.discard(id);
+    return next;
   }
-  /** The sealed sound of a meeting, for the owner's player. */
+  /**
+   * The sealed sound of a meeting, for the owner's player: from object
+   * storage once archived, else from the local file.
+   */
   audio(scope: Scope, id: string) {
     const meeting = this.get(scope, id);
     const path = this.path(meeting);
+    const found = { bytes: meeting.bytes, mimeType: meeting.mimeType };
+    if (meeting.audioDeletedAt || !meeting.sourceHash)
+      throw new IdentityError(404, "meeting_audio_not_found");
+    if (this.archive.stored(meeting))
+      return {
+        ...found,
+        open: (start: number, end: number) =>
+          this.archive.read(meeting, start, end)!,
+      };
     if (
-      meeting.audioDeletedAt ||
-      !meeting.sourceHash ||
       !existsSync(path) ||
       !lstatSync(path).isFile() ||
       lstatSync(path).size !== meeting.bytes
     )
       throw new IdentityError(404, "meeting_audio_not_found");
-    return { path, bytes: meeting.bytes, mimeType: meeting.mimeType };
+    return {
+      ...found,
+      open: (start: number, end: number): Readable =>
+        createReadStream(path, { start, end }),
+    };
+  }
+  /** The sealed sound as a local file for processing, fetched back if archived. */
+  async localAudio(meeting: Meeting) {
+    const path = this.path(meeting);
+    if (existsSync(path)) return path;
+    return this.archive.restore(meeting);
   }
   /** The record's summary, or "" for a meeting without one. */
   summary(id: string) {
@@ -691,6 +720,7 @@ export class MeetingStore {
         .prepare("DELETE FROM niaro_meeting_block WHERE id=?")
         .run(meeting.id);
       this.save({ ...meeting, audioDeletedAt: new Date(now).toISOString() });
+      this.archive.discard(meeting.id);
       deleted++;
     }
     return deleted;
@@ -821,6 +851,7 @@ export class MeetingStore {
         }),
       );
       this.update(scope, id, { status: "ready", failure: null });
+      void this.archive.kick();
       this.db
         .prepare(
           "INSERT INTO profile_meeting_source(source_id,owner,meeting_id,digest,at) VALUES(?,?,?,?,?)",
@@ -858,6 +889,7 @@ export class MeetingStore {
     this.db.prepare("DELETE FROM niaro_meeting_utterances WHERE id=?").run(id);
     this.db.prepare("DELETE FROM niaro_meeting_block WHERE id=?").run(id);
     this.db.prepare("DELETE FROM niaro_meeting WHERE id=?").run(id);
+    this.archive.discard(id);
     return { profile: MEETING_PROFILE, scope, deleted: id };
   }
   profileOwners(after = "", limit = 100) {

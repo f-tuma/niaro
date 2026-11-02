@@ -33,7 +33,8 @@ For a development checkout without containers see the
   people; the compose files set a 2 GB limit. Model calls run at the provider.
 - CPU: one or two cores.
 - Disk: the image is about 630 MB. Data grows with conversations, the activity
-  log, agent memory and meeting audio; keep 1 GB free plus room for backups.
+  log, agent memory and meeting audio (processed sound moves to object storage when
+  it is configured); keep 1 GB free plus room for backups.
 - One container per data volume. There are no replicas.
 
 ## Install with compose

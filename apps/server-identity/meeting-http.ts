@@ -1,5 +1,5 @@
 import type { IncomingMessage } from "node:http";
-import { createReadStream } from "node:fs";
+import type { Readable } from "node:stream";
 import { z } from "zod";
 import {
   MEETING_BLOCK_BYTES,
@@ -208,7 +208,7 @@ export async function meetingAudioRoute(
 ): Promise<{
   status: number;
   headers: Record<string, string>;
-  body: ReturnType<typeof createReadStream> | null;
+  body: Readable | null;
 }> {
   const [, rawId, operation] = route.split("/");
   const id = MeetingId.parse(rawId);
@@ -257,10 +257,7 @@ export async function meetingAudioRoute(
         ? { "Content-Range": `bytes ${start}-${end}/${audio.bytes}` }
         : {}),
     },
-    body:
-      req.method === "HEAD"
-        ? null
-        : createReadStream(audio.path, { start, end }),
+    body: req.method === "HEAD" ? null : audio.open(start, end),
   };
 }
 

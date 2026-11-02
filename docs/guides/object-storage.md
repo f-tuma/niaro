@@ -1,6 +1,6 @@
 # Private S3 object storage foundation
 
-NIAR-250 adds the server-side storage foundation. Attachment upload routes, chat bindings, camera UI, conversion, inference and automatic cleanup are later checkpoints. This configuration does not advertise or activate attachments. Existing text chat and meeting audio keep their current behavior.
+NIAR-250 adds the server-side storage foundation. Attachment upload routes, chat bindings, camera UI, conversion, inference and automatic cleanup are later checkpoints. This configuration does not advertise or activate attachments. Existing text chat keeps its current behavior; meeting sound moves to the store once processed (see below).
 
 The application uses one S3 adapter for RustFS, Hetzner and endpoints that pass the explicit contract suite. Only RustFS 1.0.4 has been exercised locally; no live Hetzner credentials were supplied. No provider failure selects another bucket, local files or public URLs.
 
@@ -96,7 +96,7 @@ A lost/unknown PUT response quarantines its reservation durably, including after
 
 ## Persistence, backup and verification scope
 
-Niaro's existing data-directory backup contains registry metadata but no external object bytes. Complete future attachment backup needs matched database/object snapshots, manifests and quiescence/restore verification from later tasks 4.4–4.5; those are not implemented by this checkpoint. Preserve both named volumes for local experiments, or the hosted bucket plus Niaro volume, and keep root/application secrets separately protected. Never claim that an ordinary Niaro volume backup contains S3 originals. Existing meeting recordings remain in Niaro's identity directory.
+Niaro's existing data-directory backup contains registry metadata but no external object bytes. Complete future attachment backup needs matched database/object snapshots, manifests and quiescence/restore verification from later tasks 4.4–4.5; those are not implemented by this checkpoint. Preserve both named volumes for local experiments, or the hosted bucket plus Niaro volume, and keep root/application secrets separately protected. Never claim that an ordinary Niaro volume backup contains S3 originals or archived meeting sound.
 
 Run the production tests with `npm run test:storage`. The opt-in destructive-to-its-own-synthetic-resources Docker test is:
 
@@ -175,3 +175,17 @@ all threads of a fixed chat. Diagnostics expose content-free counts and age.
 An unknown PUT remains quarantined even after missing HEAD or delayed arrival;
 it keeps quota and the location reference. Generic-S3 uncertainty reconciliation,
 quota reset, fallback originals and an operator force-release are unsupported.
+
+## Meeting sound
+
+With storage configured, a meeting's sound is uploaded and processed from the
+local `meeting-audio/` directory as before. Once the meeting is ready, the
+server checks the file against its sealed SHA-256, stores it as immutable 8 MiB
+objects under the same prefix (owner = meeting id) and removes the local copy.
+The player reads byte ranges from those objects; a later reprocessing fetches
+the sound back to disk, verifies it and drops the local copy again without a
+new upload. Deleting the sound or the meeting, or the retention sweep, queues
+the objects for deletion; failed puts or deletes retry every 30 seconds and an
+unknown put stays quarantined like any other object. Without configured
+storage the sound stays local. The part rows live in the identity database
+(`niaro_meeting_object`), the reservations in the workflow registry.

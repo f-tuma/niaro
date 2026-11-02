@@ -267,6 +267,7 @@ export type FixtureServerOptions = {
     IdentityService,
     | "attachWorkflow"
     | "attachAttachmentWorkflow"
+    | "attachObjectStorage"
     | "attachmentIdentityDirectory"
     | "mobileAccess"
     | "mobileAttachmentAccess"
@@ -368,6 +369,7 @@ export function createFixtureServer(
     storage.initializeObjectStorage(
       options.objectStorage ?? { state: "disabled" },
     );
+    options.identity?.attachObjectStorage?.(() => storage.objectStorage);
     storage.recordAttachmentOwners(
       options.identity?.attachmentIdentityDirectory() ?? null,
     );

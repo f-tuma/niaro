@@ -409,7 +409,7 @@ export class MeetingProcessor {
       "audio/mpeg": "mp3",
       "audio/ogg": "ogg",
     }[meeting.mimeType];
-    let source = this.store.path(meeting);
+    let source = await this.store.localAudio(meeting);
     // Uploaded containers cannot reference network resources or choose a demuxer.
     const probe = async () => {
       const value = JSON.parse(

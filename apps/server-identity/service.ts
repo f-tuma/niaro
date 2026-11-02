@@ -185,6 +185,7 @@ import {
 } from "./hub-scheduler";
 import type { HubOwner, HubScheduledItem } from "./hub-store";
 import { operatorLog } from "../fixture-server/operator-log";
+import type { StorageRuntime } from "../server-storage/runtime";
 import {
   HUB_FILL_CAPS,
   HUB_OPEN_CAPS,
@@ -2930,7 +2931,8 @@ export class IdentityService {
             },
             confirmedPosition: () => {
               check();
-              const { jobTitle, department } = this.pet.read(memoryActor).settings;
+              const { jobTitle, department } =
+                this.pet.read(memoryActor).settings;
               return { jobTitle, department };
             },
             sourceAccess: (source, actor) =>
@@ -3076,6 +3078,10 @@ export class IdentityService {
       restoreId?: string,
     ) => boolean;
   };
+  /** Processed meeting sound moves to the server's object storage. */
+  attachObjectStorage(storage: () => StorageRuntime) {
+    this.meetings.archive.attach(storage);
+  }
   attachAttachmentWorkflow(owner: {
     generationConversation: (
       scope: Scope,
@@ -3687,7 +3693,8 @@ export class IdentityService {
               },
               confirmedPosition: () => {
                 check();
-                const { jobTitle, department } = this.pet.read(memoryActor).settings;
+                const { jobTitle, department } =
+                  this.pet.read(memoryActor).settings;
                 return { jobTitle, department };
               },
               sourceAccess: (source, actor) =>
@@ -4489,6 +4496,7 @@ export class IdentityService {
     this.connectionKeeperAbort.abort();
     clearInterval(this.meetingSweep);
     await this.meetingProcessor.close();
+    await this.meetings.archive.close();
     await this.hosted?.close();
     for (const controller of this.executions) controller.abort();
     this.nativeRequests.abortAll();
