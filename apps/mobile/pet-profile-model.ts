@@ -8,20 +8,35 @@ import {
   useState,
 } from "react";
 import type { ClientSession } from "../../packages/client-core/session";
-import type {
-  PetProfile,
-  SavePetProfile,
+import {
+  PetProfileSchema,
+  type PetProfile,
+  type SavePetProfile,
 } from "../../packages/protocol/work-pet";
 export { profilePetAppearance as nativePetAppearance } from "../shared/pet-appearance";
 
 /** Polling interval for servers that cannot stream pet changes. */
 export const PET_PROFILE_REFRESH_MS = 30_000;
 
-export function useNativePetProfile(session: ClientSession | null) {
+/** Where the last profile waits, so the pet appears before the server answers. */
+export type PetProfileCache = {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  removeItem(key: string): Promise<void>;
+};
+const cacheKey = (session: ClientSession) =>
+  `niaro.petProfile:${session.identityKey}`;
+
+export function useNativePetProfile(
+  session: ClientSession | null,
+  cache?: PetProfileCache,
+) {
   const scope = useMemo(() => ({ session }), [session]);
   const [state, setState] = useState<{
     owner: typeof scope;
     profile: PetProfile | null;
+    /** Remembered from an earlier run; any server answer replaces it. */
+    cached?: true;
   }>();
   const [error, setError] = useState(false);
   const owner = useRef<typeof scope | null>(scope);
@@ -31,6 +46,38 @@ export function useNativePetProfile(session: ClientSession | null) {
       if (owner.current === scope) owner.current = null;
     };
   }, [scope]);
+  const remember = useCallback(
+    (profile: PetProfile | null) => {
+      if (!cache || !session) return;
+      const key = cacheKey(session);
+      void (async () =>
+        profile
+          ? cache.setItem(key, JSON.stringify(profile))
+          : cache.removeItem(key))().catch(() => {});
+    },
+    [cache, session],
+  );
+  // The remembered profile stands in only until the server has answered.
+  useEffect(() => {
+    if (!cache || !session) return;
+    let current = true;
+    const key = cacheKey(session);
+    void (async () => cache.getItem(key))()
+      .then((stored) => {
+        if (!current || !stored || owner.current !== scope) return;
+        const parsed = PetProfileSchema.safeParse(JSON.parse(stored));
+        if (parsed.success)
+          setState((previous) =>
+            previous?.owner === scope
+              ? previous
+              : { owner: scope, profile: parsed.data, cached: true },
+          );
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [cache, session, scope]);
   const request = useRef(0);
   const read = useCallback(async () => {
     if (!session) return;
@@ -38,19 +85,22 @@ export function useNativePetProfile(session: ClientSession | null) {
     setError(false);
     try {
       const profile = await session.petProfile();
-      if (owner.current === scope && request.current === ticket)
+      if (owner.current === scope && request.current === ticket) {
+        remember(profile);
         setState((previous) =>
           previous?.owner === scope &&
+          !previous.cached &&
           previous.profile &&
           profile &&
           previous.profile.revision > profile.revision
             ? previous
             : { owner: scope, profile },
         );
+      }
     } catch {
       if (owner.current === scope && request.current === ticket) setError(true);
     }
-  }, [session, scope]);
+  }, [session, scope, remember]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronize the session-owned remote profile and its loading state.
     void read();
@@ -136,8 +186,10 @@ export function useNativePetProfile(session: ClientSession | null) {
       if (!profile) throw Error("unsupported");
       // An acknowledgement supersedes every read already in flight.
       request.current++;
+      remember(profile);
       setState((previous) =>
         previous?.owner === scope &&
+        !previous.cached &&
         previous.profile &&
         profile &&
         previous.profile.revision > profile.revision

@@ -591,3 +591,54 @@ test("native profile follows the server's pet events live", async () => {
   AppState.currentState = state;
   subscribe.mockRestore();
 });
+test("the remembered pet shows before the server answers, and the server's answer replaces it", async () => {
+  jest
+    .spyOn(AppState, "addEventListener")
+    .mockReturnValue({ remove: jest.fn() } as never);
+  const stored = new Map<string, string>([
+    [
+      'niaro.petProfile:["TEST"]',
+      JSON.stringify({
+        ...profile,
+        revision: 5,
+        settings: { ...profile.settings, name: "Remembered" },
+      }),
+    ],
+  ]);
+  const cache = {
+    getItem: jest.fn(async (key: string) => stored.get(key) ?? null),
+    setItem: jest.fn(async (key: string, value: string) => {
+      stored.set(key, value);
+    }),
+    removeItem: jest.fn(async (key: string) => {
+      stored.delete(key);
+    }),
+  };
+  let finish!: (value: Profile) => void;
+  const session = {
+    identityKey: '["TEST"]',
+    petProfile: jest.fn(
+      () =>
+        new Promise<Profile>((resolve) => {
+          finish = resolve;
+        }),
+    ),
+  } as unknown as ClientSession;
+  let model!: ReturnType<typeof useNativePetProfile>;
+  function Probe() {
+    const current = useNativePetProfile(session, cache);
+    useEffect(() => {
+      model = current;
+    });
+    return null;
+  }
+  render(<Probe />);
+  await waitFor(() => expect(model.profile?.settings.name).toBe("Remembered"));
+  // An older server revision still wins over the remembered one.
+  await act(async () => {
+    finish({ ...profile, revision: 1 });
+  });
+  expect(model.profile?.revision).toBe(1);
+  expect(model.profile?.settings.name).toBe("Niaro");
+  expect(JSON.parse(stored.get('niaro.petProfile:["TEST"]')!).revision).toBe(1);
+});

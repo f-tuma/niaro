@@ -353,7 +353,7 @@ export function Workspace({
     },
     [publishProfileBounds],
   );
-  const petProfile = useNativePetProfile(session);
+  const petProfile = useNativePetProfile(session, AsyncStorage);
   const petScreen = usePetScreen();
   const [petScreenOwner, setPetScreenOwner] = useState<ClientSession | null>(
     null,
