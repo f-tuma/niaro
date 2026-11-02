@@ -6,6 +6,13 @@ const microphonePermission = audioSpike
   : "Allow Niaro to record a voice request or meeting only after you press Record.";
 const config: ExpoConfig = {
   name: audioSpike ? "Agent Client Audio Spike" : "Niaro",
+  // EAS builds the store app; the isolated audio spike is not part of it.
+  ...(audioSpike
+    ? {}
+    : {
+        owner: "f-tuma",
+        extra: { eas: { projectId: "aa95554b-6570-4024-90e9-d96b2ff9c335" } },
+      }),
   slug: audioSpike ? "agent-client-audio" : "niaro",
   version: "0.1.0",
   scheme: audioSpike ? "agentclient-audio" : "niaro",
@@ -25,6 +32,8 @@ const config: ExpoConfig = {
   },
   android: {
     package: audioSpike ? "dev.agentclient.demo.audio" : "dev.ftuma.niaro",
+    // Google Play needs a higher number for every upload.
+    versionCode: 1,
     adaptiveIcon: {
       foregroundImage: "./assets/application/mark.png",
       monochromeImage: "./assets/application/mark.png",

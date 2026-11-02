@@ -33,3 +33,9 @@ __pycache__/
 *.pyc
 
 dist-admin/
+
+# Android upload key settings for EAS local credentials; never commit.
+credentials.json
+*.jks
+*.keystore
+!android/app/debug.keystore
