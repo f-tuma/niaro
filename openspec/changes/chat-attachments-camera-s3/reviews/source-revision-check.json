@@ -1,0 +1,181 @@
+{
+  "checked_utc": "2026-10-30T10:25:20.129980+00:00",
+  "canonical_input_drift": [],
+  "reviewed_source_hashes": [
+    {
+      "path": "Dockerfile",
+      "reviewed_sha256": "24ffb60fd27126adf6e6369fe57ba6d070656c0e8adf4cbd687ebaf1b9c964c2",
+      "current_sha256": "24ffb60fd27126adf6e6369fe57ba6d070656c0e8adf4cbd687ebaf1b9c964c2",
+      "unchanged": true
+    },
+    {
+      "path": "README.md",
+      "reviewed_sha256": "7a0256341a6c47bd87ff530c3fb82145285ae16f49d79ad21eb8fa5c0be93503",
+      "current_sha256": "7a0256341a6c47bd87ff530c3fb82145285ae16f49d79ad21eb8fa5c0be93503",
+      "unchanged": true
+    },
+    {
+      "path": "apps/fixture-server/model-service.ts",
+      "reviewed_sha256": "194693a870bd1db5b51d37de54fd47dd87bf2cc41bbf8122aacf6f5bfff66240",
+      "current_sha256": "194693a870bd1db5b51d37de54fd47dd87bf2cc41bbf8122aacf6f5bfff66240",
+      "unchanged": true
+    },
+    {
+      "path": "apps/fixture-server/storage.ts",
+      "reviewed_sha256": "73da64ca6347e00541656af1cf6d26b0de5b79f84b1cc3917df84d21123b0358",
+      "current_sha256": "73da64ca6347e00541656af1cf6d26b0de5b79f84b1cc3917df84d21123b0358",
+      "unchanged": true
+    },
+    {
+      "path": "apps/mobile/App.tsx",
+      "reviewed_sha256": "90794848f9d82e5af27bb9a2149deb8523ea050b6958dadd91ad530a44dbef9a",
+      "current_sha256": "90794848f9d82e5af27bb9a2149deb8523ea050b6958dadd91ad530a44dbef9a",
+      "unchanged": true
+    },
+    {
+      "path": "apps/mobile/ScreenChrome.tsx",
+      "reviewed_sha256": "6863c7e8c463e525bb83b101d6708d754b273f2129e01b979162125e0cf6a5e0",
+      "current_sha256": "6863c7e8c463e525bb83b101d6708d754b273f2129e01b979162125e0cf6a5e0",
+      "unchanged": true
+    },
+    {
+      "path": "apps/mobile/meeting-device.ts",
+      "reviewed_sha256": "cd741195c6f205b7a48e569f4a8b4f511fa7a6b025d8578e89ef15ecd7341a35",
+      "current_sha256": "cd741195c6f205b7a48e569f4a8b4f511fa7a6b025d8578e89ef15ecd7341a35",
+      "unchanged": true
+    },
+    {
+      "path": "apps/reference-server/cli.ts",
+      "reviewed_sha256": "781e478594ced735454048a642dc8cc1223e2d58d44f8159d72f2f771abc8972",
+      "current_sha256": "781e478594ced735454048a642dc8cc1223e2d58d44f8159d72f2f771abc8972",
+      "unchanged": true
+    },
+    {
+      "path": "apps/reference-server/config.ts",
+      "reviewed_sha256": "8b8c79167d2c4b11394907e0f974a3263319bed10eb2365773d61e3e9b154d7d",
+      "current_sha256": "8b8c79167d2c4b11394907e0f974a3263319bed10eb2365773d61e3e9b154d7d",
+      "unchanged": true
+    },
+    {
+      "path": "apps/server-admin/web/app/chat-next/chat-next-page.tsx",
+      "reviewed_sha256": "be530fe18a9e837a898ad58936ccfc595fa33ffc03e519304b25bcbbb72a96b2",
+      "current_sha256": "be530fe18a9e837a898ad58936ccfc595fa33ffc03e519304b25bcbbb72a96b2",
+      "unchanged": true
+    },
+    {
+      "path": "apps/server-agent/runtime.ts",
+      "reviewed_sha256": "9a73a383935d30a306dd9d01748f3346bfd6af163660893ff0f2709c974f2f6b",
+      "current_sha256": "9a73a383935d30a306dd9d01748f3346bfd6af163660893ff0f2709c974f2f6b",
+      "unchanged": true
+    },
+    {
+      "path": "apps/server-identity/inference-budget.ts",
+      "reviewed_sha256": "1b55bfc8e1933c567ed7e12a5e9a11d62d8d4a3c5bf73a485cd64ca13ef289c2",
+      "current_sha256": "1b55bfc8e1933c567ed7e12a5e9a11d62d8d4a3c5bf73a485cd64ca13ef289c2",
+      "unchanged": true
+    },
+    {
+      "path": "apps/server-identity/meeting-http.ts",
+      "reviewed_sha256": "805af325480452ddcad2e23b68834ec12788bb06040f0e2a04fd29a03a786786",
+      "current_sha256": "805af325480452ddcad2e23b68834ec12788bb06040f0e2a04fd29a03a786786",
+      "unchanged": true
+    },
+    {
+      "path": "apps/server-identity/meeting-store.ts",
+      "reviewed_sha256": "317baf4208604e289c613d8b7b95dd9e789d17c3473c0e75e99df3511299eb34",
+      "current_sha256": "317baf4208604e289c613d8b7b95dd9e789d17c3473c0e75e99df3511299eb34",
+      "unchanged": true
+    },
+    {
+      "path": "apps/server-identity/memory.ts",
+      "reviewed_sha256": "120978b200aec3dcc12af5f6132140530a9fec325ce7a5f43d9809e89ae78b3a",
+      "current_sha256": "120978b200aec3dcc12af5f6132140530a9fec325ce7a5f43d9809e89ae78b3a",
+      "unchanged": true
+    },
+    {
+      "path": "apps/server-integrations/mastra-model.ts",
+      "reviewed_sha256": "b4d01f7074dc547c12b16452cf2303d3c6b242eb2aee9240ba46e3402cbbe4f3",
+      "current_sha256": "b4d01f7074dc547c12b16452cf2303d3c6b242eb2aee9240ba46e3402cbbe4f3",
+      "unchanged": true
+    },
+    {
+      "path": "apps/server-integrations/models.ts",
+      "reviewed_sha256": "a5918f22b13d894dd3446436fc4c490d1faf28e8c27282128119c30f2b9fca43",
+      "current_sha256": "a5918f22b13d894dd3446436fc4c490d1faf28e8c27282128119c30f2b9fca43",
+      "unchanged": true
+    },
+    {
+      "path": "apps/server-integrations/transport.ts",
+      "reviewed_sha256": "daae07327c1f3cfaae0e2662156b34c8dd699caebd55cea2d13ed9475b51901d",
+      "current_sha256": "daae07327c1f3cfaae0e2662156b34c8dd699caebd55cea2d13ed9475b51901d",
+      "unchanged": true
+    },
+    {
+      "path": "compose.dokploy.yml",
+      "reviewed_sha256": "9c9c094f1f2b060c33a08558fb570fcc3d5446f5308e76783e71404075911361",
+      "current_sha256": "9c9c094f1f2b060c33a08558fb570fcc3d5446f5308e76783e71404075911361",
+      "unchanged": true
+    },
+    {
+      "path": "compose.yml",
+      "reviewed_sha256": "9c2a1a47c4a61452efae288ba3825f6b1e1ea923ca4b9a876c5d89e233ae1644",
+      "current_sha256": "9c2a1a47c4a61452efae288ba3825f6b1e1ea923ca4b9a876c5d89e233ae1644",
+      "unchanged": true
+    },
+    {
+      "path": "packages/client-core/session.ts",
+      "reviewed_sha256": "460e2cf950f0a3f88f4ad205d2204239185744bb8d3d1874208f85be7c87576b",
+      "current_sha256": "460e2cf950f0a3f88f4ad205d2204239185744bb8d3d1874208f85be7c87576b",
+      "unchanged": true
+    },
+    {
+      "path": "packages/openui-library/follow-up.ts",
+      "reviewed_sha256": "1e15b3754c62809c52e7060509770f2d3decd2c1443b068e0b0a7f719ee54d09",
+      "current_sha256": "1e15b3754c62809c52e7060509770f2d3decd2c1443b068e0b0a7f719ee54d09",
+      "unchanged": true
+    },
+    {
+      "path": "packages/protocol/index.ts",
+      "reviewed_sha256": "936cfe634eaf358f0e2f053c0226b16046c2c5b7800970d946503c1c703fa534",
+      "current_sha256": "936cfe634eaf358f0e2f053c0226b16046c2c5b7800970d946503c1c703fa534",
+      "unchanged": true
+    },
+    {
+      "path": "packages/protocol/server-settings.ts",
+      "reviewed_sha256": "4fa12cc95533aa458569532af81bd90461db4d1463427bbffa2f53efca124902",
+      "current_sha256": "4fa12cc95533aa458569532af81bd90461db4d1463427bbffa2f53efca124902",
+      "unchanged": true
+    },
+    {
+      "path": "packages/protocol/service-catalog.ts",
+      "reviewed_sha256": "75278ef8d09633588494f48b2f510a57fd1321ebc280d0d348bf47fe2ede42bb",
+      "current_sha256": "75278ef8d09633588494f48b2f510a57fd1321ebc280d0d348bf47fe2ede42bb",
+      "unchanged": true
+    },
+    {
+      "path": "packages/ui-catalog/GenerativeUiView.tsx",
+      "reviewed_sha256": "facaf635226fddc42b44f8d97b04aa127895557bef765b69a021bb00a9f9424a",
+      "current_sha256": "facaf635226fddc42b44f8d97b04aa127895557bef765b69a021bb00a9f9424a",
+      "unchanged": true
+    },
+    {
+      "path": "packages/ui-catalog/generative-ui-components.tsx",
+      "reviewed_sha256": "cfdf89b9f22f7c970393f0fba0aa048c9803cc8043ce4fe3eb7673c9683379a7",
+      "current_sha256": "cfdf89b9f22f7c970393f0fba0aa048c9803cc8043ce4fe3eb7673c9683379a7",
+      "unchanged": true
+    },
+    {
+      "path": "packages/ui-catalog/generative-ui-runtime.ts",
+      "reviewed_sha256": "a85d93c6a2f5bd6d76c0991053dae9379698c7e7c5586f901361356a99e836f0",
+      "current_sha256": "a85d93c6a2f5bd6d76c0991053dae9379698c7e7c5586f901361356a99e836f0",
+      "unchanged": true
+    },
+    {
+      "path": "scripts/backup.mjs",
+      "reviewed_sha256": "235c8a5d1598f722ed912fecfeb6146eac482e4b6b2fc552b23747f68db252ce",
+      "current_sha256": "235c8a5d1598f722ed912fecfeb6146eac482e4b6b2fc552b23747f68db252ce",
+      "unchanged": true
+    }
+  ],
+  "missing_report_links": []
+}

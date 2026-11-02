@@ -1,0 +1,43 @@
+{
+  "completed_stages": [
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "fresh_reviewers_completed": 9,
+  "canonical_files_unchanged": true,
+  "source_drift": [],
+  "missing_links": [],
+  "reports": [
+    {
+      "path": "zoom_out_report.md",
+      "sha256": "1f1243990f4d723d1196c16cf6c662895d53ea608ab5be59d72aa9160619a6c6"
+    },
+    {
+      "path": "comprehension_report.md",
+      "sha256": "60eefdc48e648361215ab95e4d784b3f0420b433ab70ce767763212dfeef8f4b"
+    },
+    {
+      "path": "critic_report.md",
+      "sha256": "6084f1728b6584bfada3051409c3fa7a9c08d918eca86a5e3075f479ad9fe7c8"
+    },
+    {
+      "path": "intermediate_zoom_out_report.md",
+      "sha256": "5aa0acd5283fedc172d70e31532e42c648e4f36097ec610f1eb68b30196a0062"
+    },
+    {
+      "path": "implementation_readiness_report.md",
+      "sha256": "4dbc630d383b67c58515ff8dbb2bf3d6066437c019b4365e40a94a1c2926f8d8"
+    },
+    {
+      "path": "consolidated_review_report.md",
+      "sha256": "42fc2b33c3de28fd123e95d0755da1f3c567130ca735542bcb7798f5bfc32f29"
+    },
+    {
+      "path": "external-source-checks.md",
+      "sha256": "a8bd688695fbd8c21b2d57735526952329d7dba5b79977d1d2f919fabcbc8251"
+    }
+  ]
+}

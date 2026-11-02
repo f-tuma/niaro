@@ -1,0 +1,62 @@
+{
+  "captured_utc": "2026-10-30T10:03:03.628193+00:00",
+  "head": "260b1eef413dc3e6295ef9776c2a5ea868a8ef0f",
+  "scope": "canonical planning inputs and project instructions; working-tree bytes, not HEAD alone",
+  "files": [
+    {
+      "path": "openspec/changes/chat-attachments-camera-s3/design.md",
+      "sha256": "f0a0bc02f4d95c39fbb3ef386e8fb5c6317ddceee213bb07be4cb54bb64f6344",
+      "bytes": 19774
+    },
+    {
+      "path": "openspec/changes/chat-attachments-camera-s3/proposal.md",
+      "sha256": "32979ed43dd485d5c5409ed0a7b94bcb5d80f797d6d3b8cebc80d172021d0ab9",
+      "bytes": 3640
+    },
+    {
+      "path": "openspec/changes/chat-attachments-camera-s3/tasks.md",
+      "sha256": "69d056fd3f6e8550afde974be24986a9ccde3647c0c9cfe9649ff82ffb1de8d0",
+      "bytes": 12431
+    },
+    {
+      "path": "openspec/changes/chat-attachments-camera-s3/specs/chat/spec.md",
+      "sha256": "b594cfe8f5be2a4803e941919040b2c0c21c067a7648d341ccdac8e88d4b7094",
+      "bytes": 3263
+    },
+    {
+      "path": "openspec/changes/chat-attachments-camera-s3/specs/deployment/spec.md",
+      "sha256": "fcc5e257dfeee7964be09b1d58fdb828130050472efc751d5d03d6aa52a6427d",
+      "bytes": 4787
+    },
+    {
+      "path": "openspec/changes/chat-attachments-camera-s3/specs/message-attachments/spec.md",
+      "sha256": "4b8e23ceab5964a5dcb77281b5bc87575ac8b473c210cc95f326b210628687b7",
+      "bytes": 8242
+    },
+    {
+      "path": "openspec/changes/chat-attachments-camera-s3/specs/models-and-providers/spec.md",
+      "sha256": "8fe258048e92806d06ee0d580afb8601446c106895f3bb9fdac979975b006099",
+      "bytes": 2548
+    },
+    {
+      "path": "openspec/changes/chat-attachments-camera-s3/specs/object-storage/spec.md",
+      "sha256": "bd9a7e317cb2b301b6be58d4c231e606c42ffb47c7392d2150cc526c7b7552e0",
+      "bytes": 4891
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "8546a8187adffa9324860e130d0c1cc2340b5e77a96a8f8021427cbc79812bb4",
+      "bytes": 3720
+    },
+    {
+      "path": "docs/architecture.md",
+      "sha256": "e635ef4de37465d8d6a216a05790682b9de6328ab864abcbb99ad185e73976c3",
+      "bytes": 10858
+    },
+    {
+      "path": ".spec-pilot.json",
+      "sha256": "b40ffbcae7db2f1c8326ae63658430fc4acb3d8eec23bda7e6492ff94e9a3b05",
+      "bytes": 2112
+    }
+  ]
+}

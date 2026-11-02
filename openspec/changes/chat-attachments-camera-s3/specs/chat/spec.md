@@ -11,17 +11,32 @@ Receipts of a deleted chat SHALL stay for idempotency without what the person wr
 
 ### Requirement: Message actions
 
-Each message SHALL offer copy (an answer as its Markdown); the latest answer SHALL offer **Again**, which resends the request before it as a new message, and the latest request SHALL offer **Edit**, which puts it back in the composer. History SHALL never change. Read-only chats SHALL offer no edit. Again and Edit SHALL select available owned files through a new draft/binding without modifying the earlier request; unavailable files SHALL require resolution before sending.
+Each message SHALL offer copy on every client (an answer as its Markdown), next to the time it was stored when the server sent one; the latest answer SHALL offer **Again**, which resends the request before it as a new message, and the latest request SHALL offer **Edit**, which puts it back in the composer, both with its available owned files through a new draft without modifying the earlier request. History SHALL never change.
 
 #### Scenario: Again
 
 - **WHEN** the person presses **Again** on the latest answer
 - **THEN** the request before it is sent again as a new message and the earlier answer stays
 
+#### Scenario: Copy on the phone
+
+- **WHEN** the person presses **Copy** under an answer in the mobile app
+- **THEN** the answer's text is on the clipboard and the button reads "Copied" for a moment
+
+#### Scenario: Again keeps the draft
+
+- **WHEN** the person has typed a new message and presses **Again** on the latest answer
+- **THEN** the earlier request is sent again and the typed text stays in the composer
+
+#### Scenario: Edit sends nothing
+
+- **WHEN** the person presses **Edit** on the latest request
+- **THEN** its text is in the composer and nothing is sent until the person sends it
+
 #### Scenario: Edit with a file
 
 - **WHEN** the person edits the latest request containing a file
-- **THEN** its text and attachment selection return to the composer without modifying the earlier message
+- **THEN** its text and attachment selection return to the composer without modifying the earlier message, and an unavailable file must be resolved before sending
 
 ## ADDED Requirements
 

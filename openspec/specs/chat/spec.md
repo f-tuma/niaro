@@ -214,6 +214,20 @@ A write that needs the person's decision SHALL appear in the chat as an approval
 - **WHEN** the person approves a card whose work item revision changed
 - **THEN** the server answers `revision_conflict` and runs nothing
 
+#### Scenario: Phone and web agree
+
+- **WHEN** the same pending write is shown on the web and on the phone
+- **THEN** both show Decline before Approve, right-aligned, with the same labels
+
+### Requirement: Approval card footer
+
+On every client the approval card SHALL end with **Decline** and then **Approve**, right-aligned, with Approve as the only primary action. The decline action SHALL be labelled "Decline" / "Odmítnout", never with the word that closes a sheet, and a declined card SHALL read "Declined" / "Odmítnuto".
+
+#### Scenario: Declined card
+
+- **WHEN** the person declines a pending write
+- **THEN** the card reads "Declined" / "Odmítnuto"
+
 ### Requirement: Composer
 
 The composer SHALL refuse to send more than 4,000 characters. Enter SHALL send, Shift+Enter SHALL break a line and Esc SHALL stop a running answer; Ctrl/Cmd+Shift+O SHALL start a new chat and Ctrl/Cmd+K SHALL open search. `@` SHALL open a picker of what the person can tag (see `skills`). A button SHALL jump back to the end of a long chat.
@@ -239,12 +253,36 @@ A message SHALL carry an open item from Tasks the person brought to the chat as 
 
 ### Requirement: Message actions
 
-Each message SHALL offer copy (an answer as its Markdown); the latest answer SHALL offer **Again**, which resends the request before it as a new message, and the latest request SHALL offer **Edit**, which puts it back in the composer. History SHALL never change. Read-only chats SHALL offer no edit.
+Each message SHALL offer copy on every client (an answer as its Markdown), next to the time it was stored when the server sent one; the latest answer SHALL offer **Again**, which resends the request before it as a new message, and the latest request SHALL offer **Edit**, which puts it back in the composer. History SHALL never change.
 
 #### Scenario: Again
 
 - **WHEN** the person presses **Again** on the latest answer
 - **THEN** the request before it is sent again as a new message and the earlier answer stays
+
+#### Scenario: Copy on the phone
+
+- **WHEN** the person presses **Copy** under an answer in the mobile app
+- **THEN** the answer's text is on the clipboard and the button reads "Copied" for a moment
+
+#### Scenario: Again keeps the draft
+
+- **WHEN** the person has typed a new message and presses **Again** on the latest answer
+- **THEN** the earlier request is sent again and the typed text stays in the composer
+
+#### Scenario: Edit sends nothing
+
+- **WHEN** the person presses **Edit** on the latest request
+- **THEN** its text is in the composer and nothing is sent until the person sends it
+
+### Requirement: Message action limits
+
+Again SHALL leave the composer's draft, attached files and attached task as they are. Read-only chats SHALL offer no edit and no again. On touch screens the message actions SHALL always be visible.
+
+#### Scenario: Read-only chat
+
+- **WHEN** the person opens a read-only chat
+- **THEN** its messages offer copy but no Edit and no Again
 
 ### Requirement: Archive screens
 
@@ -272,3 +310,120 @@ The web app SHALL keep chat caches, unsent drafts and credentials only in page m
 
 - **WHEN** the person reloads the chat page
 - **THEN** no chat content or credential is read from browser storage
+
+### Requirement: Readable answers
+
+The answer renderers of the web app and the mobile app SHALL render Markdown from the parsed syntax tree without raw HTML: headings as headings on a two-step scale, the first row of a table as its header row, and code blocks with a visible **Copy code** action that copies the block's text. HTML in an answer SHALL stay text and remote images SHALL NOT be fetched.
+
+#### Scenario: Table answer
+
+- **WHEN** an answer contains a Markdown table
+- **THEN** its first row is rendered as column headers
+
+#### Scenario: Copy code
+
+- **WHEN** the person presses **Copy code** on a code block
+- **THEN** exactly the block's text is copied and the action reads "Copied" for a moment
+
+#### Scenario: HTML in an answer
+
+- **WHEN** an answer contains `<script>`
+- **THEN** it is shown as text and nothing runs
+
+### Requirement: Chat reading size
+
+The web chat transcript and composer SHALL use 14 px text with a 22 px line height; cards, generated UI and the rest of the app SHALL keep the console's 13 px density.
+
+#### Scenario: Long answer
+
+- **WHEN** an answer of several paragraphs is shown in the web chat
+- **THEN** its prose is 14 px with a 22 px line height and a card beside it keeps 13 px
+
+### Requirement: Long requests fold
+
+In the web chat a request taller than 12 lines SHALL be folded with a **Show more** control that expands it and **Show less** that folds it again, except when it is the target of a search jump. Answers, attachments and cards SHALL NOT fold.
+
+#### Scenario: Pasted e-mail
+
+- **WHEN** the person sends a request of 40 lines
+- **THEN** it shows 12 lines and **Show more**
+
+#### Scenario: Search jump
+
+- **WHEN** the person opens that request from a search result
+- **THEN** it is shown whole
+
+### Requirement: Finished answers are announced
+
+When an answer is stored, the web chat SHALL announce "Answer ready" and the answer's first paragraph once, through one polite status region that is always present; it SHALL NOT announce streamed text or answers that were already stored when the chat was opened.
+
+#### Scenario: Same answer twice
+
+- **WHEN** two consecutive answers have the same text
+- **THEN** both are announced
+
+#### Scenario: Opening a chat
+
+- **WHEN** the person opens a chat with stored answers
+- **THEN** nothing is announced
+
+### Requirement: Chat header
+
+The web chat page SHALL start with one line holding the chat's name and a `…` menu with **Rename**, **Pin**, **Archive** and **Delete**, the same actions and confirmations as the chat's sidebar row, whether or not the sidebar is visible. A chat that cannot be archived SHALL offer no Archive; a new chat that is not saved yet and an archived chat SHALL show no menu.
+
+#### Scenario: Collapsed sidebar
+
+- **WHEN** the person collapses the sidebar and opens the chat's `…` menu
+- **THEN** they can rename, pin, archive or delete the chat from there
+
+#### Scenario: Delete from the header
+
+- **WHEN** the person chooses **Delete** in the header
+- **THEN** the chat is deleted only after they confirm, and the app leaves the chat
+
+### Requirement: Copied and Undo confirmations
+
+The web app SHALL confirm a copy with a short "Copied" toast and offer **Undo** after archiving a chat ("Chat archived"), which restores the chat and reopens it when it was open. The toast SHALL be used for nothing else: never for errors, approvals or questions. One toast SHALL be shown at a time and SHALL be announced politely to screen readers.
+
+#### Scenario: Undo an archive
+
+- **WHEN** the person archives the open chat and presses **Undo**
+- **THEN** the chat is restored, listed again and opened
+
+#### Scenario: Error
+
+- **WHEN** archiving a chat fails
+- **THEN** the error is shown where the action was pressed and no toast appears
+
+### Requirement: Days in chats
+
+Clients SHALL group the chat list and divide a chat's messages by local calendar days, never by 24-hour spans, with the same rules on every client: the list groups **Today**, **Yesterday**, **Previous 7 days**, then months (with the year when it is not the current one, the month starting with a capital), and inside a chat a divider names the day ("Today", "Yesterday", or the weekday and date) where a new day starts. Messages without a stored time SHALL start no divider.
+
+#### Scenario: Daylight-saving night
+
+- **WHEN** a chat was last active at 00:30 on the day the clocks went back, and the list is opened the next morning
+- **THEN** the chat is under **Yesterday** on the web and on the phone
+
+#### Scenario: Czech month heading
+
+- **WHEN** the app is in Czech and a chat is older than seven days, from September of this year
+- **THEN** it is under the heading "Září"
+
+#### Scenario: Divider in a chat
+
+- **WHEN** a chat has messages from yesterday and from today
+- **THEN** a divider "Yesterday" precedes the first of yesterday's messages and "Today" the first of today's
+
+### Requirement: Attachments wait before sending
+
+The composer SHALL NOT send while an attachment is still being prepared, uploaded or checked, or when one failed. Each attachment chip SHALL show its own state (preparing, uploading, checking, ready or failed, with a retry when the upload can be retried). The mobile app SHALL also say why Send waits, above the composer and in the Send button's label.
+
+#### Scenario: Slow upload
+
+- **WHEN** a photo is still uploading
+- **THEN** Send is disabled and its label says the attachment is not ready
+
+#### Scenario: Failed upload
+
+- **WHEN** an attachment failed to upload
+- **THEN** Send stays disabled, the phone composer says an attachment failed and the chip shows the failure

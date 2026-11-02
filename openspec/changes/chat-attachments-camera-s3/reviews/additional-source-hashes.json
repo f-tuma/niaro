@@ -1,0 +1,46 @@
+{
+  "captured_utc": "2026-10-30T10:20:32.298058+00:00",
+  "basis": "Additional source files inspected in the completed reviewer reports or coordinator checks; full files hashed, inspection may be excerpted.",
+  "files": [
+    {
+      "path": "apps/reference-server/config.ts",
+      "sha256": "8b8c79167d2c4b11394907e0f974a3263319bed10eb2365773d61e3e9b154d7d"
+    },
+    {
+      "path": "apps/reference-server/cli.ts",
+      "sha256": "781e478594ced735454048a642dc8cc1223e2d58d44f8159d72f2f771abc8972"
+    },
+    {
+      "path": "apps/reference-server/runtime.ts",
+      "sha256": "c4e1dce42a3057ec149afe796abffcf6e486bfb58a3ec936aaab18a0e73c91c3"
+    },
+    {
+      "path": "apps/server-hosting/sandbox.ts",
+      "sha256": "5542cd978edde974f5c6823b9dbfd2a447da815424c69199f1ce8fbf2077e4a6"
+    },
+    {
+      "path": "apps/fixture-server/speech-queue.ts",
+      "sha256": "20a3f1ec46fba533b129197545db1304ce9c55747df80e4ced5f7b0f79d9c64e"
+    },
+    {
+      "path": "apps/server-identity/meeting-processing.ts",
+      "sha256": "3fbbd4bb2579a23366cd741383ead87b4689b7a7d4a58aeb48d386866ade6c48"
+    },
+    {
+      "path": "scripts/restore.mjs",
+      "sha256": "2187488b83316178c4aac04f5c220be1b8862508ef192eff62e74458221aab36"
+    },
+    {
+      "path": "scripts/backup-common.mjs",
+      "sha256": "a70f727072e3946eee1b5c7200c41edf35bb3c1913a9246629f6188599e35be3"
+    },
+    {
+      "path": ".env.example",
+      "sha256": "c1869a674c49807df713285ea245ddd46f92495306cc01d0f72a26c4ee3a4ed0"
+    },
+    {
+      "path": "docs/guides/deployment.md",
+      "sha256": "25874b00e7d5d8efe4e0c228d53458e1c8ad4464c8a5192d55a0b6c9383dc5fd"
+    }
+  ]
+}

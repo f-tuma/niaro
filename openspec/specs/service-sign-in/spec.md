@@ -282,3 +282,36 @@ The web app's Connections screen SHALL list the services acting under the person
 
 - **WHEN** a service needs personal sign-in but its OAuth is not complete
 - **THEN** the service shows as not set up and cannot be connected
+
+#### Scenario: Company CRM
+
+- **WHEN** the CRM runs on a company account and the member may run two of its reads
+- **THEN** the member sees it under "Company account" with "2 reads" and no sign-in action
+
+#### Scenario: Reads with the company account, changes with the person's
+
+- **WHEN** a service requires personal sign-in for changes only
+- **THEN** its row and page say that reading uses the company account and changes use the person's account
+
+#### Scenario: Own activity only
+
+- **WHEN** a colleague's assistant read the CRM after the member's last read
+- **THEN** the member sees their own last read time, not the colleague's
+
+### Requirement: Company-account services in Connections
+
+Connections SHALL also list, read-only and in its own **Company account** group, every enabled service the person may use that runs only on the company's account, from the member service projection (`service-catalog`). A company-account service SHALL offer no sign-in, switch or approval choice; its page SHALL list the reads and changes the person may run and say that an administrator sets them. The phone SHALL render the same groups from the same projection.
+
+#### Scenario: Company CRM
+
+- **WHEN** the CRM runs on a company account
+- **THEN** the member sees it under Company account with no sign-in action
+
+### Requirement: Own read history in Connections
+
+Every service in Connections SHALL say whose account its reads and its changes use and SHALL show only the person's own last successful read and last failure. When the member service projection cannot be loaded, the sign-ins SHALL stay usable.
+
+#### Scenario: Someone else's failure
+
+- **WHEN** a colleague's read of a company service failed
+- **THEN** the person's Connections does not show that failure
