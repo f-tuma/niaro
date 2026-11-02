@@ -1565,8 +1565,9 @@ export function createFixtureServer(
         if (!synthesizer) throw new SpeechError("speech_unavailable", 503);
         const request = SpeechRequestSchema.parse(await body(req, 4096));
         const readText = () => {
+          // Only the selected chat carries its messages in a snapshot.
           const message = storage
-            .snapshot(session.scope)
+            .snapshot(session.scope, request.conversationId)
             .conversations.find((c) => c.id === request.conversationId)
             ?.messages.find((m) => m.id === request.messageId);
           if (!message || message.role !== "assistant")

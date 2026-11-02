@@ -10,6 +10,7 @@ import { SPEECH_PROFILE } from "../packages/protocol/speech";
 import {
   AUTH_PROFILE,
   PROFILE,
+  CONVERSATION_PROJECTION_PROFILE,
   CredentialSchema,
   SnapshotSchema,
 } from "../packages/protocol";
@@ -157,6 +158,45 @@ test("speech is scoped, assistant-only, read-only and rejects arbitrary client t
       (await s.json("voice/speech", request, other.accessToken)).status,
     ).toBe(409);
     expect(synthesize).toHaveBeenCalledTimes(1);
+  } finally {
+    await s.close();
+  }
+});
+test("a reply in a chat other than the first one can be read aloud", async () => {
+  const synthesize = jest.fn(async (_text, _language, _signal, guard) => {
+    await guard(() => {});
+    return { mimeType: "audio/wav" as const, base64: "AAAA" };
+  });
+  const s = await setup({ model: "TEST reader", synthesize });
+  try {
+    const path = `commands?chats=${CONVERSATION_PROJECTION_PROFILE}`;
+    expect(
+      (
+        await s.call(path, {
+          type: "conversation.create",
+          conversationId: "TEST-second",
+          commandId: "TEST-new",
+          idempotencyKey: "TEST-new",
+        })
+      ).status,
+    ).toBe(202);
+    const sent = await s.call(path, {
+      ...messageCommand("Choose Peter", "en", "second"),
+      conversationId: "TEST-second",
+    });
+    const conversation = SnapshotSchema.parse(
+      sent.value.snapshot,
+    ).conversations.find((c) => c.id === "TEST-second")!;
+    const message = conversation.messages.find((m) => m.role === "assistant")!;
+    const response = await s.call("voice/speech", {
+      profile: SPEECH_PROFILE,
+      requestId: "r",
+      language: "en",
+      conversationId: conversation.id,
+      messageId: message.id,
+    });
+    expect(response.status).toBe(200);
+    expect(synthesize.mock.calls[0]![0]).toBe(message.text);
   } finally {
     await s.close();
   }
