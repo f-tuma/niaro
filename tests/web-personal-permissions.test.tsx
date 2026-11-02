@@ -6,11 +6,13 @@ import type {
   PersonalSignIn,
 } from "../packages/protocol/service-oauth";
 import type { Service } from "../packages/protocol/service-catalog";
+import type { MemberService } from "../packages/protocol/member-services";
 import type { ServiceResult } from "../packages/protocol/service-result";
 import { ConnectionDetailPage } from "../apps/server-admin/web/app/connection-detail";
 import { ConnectionsPage } from "../apps/server-admin/web/app/connections-page";
 import { signInDetails } from "../apps/server-admin/web/app/connections-page";
 import { menuCopy } from "../apps/server-admin/web/app/menu-copy";
+import { memberServicesCopy } from "../apps/server-admin/web/app/member-services-copy";
 import { ServiceActionView } from "../apps/server-admin/web/app/chat-cards";
 import { ServiceActionList } from "../apps/server-admin/web/service-action-list";
 import { OwnServicesPolicy } from "../apps/server-admin/web/catalog-services";
@@ -109,7 +111,37 @@ jest.mock("@admin/components/ui/toggle-group", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/field", () => host(), { virtual: true });
 jest.mock("@admin/components/ui/empty", () => host(), { virtual: true });
 jest.mock("@admin/components/console/status", () => host(), { virtual: true });
-jest.mock("@admin/components/console/forms", () => host(), { virtual: true });
+// Detail lists show their labels and values, like the page does.
+jest.mock(
+  "@admin/components/console/forms",
+  () => {
+    const React = jest.requireActual<typeof import("react")>("react");
+    return jest
+      .requireActual<
+        typeof import("./helpers/web-hosts")
+      >("./helpers/web-hosts")
+      .hostModule({
+        DetailList: ({
+          items,
+        }: {
+          items: { label: string; value: React.ReactNode }[];
+        }) =>
+          React.createElement(
+            "dl",
+            { "data-host": "DetailList" },
+            items.map((item) =>
+              React.createElement(
+                React.Fragment,
+                { key: item.label },
+                React.createElement("dt", null, item.label),
+                React.createElement("dd", null, item.value),
+              ),
+            ),
+          ),
+      });
+  },
+  { virtual: true },
+);
 jest.mock("@admin/components/console/disclosure", () => host(), {
   virtual: true,
 });
@@ -258,10 +290,16 @@ const permissions = (
   ],
   ...patch,
 });
-function serve(view: PersonalServicePermissions, list = [signIn]) {
+function serve(
+  view: PersonalServicePermissions,
+  list = [signIn],
+  members: MemberService[] = [],
+) {
   mockApi.mockImplementation(async (path: string, body: unknown) => {
     if (path === "identity/catalog/oauth/list")
       return { ...mockTarget, services: list };
+    if (path === "identity/catalog/member/services")
+      return { ...mockTarget, services: members };
     if (path === "identity/catalog/oauth/permissions") return view;
     if (path === "identity/catalog/oauth/permissions/save") {
       const input = body as {
@@ -412,6 +450,131 @@ describe("Connections → service detail", () => {
         ([path]) => path === "identity/catalog/oauth/permissions",
       ),
     ).toBe(false);
+  });
+});
+
+describe("Connections: where Niaro reads for you", () => {
+  const company: MemberService = {
+    serviceId: "svc-crm",
+    name: "Firemní CRM",
+    icon: "users",
+    iconSource: "custom",
+    own: false,
+    reads: {
+      account: "company",
+      actions: [
+        { id: "crm-1", name: "Najít kontakt", description: "Hledá v CRM" },
+        { id: "crm-2", name: "Číst obchody", description: "" },
+      ],
+    },
+    changes: {
+      account: "company",
+      actions: [{ id: "crm-3", name: "Upravit kontakt", description: "" }],
+    },
+    signIn: null,
+    lastRead: { at: 1_000 },
+    lastFailure: { at: 2_000, kind: "connection" },
+  };
+  const mail: MemberService = {
+    serviceId: "svc-mail",
+    name: "Pošta",
+    icon: "mail",
+    iconSource: "custom",
+    own: false,
+    reads: { account: "own", actions: [] },
+    changes: { account: "own", actions: [] },
+    signIn: "connected",
+    lastRead: { at: 3_000 },
+    lastFailure: null,
+  };
+
+  test("company-account services are listed read-only beside the person's own sign-ins", async () => {
+    serve(permissions(), [signIn], [mail, company]);
+    const { root } = await render(<ConnectionsPage />);
+    const page = text(root);
+    expect(page).toContain("Tvůj účet");
+    expect(page).toContain("Firemní účet");
+    expect(page).toContain("Pošta");
+    const rows = root.findAll(
+      (node) =>
+        node.type === "div" && node.props["data-testid"] === "company-service",
+    );
+    expect(rows).toHaveLength(1);
+    const row = text(rows[0]!);
+    expect(row).toContain("Firemní CRM");
+    expect(row).toContain("2 čtení, 1 změna");
+    // The failure is newer than the last read, so the row says so.
+    expect(row).toContain("Chyba");
+    // Company account: no sign-in, no switches, no menu.
+    expect(rows[0]!.findAll((node) => node.type === "button")).toHaveLength(0);
+    expect(rows[0]!.findAll((node) => node.type === "a")[0]!.props.href).toBe(
+      "/connections/svc-crm",
+    );
+    // The own-account row shows the person's last read.
+    expect(page).toContain("Čteno");
+  });
+
+  test("a company-account service opens read-only, with the person's own activity", async () => {
+    serve(permissions(), [], [{ ...company, serviceId: "svc-mail" }]);
+    const { root } = await render(<ConnectionDetailPage />);
+    const page = text(root);
+    expect(page).toContain("Firemní CRM");
+    expect(byHost(root, "Badge").map(text)).toEqual(["Firemní účet"]);
+    expect(page).toContain("Nastavuje správce.");
+    expect(page).toContain("Najít kontakt");
+    expect(page).toContain("Upravit kontakt");
+    expect(page).toContain("Tvoje aktivita");
+    expect(page).toContain("Spojení selhalo");
+    expect(byHost(root, "Switch")).toHaveLength(0);
+    expect(byHost(root, "Select")).toHaveLength(0);
+    expect(byHost(root, "MoreActions")).toHaveLength(0);
+    expect(root.findAll((node) => node.type === "button")).toHaveLength(0);
+    // Its permissions are not the person's to read or save.
+    expect(
+      mockApi.mock.calls.some(
+        ([path]) => path === "identity/catalog/oauth/permissions",
+      ),
+    ).toBe(false);
+  });
+
+  test("an own-account service says whose account reads and changes use", async () => {
+    serve(
+      permissions({ requiredFor: "writes" }),
+      [{ ...signIn, requiredFor: "writes" }],
+      [{ ...mail, reads: { account: "company", actions: [] }, lastRead: null }],
+    );
+    const { root } = await render(<ConnectionDetailPage />);
+    expect(byHost(root, "Badge").map(text)).toEqual([
+      "Čtení: firemní účet",
+      "Změny: tvůj účet",
+    ]);
+    expect(text(root)).toContain("Naposledy čteno");
+    expect(text(root)).toContain("Zatím ne");
+    expect(text(root)).toContain("Žádná");
+  });
+
+  test("the sign-ins stay when the person's projection does not load", async () => {
+    serve(permissions());
+    const fallback = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation(async (path: string, body: unknown) => {
+      if (path === "identity/catalog/member/services")
+        throw new Error("offline");
+      return fallback(path, body);
+    });
+    const { root } = await render(<ConnectionsPage />);
+    expect(text(root)).toContain("Pošta");
+    expect(text(root)).not.toContain("Firemní účet");
+  });
+
+  test("EN and CS copy have the same keys", () => {
+    const keys = (value: object): string[] =>
+      Object.entries(value).flatMap(([key, entry]) =>
+        typeof entry === "object"
+          ? keys(entry as object).map((inner) => `${key}.${inner}`)
+          : [key],
+      );
+    expect(keys(memberServicesCopy.cs)).toEqual(keys(memberServicesCopy.en));
+    expect(memberServicesCopy.en.accountCompanyTitle).toBe("Company account");
   });
 });
 

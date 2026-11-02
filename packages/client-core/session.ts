@@ -118,6 +118,7 @@ import {
   MentionDirectorySchema,
   type MentionDirectory,
 } from "../protocol/mentions";
+import { MemberServiceList } from "../protocol/member-services";
 import {
   PROCESS_OUTPUT_PROFILE,
   PROCESS_OUTPUT_WORK_PROFILE,
@@ -1383,6 +1384,20 @@ export class ClientSession {
     )
       throw new Error("invalid_payload");
     return directory;
+  }
+  /** The services the person may use, whose account each reads and changes
+   * with, and their own last read and failure. Null on a server without it. */
+  async readMemberServices(
+    signal?: AbortSignal,
+  ): Promise<MemberServiceList | null> {
+    if (!this.authorized) await this.authorize();
+    const { response, value } = await this.json("services", { signal });
+    if (response.status === 404 || response.status === 405) return null;
+    if (!response.ok) throw new Error("connection_failed");
+    const list = MemberServiceList.parse(value);
+    if (list.workspaceId !== this.credential.scope.workspaceId)
+      throw new Error("invalid_payload");
+    return list;
   }
   private async petRequest(
     path: string,

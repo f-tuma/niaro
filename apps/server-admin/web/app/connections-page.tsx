@@ -33,7 +33,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@admin/components/ui/item";
-import { PageHeader } from "@admin/components/console/page";
+import { PageHeader, Section } from "@admin/components/console/page";
 import { StatusDot, type Tone } from "@admin/components/console/status";
 import { EntityIcon } from "@admin/components/console/entity-icon";
 import { ConfirmAction, MoreActions } from "@admin/components/console/forms";
@@ -50,6 +50,14 @@ import { useAppCopy } from "./copy";
 import { useMenuCopy, type MenuCopy } from "./menu-copy";
 import { MenuPage } from "./menu-page";
 import { OwnServices } from "./own-services";
+import type { MemberService } from "../../../../packages/protocol/member-services";
+import {
+  CompanyServices,
+  ServiceActivityMeta,
+  companyServices,
+  useMemberServices,
+} from "./member-services";
+import { useMemberServicesCopy } from "./member-services-copy";
 
 /** A sign-in in another tab is given ten minutes, like the server's attempt. */
 const ATTEMPT_MS = 10 * 60_000;
@@ -209,15 +217,26 @@ function SignIns({
 }) {
   const copy = useMenuCopy();
   const appCopy = useAppCopy();
+  const accounts = useMemberServicesCopy();
   const { query, services, busy, waiting, error, connect } = useSignIns(
     session,
     workspace,
   );
+  // Where the assistant reads for the person: accounts, permitted actions and
+  // their own last outcomes. A failure here leaves the sign-ins as they are.
+  const members = useMemberServices(workspace);
+  const projected = new Map(
+    (members.data?.services ?? []).map((service) => [
+      service.serviceId,
+      service,
+    ]),
+  );
+  const company = companyServices(members.data?.services ?? []);
   return (
     <MenuPage>
       <PageHeader
         title={appCopy.connections}
-        count={services.length || undefined}
+        count={services.length + company.length || undefined}
       />
       {error && (
         <Alert variant="destructive">
@@ -243,22 +262,26 @@ function SignIns({
           <Skeleton className="h-32 w-full" />
         </div>
       ) : services.length ? (
-        <Card variant="list">
-          {services.map((service) => (
-            <SignInRow
-              key={service.serviceId}
-              service={service}
-              workspace={workspace}
-              copy={copy}
-              busy={busy === service.serviceId}
-              disabled={!!busy}
-              waiting={
-                waiting.has(service.serviceId) && service.status !== "connected"
-              }
-              onConnect={() => connect(service)}
-            />
-          ))}
-        </Card>
+        <Section title={accounts.accountOwnTitle}>
+          <Card variant="list">
+            {services.map((service) => (
+              <SignInRow
+                key={service.serviceId}
+                service={service}
+                projected={projected.get(service.serviceId)}
+                workspace={workspace}
+                copy={copy}
+                busy={busy === service.serviceId}
+                disabled={!!busy}
+                waiting={
+                  waiting.has(service.serviceId) &&
+                  service.status !== "connected"
+                }
+                onConnect={() => connect(service)}
+              />
+            ))}
+          </Card>
+        </Section>
       ) : (
         <Empty variant="outline">
           <EmptyHeader>
@@ -269,6 +292,7 @@ function SignIns({
           </EmptyHeader>
         </Empty>
       )}
+      <CompanyServices services={company} workspace={workspace} />
       <OwnServices workspace={workspace} />
     </MenuPage>
   );
@@ -276,6 +300,7 @@ function SignIns({
 
 function SignInRow({
   service,
+  projected,
   workspace,
   copy,
   busy,
@@ -284,6 +309,9 @@ function SignInRow({
   onConnect,
 }: {
   service: PersonalSignIn;
+  /** The person's view of the service: whose account reads, their own
+   * last outcomes. */
+  projected?: MemberService;
   workspace: AppWorkspace;
   copy: MenuCopy;
   busy: boolean;
@@ -291,6 +319,7 @@ function SignInRow({
   waiting: boolean;
   onConnect(): void;
 }) {
+  const accounts = useMemberServicesCopy();
   const state = signInState(service, copy);
   const details = signInDetails(service, copy);
   // A missing sign-in is the next step, so it stays on the row; everything
@@ -314,6 +343,10 @@ function SignInRow({
                 {waiting ? copy.connectionWaiting : state.label}
               </StatusDot>
               {details.length > 0 && <span>{details.join(" · ")}</span>}
+              {projected?.reads.account === "company" && (
+                <span>{accounts.readsCompany}</span>
+              )}
+              {projected && <ServiceActivityMeta service={projected} />}
             </span>
           </ItemDescription>
         </ItemContent>

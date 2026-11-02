@@ -50,6 +50,7 @@ import {
   autoConfigureOAuth,
   handleServiceOAuth,
 } from "./service-oauth-controller";
+import { memberServices } from "./member-services";
 import { refreshOAuthToken } from "../server-integrations/service-oauth";
 import { actionFailure } from "../server-integrations/failures";
 import type { ActionFailure } from "../../packages/protocol/action-failure";
@@ -1003,6 +1004,21 @@ export class CatalogController {
               actor.userId,
             ),
           });
+        });
+      }
+      if (path === "/member/services") {
+        // Read-only and personal: what the assistant may read and change for
+        // this person, under whose account, and their own last outcomes.
+        const target = CatalogTarget.parse(payload);
+        if (!context.session)
+          throw new IdentityError(403, "identity_account_required");
+        const session = context.session;
+        return await context.serial(async () => {
+          const actor = await context.actor(target),
+            user = await session();
+          if (actor.userId !== user.userId)
+            throw new IdentityError(403, "identity_forbidden");
+          return memberServices(this.store, target, actor);
         });
       }
       if (path === "/personal/command")

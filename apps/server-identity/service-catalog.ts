@@ -192,6 +192,7 @@ export class ServiceCatalogStore {
     CREATE TABLE IF NOT EXISTS agent_catalog_routing (workspace_id TEXT PRIMARY KEY REFERENCES agent_workspace(id) ON DELETE CASCADE, revision INTEGER NOT NULL, data TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS agent_provider_usage (provider_id TEXT NOT NULL, day TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(provider_id,day)) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_invocation (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, data TEXT NOT NULL) STRICT;
+    CREATE INDEX IF NOT EXISTS agent_service_invocation_person ON agent_service_invocation(workspace_id,user_id);
     CREATE TABLE IF NOT EXISTS agent_service_turn (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, data TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_attachment_binding(command_key TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,user_id TEXT NOT NULL,handoff_id TEXT NOT NULL UNIQUE,outer_key TEXT NOT NULL UNIQUE,proof_id TEXT UNIQUE,fingerprint TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_turn_operation (operation_id TEXT PRIMARY KEY, turn_id TEXT NOT NULL REFERENCES agent_service_turn(id), workspace_id TEXT NOT NULL, user_id TEXT NOT NULL) STRICT;
@@ -1741,6 +1742,46 @@ export class ServiceCatalogStore {
         "INSERT INTO agent_service_invocation VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
       )
       .run(value.id, value.workspaceId, value.userId, JSON.stringify(value));
+  }
+  /**
+   * The person's own last successful read and last failure per service, from
+   * their receipts only. Never inputs, results or messages.
+   */
+  serviceActivity(organizationId: string, workspaceId: string, userId: string) {
+    const rows = this.db
+      .prepare(
+        `SELECT service, status, MAX(at) AS at, kind FROM (
+          SELECT json_extract(data,'$.serviceId') AS service,
+            json_extract(data,'$.status') AS status,
+            json_extract(data,'$.effect') AS effect,
+            json_extract(data,'$.completedAt') AS at,
+            json_extract(data,'$.failure.kind') AS kind
+          FROM agent_service_invocation
+          WHERE workspace_id=? AND user_id=? AND json_extract(data,'$.organizationId')=?
+        ) WHERE at > 0 AND ((status='succeeded' AND effect='read') OR status='failed')
+        GROUP BY service, status`,
+      )
+      .all(workspaceId, userId, organizationId);
+    const activity = new Map<
+      string,
+      {
+        lastRead?: number;
+        lastFailure?: { at: number; kind: ActionFailure["kind"] };
+      }
+    >();
+    for (const row of rows) {
+      const service = String(row.service),
+        at = Number(row.at);
+      if (!Number.isSafeInteger(at)) continue;
+      const entry = activity.get(service) ?? {};
+      if (row.status === "succeeded") entry.lastRead = at;
+      else {
+        const kind = ActionFailureSchema.shape.kind.safeParse(row.kind);
+        entry.lastFailure = { at, kind: kind.success ? kind.data : "unknown" };
+      }
+      activity.set(service, entry);
+    }
+    return activity;
   }
   /** Names only from this author's bound successful turn; inputs/results never leave the receipt store. */
   profileUsedActions(

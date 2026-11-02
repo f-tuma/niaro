@@ -64,6 +64,13 @@ import {
   signInState,
   useSignIns,
 } from "./connections-page";
+import {
+  AccountBadges,
+  CompanyServiceDetail,
+  ServiceActivitySection,
+  companyServices,
+  useMemberServices,
+} from "./member-services";
 
 /** Search appears once a list is long enough to need it. */
 const SEARCH_FROM = 8;
@@ -98,12 +105,26 @@ function ConnectionDetail({
   const service = signIns.services.find((s) => s.serviceId === serviceId);
   const own = useOwnServices(workspace);
   const mine = own.services.find((s) => s.id === serviceId);
+  const members = useMemberServices(workspace);
+  const projected = members.data?.services.find(
+    (s) => s.serviceId === serviceId,
+  );
   const back = { to: "/connections" as const, label: appCopy.connections };
   if (!service && mine)
     return (
       <OwnServiceDetail
         service={mine}
         own={own}
+        workspace={workspace}
+        back={back}
+      />
+    );
+  // Read with the company's account: nothing to sign in to or switch.
+  const company = projected && companyServices([projected])[0];
+  if (!service && company)
+    return (
+      <CompanyServiceDetail
+        service={company}
         workspace={workspace}
         back={back}
       />
@@ -127,7 +148,11 @@ function ConnectionDetail({
         </Alert>
       </MenuPage>
     );
-  if (signIns.query.isPending || own.query.isPending)
+  if (
+    signIns.query.isPending ||
+    own.query.isPending ||
+    (!service && members.isPending)
+  )
     return (
       <MenuPage>
         <div role="status" aria-label={appCopy.loading}>
@@ -171,6 +196,7 @@ function ConnectionDetail({
                 {details.join(" · ")}
               </span>
             )}
+            {projected && <AccountBadges service={projected} />}
           </>
         }
         actions={
@@ -208,6 +234,7 @@ function ConnectionDetail({
         workspace={workspace}
         serviceId={service.serviceId}
       />
+      {projected && <ServiceActivitySection service={projected} />}
     </MenuPage>
   );
 }
@@ -228,6 +255,9 @@ function OwnServiceDetail({
   const copy = useMenuCopy();
   const navigate = useNavigate();
   const state = ownServiceState(service, copy);
+  const projected = useMemberServices(workspace).data?.services.find(
+    (s) => s.serviceId === service.id,
+  );
   return (
     <MenuPage>
       <PageHeader
@@ -285,6 +315,7 @@ function OwnServiceDetail({
           owner={{ service, own }}
         />
       )}
+      {projected && <ServiceActivitySection service={projected} />}
     </MenuPage>
   );
 }

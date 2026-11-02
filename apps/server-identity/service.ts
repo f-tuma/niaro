@@ -180,6 +180,8 @@ import {
   MentionDirectorySchema,
   type MentionDirectory,
 } from "../../packages/protocol/mentions";
+import type { MemberServiceList } from "../../packages/protocol/member-services";
+import { memberServices } from "./member-services";
 import { createHub, type Hub, type HubRunOutcome } from "./hub";
 import type { HubFillCredential, HubLaunch } from "./hub-runner";
 import {
@@ -2766,6 +2768,25 @@ export class IdentityService {
             })),
         });
       return this.mentionDirectory(actor, scope);
+    });
+  }
+  /** The app's "where Niaro reads for you": the person's own projection of
+   * the services they may use, read-only. */
+  mobileMemberServices(
+    header: string | undefined,
+    workspaceId: string,
+    serverId: string,
+  ): Promise<MemberServiceList> {
+    return this.serial(async () => {
+      const { actor } = this.appActor(header, workspaceId, serverId);
+      return memberServices(
+        this.catalog.store,
+        {
+          organizationId: actor.organizationId,
+          workspaceId: actor.workspaceId,
+        },
+        { userId: actor.userId, role: actor.role },
+      );
     });
   }
   private mentionDirectory(actor: SkillActor, scope: Scope): MentionDirectory {

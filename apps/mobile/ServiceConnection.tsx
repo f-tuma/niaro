@@ -4,6 +4,8 @@ import type { ClientSession } from "../../packages/client-core/session";
 import type { Language } from "../../packages/protocol";
 import type { ServiceConnectionCard as ConnectionResult } from "../../packages/protocol/service-oauth";
 import { ServiceConnectionCard } from "../../packages/ui-catalog/ServiceConnectionCard";
+import type { MemberService } from "../../packages/protocol/member-services";
+import { MemberServicesView } from "../../packages/ui-catalog/MemberServicesView";
 import {
   ConnectionFlow,
   type ConnectionPlatform,
@@ -108,6 +110,47 @@ export function ServiceConnection({
               }
             }
       }
+    />
+  );
+}
+
+/**
+ * Where Niaro reads for the person: the services they may use, under whose
+ * account, and their own last read and failure, as the server projects it.
+ * Read-only; nothing here signs in or changes a choice. A server without the
+ * projection shows nothing.
+ */
+export function MemberServices({
+  session,
+  language,
+}: {
+  session: ClientSession;
+  language: Language;
+}) {
+  const [result, setResult] = useState<{
+    session: ClientSession;
+    value: readonly MemberService[] | null | "failed";
+  }>();
+  useEffect(() => {
+    const controller = new AbortController();
+    void session.readMemberServices(controller.signal).then(
+      (list) => {
+        if (!controller.signal.aborted)
+          setResult({ session, value: list?.services ?? null });
+      },
+      () => {
+        if (!controller.signal.aborted) setResult({ session, value: "failed" });
+      },
+    );
+    return () => controller.abort();
+  }, [session]);
+  const value = result?.session === session ? result.value : undefined;
+  if (value === null) return null;
+  return (
+    <MemberServicesView
+      language={language}
+      services={value === "failed" ? undefined : value}
+      failed={value === "failed"}
     />
   );
 }
