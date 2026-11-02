@@ -68,6 +68,11 @@ export const petCopy = (language: "en" | "cs") =>
           "Odstranit všechny osobní poznatky včetně předchozích verzí? Výslovně uložené vzpomínky zůstanou.",
         classify: "Označit jako osobní",
         classifyWork: "Označit jako pracovní",
+        // NIAR-272: what the learner never keeps (docs/guides/memory.md, Never kept).
+        neverLearns: "Co si Niaro nikdy nezapíše",
+        neverLearnsList:
+          "Zdraví, etnický původ, politické názory, náboženské či filozofické přesvědčení, členství v odborech, sexuální život či orientace, biometrické či genetické údaje, hesla a klíče, čísla účtů, karet a rodná čísla.",
+        neverLearnsHint: "Když něco proklouzne, smaž to.",
         shapes: [
           "Kruh",
           "Pilulka",
@@ -149,6 +154,11 @@ export const petCopy = (language: "en" | "cs") =>
           "Erase all personal observations and their earlier versions? Explicitly saved memories remain.",
         classify: "Mark as personal",
         classifyWork: "Mark as work",
+        // NIAR-272: what the learner never keeps (docs/guides/memory.md, Never kept).
+        neverLearns: "What Niaro never learns",
+        neverLearnsList:
+          "Health, ethnic origin, political opinions, religious or philosophical beliefs, trade union membership, sex life or sexual orientation, biometric or genetic data, passwords and keys, account, card and birth numbers.",
+        neverLearnsHint: "If something slips through, delete it.",
         shapes: [
           "Circle",
           "Pill",

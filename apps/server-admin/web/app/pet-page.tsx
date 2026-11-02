@@ -855,21 +855,28 @@ function PetPageOwner({ manager }: { manager: boolean }) {
             }}
           >
             {sheet === "about" ? (
-              (["jobTitle", "department"] as const).map((field) => (
-                <div key={field} className="flex flex-col gap-2">
-                  <Label htmlFor={`pet-${field}`}>
-                    {field === "jobTitle" ? copy.job : copy.department}
-                  </Label>
-                  <Input
-                    id={`pet-${field}`}
-                    value={settings[field]}
-                    maxLength={120}
-                    onChange={(e) =>
-                      setDraft({ ...settings, [field]: e.target.value })
-                    }
-                  />
-                </div>
-              ))
+              <>
+                {(["jobTitle", "department"] as const).map((field) => (
+                  <div key={field} className="flex flex-col gap-2">
+                    <Label htmlFor={`pet-${field}`}>
+                      {field === "jobTitle" ? copy.job : copy.department}
+                    </Label>
+                    <Input
+                      id={`pet-${field}`}
+                      value={settings[field]}
+                      maxLength={120}
+                      onChange={(e) =>
+                        setDraft({ ...settings, [field]: e.target.value })
+                      }
+                    />
+                  </div>
+                ))}
+                <Disclosure title={copy.neverLearns}>
+                  <p className="text-sm text-muted-foreground">
+                    {copy.neverLearnsList} {copy.neverLearnsHint}
+                  </p>
+                </Disclosure>
+              </>
             ) : (
               <>
                 <div className="flex flex-col gap-2">

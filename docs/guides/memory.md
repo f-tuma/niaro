@@ -8,7 +8,29 @@ Explicit notes are user assertions. Observations are model inferences about one 
 
 Learning reads new accepted messages written by the person, the names of that person's bound successful service actions, and their own `me` turns in two-track meetings they recorded. A meeting task requires explicit `owner=me` and quotes backed by those turns. A null assignee is insufficient. Quoted, forwarded and code text, service results, other or unknown speakers, single-track speaker guesses, attachments, mailboxes and documents are excluded. There is no historical backfill or voice identification.
 
-The closed extraction agent has no tools, shared conversation or memory. Its output is untrusted and passes strict count, length, section and evidence checks plus conservative EN/CS sensitive-data and credential filters. Those lexical filters and synthetic tests are defense in depth; they do not establish measured live-model quality. Sensitive health, ethnicity, political or religious beliefs, union membership, sexuality, biometrics/genetics and credentials/account numbers must not be retained.
+The closed extraction agent has no tools, shared conversation or memory. Its output is untrusted and passes strict count, length, section and evidence checks plus conservative EN/CS sensitive-data and credential filters. Those lexical filters and synthetic tests are defense in depth; they do not establish measured live-model quality. The categories under [Never kept](#never-kept) must not be retained.
+
+## Never kept
+
+The learner never keeps an observation about:
+
+- health
+- ethnic origin
+- political opinions
+- religious or philosophical beliefs
+- trade union membership
+- sex life or sexual orientation
+- biometric or genetic data
+- passwords and keys
+- account, card and birth numbers
+
+The list is fixed and enforced by `isSafeObservation()` in `apps/server-identity/profile-material.ts`; `tests/memory-ranking.node.ts` checks that each listed category is refused. The filter is lexical, so a paraphrase, especially an inflected Czech one, can slip through. It is not a guarantee: Delete and Erase all remain the backstop. Pet's About you shows the same list on web and phone. Explicit "Remember …" notes are the person's own words and are not filtered.
+
+## Ranking
+
+`MemoryStore.search()` ranks the readable records of one request in memory, over the plaintext it already decrypts for that request; no index or token list is stored. Text is accent- and case-folded (NFKD without marks, lowercase), split into letter/digit tokens of at least two characters, and a short Czech and English stop list is dropped. Two tokens match when they are equal, share their first five characters, or the shorter one has at least four characters and starts the longer one, so "schůzku" recalls "schůzka" and "úkol" recalls "úkoly". At most 20 distinct query tokens count.
+
+The score is BM25 (k1 = 1.2, b = 0.75) over the request's candidates, rounded to 1e-9. Preferences always come first; other records need a score above zero. Ties fall back to the newer update and then the record id, so the order is deterministic. The usual `maxItems` and `maxContextChars` limits then apply. The fixed synthetic test set is `tests/fixtures/memory-ranking-set.ts`; it measures nothing about real memories.
 
 ## Context and retention
 

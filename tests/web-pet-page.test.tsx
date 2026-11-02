@@ -2,6 +2,7 @@ import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PetPage } from "../apps/server-admin/web/app/pet-page";
+import { Disclosure } from "../apps/server-admin/web/components/console/disclosure";
 jest.mock("../apps/server-admin/web/components/console/forms", () => ({
   MoreActions: ({ children }: { children: React.ReactNode }) => (
     <div data-menu>{children}</div>
@@ -295,6 +296,23 @@ test("an empty profile says it is still learning", async () => {
   const view = await mount();
   expect(statusLine(view)).toContain("Still learning you");
   expect(mockPet.mock.lastCall![0].state).toBe("idle");
+  act(() => view.unmount());
+});
+test("About you lists what Niaro never learns in a closed disclosure (NIAR-272)", async () => {
+  const view = await mount();
+  await act(async () => button(view, "About you").props.onClick());
+  const [boundary] = view.root
+    .findAllByType(Disclosure)
+    .filter((node) => node.props.title === "What Niaro never learns");
+  expect(boundary).toBeDefined();
+  expect(boundary!.props.defaultOpen).toBeUndefined();
+  expect(boundary!.props.open).toBeUndefined();
+  // Closed: the list is not rendered until the person opens it.
+  expect(boundary!.findAllByType("p")).toHaveLength(0);
+  const text = [boundary!.props.children.props.children].flat().join("");
+  for (const category of ["Health", "trade union membership", "passwords"])
+    expect(text).toContain(category);
+  expect(text).toContain("If something slips through, delete it.");
   act(() => view.unmount());
 });
 test("appearance saves confirmed server state; a rejected write keeps the entered draft", async () => {

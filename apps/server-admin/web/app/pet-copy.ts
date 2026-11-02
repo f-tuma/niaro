@@ -75,6 +75,11 @@ export const petCopy = (language: "en" | "cs") =>
           days <= 0 ? "dnes" : days === 1 ? "včera" : `před ${days} dny`,
         sections: "Oblasti",
         more: "Možnosti",
+        // NIAR-272: what the learner never keeps (docs/guides/memory.md, Never kept).
+        neverLearns: "Co si Niaro nikdy nezapíše",
+        neverLearnsList:
+          "Zdraví, etnický původ, politické názory, náboženské či filozofické přesvědčení, členství v odborech, sexuální život či orientace, biometrické či genetické údaje, hesla a klíče, čísla účtů, karet a rodná čísla.",
+        neverLearnsHint: "Když něco proklouzne, smaž to.",
         shapes: [
           "Kruh",
           "Pilulka",
@@ -163,6 +168,11 @@ export const petCopy = (language: "en" | "cs") =>
           days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`,
         sections: "Sections",
         more: "Options",
+        // NIAR-272: what the learner never keeps (docs/guides/memory.md, Never kept).
+        neverLearns: "What Niaro never learns",
+        neverLearnsList:
+          "Health, ethnic origin, political opinions, religious or philosophical beliefs, trade union membership, sex life or sexual orientation, biometric or genetic data, passwords and keys, account, card and birth numbers.",
+        neverLearnsHint: "If something slips through, delete it.",
         shapes: [
           "Circle",
           "Pill",

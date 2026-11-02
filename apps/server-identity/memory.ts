@@ -42,6 +42,7 @@ import {
   isPersonalObservation,
   normalizeObservation,
 } from "./profile-material";
+import { memoryScores } from "./memory-ranking";
 
 /** This actor is constructed from authenticated identity, never from a tool or request payload. */
 export type MemoryActor = {
@@ -2351,18 +2352,10 @@ export class MemoryStore {
         .trim()
         .max(500)
         .parse(options.query ?? "");
-      const tokens = [
-        ...new Set(
-          query
-            .normalize("NFKC")
-            .toLowerCase()
-            .match(/[\p{L}\p{N}]{2,}/gu) ?? [],
-        ),
-      ].slice(0, 20);
       return {
         actor,
         settings,
-        tokens,
+        query,
         version: this.version(actor),
         rows: this.readPreferences(actor).optOut
           ? []
@@ -2376,7 +2369,7 @@ export class MemoryStore {
     });
     const items = await Promise.all(capture.rows.map((row) => this.item(row)));
     return this.gate(options, () => {
-      const { actor, settings, tokens, version } = capture;
+      const { actor, settings, query, version } = capture;
       if (this.version(actor) !== version)
         throw new IdentityError(409, "memory_context_changed");
       const result: MemoryContext = {
@@ -2385,19 +2378,16 @@ export class MemoryStore {
         contextChars: 2,
         expiresAt: null,
       };
-      const scored = items
-        .filter((item) => this.readable(item, actor, options, this.now()))
-        .map((item) => ({
-          item,
-          score: tokens.reduce(
-            (score, token) =>
-              score +
-              Number(
-                item.content?.normalize("NFKC").toLowerCase().includes(token),
-              ),
-            0,
-          ),
-        }))
+      // BM25 over the plaintext decrypted for this request only; no index is kept.
+      const readable = items.filter((item) =>
+        this.readable(item, actor, options, this.now()),
+      );
+      const scores = memoryScores(
+        query,
+        readable.map((item) => item.content ?? ""),
+      );
+      const scored = readable
+        .map((item, index) => ({ item, score: scores[index]! }))
         .filter(({ item, score }) => item.kind === "preference" || score > 0)
         .sort(
           (a, b) =>

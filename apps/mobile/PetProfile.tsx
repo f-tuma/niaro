@@ -1027,6 +1027,11 @@ export function PetProfile({
                 setDraft({ ...settings, department })
               }
             />
+            <Disclosure label={c.neverLearns}>
+              <Text role="caption" tone="secondary">
+                {`${c.neverLearnsList} ${c.neverLearnsHint}`}
+              </Text>
+            </Disclosure>
           </View>
         </DetailSheet>
       ) : null}
