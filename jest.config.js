@@ -1,3 +1,6 @@
+// One time zone with daylight saving for every run, also in CI (UTC there):
+// day grouping is tested across the autumn and spring changes.
+process.env.TZ = "Europe/Prague";
 const transformIgnorePatterns =
   require("jest-expo/jest-preset").transformIgnorePatterns.map((pattern) =>
     pattern.replace(

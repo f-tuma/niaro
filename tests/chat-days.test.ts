@@ -5,8 +5,8 @@ import {
   startOfDay,
 } from "../packages/client-core/chat-days";
 
-// Days are local calendar days; Prague has both daylight-saving changes.
-process.env.TZ = "Europe/Prague";
+// Days are local calendar days; jest.config.js runs in Europe/Prague, which has
+// both daylight-saving changes.
 
 const labels = {
   today: "Today",
