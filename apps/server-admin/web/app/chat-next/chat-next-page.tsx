@@ -16,9 +16,15 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type RefObject,
 } from "react";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AssistantRuntimeProvider,
@@ -119,7 +125,7 @@ import {
 import { loopsCopy } from "../../loops-copy";
 import type { AnswerStreamStep } from "../../../../../packages/protocol/answer-stream";
 import { chatChangeError, useChatCopy } from "../chat-copy";
-import { useMessageLink } from "../message-link";
+import { linkedMessageId, useMessageLink } from "../message-link";
 import {
   UNSAVED_DRAFT,
   chatHistoryKey,
@@ -173,6 +179,7 @@ import {
   type ChatMessage,
   TOOL,
 } from "./transport";
+import { useAnswerAnnouncement } from "./announce";
 
 /**
  * The chat rebuilt on assistant-ui (NIAR-228), next to the classic one. The
@@ -770,6 +777,12 @@ export function ChatNextConversation({
     // linked message scrolled into view stays put on its own.
     onFound: () => {},
   });
+  // Stored answers only: the streamed draft is not among the messages.
+  const announcement = useAnswerAnnouncement({
+    messages,
+    ready: (unsaved || !!historySelection) && !historyLoading,
+    prefix: copy.answerReady,
+  });
 
   const replyToWork = (w: WorkItem) => {
     const replyInput =
@@ -1199,6 +1212,16 @@ export function ChatNextConversation({
         >
           {!showHome && <ChatPet compact />}
           <h1 className="sr-only">{title || copy.newChat}</h1>
+          {/* Always present, so the first answer is heard too. */}
+          <div
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            data-testid="answer-announcement"
+            className="sr-only"
+          >
+            {announcement}
+          </div>
           <ThreadPrimitive.Viewport
             data-chat-scroller
             className="min-h-0 flex-1 overflow-y-auto"
@@ -1580,6 +1603,77 @@ function Welcome({ onSuggestion }: { onSuggestion: (text: string) => void }) {
   );
 }
 
+/** A request folds when it is taller than this many lines of chat text. */
+const FOLD_LINES = 12;
+/** The chat's line height (`leading-chat`), in pixels. */
+const CHAT_LINE_PX = 22;
+/** Characters on a line, for the estimate before the page is laid out. */
+const FOLD_WRAP = 70;
+/** Whether a request is taller than the fold, estimated from its text. */
+export function longRequest(text: string) {
+  let lines = 0;
+  for (const line of text.split("\n"))
+    lines += Math.max(1, Math.ceil(line.length / FOLD_WRAP));
+  return lines > FOLD_LINES;
+}
+
+/**
+ * A long request, folded to 12 lines with a fade and "Show more". It is
+ * measured once laid out; before that (and without layout) its text decides.
+ */
+function FoldedText({
+  text,
+  foldable,
+  children,
+}: {
+  text: string;
+  /** False for the target of a search jump, which is shown whole. */
+  foldable: boolean;
+  children: ReactNode;
+}) {
+  const { copy } = useChatCopy();
+  const id = useId();
+  const ref = useRef<HTMLDivElement>(null);
+  const [long, setLong] = useState(() => longRequest(text));
+  const [open, setOpen] = useState(false);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node?.scrollHeight) return;
+    const measure = () =>
+      setLong(node.scrollHeight > FOLD_LINES * CHAT_LINE_PX + CHAT_LINE_PX / 2);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [text]);
+  const folded = foldable && long && !open;
+  return (
+    <>
+      <div
+        ref={ref}
+        id={id}
+        data-testid="request-text"
+        data-folded={folded}
+        className="max-w-full data-[folded=true]:max-h-66 data-[folded=true]:overflow-hidden data-[folded=true]:mask-b-from-50%"
+      >
+        {children}
+      </div>
+      {foldable && long && (
+        <Button
+          variant="link"
+          size="xs"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? copy.showLess : copy.unfold}
+        </Button>
+      )}
+    </>
+  );
+}
+
 const messageClass =
   "group/message flex min-w-0 flex-col gap-1 rounded-xl transition-shadow duration-500 data-[highlighted=true]:ring-2 data-[highlighted=true]:ring-ring/50 data-[highlighted=true]:ring-offset-4 data-[highlighted=true]:ring-offset-background";
 
@@ -1591,6 +1685,10 @@ function UserMessage() {
   const meta = nextMeta(message);
   const pending = meta.kind === "pending";
   const text = threadText(message);
+  // A search jump shows its hit whole.
+  const linked = linkedMessageId(
+    useRouterState({ select: (state) => state.location.searchStr }) ?? "",
+  );
   return (
     <>
       {meta.day !== undefined && <DaySeparator day={meta.day} />}
@@ -1621,9 +1719,11 @@ function UserMessage() {
           {text.trim() ? (
             <div
               data-pending={pending}
-              className="max-w-full rounded-2xl bg-muted px-4 py-2.5 text-sm break-words whitespace-pre-wrap data-[pending=true]:opacity-60"
+              className="flex max-w-full flex-col items-start rounded-2xl bg-muted px-4 py-2.5 text-md leading-chat break-words whitespace-pre-wrap data-[pending=true]:opacity-60"
             >
-              <MessagePrimitive.Parts components={userParts} />
+              <FoldedText text={text} foldable={linked !== message.id}>
+                <MessagePrimitive.Parts components={userParts} />
+              </FoldedText>
             </div>
           ) : null}
         </article>
@@ -2024,6 +2124,7 @@ function Composer({
           rows={1}
           value={draft}
           disabled={disabled}
+          size="chat"
           className="max-h-48"
           aria-invalid={tooLong || undefined}
           {...(directory.length

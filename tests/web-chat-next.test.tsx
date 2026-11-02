@@ -40,6 +40,7 @@ if (typeof document === "undefined")
   });
 
 const mockNavigate = jest.fn();
+const mockLocation = { search: "" };
 jest.mock("@tanstack/react-router", () => {
   const React = jest.requireActual<typeof import("react")>("react");
   return {
@@ -51,7 +52,13 @@ jest.mock("@tanstack/react-router", () => {
       React.createElement("a", { ...props, href: to }),
     useNavigate: () => mockNavigate,
     useParams: () => ({}),
-    useRouterState: () => "/",
+    // The address: "?m=" is a search jump to a message.
+    useRouterState: (options?: { select?: (state: unknown) => unknown }) =>
+      options?.select
+        ? options.select({
+            location: { pathname: "/", searchStr: mockLocation.search },
+          })
+        : "/",
   };
 });
 // These isolated chat/composer tests have no owner-profile transport. Model a
@@ -513,6 +520,7 @@ const user = (id: string, text: string): Message => ({
 
 beforeEach(() => {
   mockNavigate.mockReset();
+  mockLocation.search = "";
 });
 
 /**
@@ -1034,4 +1042,156 @@ test("'@' opens the picker; a pick becomes a tag the message carries", async () 
     text: "Najdi v @CRM Jana",
     mentions: [{ kind: "service", id: "svc-crm" }],
   });
+});
+
+// NIAR-266 chat reading.
+
+test("the transcript and the composer read at the chat size", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Ahoj")],
+  };
+  const { session } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const bubble = root.find(
+    (node) => node.type === "div" && node.props["data-pending"] === false,
+  );
+  expect(bubble.props.className).toContain("text-md leading-chat");
+  expect(
+    root.find((node) => node.props["data-host"] === "InputGroupTextarea").props
+      .size,
+  ).toBe("chat");
+});
+
+const longText = Array.from({ length: 20 }, (_, i) => `Řádek ${i + 1}`).join(
+  "\n",
+);
+
+test("a request longer than 12 lines folds behind Show more and opens again", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", longText), user("m-2", "Krátká zpráva")],
+  };
+  const { session } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const [long, short] = root.findAll(
+    (node) => node.props["data-testid"] === "request-text",
+  );
+  expect(long!.props["data-folded"]).toBe(true);
+  expect(short!.props["data-folded"]).toBe(false);
+  const more = button(root, "Zobrazit víc");
+  expect(more.props["aria-expanded"]).toBe(false);
+  expect(more.props["aria-controls"]).toBe(long!.props.id);
+  await act(async () => more.props.onClick());
+  expect(
+    root.findAll((node) => node.props["data-testid"] === "request-text")[0]!
+      .props["data-folded"],
+  ).toBe(false);
+  const less = button(root, "Zobrazit méně");
+  expect(less.props["aria-expanded"]).toBe(true);
+  await act(async () => less.props.onClick());
+  expect(
+    root.findAll((node) => node.props["data-testid"] === "request-text")[0]!
+      .props["data-folded"],
+  ).toBe(true);
+});
+
+test("the target of a search jump is shown whole", async () => {
+  mockLocation.search = "?m=m-1";
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", longText)],
+  };
+  const { session } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  expect(byTestId(root, "request-text").props["data-folded"]).toBe(false);
+  expect(text(root)).not.toContain("Zobrazit víc");
+});
+
+test("a stored answer is announced once with its first paragraph; opening the chat and streaming are silent", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [
+      user("m-1", "Kolik máme objednávek?"),
+      { id: "m-2", role: "assistant", text: "Starší odpověď." },
+    ],
+  };
+  const { session, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const region = () => byTestId(root, "answer-announcement");
+  const wait = () =>
+    act(async () => new Promise((resolve) => setTimeout(resolve, 150)));
+  expect(region().props.role).toBe("status");
+  expect(region().props["aria-live"]).toBe("polite");
+  await wait();
+  expect(text(region())).toBe("");
+  // The draft as it streams is never read out.
+  await act(async () =>
+    publish({
+      pending: {
+        type: "message.send",
+        commandId: "c-2",
+        idempotencyKey: "c-2",
+        conversationId: "conv-1",
+        text: "A v říjnu?",
+        language: "cs",
+      },
+      commandStates: { chat: "sending" },
+      activity: {
+        commandId: "c-2",
+        conversationId: "conv-1",
+        status: "running",
+        steps: [{ id: "understanding", status: "running" }],
+        draft: "V říjnu **zatím**",
+      },
+    }),
+  );
+  await wait();
+  expect(text(region())).toBe("");
+  const answer = (id: string, request: string) => [
+    user(`${id}-q`, request),
+    {
+      id,
+      role: "assistant" as const,
+      text: "## Říjen\n\nV říjnu **120** objednávek.\n\n| A | B |\n| - | - |",
+    },
+  ];
+  const stored = [...conversation.messages, ...answer("m-4", "A v říjnu?")];
+  await act(async () =>
+    publish({
+      pending: null,
+      activity: null,
+      commandStates: { chat: "accepted" },
+      store: storeWith([{ ...conversation, revision: 5, messages: stored }]),
+    }),
+  );
+  await wait();
+  expect(text(region())).toBe("Odpověď je hotová. V říjnu 120 objednávek.");
+  // The same answer again is news again.
+  await act(async () =>
+    publish({
+      store: storeWith([
+        {
+          ...conversation,
+          revision: 6,
+          messages: [...stored, ...answer("m-6", "Znovu")],
+        },
+      ]),
+    }),
+  );
+  expect(text(region())).toBe("");
+  await wait();
+  expect(text(region())).toBe("Odpověď je hotová. V říjnu 120 objednávek.");
 });

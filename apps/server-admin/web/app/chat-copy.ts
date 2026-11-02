@@ -63,6 +63,12 @@ const en = {
   searchOlder: "Search older",
   renameChat: "Rename",
   chatName: "Chat name",
+  // NIAR-266 chat reading
+  /** Said by the screen reader when an answer is stored, before its gist. */
+  answerReady: "Answer ready",
+  copyCode: "Copy code",
+  /** Unfolds a long request. */
+  unfold: "Show more",
   /** Generated answers (OpenUI). */
   generated: {
     sortBy: (column: string) => `Sort by ${column}`,
@@ -200,6 +206,10 @@ const cs: ChatCopy = {
   searchOlder: "Hledat ve starších",
   renameChat: "Přejmenovat",
   chatName: "Název chatu",
+  // NIAR-266 chat reading
+  answerReady: "Odpověď je hotová",
+  copyCode: "Kopírovat kód",
+  unfold: "Zobrazit víc",
   generated: {
     sortBy: (column: string) => `Seřadit podle ${column}`,
     barChart: "Sloupcový graf",

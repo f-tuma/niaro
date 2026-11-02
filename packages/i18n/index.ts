@@ -954,6 +954,9 @@ export const en = {
   // NIAR-271: recovery without a model.
   processRunAgain: "Run again",
   processRunAgainUnavailable: "It can't start now. See Processes.",
+  // NIAR-266 chat reading
+  copyCode: "Copy code",
+  codeCopied: "Copied",
 } as const;
 export type TranslationKey = keyof typeof en;
 export const cs: Record<TranslationKey, string> = {
@@ -1917,6 +1920,9 @@ export const cs: Record<TranslationKey, string> = {
   // NIAR-271: recovery without a model.
   processRunAgain: "Spustit znovu",
   processRunAgainUnavailable: "Teď spustit nejde. Podívej se do Procesů.",
+  // NIAR-266 chat reading
+  copyCode: "Kopírovat kód",
+  codeCopied: "Zkopírováno",
 };
 /** "12 messages" / "12 zpráv": a chat's message count in a list. */
 export function messageCount(language: Language, count: number) {

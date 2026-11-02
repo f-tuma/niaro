@@ -130,13 +130,18 @@ function InputGroupInput({
 
 function InputGroupTextarea({
   className,
+  size = "default",
   ...props
-}: React.ComponentProps<"textarea">) {
+}: React.ComponentProps<"textarea"> & {
+  /** chat: the chat composer's reading size (14 px, 22 px lines) from md up. */
+  size?: "default" | "chat";
+}) {
   return (
     <Textarea
       data-slot="input-group-control"
+      data-size={size}
       className={cn(
-        "flex-1 resize-none rounded-none border-0 bg-transparent py-2 shadow-none ring-0 focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent",
+        "flex-1 resize-none rounded-none border-0 bg-transparent py-2 shadow-none ring-0 focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent md:data-[size=chat]:text-md data-[size=chat]:leading-chat",
         className,
       )}
       {...props}

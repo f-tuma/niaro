@@ -82,9 +82,16 @@ export function useNextChat() {
   return chat;
 }
 
-/** An answer's text, as Markdown. */
+/** An answer's text, as Markdown at the chat's reading size. */
 export function AssistantText({ text }: { text: string }) {
-  return <Markdown text={text} />;
+  const { copy } = useChatCopy();
+  return (
+    <Markdown
+      text={text}
+      size="chat"
+      codeCopy={{ copy: copy.copyCode, copied: copy.copied }}
+    />
+  );
 }
 /** The person's text, as written. */
 export function UserText({ text }: { text: string }) {

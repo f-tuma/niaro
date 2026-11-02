@@ -1,4 +1,11 @@
-import React, { memo, useMemo } from "react";
+import React, {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Linking,
   Platform,
@@ -11,9 +18,29 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
 import type { Definition, Nodes, PhrasingContent } from "mdast";
-import { Text } from "../ui";
+import { Button, Text } from "../ui";
 import { tokens as t } from "../design-tokens";
 import { displayLink } from "../protocol/display-link";
+import { translate } from "../i18n";
+import type { Language } from "../protocol";
+
+/** Writes text to the clipboard; absent where the app has none. */
+export type CopyText = (text: string) => void | Promise<void>;
+/** The browser's clipboard on the web build; native apps provide their own. */
+const browserCopy: CopyText | undefined =
+  Platform.OS === "web" &&
+  typeof navigator !== "undefined" &&
+  !!navigator.clipboard
+    ? (text) => navigator.clipboard.writeText(text)
+    : undefined;
+/**
+ * What Markdown's actions need from the app: the clipboard for "Copy code"
+ * (without one the action is hidden) and the language of its labels.
+ */
+export const MarkdownCopyContext = createContext<{
+  copy?: CopyText;
+  language: Language;
+}>({ copy: browserCopy, language: "en" });
 
 /** Display-only Markdown. HTML stays text and remote images are never fetched. */
 export const MarkdownText = memo(function MarkdownText({
@@ -98,25 +125,27 @@ export const MarkdownText = memo(function MarkdownText({
     return nodes.map((node, index) => {
       if (node.type === "definition" || node.type === "footnoteDefinition")
         return null;
-      if (node.type === "paragraph" || node.type === "heading")
+      if (node.type === "paragraph")
+        return (
+          <Text key={index} selectable>
+            {inlines(node.children)}
+          </Text>
+        );
+      // Two steps, as on the web: "#" to "###" are sections, deeper ones labels.
+      if (node.type === "heading")
         return (
           <Text
             key={index}
             selectable
-            accessibilityRole={node.type === "heading" ? "header" : undefined}
-            style={node.type === "heading" ? styles.heading : undefined}
+            accessibilityRole="header"
+            role={node.depth <= 3 ? "cardTitle" : "rowTitle"}
+            style={index > 0 ? styles.headingAfter : undefined}
           >
             {inlines(node.children)}
           </Text>
         );
       if (node.type === "code")
-        return (
-          <ScrollView key={index} horizontal style={styles.code}>
-            <Text selectable style={styles.monospace}>
-              {node.value}
-            </Text>
-          </ScrollView>
-        );
+        return <CodeBlock key={index} value={node.value} />;
       if (node.type === "blockquote")
         return (
           <View key={index} style={styles.quote}>
@@ -154,9 +183,10 @@ export const MarkdownText = memo(function MarkdownText({
                     <Text
                       key={cellIndex}
                       selectable
+                      accessibilityRole={rowIndex === 0 ? "header" : undefined}
                       style={[
                         styles.cell,
-                        rowIndex === 0 ? styles.strong : undefined,
+                        rowIndex === 0 ? styles.headerCell : undefined,
                       ]}
                     >
                       {inlines(cell.children)}
@@ -178,6 +208,42 @@ export const MarkdownText = memo(function MarkdownText({
   }
   return <View style={styles.blocks}>{blocks(tree.children)}</View>;
 });
+
+/** A code block; with a clipboard, a visible "Copy code" under it. */
+function CodeBlock({ value }: { value: string }) {
+  const { copy, language } = useContext(MarkdownCopyContext);
+  const tr = translate(language);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <View style={styles.codeBlock}>
+      <ScrollView horizontal style={styles.code}>
+        <Text selectable style={styles.monospace}>
+          {value}
+        </Text>
+      </ScrollView>
+      {copy ? (
+        <Button
+          label={tr(copied ? "codeCopied" : "copyCode")}
+          icon={copied ? "check" : undefined}
+          variant="quiet"
+          size="small"
+          style={styles.copy}
+          onPress={() => {
+            void Promise.resolve()
+              .then(() => copy(value))
+              .then(() => setCopied(true))
+              .catch(() => {});
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
 
 function plain(node: Nodes): string {
   if ("value" in node) return node.value;
@@ -201,7 +267,7 @@ function markdownLink(url: string): string | undefined {
 
 const styles = StyleSheet.create({
   blocks: { gap: t.spacing.sm, minWidth: 0 },
-  heading: { ...t.typography.cardTitle },
+  headingAfter: { marginTop: t.spacing.sm },
   strong: { fontWeight: "600" },
   emphasis: { fontStyle: "italic" },
   deleted: { textDecorationLine: "line-through" },
@@ -237,5 +303,8 @@ const styles = StyleSheet.create({
     borderBottomColor: t.color.border,
   },
   cell: { width: 160, padding: t.spacing.sm },
+  headerCell: { fontWeight: "600", backgroundColor: t.color.fill },
+  codeBlock: { gap: t.spacing.xs, minWidth: 0 },
+  copy: { alignSelf: "flex-end" },
   rule: { height: 1, backgroundColor: t.color.border },
 });

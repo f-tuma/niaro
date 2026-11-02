@@ -14,6 +14,9 @@
   --text-sm--line-height: 1.25rem;
   --text-md: 0.875rem;
   --text-md--line-height: 1.25rem;
+  /* Chat reading (NIAR-266): the transcript and composer read at text-md
+     with a 22px line height; see apps/server-admin/DESIGN.md. */
+  --leading-chat: 1.375rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
