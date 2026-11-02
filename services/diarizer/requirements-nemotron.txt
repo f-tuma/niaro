@@ -1,0 +1,4 @@
+# Voice fingerprints for the Nemotron engine (Apache-2.0): TitaNet through
+# ONNX Runtime, bundled in the wheel.
+sherpa-onnx==2.0.1
+numpy==2.3.4

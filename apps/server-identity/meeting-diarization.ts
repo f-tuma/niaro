@@ -87,7 +87,8 @@ export async function diarizerHealth(
 
 /**
  * Diarizes one track: a 16 kHz mono 16-bit WAV file, streamed so a two-hour
- * meeting is never held in memory. A CPU takes minutes for an hour of sound.
+ * meeting is never held in memory. Nemotron takes about two minutes for an
+ * hour of sound on eight cores, pyannote about twenty.
  */
 export async function diarize(
   config: DiarizerConfig,

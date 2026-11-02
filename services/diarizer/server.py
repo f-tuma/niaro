@@ -1,12 +1,16 @@
 """Speaker diarization for Niaro meetings: who spoke when.
 
 A small HTTP service next to the Niaro server (docker compose profile
-"diarization"). It runs pyannote's open model (speaker-diarization-community-1)
-on the CPU, so meeting audio never leaves the machine.
+"diarization"); meeting audio never leaves the machine. Two images share
+this server and differ in the engine (DIARIZER_ENGINE):
+
+  nemotron   NVIDIA Nemotron 3 Diarization (NeMo-Speech.cpp) with TitaNet
+             fingerprints (sherpa-onnx); the default, fast, model in the image
+  pyannote   pyannote speaker-diarization-community-1; slow, needs HF_TOKEN
 
   GET  /health    {"ready", "model", "error"}
   POST /diarize   body: WAV, 16 kHz, mono, 16-bit
-                  query: minSpeakers, maxSpeakers, embeddings=1 (optional)
+                  query: maxSpeakers, embeddings=1 (optional)
                   -> {"model", "speakers", "segments": [{"start", "end", "speaker"}],
                       "embeddings": {"1": [...], ...} with embeddings=1}
   POST /embed     body: WAV of one person speaking (16 kHz, mono, 16-bit)
@@ -22,159 +26,96 @@ recording is diarized at a time; others wait.
 
 from __future__ import annotations
 
-import io
 import json
 import logging
 import os
 import threading
 import time
-import wave
-import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-MODEL = os.environ.get("DIARIZER_MODEL", "pyannote/speaker-diarization-community-1")
+ENGINE = os.environ.get("DIARIZER_ENGINE", "nemotron")
 TOKEN = os.environ.get("DIARIZER_TOKEN", "")
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
 PORT = int(os.environ.get("PORT", "8000"))
 # Two hours of 16 kHz mono 16-bit sound is about 230 MB.
 MAX_BYTES = int(os.environ.get("DIARIZER_MAX_BYTES", str(260 * 1024 * 1024)))
 
-# Audio arrives decoded (read_wav), so torchcodec's FFmpeg is never needed.
-warnings.filterwarnings("ignore", message=r"\s*torchcodec is not installed")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("diarizer")
 
-state: dict = {"pipeline": None, "error": None}
+state: dict = {"engine": None, "model": None, "error": None}
 work = threading.Lock()
 
 
 def load() -> None:
-    """Loads the model in the background, so /health answers at once. A
-    failed download (terms not yet accepted, no network) is tried again every
-    few minutes; a missing token waits for a restart."""
-    import torch
-    from pyannote.audio import Pipeline
-
-    # More threads than about eight only contend: on a 20-core host 8 threads
-    # diarized 300 s of sound in 100 s, all 20 in 157 s.
-    torch.set_num_threads(max(1, int(os.environ.get("DIARIZER_THREADS", "0")) or min(8, os.cpu_count() or 2)))
-    if not HF_TOKEN:
-        state["error"] = "HF_TOKEN is not set: accept the model's terms on Hugging Face and set the token"
-        log.error("model not loaded: %s", state["error"])
-        return
-    while state["pipeline"] is None:
+    """Loads the engine in the background, so /health answers at once. A
+    failed load is tried again every few minutes; a missing token waits for a
+    restart."""
+    if ENGINE == "pyannote":
+        from engine_pyannote import Engine
+    else:
+        from engine_nemotron import Engine
+    state["model"] = Engine.model
+    while state["engine"] is None:
         try:
             started = time.monotonic()
-            pipeline = Pipeline.from_pretrained(MODEL, token=HF_TOKEN)
-            if pipeline is None:
-                raise RuntimeError("the model could not be loaded (terms not accepted?)")
-            state["pipeline"], state["error"] = pipeline, None
-            log.info("model %s ready in %.1f s", MODEL, time.monotonic() - started)
-        except Exception as error:  # reported by /health, never the token
-            first = next((line.strip() for line in str(error).splitlines()[1:] if line.strip()), "")
-            message = first or str(error).splitlines()[0] if str(error) else type(error).__name__
-            state["error"] = message.replace(HF_TOKEN, "[token]")[:300]
-            log.error("model not loaded, trying again in 5 minutes: %s", state["error"])
+            state["engine"], state["error"] = Engine(), None
+            log.info("engine %s (%s) ready in %.1f s", ENGINE, Engine.model, time.monotonic() - started)
+        except PermissionError as error:
+            state["error"] = str(error)
+            log.error("engine not loaded: %s", error)
+            return
+        except Exception as error:  # reported by /health
+            state["error"] = str(error)[:300] or type(error).__name__
+            log.error("engine not loaded, trying again in 5 minutes: %s", state["error"])
             time.sleep(300)
 
 
-def read_wav(body: bytes):
-    import numpy as np
-    import torch
-
-    with wave.open(io.BytesIO(body)) as audio:
-        if audio.getnchannels() != 1 or audio.getsampwidth() != 2:
-            raise ValueError("expected mono 16-bit WAV")
-        rate = audio.getframerate()
-        frames = audio.readframes(audio.getnframes())
-    samples = np.frombuffer(frames, dtype="<i2").astype("float32") / 32768.0
-    return {"waveform": torch.from_numpy(samples).unsqueeze(0), "sample_rate": rate}
-
-
-def turns(output):
-    """(start, end, label) from pyannote 4 (exclusive when offered) or 3."""
-    annotation = getattr(output, "exclusive_speaker_diarization", None) or getattr(
-        output, "speaker_diarization", output
-    )
-    if hasattr(annotation, "itertracks"):
-        for segment, _track, label in annotation.itertracks(yield_label=True):
-            yield segment.start, segment.end, label
-    else:
-        for segment, label in annotation:
-            yield segment.start, segment.end, label
-
-
 def diarize(body: bytes, query: dict) -> dict:
-    pipeline = state["pipeline"]
-    if pipeline is None:
-        raise RuntimeError(state["error"] or "model is loading")
-    audio = read_wav(body)
-    options = {}
-    for name, key in (("minSpeakers", "min_speakers"), ("maxSpeakers", "max_speakers")):
-        if name in query:
-            value = int(query[name][0])
-            if 1 <= value <= 20:
-                options[key] = value
+    engine = state["engine"]
+    maximum = None
+    if "maxSpeakers" in query:
+        value = int(query["maxSpeakers"][0])
+        if 1 <= value <= 20:
+            maximum = value
+    embeddings = query.get("embeddings", [""])[0] == "1"
     started = time.monotonic()
-    output = pipeline(audio, **options)
+    turns, by_label = engine.diarize(body, maximum, embeddings)
     numbers: dict[str, int] = {}
     segments = []
-    for start, end, label in sorted(turns(output), key=lambda t: t[0]):
+    for start, end, label in sorted(turns, key=lambda t: t[0]):
         if end - start < 0.05:
             continue
-        number = numbers.setdefault(str(label), len(numbers) + 1)
+        number = numbers.setdefault(label, len(numbers) + 1)
         segments.append({"start": round(start, 3), "end": round(end, 3), "speaker": number})
-    seconds = audio["waveform"].shape[1] / audio["sample_rate"]
     log.info(
         "diarized %.0f s of sound in %.1f s: %d speakers, %d turns",
-        seconds,
+        max(0, len(body) - 44) / 32000,
         time.monotonic() - started,
         len(numbers),
         len(segments),
     )
-    result = {"model": MODEL, "speakers": len(numbers), "segments": segments}
-    if query.get("embeddings", [""])[0] == "1":
-        by_label = voice_embeddings(output)
+    result = {"model": engine.model, "speakers": len(numbers), "segments": segments}
+    if embeddings:
         result["embeddings"] = {
             str(number): by_label[label] for label, number in numbers.items() if label in by_label
         }
     return result
 
 
-def voice_embeddings(output) -> dict[str, list[float]]:
-    """Each voice's embedding by its pyannote label, unit length."""
-    import numpy as np
-
-    vectors = getattr(output, "speaker_embeddings", None)
-    annotation = getattr(output, "speaker_diarization", None)
-    if vectors is None or annotation is None:
-        return {}
-    found = {}
-    for label, vector in zip(annotation.labels(), vectors):
-        vector = np.asarray(vector, dtype=np.float64)
-        norm = float(np.linalg.norm(vector))
-        if np.isfinite(norm) and norm > 0:
-            found[str(label)] = [round(float(x), 6) for x in vector / norm]
-    return found
-
-
 def embed(body: bytes) -> dict:
     """The fingerprint of the voice that speaks most in a recording of one
-    person: the same pipeline as diarization, so the two compare."""
-    pipeline = state["pipeline"]
-    if pipeline is None:
-        raise RuntimeError(state["error"] or "model is loading")
-    audio = read_wav(body)
-    output = pipeline(audio)
+    person: the same engine as diarization, so the two compare."""
+    engine = state["engine"]
+    turns, by_label = engine.diarize(body, None, True)
     spoken: dict[str, float] = {}
-    for start, end, label in turns(output):
-        spoken[str(label)] = spoken.get(str(label), 0.0) + end - start
-    by_label = voice_embeddings(output)
-    if not spoken or not by_label:
+    for start, end, label in turns:
+        spoken[label] = spoken.get(label, 0.0) + end - start
+    spoken = {label: seconds for label, seconds in spoken.items() if label in by_label}
+    if not spoken:
         raise ValueError("no speech found")
     label = max(spoken, key=spoken.get)
-    return {"model": MODEL, "seconds": round(spoken[label], 1), "embedding": by_label[label]}
+    return {"model": engine.model, "seconds": round(spoken[label], 1), "embedding": by_label[label]}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -201,7 +142,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(401, {"error": "unauthorized"})
         self.send(
             200,
-            {"ready": state["pipeline"] is not None, "model": MODEL, "error": state["error"]},
+            {"ready": state["engine"] is not None, "model": state["model"] or ENGINE, "error": state["error"]},
         )
 
     def do_POST(self):
@@ -214,7 +155,7 @@ class Handler(BaseHTTPRequestHandler):
         if length <= 44 or length > MAX_BYTES:
             return self.send(413, {"error": "too_large" if length else "empty"})
         body = self.rfile.read(length)
-        if state["pipeline"] is None:
+        if state["engine"] is None:
             return self.send(503, {"error": "not_ready", "detail": state["error"]})
         try:
             with work:

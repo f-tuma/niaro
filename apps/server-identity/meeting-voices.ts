@@ -31,7 +31,9 @@ export type VoiceProfile = z.infer<typeof ProfileSchema>;
  * lead it needs over the next voice. On a Czech council recording with
  * pyannote speaker-diarization-community-1 (NIAR-261), a person enrolled
  * from one ten minutes scored 0.91 and 0.96 against their own voice in the
- * next ten, and at most 0.58 against anyone else.
+ * next ten, and at most 0.58 against anyone else. With Nemotron and TitaNet
+ * fingerprints a voice scored 0.85 to 0.99 against itself and at most 0.49
+ * against the other voices of the same recording.
  */
 export const VOICE_MATCH = { similarity: 0.75, margin: 0.15 };
 /** At most this much of a person's speech is used for their fingerprint. */

@@ -186,9 +186,9 @@ Read by the server (image or `pnpm server`):
 
 Compose only: `NIARO_DATA_VOLUME` (volume name, default `niaro-data`),
 `NIARO_IMAGE` (default `niaro:local`), `NIARO_GIT_REF` (Dokploy build ref),
-for diarization `HF_TOKEN`, `DIARIZER_TOKEN`, `DIARIZER_THREADS`,
-`DIARIZER_MEMORY`, `DIARIZER_IMAGE`, and for document reading
-`CONVERTER_TOKEN`, `CONVERTER_DOCKERFILE`, `CONVERTER_MEMORY`,
+for diarization `DIARIZER_TOKEN`, `DIARIZER_THREADS`, `DIARIZER_MEMORY`,
+`DIARIZER_IMAGE`, `DIARIZER_DOCKERFILE`, `HF_TOKEN` (pyannote only), and for
+document reading `CONVERTER_TOKEN`, `CONVERTER_DOCKERFILE`, `CONVERTER_MEMORY`,
 `CONVERTER_THREADS`, `CONVERTER_TIMEOUT_SECONDS`, `CONVERTER_IMAGE`; plus
 `COMPOSE_PROFILES`.
 
@@ -409,14 +409,19 @@ They install on first start and need outbound access to the npm registry.
 A separate CPU service, `services/diarizer`, numbers the voices in meeting
 transcripts. Behavior: [meetings](../../openspec/specs/meetings/spec.md).
 
-1. Create a Hugging Face account, accept the terms of
-   `pyannote/speaker-diarization-community-1` on its model page and create a
-   read token.
-2. Add to `.env` (or Dokploy **Environment**):
+It runs NVIDIA [Nemotron 3 Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization)
+through [NeMo-Speech.cpp](https://github.com/NVIDIA/NeMo-Speech.cpp) on the
+CPU: up to eight voices, about 30 times faster than real time on eight cores
+(an hour of sound in about two minutes). Voice fingerprints come from NVIDIA
+[TitaNet](https://huggingface.co/nvidia/speakerverification_en_titanet_large).
+Both models are in the image, checked by SHA-256, so the service needs no
+token and no network. Licenses: NeMo-Speech.cpp Apache-2.0, Nemotron 3
+Diarization OpenMDW 1.1, TitaNet CC BY 4.0, sherpa-onnx Apache-2.0.
+
+1. Add to `.env` (or Dokploy **Environment**):
 
    ```sh
    COMPOSE_PROFILES=diarization
-   HF_TOKEN=hf_...
    DIARIZER_TOKEN=<random shared secret>
    # Optional
    DIARIZER_THREADS=0      # CPU threads, 0 = up to 8 (more only contend)
@@ -425,17 +430,24 @@ transcripts. Behavior: [meetings](../../openspec/specs/meetings/spec.md).
 
    Compose passes `DIARIZER_TOKEN` to the server as `NIARO_DIARIZATION_TOKEN`.
 
-3. Start it:
+2. Start it:
 
    ```sh
    docker compose --profile diarization up -d --build
    ```
 
    With `--profile https` as well in production. On Dokploy, redeploy; the
-   service runs on the project's own network, not on `dokploy-network`.
+   service runs on the project's own network, not on `dokploy-network`. The
+   first build compiles NeMo-Speech.cpp, a few minutes.
 
-4. Turn it on in administration → **Settings** → **Meetings** → **Tell voices
+3. Turn it on in administration → **Settings** → **Meetings** → **Tell voices
    apart**; see [telling voices apart](administration.md#telling-voices-apart).
+
+The slower pyannote alternative (`pyannote/speaker-diarization-community-1`,
+about a third of real time on eight cores) is built with
+`DIARIZER_DOCKERFILE=Dockerfile.pyannote`. It needs `HF_TOKEN`, a Hugging Face
+read token whose account accepted the model's terms, and downloads the model
+into the `diarizer-models` volume.
 
 In a meeting, a click on "Speaker 2" names that voice everywhere in the
 meeting, or marks it "This is me". With "This is me", a person can also let
@@ -444,10 +456,12 @@ makes a fingerprint of up to 90 s of their speech and the server keeps it for
 that person only, until they choose "Forget my voice". A fingerprint is
 biometric data; other participants' voices are compared in memory and never
 kept. Removing a member does not yet delete their meetings or fingerprint.
+Fingerprints of one engine never match another's: after switching engines a
+person records their voice again.
 
-The image is about 2 GB; the model (about 30 MB) is downloaded once into the
-`diarizer-models` volume. A two-hour meeting needs about 2 GB of memory on top
-of the model. To switch it off, leave out the profile or remove the
+The Nemotron image is about 600 MB and a two-hour meeting needs about 1.5 GB
+of memory; the pyannote image is about 2 GB and needs 2 GB on top of its
+model. To switch diarization off, leave out the profile or remove the
 `diarizer` service.
 
 ## Optional document reading
