@@ -2142,7 +2142,9 @@ export function Workspace({
                 petProfile.profile?.settings.showInChat !== false ? (
                   <PetView
                     appearance={petLook}
-                    animate={false}
+                    // Still, the small pet looked broken; it moves like the
+                    // big one unless motion is off in its settings.
+                    animate={petProfile.profile?.settings.animate ?? true}
                     onPress={() => {
                       changeSection("library");
                       setPetOpen(true);
