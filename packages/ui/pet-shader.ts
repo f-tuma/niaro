@@ -735,6 +735,9 @@ void main(){
   gl_FragColor = vec4(dither(mix(outc, em.rgb, em.a)), 1.0);
 }`;
 
+/** Everything the GPU compiles: a snapshot of the pet is valid only for the same source. */
+export const PET_SHADER_SOURCE = vertex + fragment;
+
 const uniformNames = [
   "uEmote",
   "uEmotePos",
@@ -787,28 +790,120 @@ const linear = (color: readonly number[]) =>
 const inkGlow = PET_COLORS.flatMap(linear);
 const inkAbs = inkGlow.map((value) => (1 - value) * 1.5 + 0.04);
 
-/** Owns only its GL resources. Dispose also handles partial compilation failures. */
-export function createPetShader(gl: WebGLRenderingContext, background: string) {
+/**
+ * Owns only its GL resources. Dispose also handles partial compilation failures.
+ *
+ * With `defer`, compile and link are only queued: nothing asks the driver for a result yet, so
+ * expo-gl's GL thread compiles while JS runs on (every status or location query makes JS wait for
+ * that thread). `compiling()` says, without waiting, whether a driver that can tell
+ * (KHR_parallel_shader_compile, in browsers) is still compiling. `finish()` checks the result and
+ * looks up the uniforms, waiting for the compile if it is not done, and throws on failure; `draw`
+ * does nothing before it. Without `defer`, finish() runs at once, as before.
+ */
+export function createPetShader(
+  gl: WebGLRenderingContext,
+  background: string,
+  defer = false,
+) {
   const shaders: WebGLShader[] = [];
   let program: WebGLProgram | null = null;
   let buffer: WebGLBuffer | null = null;
+  let linked = false;
+  let parallel: object | false = false;
+  const locations = new Map<string, WebGLUniformLocation | null>();
   const dispose = () => {
     if (buffer) gl.deleteBuffer(buffer);
     if (program) gl.deleteProgram(program);
     for (const shader of shaders) gl.deleteShader(shader);
     buffer = null;
     program = null;
+    linked = false;
     shaders.length = 0;
   };
+  type Name = (typeof uniformNames)[number];
+  const one = (name: Name, value: number) => {
+    const loc = locations.get(name);
+    if (loc != null) gl.uniform1f(loc, value);
+  };
+  const two = (name: Name, a: number, b: number) => {
+    const loc = locations.get(name);
+    if (loc != null) gl.uniform2f(loc, a, b);
+  };
+  const three = (name: Name, values: readonly number[] | Float32Array) => {
+    const loc = locations.get(name);
+    if (loc != null) gl.uniform3fv(loc, values as number[]);
+  };
+  const four = (name: Name, a: number, b: number, c: number, d: number) => {
+    const loc = locations.get(name);
+    if (loc != null) gl.uniform4f(loc, a, b, c, d);
+  };
+  let lastBackground = "";
+  const backdrop = (color: string) => {
+    if (color === lastBackground) return;
+    lastBackground = color;
+    const bg = rgb(color);
+    three("uBg", bg);
+    three("uBgL", linear(bg));
+    one("uDark", bg.reduce((a, b) => a + b, 0) < 1.5 ? 1 : 0);
+  };
+  const finish = () => {
+    if (linked || !program) return;
+    try {
+      for (const shader of shaders)
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+          throw Error("Pet shader compile failed");
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS))
+        throw Error("Pet shader link failed");
+      gl.useProgram(program);
+      buffer = gl.createBuffer();
+      if (!buffer) throw Error("Pet buffer unavailable");
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 3, -1, -1, 3]),
+        gl.STATIC_DRAW,
+      );
+      const position = gl.getAttribLocation(program, "p");
+      gl.enableVertexAttribArray(position);
+      gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+      for (const name of uniformNames)
+        locations.set(name, gl.getUniformLocation(program, name));
+      backdrop(background);
+      three("uTintL", linear([0.74, 0.7, 0.98]));
+      three("uInkA[0]", inkAbs);
+      three("uInkG[0]", inkGlow);
+      four("uShapeA", 9, 0.075, 1, 0);
+      four("uShapeB", 9, 0.075, 1, 0);
+      four("uShapeK", 1, 1, 1 / 1.675, 1.675);
+      one("uMorph", 1);
+      one("uR", 0.7);
+      one("uFov", 0.37);
+      one("uGrow", 1);
+      one("uGlow", 0);
+      two("uLean", 0, 0);
+      two("uRoll", 1, 0);
+      four("uFace2", 0, 0, 0, 0);
+      three("uMood", [0, 0, 0]);
+      two("uWx", 0, 0);
+      four("uDent", 0, 0, 0, 0);
+      four("uEmote", 0, 1, 0, 0);
+      four("uEmoteXf", 1, 0, 1, 1);
+      linked = true;
+    } catch (error) {
+      dispose();
+      throw error;
+    }
+  };
   try {
+    // Enabled before compiling: the driver then compiles in the background and can say when done.
+    if (defer && typeof gl.getExtension === "function")
+      parallel = gl.getExtension("KHR_parallel_shader_compile") || false;
     const compile = (type: number, source: string) => {
       const shader = gl.createShader(type);
       if (!shader) throw Error("Pet shader unavailable");
       shaders.push(shader);
       gl.shaderSource(shader, source);
       gl.compileShader(shader);
-      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
-        throw Error("Pet shader compile failed");
       return shader;
     };
     program = gl.createProgram();
@@ -816,79 +911,24 @@ export function createPetShader(gl: WebGLRenderingContext, background: string) {
     gl.attachShader(program, compile(gl.VERTEX_SHADER, vertex));
     gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragment));
     gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS))
-      throw Error("Pet shader link failed");
-    gl.useProgram(program);
-    buffer = gl.createBuffer();
-    if (!buffer) throw Error("Pet buffer unavailable");
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
-      new Float32Array([-1, -1, 3, -1, -1, 3]),
-      gl.STATIC_DRAW,
-    );
-    const position = gl.getAttribLocation(program, "p");
-    gl.enableVertexAttribArray(position);
-    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
-    const locations = new Map(
-      uniformNames.map((name) => [name, gl.getUniformLocation(program!, name)]),
-    );
-    type Name = (typeof uniformNames)[number];
-    const one = (name: Name, value: number) => {
-      const loc = locations.get(name);
-      if (loc != null) gl.uniform1f(loc, value);
-    };
-    const two = (name: Name, a: number, b: number) => {
-      const loc = locations.get(name);
-      if (loc != null) gl.uniform2f(loc, a, b);
-    };
-    const three = (name: Name, values: readonly number[] | Float32Array) => {
-      const loc = locations.get(name);
-      if (loc != null) gl.uniform3fv(loc, values as number[]);
-    };
-    const four = (name: Name, a: number, b: number, c: number, d: number) => {
-      const loc = locations.get(name);
-      if (loc != null) gl.uniform4f(loc, a, b, c, d);
-    };
-    let lastBackground = "";
-    const backdrop = (color: string) => {
-      if (color === lastBackground) return;
-      lastBackground = color;
-      const bg = rgb(color);
-      three("uBg", bg);
-      three("uBgL", linear(bg));
-      one("uDark", bg.reduce((a, b) => a + b, 0) < 1.5 ? 1 : 0);
-    };
-    backdrop(background);
-    three("uTintL", linear([0.74, 0.7, 0.98]));
-    three("uInkA[0]", inkAbs);
-    three("uInkG[0]", inkGlow);
-    four("uShapeA", 9, 0.075, 1, 0);
-    four("uShapeB", 9, 0.075, 1, 0);
-    four("uShapeK", 1, 1, 1 / 1.675, 1.675);
-    one("uMorph", 1);
-    one("uR", 0.7);
-    one("uFov", 0.37);
-    one("uGrow", 1);
-    one("uGlow", 0);
-    two("uLean", 0, 0);
-    two("uRoll", 1, 0);
-    four("uFace2", 0, 0, 0, 0);
-    three("uMood", [0, 0, 0]);
-    two("uWx", 0, 0);
-    four("uDent", 0, 0, 0, 0);
-    four("uEmote", 0, 1, 0, 0);
-    four("uEmoteXf", 1, 0, 1, 1);
+    if (!defer) finish();
     const drops = new Float32Array(24);
     const rotation = new Float32Array(9);
     return {
+      /** Deferred only: whether the driver reports it is still compiling; false when it cannot tell. */
+      compiling() {
+        if (linked || !program) return false;
+        // COMPLETION_STATUS_KHR: answered at once, never waits for the compile.
+        return !!parallel && !gl.getProgramParameter(program, 0x91b1);
+      },
+      finish,
       draw(
         motion: PetMotion,
         state: PetState,
         reduced: boolean,
         backgroundColor = background,
       ) {
-        if (!program) return;
+        if (!program || !linked) return;
         gl.useProgram(program);
         backdrop(backgroundColor);
         const sh = petGeometry(motion);

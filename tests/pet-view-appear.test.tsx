@@ -15,12 +15,27 @@ jest.mock("../packages/ui/gl-surface", () => ({
 test("a starting renderer shows no still drawing, and falls back only when it stalls", () => {
   jest.useFakeTimers();
   try {
-    render(<PetView label="Niaro" />);
+    // A look no still was kept for (the default one has a bundled still, below).
+    render(<PetView label="Niaro" appearance={{ shape: "pebble" }} />);
     expect(screen.UNSAFE_queryAllByType(PetFallback)).toHaveLength(0);
     act(() => jest.advanceTimersByTime(1100));
     expect(screen.UNSAFE_queryAllByType(PetFallback)).toHaveLength(0);
     act(() => jest.advanceTimersByTime(200));
     expect(screen.UNSAFE_queryAllByType(PetFallback)).toHaveLength(1);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("the default pet shows its bundled still at once while the renderer starts", () => {
+  jest.useFakeTimers();
+  try {
+    render(<PetView label="Niaro" />);
+    expect(
+      screen.getByTestId("niaro-pet-still", { includeHiddenElements: true }),
+    ).toBeTruthy();
+    act(() => jest.advanceTimersByTime(1300));
+    expect(screen.UNSAFE_queryAllByType(PetFallback)).toHaveLength(0);
   } finally {
     jest.useRealTimers();
   }

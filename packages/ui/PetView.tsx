@@ -3,7 +3,6 @@ import {
   createPetCadence,
   petCadenceDue,
   advancePetMotion,
-  createPetInteraction,
   petFrame,
   resetPetInteraction,
   pressPet,
@@ -21,6 +20,7 @@ import React, {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -30,6 +30,7 @@ import {
   Platform,
   Animated,
   Easing,
+  Image,
   View,
   type GestureResponderEvent,
   type NativeSyntheticEvent,
@@ -41,6 +42,20 @@ import { GLBoundary, supportedGLView } from "./gl-surface";
 import { useReducedMotion } from "./motion";
 import { createPetShader } from "./pet-shader";
 import { PetFallback } from "./PetFallback";
+import { petPerf } from "./pet-perf";
+import {
+  keepPetSnapshot,
+  keptPetSnapshot,
+  petSnapshot,
+  petSnapshotFile,
+  petSnapshotKey,
+} from "./pet-snapshot";
+import {
+  canSavePetSnapshot,
+  glSettled,
+  savePetSnapshot,
+} from "./pet-snapshot-io";
+import { claimPetMotion, createPetMotion, releasePetMotion } from "./pet-store";
 import {
   focusPetPlay,
   keyPetPlay,
@@ -73,6 +88,17 @@ export type PetViewProps = {
   visible?: boolean;
   /** Bumped as the person types to it; the pet glances at their words. */
   typed?: number;
+  /**
+   * A placement's name (one view at a time): a rebuilt view under the same name continues the
+   * pet's motion instead of starting it again. Read once, at mount.
+   */
+  motionKey?: string;
+  /**
+   * The drawing buffer's size in points, kept for the life of the view: a changed `size` only
+   * scales the drawing. A view that needs a third more pixels than it has draws anew. Defaults
+   * to the first `size`.
+   */
+  drawingSize?: number;
 };
 export type { PetState } from "./pet-motion";
 
@@ -92,10 +118,13 @@ export const PetView = memo(function PetView({
   occupied = false,
   visible: ownerVisible = true,
   typed = 0,
+  motionKey,
+  drawingSize,
 }: PetViewProps) {
   const systemReduced = useReducedMotion();
   const reduced = systemReduced || !animate;
   const [Surface] = useState(supportedGLView);
+  const [perf] = useState(() => petPerf(`${motionKey ?? testID} ${size}pt`));
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
   // Until the shader draws, nothing shows; the still drawing is only a
@@ -130,20 +159,56 @@ export const PetView = memo(function PetView({
     ownerVisible &&
     (state === "idle" || state === "resting");
 
-  const dimensions = petRenderSize(size, PixelRatio.get());
+  const density = Math.max(1, PixelRatio.get());
+  const dimensions = petRenderSize(size, density);
+  // The drawing buffer outlives size changes (the keyboard, a measured box): a new one means a new
+  // GL context and a new compile, so it is replaced only when it would visibly blur.
+  const needed = petRenderSize(drawingSize ?? size, density).pixels;
+  const [pixels, setPixels] = useState(needed);
+  if (needed > pixels * 1.34) setPixels(needed);
+  const surface = pixels / density;
   useEffect(() => {
     // A replaced drawing buffer stays hidden until its first frame.
     setReady(false);
-  }, [dimensions.pixels]);
+  }, [pixels]);
+  // Until the live pet draws, the still of its first frame stands in for it, when there is one.
+  const snapshotKey = petSnapshotKey({
+    appearance,
+    background,
+    state,
+    pixels,
+    reduced,
+  });
+  const snapshot = useMemo(
+    () => (Surface && !failed ? petSnapshot(snapshotKey) : null),
+    [snapshotKey, Surface, failed],
+  );
+  const [snapshotGone, setSnapshotGone] = useState(false);
+  const snapshotShown = !!snapshot && !snapshotGone;
+  const snapshotFade = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    if (ready || !Surface || failed) return;
+    if (ready || !Surface || failed || snapshotShown) return;
     const timer = setTimeout(() => setSlow(true), 1200);
     return () => clearTimeout(timer);
-  }, [ready, Surface, failed]);
+  }, [ready, Surface, failed, snapshotShown]);
+  useEffect(() => {
+    if (!ready || !snapshotShown) return;
+    // Same frame underneath, so this is invisible; a pet that kept moving shifts softly.
+    const run = Animated.timing(snapshotFade, {
+      toValue: 0,
+      duration: t.motion.stateTransition,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: Platform.OS !== "web",
+    });
+    run.start(({ finished }) => {
+      if (finished) setSnapshotGone(true);
+    });
+    return () => run.stop();
+  }, [ready, snapshotShown, snapshotFade]);
   useEffect(() => {
     if (!ready) return;
-    // The first appearance eases in; a resized buffer simply returns.
-    if (appeared.current || reduced) {
+    // The first appearance eases in; a resized buffer, or a pet its still already shows, is there.
+    if (appeared.current || reduced || snapshotShown) {
       appear.setValue(1);
       appeared.current = true;
       return;
@@ -157,7 +222,7 @@ export const PetView = memo(function PetView({
     });
     run.start();
     return () => run.stop();
-  }, [ready, reduced, appear]);
+  }, [ready, reduced, appear, snapshotShown]);
   const latest = useRef({
     state,
     reduced,
@@ -170,18 +235,24 @@ export const PetView = memo(function PetView({
     ownerVisible,
     enabled,
     occupied,
+    snapshotKey,
+    snapshot,
   });
-  const motion = useRef<PetMotion>({
-    time: 2,
-    level: 0,
-    touch: 0,
-    sleep: state === "resting" ? 1 : 0,
-    interaction: createPetInteraction(),
-  });
+  const [initialMotion] = useState(() => createPetMotion(state));
+  const motion = useRef<PetMotion>(initialMotion);
+  const restored = useRef(false);
   const control = useRef<{
     wake: (immediate?: boolean) => void;
     stop: () => void;
   } | null>(null);
+  // Before the effects below read motion: a kept pet for this placement replaces the new one.
+  useLayoutEffect(() => {
+    if (!motionKey) return;
+    const claim = claimPetMotion(motionKey, motion.current);
+    motion.current = claim.motion;
+    restored.current = claim.motion !== initialMotion;
+    return () => releasePetMotion(motionKey, motion.current);
+  }, [motionKey, initialMotion]);
   useLayoutEffect(() => {
     setPetAppearance(motion.current, appearance, reduced || !Surface || failed);
     latest.current.enabled = enabled;
@@ -194,6 +265,8 @@ export const PetView = memo(function PetView({
     latest.current.occupied = occupied;
     latest.current.reduced = reduced;
     latest.current.background = background;
+    latest.current.snapshotKey = snapshotKey;
+    latest.current.snapshot = snapshot;
     control.current?.wake();
   }, [
     state,
@@ -206,6 +279,8 @@ export const PetView = memo(function PetView({
     appearance,
     Surface,
     failed,
+    snapshotKey,
+    snapshot,
   ]);
   useEffect(() => {
     latest.current.level = 0;
@@ -299,7 +374,9 @@ export const PetView = memo(function PetView({
       let frame = 0,
         last = 0,
         stopped = false,
-        rendered = false;
+        rendered = false,
+        // While the first frame is saved as a still, nothing else may draw over it.
+        saving = false;
       let cadence = createPetCadence(),
         forceDraw = true;
       const canvas = Platform.OS === "web" ? gl?.canvas : undefined;
@@ -323,6 +400,7 @@ export const PetView = memo(function PetView({
         frame = 0;
         if (
           stopped ||
+          saving ||
           !latest.current.active ||
           !latest.current.visible ||
           !latest.current.ownerVisible
@@ -390,8 +468,37 @@ export const PetView = memo(function PetView({
           if (!rendered && renderer) {
             rendered = true;
             setReady(true);
+            perf?.mark("first frame");
+            const key = latest.current.snapshotKey;
+            const note = `motion ${restored.current ? "kept" : "new"}, still ${latest.current.snapshot ? "shown" : "none"}`;
+            const play = motion.current.interaction!.play;
+            // Only a pet that has not moved yet is the frame its key promises.
+            if (
+              gl &&
+              key &&
+              canSavePetSnapshot() &&
+              !keptPetSnapshot(key) &&
+              motion.current.time === 2 &&
+              motion.current.touch === 0 &&
+              !motion.current.appearanceTransition &&
+              !petPlayBusy(play)
+            ) {
+              saving = true;
+              savePetSnapshot(gl, petSnapshotFile(key))
+                .then((uri) => {
+                  if (uri) keepPetSnapshot(key, uri);
+                  perf?.mark("still saved");
+                })
+                .catch(() => perf?.mark("still not saved"))
+                .finally(() => {
+                  saving = false;
+                  perf?.done(note);
+                  wake();
+                });
+            } else perf?.done(note);
           }
           if (
+            !saving &&
             !latest.current.reduced &&
             (renderer ||
               motion.current.touch > 0.001 ||
@@ -406,6 +513,7 @@ export const PetView = memo(function PetView({
       };
       const wake = (immediate = false) => {
         forceDraw ||= immediate;
+        if (saving) return;
         if (
           stopped ||
           !latest.current.active ||
@@ -426,16 +534,38 @@ export const PetView = memo(function PetView({
       };
       control.current = { wake, stop };
       try {
-        if (gl) renderer = createPetShader(gl, latest.current.background);
+        if (gl) {
+          perf?.context();
+          // Queued only: the GL thread compiles while JS goes on.
+          renderer = createPetShader(gl, latest.current.background, true);
+        }
         if (canvas && "addEventListener" in canvas)
           canvas.addEventListener("webglcontextlost", lost);
-        if (gl) wake();
+        const pending = renderer;
+        if (gl && pending?.finish) {
+          gl.endFrameEXP();
+          void glSettled(gl, pending).then(() => {
+            if (stopped) return;
+            try {
+              const asked = performance.now();
+              pending.finish();
+              perf?.mark(
+                "compiled",
+                `JS waited ${Math.round(performance.now() - asked)}ms`,
+              );
+              wake();
+            } catch {
+              stop();
+              failRenderer();
+            }
+          });
+        } else if (gl) wake();
       } catch {
         stop();
         failRenderer();
       }
     },
-    [fallbackScale, fallbackTilt, failRenderer],
+    [fallbackScale, fallbackTilt, failRenderer, perf],
   );
   useEffect(() => {
     if (!Surface || failed) create();
@@ -782,7 +912,7 @@ export const PetView = memo(function PetView({
         fallback
       ) : (
         <GLBoundary fallback={fallback} onError={failRenderer}>
-          {!ready && slow ? (
+          {!ready && slow && !snapshotShown ? (
             <View pointerEvents="none" style={{ position: "absolute" }}>
               {fallback}
             </View>
@@ -791,16 +921,16 @@ export const PetView = memo(function PetView({
             pointerEvents="none"
             aria-hidden
             style={{
-              width: dimensions.surface,
-              height: dimensions.surface,
+              width: surface,
+              height: surface,
               opacity: ready ? appear : 0,
               transform: [
                 {
                   scale: appear.interpolate({
                     inputRange: [0, 1],
                     outputRange: [
-                      (0.9 * dimensions.logical) / dimensions.surface,
-                      dimensions.logical / dimensions.surface,
+                      (0.9 * dimensions.logical) / surface,
+                      dimensions.logical / surface,
                     ],
                   }),
                 },
@@ -809,11 +939,35 @@ export const PetView = memo(function PetView({
           >
             {/* expo-gl keeps the first drawing buffer; a new size needs a new surface. */}
             <Surface
-              key={dimensions.pixels}
-              style={{ width: dimensions.surface, height: dimensions.surface }}
+              key={pixels}
+              style={{ width: surface, height: surface }}
               onContextCreate={create}
             />
           </Animated.View>
+          {snapshotShown ? (
+            <Animated.View
+              pointerEvents="none"
+              aria-hidden
+              testID={`${testID}-still`}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                opacity: ready ? snapshotFade : 1,
+              }}
+            >
+              <Image
+                source={
+                  typeof snapshot === "number" ? snapshot : { uri: snapshot! }
+                }
+                fadeDuration={0}
+                style={{
+                  width: dimensions.logical,
+                  height: dimensions.logical,
+                }}
+              />
+            </Animated.View>
+          ) : null}
         </GLBoundary>
       )}
     </View>
