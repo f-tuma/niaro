@@ -193,9 +193,16 @@ float bodyL(vec3 p){
 float body(vec3 p){ return bodyL(local(p)); }
 // without the rim waves, which move it by at most 0.004 R uWobble: for the march through the water
 float bodyCheapL(vec3 p){ return length(vec2(max(shape2(p.xy) + T, 0.0), p.z * 1.15)) - T + dent(p); }
+// (the four samples in a loop, the field written once: unrolled, each sample inlined the whole body
+// again, and the shader took twice as long to compile)
 vec3 normalAt(vec3 p){
   const vec2 e = vec2(0.0012, -0.0012);
-  return normalize(e.xyy*body(p+e.xyy) + e.yyx*body(p+e.yyx) + e.yxy*body(p+e.yxy) + e.xxx*body(p+e.xxx));
+  vec3 n = vec3(0.0);
+  for (int i = 0; i < 4; i++){
+    vec3 k = i == 0 ? e.xyy : i == 1 ? e.yyx : i == 2 ? e.yxy : e.xxx;
+    n += k * body(p + k);
+  }
+  return normalize(n);
 }
 
 // ---- the little studio the pet sits in
@@ -442,16 +449,21 @@ vec4 emote(vec2 s, vec3 under, float cov){
   mat2 rot = mat2(uEmoteXf.x, uEmoteXf.y, -uEmoteXf.y, uEmoteXf.x);
   vec2 isc = 1.0 / uEmoteXf.zw;
   vec2 p = (rot * P) * isc;
-  float d = emoteD(p);
   float px = uEmote.w / max(S, 0.001);
-  // (the field's slope is at most about 5.3 at the sparkle's spikes and 1.3 elsewhere, so where it is
-  // surely more than 2 px away the slope samples are skipped)
-  if (d > 2.0 * px * (uEmote.x < 1.5 ? 6.0 : 1.4) * max(isc.x, isc.y)) return vec4(0.0);
-  // (forward differences, 0.3 px apart: two more evaluations of the field instead of four, which
-  // matters for the software renderer, where each one is inlined)
+  // (forward differences, 0.3 px apart: two more evaluations of the field instead of four, all three
+  // from one loop, so the field is compiled once)
   float e = 0.01;
   vec2 ex = (rot * vec2(e, 0.0)) * isc, ey = (rot * vec2(0.0, e)) * isc;
-  vec2 g = vec2(emoteD(p + ex) - d, emoteD(p + ey) - d) / e;
+  float d = 0.0; vec2 g = vec2(0.0);
+  for (int i = 0; i < 3; i++){
+    float v = emoteD(i == 0 ? p : p + (i == 1 ? ex : ey));
+    // (the field's slope is at most about 5.3 at the sparkle's spikes and 1.3 elsewhere, so where it is
+    // surely more than 2 px away the slope samples are skipped)
+    if (i == 0){ d = v; if (d > 2.0 * px * (uEmote.x < 1.5 ? 6.0 : 1.4) * max(isc.x, isc.y)) return vec4(0.0); }
+    else if (i == 1) g.x = v - d;
+    else g.y = v - d;
+  }
+  g /= e;
   float gl = max(length(g), 1e-3), dn = d / gl;
   float a = clamp(0.5 - dn / px, 0.0, 1.0);
   if (a <= 0.0) return vec4(0.0);
@@ -497,43 +509,9 @@ vec2 edgeGL(vec3 x){
   return vec2(length(gq / st) * min(st.x, st.y), lip);
 }
 
-void main(){
-  vec3 ro = vec3(0.0, 0.0, CAM);
-  vec3 rd = normalize(vec3(uv * uFov, -1.0));
-  // The march runs only where the ray crosses both bounds of the body: the sphere round its widest
-  // reach and the slab |local z| <= T/1.15 that holds it exactly (local z is the third row of uRot).
-  // The background skips it, and the march starts where the body can begin, in the body's own space.
-  float t = 1.8, minD = 9.0, tMin = 1.8; bool hit = false;
-  vec3 oc = ro - vec3(0.0, uBound.x, 0.0), ns = vec3(uRot[0].z, uRot[1].z, uRot[2].z);
-  float bq = dot(oc, rd), disc = bq * bq - dot(oc, oc) + uBound.y * uBound.y, sq = sqrt(max(disc, 0.0));
-  float s0 = dot(ns, oc), sv = -dot(ns, rd); // the ray goes into the slab: sv is near 1
-  float t0 = max(max(1.8, -bq - sq), (s0 - uBound.z) / sv), t1 = min(-bq + sq, (s0 + uBound.z) / sv);
-  if (disc > 0.0 && t0 < t1){
-    vec3 l0 = local(ro), lv = local(ro + rd) - l0;
-    t = t0; tMin = t;
-    for (int i = 0; i < 80; i++){
-      float d = bodyL(l0 + lv * t);
-      if (d < minD){ minD = d; tMin = t; }
-      if (d < 0.001){ hit = true; break; }
-      t += d * 0.8;
-      if (t > t1) break;
-    }
-  }
-  // No external aura: colour and light stay inside the body.
-  vec3 bgc = backdrop(uv);
-  // anti-aliased silhouette: pixels the surface only grazes are shaded at the
-  // closest point and blended by how much of the pixel it covers, a 1-px box
-  // centred on the outline. The distance to it comes from the outline's slope
-  // (misses) or the rim's curvature (hits); both measure from where the march
-  // calls it a hit (0.001), so they meet without a step.
-  float pxw = uPix / 1.5; // one canvas pixel in world units, at the camera distance
-  float cov = 1.0;
-  if (!hit){
-    cov = 0.0;
-    if (minD < uPix){ vec2 eg = edgeGL(ro + rd * tMin); cov = clamp(0.5 - (minD - 0.001) * eg.y / eg.x / (pxw * tMin / CAM), 0.0, 1.0); }
-    if (cov <= 0.0){ vec4 em = emote(uv, bgc, 0.0); gl_FragColor = vec4(dither(mix(srgb(bgc), em.rgb, em.a)), 1.0); return; }
-    t = tMin;
-  }
+// The water at the point the ray reaches (or grazes most closely), linear, before the roll-off;
+// a grazing hit lowers cov. Called once, so main() has a single emote() for every pixel.
+vec3 water(vec3 ro, vec3 rd, float t, bool hit, float pxw, inout float cov){
   vec3 p = ro + rd * t; vec3 n = normalAt(p);
   float cosi = clamp(dot(n, -rd), 0.0, 1.0);
   if (hit && cosi < 0.5){
@@ -567,7 +545,11 @@ void main(){
   vec3 s2t = vec3(1.7161, 1.7689, 1.836) * (1.0 - ce * ce); // ior^2 * sin^2, per channel
   vec3 Rin = 0.02 + 0.98 * pow(1.0 - sqrt(max(1.0 - s2t, 0.0)), vec3(5.0));
   Rin = mix(Rin, vec3(1.0), smoothstep(0.9, 1.0, s2t));
-  vec3 tr = vec3(through(e, r1, ne, 1.31).r, through(e, r1, ne, 1.33).g, through(e, r1, ne, 1.355).b);
+  vec3 tr = vec3(0.0); // (one channel per pass, so the studio is compiled once, not three times)
+  for (int c = 0; c < 3; c++){
+    vec3 b = through(e, r1, ne, c == 0 ? 1.31 : c == 1 ? 1.33 : 1.355);
+    if (c == 0) tr.r = b.r; else if (c == 1) tr.g = b.g; else tr.b = b.b;
+  }
   tr = mix(tr, envSoft(reflect(r1, -ne)) * 0.6, Rin);
 
   vec3 tint = uTintL;
@@ -704,9 +686,53 @@ void main(){
   col = mix(col, mouthShade, mouthM);
   float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
   col = max(mix(vec3(l), col, 1.12), 0.0);
-  vec3 outc = srgb(shoulder(col));
-  vec4 em = emote(uv, mix(bgc, col, cov), cov);
-  gl_FragColor = vec4(dither(mix(mix(srgb(bgc), outc, cov), em.rgb, em.a)), 1.0);
+  return col;
+}
+
+void main(){
+  vec3 ro = vec3(0.0, 0.0, CAM);
+  vec3 rd = normalize(vec3(uv * uFov, -1.0));
+  // The march runs only where the ray crosses both bounds of the body: the sphere round its widest
+  // reach and the slab |local z| <= T/1.15 that holds it exactly (local z is the third row of uRot).
+  // The background skips it, and the march starts where the body can begin, in the body's own space.
+  float t = 1.8, minD = 9.0, tMin = 1.8; bool hit = false;
+  vec3 oc = ro - vec3(0.0, uBound.x, 0.0), ns = vec3(uRot[0].z, uRot[1].z, uRot[2].z);
+  float bq = dot(oc, rd), disc = bq * bq - dot(oc, oc) + uBound.y * uBound.y, sq = sqrt(max(disc, 0.0));
+  float s0 = dot(ns, oc), sv = -dot(ns, rd); // the ray goes into the slab: sv is near 1
+  float t0 = max(max(1.8, -bq - sq), (s0 - uBound.z) / sv), t1 = min(-bq + sq, (s0 + uBound.z) / sv);
+  if (disc > 0.0 && t0 < t1){
+    vec3 l0 = local(ro), lv = local(ro + rd) - l0;
+    t = t0; tMin = t;
+    for (int i = 0; i < 80; i++){
+      float d = bodyL(l0 + lv * t);
+      if (d < minD){ minD = d; tMin = t; }
+      if (d < 0.001){ hit = true; break; }
+      t += d * 0.8;
+      if (t > t1) break;
+    }
+  }
+  // No external aura: colour and light stay inside the body.
+  vec3 bgc = backdrop(uv);
+  // anti-aliased silhouette: pixels the surface only grazes are shaded at the
+  // closest point and blended by how much of the pixel it covers, a 1-px box
+  // centred on the outline. The distance to it comes from the outline's slope
+  // (misses) or the rim's curvature (hits); both measure from where the march
+  // calls it a hit (0.001), so they meet without a step.
+  float pxw = uPix / 1.5; // one canvas pixel in world units, at the camera distance
+  float cov = 1.0;
+  if (!hit){
+    cov = 0.0;
+    if (minD < uPix){ vec2 eg = edgeGL(ro + rd * tMin); cov = clamp(0.5 - (minD - 0.001) * eg.y / eg.x / (pxw * tMin / CAM), 0.0, 1.0); }
+    t = tMin;
+  }
+  vec3 under = bgc, outc = srgb(bgc);
+  if (cov > 0.0){
+    vec3 col = water(ro, rd, t, hit, pxw, cov);
+    under = mix(bgc, col, cov);
+    outc = mix(outc, srgb(shoulder(col)), cov);
+  }
+  vec4 em = emote(uv, under, cov);
+  gl_FragColor = vec4(dither(mix(outc, em.rgb, em.a)), 1.0);
 }`;
 
 const uniformNames = [
