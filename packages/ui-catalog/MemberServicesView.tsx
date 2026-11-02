@@ -30,9 +30,13 @@ function count(
   value: number,
   forms: { one: string; few: string; other: string },
 ) {
-  const rule = new Intl.PluralRules(language).select(value);
+  // Hermes on the phone has no Intl.PluralRules: the rule is written out.
   const word =
-    rule === "one" ? forms.one : rule === "few" ? forms.few : forms.other;
+    value === 1
+      ? forms.one
+      : language === "cs" && value >= 2 && value <= 4
+        ? forms.few
+        : forms.other;
   return `${value} ${word}`;
 }
 

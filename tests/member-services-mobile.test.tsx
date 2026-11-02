@@ -2,7 +2,10 @@ import React from "react";
 import { act, render, screen } from "@testing-library/react-native";
 import { ClientSession } from "../packages/client-core/session";
 import type { MemberService } from "../packages/protocol/member-services";
-import { MemberServicesView } from "../packages/ui-catalog/MemberServicesView";
+import {
+  MemberServicesView,
+  memberServiceCounts,
+} from "../packages/ui-catalog/MemberServicesView";
 import { memberServicesCopy } from "../packages/ui-catalog/member-services-copy";
 import { MemberServices } from "../apps/mobile/ServiceConnection";
 import { FixtureEngine } from "../apps/fixture-server/engine";
@@ -236,4 +239,21 @@ describe("ClientSession.readMemberServices", () => {
       session.stop();
     }
   });
+});
+
+test("counts read without Intl.PluralRules, which Hermes on the phone lacks", () => {
+  const intl = Intl as { PluralRules?: typeof Intl.PluralRules };
+  const plural = intl.PluralRules;
+  delete intl.PluralRules;
+  try {
+    expect(memberServiceCounts(company, "cs")).toBe("2 čtení, 1 změna");
+    expect(
+      memberServiceCounts(
+        { ...company, changes: { ...company.changes, actions: [] } },
+        "en",
+      ),
+    ).toBe("2 reads");
+  } finally {
+    intl.PluralRules = plural;
+  }
 });
