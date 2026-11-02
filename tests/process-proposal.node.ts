@@ -6,7 +6,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PROCESS_PROPOSAL_PROFILE } from "../packages/protocol/process-proposal";
-import { ProcessProposalStore } from "../apps/server-identity/process-proposal";
+import {
+  ProcessProposalStore,
+  proposalReadiness,
+} from "../apps/server-identity/process-proposal";
+import { ProcessDefinitionSchema } from "../packages/protocol/service-processes";
+import { DEFAULT_PROCESS_LIMITS } from "../apps/server-identity/process-validation";
+import { processObject } from "./helpers/service-process";
 import { IdentityError } from "../apps/server-identity/error";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -116,4 +122,91 @@ test("saving a chat proposal is per person, recognises a retried press, refuses 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("sign-in readiness: a personal sign-in that is missing, one that is there, and a service that needs none", () => {
+  const definition = ProcessDefinitionSchema.parse({
+    schemaVersion: 1,
+    kind: "workflow",
+    name: "TEST readiness",
+    description: "",
+    trigger: "manual",
+    inputSchema: processObject({}),
+    outputSchema: processObject({}),
+    limits: DEFAULT_PROCESS_LIMITS,
+    entry: "crm",
+    steps: [
+      ...["crm", "mail", "wiki"].map((serviceId, index, all) => ({
+        id: serviceId,
+        type: "action",
+        serviceId: `11111111-1111-4111-8111-00000000000${index}`,
+        actionId: "read",
+        input: {},
+        outputSchema: processObject({}),
+        next: all[index + 1] ?? "done",
+      })),
+      { id: "done", type: "return", output: {} },
+    ],
+  });
+  const ids = [0, 1, 2].map(
+    (index) => `11111111-1111-4111-8111-00000000000${index}`,
+  );
+  const services = new Map(
+    [
+      // Its own sign-in, which this person has not done.
+      { name: "TEST CRM", auth: "oauth", shared: false, ready: false },
+      // Signed in with their own account.
+      { name: "TEST Mail", auth: "oauth", shared: false, ready: "personal" },
+      // Uses the key it was added with.
+      { name: "TEST Wiki", auth: "bearer", shared: true, ready: "shared" },
+    ].map((service, index) => [ids[index]!, service]),
+  );
+  const asked: string[] = [];
+  const catalog = {
+    service: (_workspaceId: string, id: string) => {
+      const known = services.get(id);
+      if (!known) throw new Error("service_not_found");
+      return {
+        id,
+        name: known.name,
+        url: `https://${id}.test`,
+        revision: 1,
+        auth: { type: known.auth },
+        hasCredential: known.shared,
+        actions: [{ id: "read", effect: "read" }],
+      } as never;
+    },
+    oauth: {
+      executionReady: (
+        target: { serviceId: string },
+        userId: string,
+        effect: "read" | "write",
+      ) => {
+        asked.push(`${target.serviceId}:${userId}:${effect}`);
+        return services.get(target.serviceId)!.ready as never;
+      },
+    },
+  };
+  assert.deepEqual(
+    proposalReadiness(definition, catalog, {
+      workspaceId,
+      userId: "TEST-user",
+    }),
+    [
+      { serviceId: ids[0], name: "TEST CRM", signIn: "needed" },
+      { serviceId: ids[1], name: "TEST Mail", signIn: "connected" },
+      { serviceId: ids[2], name: "TEST Wiki", signIn: "none" },
+    ],
+  );
+  assert.deepEqual(
+    asked,
+    ids.map((id) => `${id}:TEST-user:read`),
+  );
+  // A service no longer in the catalog is left out.
+  services.delete(ids[2]!);
+  assert.equal(
+    proposalReadiness(definition, catalog, { workspaceId, userId: "TEST-user" })
+      .length,
+    2,
+  );
 });

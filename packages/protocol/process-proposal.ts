@@ -168,6 +168,22 @@ export const ProcessProposalStatusSchema = z.strictObject({
     })
     .optional(),
   updatedAt: z.iso.datetime().optional(),
+  /**
+   * Read with the status, never stored: for each service the proposal uses,
+   * whether the person is signed in to it. `needed`: a run would stop at
+   * `connection_required` for them; `connected`: their own connection serves
+   * it; `none`: no personal sign-in. Signed in, never "it works".
+   */
+  services: z
+    .array(
+      z.strictObject({
+        serviceId: IdentityId,
+        name: label,
+        signIn: z.enum(["none", "needed", "connected"]),
+      }),
+    )
+    .max(16)
+    .optional(),
 });
 export type ProcessProposalStatus = z.infer<typeof ProcessProposalStatusSchema>;
 

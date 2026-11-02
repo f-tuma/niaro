@@ -13,7 +13,7 @@ import {
 } from "../../packages/client-core/service-connection-flow";
 
 /** The provider page opens in the browser and returns through the app link. */
-const platform: ConnectionPlatform = {
+export const connectionPlatform: ConnectionPlatform = {
   open: (url) => Linking.openURL(url),
   onReturn: (listener) =>
     Linking.addEventListener("url", ({ url }) => {
@@ -60,7 +60,7 @@ export function ServiceConnection({
         setContinued(true);
         continueRequest.current(resume.current);
       },
-      platform,
+      connectionPlatform,
     );
     flow.current = owner;
     void owner.load();

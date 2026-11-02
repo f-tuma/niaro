@@ -38,6 +38,8 @@ import { fitProcessLimits } from "./process-proposal-limits";
 import { processDigest } from "./process-validation";
 import type { ProcessVersionsStore } from "./process-versions-store";
 import type { ServiceCatalogStore } from "./service-catalog";
+import type { ServiceOAuthStore } from "./service-oauth";
+import type { Service } from "../../packages/protocol/service-catalog";
 import type { ProcessActor, ServiceProcessStore } from "./service-processes";
 import type { WorkspacePluginStore } from "./workspace-plugins";
 
@@ -235,6 +237,73 @@ function capabilitiesOf(definition: ProcessDefinition) {
             ? step.capabilities
             : [],
       );
+}
+
+/** The catalog reads that sign-in readiness needs. */
+type ReadinessCatalog = {
+  service(workspaceId: string, id: string): Service;
+  oauth?: Pick<ServiceOAuthStore, "executionReady">;
+};
+/**
+ * Whether the person is signed in to each service a proposal uses, by the
+ * rule availability applies (`service-processes.ts`): an action that is not
+ * execution-ready for them, or a service with auth but neither a shared
+ * credential nor their own connection, needs their sign-in.
+ */
+export function proposalReadiness(
+  definition: ProcessDefinition,
+  catalog: ReadinessCatalog,
+  actor: Pick<ProcessActor, "workspaceId" | "userId">,
+): NonNullable<ProcessProposalStatus["services"]> {
+  const used = new Map<string, string[]>();
+  for (const capability of capabilitiesOf(definition))
+    used.set(capability.serviceId, [
+      ...(used.get(capability.serviceId) ?? []),
+      capability.actionId,
+    ]);
+  const services: NonNullable<ProcessProposalStatus["services"]> = [];
+  for (const [serviceId, actionIds] of used) {
+    let service: Service;
+    try {
+      service = catalog.service(actor.workspaceId, serviceId);
+    } catch {
+      continue;
+    }
+    let signIn: "none" | "needed" | "connected" = "none";
+    for (const actionId of actionIds) {
+      const effect =
+        service.actions.find((action) => action.id === actionId)?.effect ??
+        "write";
+      let connection: "shared" | "personal" | false = "shared";
+      try {
+        connection =
+          catalog.oauth?.executionReady(
+            {
+              workspaceId: actor.workspaceId,
+              serviceId,
+              serviceUrl: service.url,
+              serviceRevision: service.revision,
+            },
+            actor.userId,
+            effect,
+          ) ?? "shared";
+      } catch {
+        connection = "shared";
+      }
+      if (
+        connection === false ||
+        (service.auth.type !== "none" &&
+          !service.hasCredential &&
+          connection !== "personal")
+      ) {
+        signIn = "needed";
+        break;
+      }
+      if (connection === "personal") signIn = "connected";
+    }
+    services.push({ serviceId, name: clip(service.name, 160), signIn });
+  }
+  return services.slice(0, 16);
 }
 
 /** The card a person reviews; built from the designer's current review. */
@@ -549,13 +618,32 @@ export function createProcessProposals(deps: ProcessProposalDependencies) {
       return false;
     }
   }
-  function status(actor: ProcessActor, sessionId: string) {
+  /** Sign-in readiness of the services the current proposal uses. */
+  function readiness(actor: ProcessActor, sessionId: string) {
+    try {
+      const candidate = deps.proposals.readReview(actor, sessionId).candidate;
+      return candidate
+        ? proposalReadiness(candidate, deps.catalog, actor)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  function status(
+    actor: ProcessActor,
+    sessionId: string,
+  ): ProcessProposalStatus {
     const current = deps.store.read(owner(actor), sessionId).status;
-    return current.state === "done" &&
+    const services = readiness(actor, sessionId);
+    return {
+      ...current,
+      ...(current.state === "done" &&
       current.processId &&
       outgrown(actor, current.processId)
-      ? { ...current, resize: true }
-      : current;
+        ? { resize: true as const }
+        : {}),
+      ...(services?.length ? { services } : {}),
+    };
   }
 
   /**

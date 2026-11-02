@@ -259,6 +259,10 @@ test(
         `process-proposals?sessionId=${card.sessionId}`,
       );
       assert.equal(ProcessProposalStatusSchema.parse(open.data).state, "open");
+      // Read with the status: the fixture's service needs no personal sign-in.
+      assert.deepEqual(ProcessProposalStatusSchema.parse(open.data).services, [
+        { serviceId: h.serviceId, name: "TEST design service", signIn: "none" },
+      ]);
 
       // Another person cannot read or save it.
       const admin = await h.pair("admin");

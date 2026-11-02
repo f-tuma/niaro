@@ -1,9 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import type { ClientSession } from "../../../packages/client-core/session";
 import type { Language, WorkItem } from "../../../packages/protocol";
 import type { ProcessOfferResult } from "../../../packages/protocol/process-offer";
-import { processProposalWebUrl } from "../../../packages/protocol/process-proposal";
 import { cardDocumentText } from "../../../packages/protocol/card-document";
 import { translate } from "../../../packages/i18n";
 import {
@@ -12,7 +11,7 @@ import {
   messageTime,
 } from "../../../packages/client-core/chat-days";
 import { tokens as t } from "../../../packages/design-tokens";
-import { Button, Icon, Row, Text, type IconName } from "../../../packages/ui";
+import { Icon, Row, Text, type IconName } from "../../../packages/ui";
 import { MarkdownText } from "../../../packages/ui-catalog/MarkdownText";
 import { GenerativeUiView } from "../../../packages/ui-catalog/GenerativeUiView";
 import { ProcessOfferCard } from "../../../packages/ui-catalog/ProcessOfferCard";
@@ -23,6 +22,7 @@ import { chrome as styles, AssistantMessage } from "../ScreenChrome";
 import { ServiceConnection } from "../ServiceConnection";
 import { MobileMessageAttachments } from "../AttachmentControls";
 import { copyText } from "../clipboard";
+import { ProcessProposalCard } from "../ProcessProposal";
 import type { ChatMessage, ThreadEntry, ThreadPart } from "./thread";
 
 /**
@@ -194,27 +194,21 @@ function OfferPart({ entry }: PartProps) {
   );
 }
 
-/** A process drafted in chat is reviewed and saved in the web app. */
+/** A process drafted in chat: saved and turned on here, edited on the web. */
 function ProposalPart({ entry }: PartProps) {
   const m = entry.message;
   const chat = useMobileChat();
   if (m.result?.type !== "process.proposal") return null;
-  const tr = translate(chat.language);
-  const web = chat.session
-    ? processProposalWebUrl(chat.session.address, m.result)
-    : null;
   return (
     <AssistantMessage>
       <AnswerBody message={m} />
-      <Text role="caption" tone="secondary">
-        {`${tr("processProposalTitle")}: ${m.result.name}`}
-      </Text>
-      {web ? (
-        <Button
-          label={tr("processProposalOpenWeb")}
-          variant="secondary"
-          size="small"
-          onPress={() => void Linking.openURL(web).catch(() => {})}
+      {chat.session ? (
+        <ProcessProposalCard
+          session={chat.session}
+          language={chat.language}
+          proposal={m.result}
+          disabled={chat.busy || !chat.online || chat.readOnly}
+          online={chat.online}
         />
       ) : null}
       <MessageMeta entry={entry} align="start" />
