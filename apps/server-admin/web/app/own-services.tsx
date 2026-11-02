@@ -487,7 +487,7 @@ function AddOwnServiceSheet({
         }
       }}
     >
-      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+      <SheetContent size="form">
         <form
           data-testid="own-service-form"
           className="flex min-h-0 flex-1 flex-col"
@@ -637,7 +637,7 @@ export function OwnServiceMenu({
         open={renaming}
         onOpenChange={(value) => !value && setRenaming(false)}
       >
-        <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+        <SheetContent size="form">
           <form
             className="flex min-h-0 flex-1 flex-col"
             onSubmit={(event) => {

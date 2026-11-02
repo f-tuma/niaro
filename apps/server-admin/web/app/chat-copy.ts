@@ -69,6 +69,10 @@ const en = {
   copyCode: "Copy code",
   /** Unfolds a long request. */
   unfold: "Show more",
+  // NIAR-267 ui consistency
+  /** The toast after archiving, with Undo. */
+  chatArchived: "Chat archived",
+  undo: "Undo",
   /** Generated answers (OpenUI). */
   generated: {
     sortBy: (column: string) => `Sort by ${column}`,
@@ -210,6 +214,9 @@ const cs: ChatCopy = {
   answerReady: "Odpověď je hotová",
   copyCode: "Kopírovat kód",
   unfold: "Zobrazit víc",
+  // NIAR-267 ui consistency
+  chatArchived: "Chat je v archivu",
+  undo: "Zpět",
   generated: {
     sortBy: (column: string) => `Seřadit podle ${column}`,
     barChart: "Sloupcový graf",

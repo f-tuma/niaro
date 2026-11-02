@@ -1195,3 +1195,82 @@ test("a stored answer is announced once with its first paragraph; opening the ch
   await wait();
   expect(text(region())).toBe("Odpověď je hotová. V říjnu 120 objednávek.");
 });
+
+// NIAR-267: the chat's name and actions live on the page, not only in the sidebar.
+test("an opened chat names itself in one header line with its menu; a new chat's name is for screen readers", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Ahoj")],
+  };
+  const { session } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const header = byTestId(
+    (await render(session, "conv-1")).root,
+    "chat-header",
+  );
+  const title = header.findByType("h1");
+  expect(text(title)).toBe("Klient");
+  expect(title.props["data-home"]).toBe(false);
+  expect(button(header, "Možnosti chatu")).toBeTruthy();
+  expect(
+    header
+      .findAll((node) => node.props["data-host"] === "DropdownMenuItem")
+      .map(text),
+  ).toEqual([
+    "Přejmenovat",
+    tr("pinChat"),
+    tr("archiveChat"),
+    tr("deleteChat"),
+  ]);
+
+  const fresh = fakeSession(storeWith([]));
+  const empty = byTestId((await render(fresh.session)).root, "chat-header");
+  expect(text(empty.findByType("h1"))).toBe("Nový chat");
+  expect(empty.findByType("h1").props["data-home"]).toBe(true);
+  expect(
+    empty.findAll((node) => node.props["aria-label"] === "Možnosti chatu"),
+  ).toHaveLength(0);
+});
+
+test("an archived chat's header has no menu; Restore stays in the page", async () => {
+  const { session } = fakeSession(storeWith([]), {
+    "archived-1": { conversation: summary("archived-1", { readOnly: true }) },
+  });
+  const root = (await render(session, "archived-1")).root;
+  const header = byTestId(root, "chat-header");
+  expect(text(header.findByType("h1"))).toBe("Klient");
+  expect(
+    header.findAll((node) => node.props["aria-label"] === "Možnosti chatu"),
+  ).toHaveLength(0);
+});
+
+test("an approval card ends with Decline then Approve, and Decline declines", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [
+      user("m-1", "Založ Jana Nováka"),
+      { id: "m-2", role: "assistant", text: "Zápis", result: approval },
+    ],
+  };
+  const { session, sent } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const footer = byTestId(
+    byTestId(root, "service-action-op-1"),
+    "service-action-decisions",
+  );
+  const decisions = footer.findAll((node) => node.type === "button");
+  expect(decisions.map(text)).toEqual(["Odmítnout", "Potvrdit"]);
+  expect(decisions[0]!.props.variant).toBe("outline");
+  expect(decisions[1]!.props.variant).toBeUndefined();
+  await act(async () => decisions[0]!.props.onClick());
+  expect(sent[0]).toMatchObject({
+    type: "service.resolve",
+    operationId: "op-1",
+    approved: false,
+  });
+});

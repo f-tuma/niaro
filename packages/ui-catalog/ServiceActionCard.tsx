@@ -130,26 +130,23 @@ export function ServiceActionCard({
               )}
             </Text>
           </Row>
-          <Row style={{ gap: t.spacing.sm }}>
-            <View style={{ flex: 1 }}>
-              <Button
-                label={tr("serviceReject")}
-                variant="secondary"
-                disabled={decisionDisabled}
-                onPress={() => {
-                  if (!decisionDisabled) onDecide(false);
-                }}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Button
-                label={tr("serviceApprove")}
-                disabled={decisionDisabled}
-                onPress={() => {
-                  if (!decisionDisabled) onDecide(true);
-                }}
-              />
-            </View>
+          {/* As on the web: right-aligned, Decline (tonal) then Approve. */}
+          <Row testID="service-action-decisions" style={styles.decisions}>
+            <Button
+              label={tr("serviceReject")}
+              variant="secondary"
+              disabled={decisionDisabled}
+              onPress={() => {
+                if (!decisionDisabled) onDecide(false);
+              }}
+            />
+            <Button
+              label={tr("serviceApprove")}
+              disabled={decisionDisabled}
+              onPress={() => {
+                if (!decisionDisabled) onDecide(true);
+              }}
+            />
           </Row>
         </>
       )}
@@ -225,6 +222,11 @@ function ContactResults({
 }
 
 const styles = StyleSheet.create({
+  decisions: {
+    gap: t.spacing.sm,
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+  },
   mark: {
     width: 40,
     height: 40,

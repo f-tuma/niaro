@@ -4,23 +4,47 @@ import * as React from "react";
 import { cn } from "cn";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
 
+/**
+ * How long a pointer rests before a tooltip opens. Keyboard focus opens it at
+ * once; moving on to the next trigger within `skipDelayDuration` skips the
+ * wait, so a sweep along a toolbar stays quick.
+ */
+const TOOLTIP_DELAY = {
+  /** Icon buttons: the label of a control. */
+  action: 300,
+  /** A truncated name or detail shown whole: only when the pointer stays. */
+  name: 800,
+} as const;
+
 function TooltipProvider({
-  delayDuration = 0,
+  delayDuration = TOOLTIP_DELAY.action,
+  skipDelayDuration = 300,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return (
     <TooltipPrimitive.Provider
       data-slot="tooltip-provider"
       delayDuration={delayDuration}
+      skipDelayDuration={skipDelayDuration}
       {...props}
     />
   );
 }
 
 function Tooltip({
+  delay = "action",
   ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
+}: React.ComponentProps<typeof TooltipPrimitive.Root> & {
+  /** action: an icon button's label (300 ms); name: a truncated name (800 ms). */
+  delay?: keyof typeof TOOLTIP_DELAY;
+}) {
+  return (
+    <TooltipPrimitive.Root
+      data-slot="tooltip"
+      delayDuration={TOOLTIP_DELAY[delay]}
+      {...props}
+    />
+  );
 }
 
 function TooltipTrigger({

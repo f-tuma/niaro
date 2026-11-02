@@ -160,7 +160,7 @@ export function HubGallery({
         if (!value) close();
       }}
     >
-      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-xl">
+      <SheetContent size="wide">
         <SheetHeader>
           <div className="flex items-center gap-1">
             {step.kind !== "pick" && back}
@@ -727,7 +727,7 @@ export function HubWidgetEditSheet({
         if (!open) onClose();
       }}
     >
-      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+      <SheetContent size="form">
         <SheetHeader>
           <SheetTitle>
             {definition?.fill === "ai" ? copy.editBrief : copy.editWidget}

@@ -1142,7 +1142,7 @@ function ServiceDetail({
             if (!state.busy) setEditingConnection(open);
           }}
         >
-          <SheetContent size="lg">
+          <SheetContent size="wide">
             <SheetHeader>
               <SheetTitle>{setupCopy.editConnection}</SheetTitle>
               <SheetDescription>{service.name}</SheetDescription>
@@ -1245,7 +1245,7 @@ function ServiceDetail({
               }}
             >
               <SheetContent
-                size="lg"
+                size="wide"
                 onCloseAutoFocus={(event) => {
                   event.preventDefault();
                   (editorTrigger.current?.isConnected
@@ -1426,7 +1426,7 @@ function Discovery({
         if (!open && !state.busy) close();
       }}
     >
-      <SheetContent size="lg">
+      <SheetContent size="wide">
         <SheetHeader>
           <SheetTitle>
             {choices ? copy.chooseActions : copy.discover}

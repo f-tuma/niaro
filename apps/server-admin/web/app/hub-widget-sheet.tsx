@@ -93,7 +93,7 @@ export function HubWidgetSheet({
         if (!open) onClose();
       }}
     >
-      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+      <SheetContent size="form">
         <SheetHeader>
           <SheetTitle>{copy.sheetTitle}</SheetTitle>
         </SheetHeader>

@@ -103,7 +103,6 @@ import {
   selectReplyInput,
   selectWorkMessageAnchors,
 } from "../../../../../packages/client-core/store";
-import { conversationTitle } from "../../../../../packages/client-core/conversation-title";
 import { en, type TranslationKey } from "../../../../../packages/i18n";
 import type {
   Conversation,
@@ -133,6 +132,8 @@ import {
   readDraft,
   saveDraft,
 } from "../chat-store";
+import { useChatTitle, useListedChat } from "../chat-history";
+import { ChatHeader } from "./chat-header";
 import { handOffProcessOffer } from "../offer-handoff";
 import { takeComposerHandoff } from "../task-handoff";
 import { TaskReferencePicker } from "../task-reference-picker";
@@ -455,6 +456,8 @@ export function ChatNextConversation({
   );
   const conversation = store?.conversations[id];
   const historyLiveRevision = conversation?.revision;
+  const listedChat = useListedChat(id);
+  const chatTitle = useChatTitle();
   useEffect(() => {
     const selected = historySelectionRef.current;
     if (
@@ -1115,7 +1118,11 @@ export function ChatNextConversation({
   const hasConversation =
     messages.length > 0 || trailingWork.length > 0 || !!pending;
   const inputDisabled = !valid || (!!context && !validContext);
-  const title = conversationTitle(historySelection?.title ?? "");
+  // The sidebar's list has a rename first; an opened chat's history next.
+  const title = chatTitle({
+    id,
+    title: listedChat?.title ?? historySelection?.title ?? "",
+  });
   const showHome =
     !(historyLoading && !historySelection) &&
     !hasConversation &&
@@ -1191,16 +1198,19 @@ export function ChatNextConversation({
 
   if (!valid)
     return (
-      <div className="mx-auto w-full max-w-4xl p-4 md:p-8">
-        <Alert variant="destructive">
-          <AlertDescription>{copy.chatUnavailable}</AlertDescription>
-          <AlertAction>
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/chat">{copy.newChat}</Link>
-            </Button>
-          </AlertAction>
-        </Alert>
-      </div>
+      <>
+        <ChatHeader session={session} title={copy.chatUnavailable} home />
+        <div className="mx-auto w-full max-w-4xl p-4 md:p-8">
+          <Alert variant="destructive">
+            <AlertDescription>{copy.chatUnavailable}</AlertDescription>
+            <AlertAction>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/chat">{copy.newChat}</Link>
+              </Button>
+            </AlertAction>
+          </Alert>
+        </div>
+      </>
     );
 
   return (
@@ -1210,8 +1220,13 @@ export function ChatNextConversation({
           data-testid="chat-next"
           className="flex min-h-0 flex-1 flex-col"
         >
-          {!showHome && <ChatPet compact />}
-          <h1 className="sr-only">{title || copy.newChat}</h1>
+          <ChatHeader
+            session={session}
+            chatId={!unsaved && !readOnly ? id : undefined}
+            title={unsaved && !listedChat ? copy.newChat : title}
+            home={showHome}
+            pet={!showHome && <ChatPet compact />}
+          />
           {/* Always present, so the first answer is heard too. */}
           <div
             role="status"
@@ -2381,11 +2396,7 @@ function ChatPet({ compact = false }: { compact?: boolean }) {
     />
   );
   return compact ? (
-    <Link
-      to="/pet"
-      aria-label={profile.data.settings.name}
-      className="ml-auto mr-4"
-    >
+    <Link to="/pet" aria-label={profile.data.settings.name}>
       {pet}
     </Link>
   ) : (

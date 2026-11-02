@@ -549,7 +549,7 @@ function CompanyProviders({
           if (!open) close();
         }}
       >
-        <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
+        <SheetContent size="form">
           <SheetHeader>
             <SheetTitle>
               {editor === "new" ? copy.add : copy.editTitle}

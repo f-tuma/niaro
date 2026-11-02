@@ -7,6 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@admin/components/ui/tooltip";
+import { useToast } from "@admin/components/ui/toast";
 import { useChatCopy } from "./chat-copy";
 import type { Language } from "../../../../packages/protocol";
 
@@ -19,7 +20,7 @@ function MessageTime({ at }: { at: string }) {
   const { language } = useChatCopy();
   const date = new Date(at);
   return (
-    <Tooltip>
+    <Tooltip delay="name">
       <TooltipTrigger asChild>
         <time
           dateTime={at}
@@ -146,6 +147,7 @@ export function MessageActions({
   onEdit?: () => void;
 }) {
   const { copy } = useChatCopy();
+  const toast = useToast();
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -164,7 +166,10 @@ export function MessageActions({
         onClick={() => {
           void navigator.clipboard
             ?.writeText(text)
-            .then(() => setCopied(true))
+            .then(() => {
+              setCopied(true);
+              toast?.copied();
+            })
             .catch(() => {});
         }}
       >

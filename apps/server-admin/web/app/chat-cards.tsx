@@ -268,36 +268,10 @@ export function ServiceActionView({
       )}
     </>
   );
+  // The effect and "Don't ask next time" on the left; the decisions end the
+  // card on the right, Decline (outline) before Approve, as on the phone.
   const decisions = waiting && (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button
-        disabled={decisionDisabled}
-        onClick={() => {
-          if (decisionDisabled) return;
-          const decided = onDecide(true);
-          // The approval goes first; only once the server accepted it stop
-          // asking for this action. A failed approval saves no rule.
-          if (remember && rememberTarget)
-            void Promise.resolve(decided)
-              .then((accepted) =>
-                accepted === true
-                  ? rememberApproval(rememberTarget, result.operationId)
-                  : undefined,
-              )
-              .catch(() => setRememberFailed(true));
-        }}
-      >
-        {tr("serviceApprove")}
-      </Button>
-      <Button
-        variant="outline"
-        disabled={decisionDisabled}
-        onClick={() => {
-          if (!decisionDisabled) onDecide(false);
-        }}
-      >
-        {tr("serviceReject")}
-      </Button>
+    <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
       <span className="text-xs text-muted-foreground">
         {tr(
           result.effect === "write"
@@ -314,6 +288,39 @@ export function ServiceActionView({
           onCheckedChange={setRemember}
         />
       )}
+      <div
+        data-testid="service-action-decisions"
+        className="ml-auto flex gap-2"
+      >
+        <Button
+          variant="outline"
+          disabled={decisionDisabled}
+          onClick={() => {
+            if (!decisionDisabled) onDecide(false);
+          }}
+        >
+          {tr("serviceReject")}
+        </Button>
+        <Button
+          disabled={decisionDisabled}
+          onClick={() => {
+            if (decisionDisabled) return;
+            const decided = onDecide(true);
+            // The approval goes first; only once the server accepted it stop
+            // asking for this action. A failed approval saves no rule.
+            if (remember && rememberTarget)
+              void Promise.resolve(decided)
+                .then((accepted) =>
+                  accepted === true
+                    ? rememberApproval(rememberTarget, result.operationId)
+                    : undefined,
+                )
+                .catch(() => setRememberFailed(true));
+          }}
+        >
+          {tr("serviceApprove")}
+        </Button>
+      </div>
     </div>
   );
   const header = (

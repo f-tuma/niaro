@@ -123,7 +123,7 @@ export function PasswordResetSheet({
   }
   return (
     <Sheet open={!!member} onOpenChange={(open) => !open && close()}>
-      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+      <SheetContent size="form">
         <SheetHeader>
           <SheetTitle>
             {copy.title} {member?.name}

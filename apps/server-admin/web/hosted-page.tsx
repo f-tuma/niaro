@@ -676,7 +676,7 @@ function HostedLogs({
   });
   return (
     <Sheet open={!!server} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent size="lg">
+      <SheetContent size="wide">
         <SheetHeader>
           <SheetTitle>{server?.definition.name}</SheetTitle>
           <SheetDescription>{copy.logsHint}</SheetDescription>

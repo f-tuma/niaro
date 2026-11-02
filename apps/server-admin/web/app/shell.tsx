@@ -77,6 +77,8 @@ import { useApp } from "./context";
 import { useAppCopy, type AppCopy } from "./copy";
 import { MeetingRecordingBadge } from "./meeting-recorder";
 import { ChatHistoryNav } from "./chat-history";
+import { chatCopy } from "./chat-copy";
+import { ToastProvider } from "@admin/components/ui/toast";
 import { useSearchCopy } from "./search-copy";
 
 /** The information views, after Overview, New chat and Search. */
@@ -103,9 +105,17 @@ export function AppShell() {
   return (
     // Unsaved designer edits ask before switching workspace or signing out.
     <ProcessEditsGuard copy={language === "cs" ? designCs : designEn}>
-      <SidebarProvider className="h-svh">
-        <Layout />
-      </SidebarProvider>
+      {/* The one toast: "Copied" and Undo only. */}
+      <ToastProvider
+        labels={{
+          copied: chatCopy[language].copied,
+          undo: chatCopy[language].undo,
+        }}
+      >
+        <SidebarProvider className="h-svh">
+          <Layout />
+        </SidebarProvider>
+      </ToastProvider>
     </ProcessEditsGuard>
   );
 }
@@ -117,6 +127,7 @@ function Layout() {
   const { setOpenMobile } = useSidebar();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const petPath = path === "/pet" || path === "/me/memory";
+  const chatPath = path === NEW_CHAT_PATH || path.startsWith("/chat/");
   useEffect(() => setOpenMobile(false), [path, setOpenMobile]);
   // As in ChatGPT: Ctrl/Cmd+K searches chats, Ctrl/Cmd+Shift+O starts a
   // new chat, from anywhere in the app.
@@ -240,9 +251,12 @@ function Layout() {
         <SidebarRail />
       </Sidebar>
       <SidebarInset className="min-h-0 min-w-0">
-        <header className="flex h-12 shrink-0 items-center gap-2 px-3 md:hidden">
-          <SidebarTrigger aria-label={copy.toggleSidebar} />
-        </header>
+        {/* The chat page's own header opens the sidebar on phones. */}
+        {!(session && chatPath) && (
+          <header className="flex h-12 shrink-0 items-center gap-2 px-3 md:hidden">
+            <SidebarTrigger aria-label={copy.toggleSidebar} />
+          </header>
+        )}
         <main
           id="app-content"
           tabIndex={-1}

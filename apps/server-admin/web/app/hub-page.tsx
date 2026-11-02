@@ -859,7 +859,8 @@ function WidgetFrame({
             data-type={type}
             data-tall={tall === true}
             showCloseButton={false}
-            className="flex max-h-5/6 flex-col data-[tall=true]:h-5/6 sm:max-w-5xl"
+            size="full"
+            className="flex max-h-5/6 flex-col data-[tall=true]:h-5/6"
           >
             <DialogHeader>
               {/* One line: name and status left, the tools and refresh right. */}

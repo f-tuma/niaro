@@ -719,7 +719,7 @@ export function LaunchSheet({
         if (!open) onClose();
       }}
     >
-      <SheetContent size="lg">
+      <SheetContent size="wide">
         {entry && (
           <>
             <SheetHeader>
@@ -926,7 +926,7 @@ export function RunSheet({
         if (!open) onClose();
       }}
     >
-      <SheetContent size="lg">
+      <SheetContent size="wide">
         {run && (
           <>
             <SheetHeader>

@@ -391,7 +391,7 @@ export function AddPluginSheet({
   }
   return (
     <Sheet open={open} onOpenChange={(value) => !busy && onOpenChange(value)}>
-      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+      <SheetContent size="form">
         <SheetHeader>
           <SheetTitle>{copy.addPlugin}</SheetTitle>
         </SheetHeader>

@@ -48,6 +48,8 @@ The shared principles of the web app and the console live in [docs/ui-system.md]
 | Technical detail (IDs, JSON)          | `Disclosure` (closed by default) with `CodeBlock` or `DetailList` inside                                                             |
 | When something happened               | `RelativeTime` (relative text, exact time in the tooltip). Never print both                                                          |
 | Side editor                           | `Sheet` (right side). Full forms that need space get their own route                                                                 |
+| Dialog or sheet width                 | `size` on `DialogContent`/`SheetContent`: `default` 384 px, `form` 448, `wide` 576, `full` 1024 (dialog). No `sm:max-w-*`            |
+| Transient confirmation                | `useToast`: only "Copied" and Undo ("Chat archived"). Never errors, approvals or questions; one at a time                            |
 | Run step details                      | `Collapsible` timeline step that expands in place                                                                                    |
 | Empty                                 | `Empty variant="outline"` with icon, title, optional one-line description and one CTA                                                |
 | Loading                               | `Skeleton` shaped like the content                                                                                                   |
@@ -63,6 +65,9 @@ The shared principles of the web app and the console live in [docs/ui-system.md]
 - **Permissions.** Management CTAs (add, edit, delete, setup steps) render only when the user can manage; members see read-only state, not disabled buttons.
 - **Protocol and type labels** (MCP, OpenAPI, capabilities) are `Badge variant="outline"`; status uses `StatusBadge`. Never reuse a status tone for a label.
 - **One refresh.** The shell header owns refresh; pages do not add their own.
+- **Tooltips** open at once on keyboard focus; on hover after 300 ms on icon buttons (`Tooltip`'s default) and 800 ms for a truncated name or detail shown whole (`delay="name"`). Moving to the next trigger skips the wait.
+- **Approval cards** end with the effect and "Don't ask next time" on the left and the decisions on the right: **Decline** (outline) then **Approve** (primary), the same on the phone. "Cancel" only closes a sheet or dialog.
+- **Chat header.** The chat page starts with one line: the chat's name, the compact pet and the chat's `…` menu (Rename, Pin, Archive, Delete), the same items as its sidebar row, so they stay reachable with the sidebar collapsed.
 - **Run details.** Each step is a button that toggles its details in place; one step is open at a time. Switching between the overview and all steps keeps the recorded order.
 
 ## Styling

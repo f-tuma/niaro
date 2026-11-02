@@ -5,6 +5,8 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type FocusEvent,
+  type KeyboardEvent,
 } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
@@ -52,6 +54,7 @@ import {
 } from "@admin/components/ui/alert-dialog";
 import { Button } from "@admin/components/ui/button";
 import { Spinner } from "@admin/components/ui/spinner";
+import { useToast } from "@admin/components/ui/toast";
 import {
   conversationNamesKey,
   loadConversationPins,
@@ -61,6 +64,7 @@ import { useHubCopy } from "./hub-copy";
 import { conversationTitle } from "../../../../packages/client-core/conversation-title";
 import type { KeyValueStorage } from "../../../../packages/client-core/preferences";
 import { runningChat } from "../../../../packages/client-core/chat-view";
+import type { ClientSession } from "../../../../packages/client-core/session";
 import {
   archivableConversation,
   type ConversationHistoryPage,
@@ -155,28 +159,58 @@ export function groupChatsByDay(
   return groups;
 }
 
-/**
- * Recent chats in the sidebar: pinned first, then by day. Opening, sorting
- * and pinning never touch the conversations themselves.
- */
-export function ChatHistoryNav() {
+/** The name a chat is shown under, in the sidebar and in its own header. */
+export function useChatTitle() {
+  const { tr } = useChatCopy();
+  const hub = useHubCopy();
+  return (conversation: Pick<ConversationSummary, "id" | "title">) =>
+    conversationTitle(conversation.title) ||
+    // A hub item's runs are followed in its own chat, which has no message title.
+    (conversation.id.startsWith("chat-hub-")
+      ? hub.overview
+      : tr("untitledChat"));
+}
+
+/** The chat as the sidebar's list last read it, when it is loaded there. */
+export function useListedChat(id: string) {
   const { session } = useApp();
-  const { copy, tr, language } = useChatCopy();
   const client = useQueryClient();
+  const identityKey = session?.identityKey ?? "";
+  const subscribe = useCallback(
+    (listener: () => void) => client.getQueryCache().subscribe(listener),
+    [client],
+  );
+  const data = useSyncExternalStore(subscribe, () =>
+    client.getQueryData<InfiniteData<ConversationHistoryPage>>(
+      chatHistoryKey(identityKey),
+    ),
+  );
+  return data?.pages
+    .flatMap((page) => page.conversations)
+    .find((conversation) => conversation.id === id);
+}
+
+/** A chat a menu acts on: its id and the name it is shown under. */
+export type ChatMenuTarget = { id: string; title: string };
+
+/**
+ * Rename, pin, archive and delete for one chat, shared by the sidebar's rows
+ * and the chat's header. The list shows a change at once; the server's answer
+ * settles it. An archive offers Undo in the app's toast; a delete is
+ * confirmed first, and work waiting in the chat is named before either.
+ */
+export function useChatActions(given?: ClientSession) {
+  const app = useApp();
+  const session = given ?? app.session;
+  const { copy, tr } = useChatCopy();
+  const client = useQueryClient();
+  const toast = useToast();
+  const navigate = useNavigate();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const activeId = path.startsWith("/chat/")
     ? decodeURIComponent(path.slice("/chat/".length))
     : null;
   const identityKey = session?.identityKey ?? "";
-  const chats = useInfiniteQuery({
-    queryKey: chatHistoryKey(identityKey),
-    enabled: !!session,
-    initialPageParam: null as string | null,
-    // Archived chats live in the account's archive, not here.
-    queryFn: ({ pageParam, signal }) =>
-      session!.readConversations(pageParam, signal, "active"),
-    getNextPageParam: (page) => page.nextAfter,
-  });
   const pinsKey = ["app", "chat-pins", identityKey] as const;
   const pins = useQuery({
     queryKey: pinsKey,
@@ -194,38 +228,7 @@ export function ChatHistoryNav() {
     },
     onSuccess: (next) => client.setQueryData(pinsKey, next),
   });
-  // Names used to live in this browser only; the server holds them now.
-  useEffect(() => {
-    if (!identityKey) return;
-    try {
-      localStorage.removeItem(conversationNamesKey(identityKey));
-    } catch {
-      /* Nothing to drop where storage is unavailable. */
-    }
-  }, [identityKey]);
-  // Renames and deletions from another device arrive as a new snapshot.
-  const subscribe = useCallback(
-    (listener: () => void) => session?.subscribe(listener) ?? (() => {}),
-    [session],
-  );
-  const directoryVersion = useSyncExternalStore(
-    subscribe,
-    () => session?.getDirectoryVersion() ?? 0,
-    () => 0,
-  );
-  useEffect(() => {
-    if (directoryVersion)
-      void client.invalidateQueries({ queryKey: chatHistoryKey(identityKey) });
-  }, [directoryVersion, client, identityKey]);
-  // The chat whose answer is on its way.
-  const runningId = useSyncExternalStore(
-    subscribe,
-    () => (session ? runningChat(session.getSnapshot()) : null),
-    () => null,
-  );
-  const navigate = useNavigate();
   const [failure, setFailure] = useState<string | null>(null);
-  /** The list shows the change at once; the server's answer settles it. */
   const editRows = (
     edit: (rows: ConversationSummary[]) => ConversationSummary[],
   ) =>
@@ -284,6 +287,23 @@ export function ChatHistoryNav() {
       if (id === activeId) void navigate({ to: "/" });
     },
   });
+  /** Brings an archived chat back; it outlives the header that archived it. */
+  const undoArchive = async (id: string, reopen: boolean) => {
+    if (!session) return;
+    try {
+      await session.restoreConversation(id, crypto.randomUUID());
+    } catch (error) {
+      failed(error);
+      return;
+    }
+    void client.invalidateQueries({ queryKey: chatHistoryKey(identityKey) });
+    void client.invalidateQueries({ queryKey: archivedChatsKey(identityKey) });
+    if (reopen)
+      void navigate({
+        to: "/chat/$conversationId",
+        params: { conversationId: id },
+      });
+  };
   const archive = useMutation({
     mutationFn: ({ id, cancelOpenWork }: DirectoryChange) =>
       cancelOpenWork
@@ -299,18 +319,210 @@ export function ChatHistoryNav() {
       void client.invalidateQueries({
         queryKey: archivedChatsKey(identityKey),
       });
-      if (id === activeId) void navigate({ to: "/" });
+      const open = id === activeId;
+      if (open) void navigate({ to: "/" });
+      toast?.undo(copy.chatArchived, () => void undoArchive(id, open));
     },
   });
-  const [deleting, setDeleting] = useState<ConversationSummary>();
-  const hub = useHubCopy();
+  const [deleting, setDeleting] = useState<ChatMenuTarget>();
+  const pinned = pins.data ?? [];
+  const dialogs = (
+    <>
+      <AlertDialog
+        open={!!deleting}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(undefined);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tr("deleteChatTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleting && (
+                <span className="font-medium text-foreground">
+                  {deleting.title}
+                </span>
+              )}{" "}
+              {tr("deleteChatHint")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (deleting) remove.mutate({ id: deleting.id });
+              }}
+            >
+              {tr("deleteChat")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {refusal && (
+        <OpenWorkDialog
+          refusal={refusal}
+          onDismiss={() => setRefusal(undefined)}
+          onConfirm={({ conversationId, action }) => {
+            setRefusal(undefined);
+            (action === "archive" ? archive : remove).mutate({
+              id: conversationId,
+              cancelOpenWork: true,
+            });
+          }}
+        />
+      )}
+    </>
+  );
+  return {
+    session,
+    activeId,
+    failure,
+    pinned,
+    pinsReady: pins.isSuccess && !togglePin.isPending,
+    togglePin: (id: string) => togglePin.mutate(id),
+    /** Names the chat for all devices; an empty name brings the title back. */
+    rename: (id: string, name: string) => rename.mutate({ id, name }),
+    /** Undefined for a chat that cannot be archived (a hub item's chat). */
+    archive: (id: string) =>
+      archivableConversation(id) ? () => archive.mutate({ id }) : undefined,
+    requestDelete: (target: ChatMenuTarget) => setDeleting(target),
+    /** The delete confirmation and the open-work question; render once. */
+    dialogs,
+  };
+}
+
+/**
+ * The props of a field that renames a chat in place: Enter or leaving it
+ * saves a changed name, Escape keeps the old one.
+ */
+export function chatNameField(
+  title: string,
+  label: string,
+  onRename: (name: string) => void,
+  onDone: () => void,
+) {
+  return {
+    autoFocus: true,
+    "aria-label": label,
+    defaultValue: title,
+    placeholder: title,
+    maxLength: 160,
+    onFocus: (event: FocusEvent<HTMLInputElement>) =>
+      event.currentTarget.select(),
+    onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (event.currentTarget.value.trim() !== title)
+          onRename(event.currentTarget.value);
+        onDone();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        onDone();
+      }
+    },
+    onBlur: (event: FocusEvent<HTMLInputElement>) => {
+      if (event.currentTarget.value.trim() !== title)
+        onRename(event.currentTarget.value);
+      onDone();
+    },
+  };
+}
+
+/** The items of a chat's `…` menu, the same in the sidebar and the header. */
+export function ChatMenuItems({
+  pinned,
+  pinsReady,
+  onRename,
+  onTogglePin,
+  onArchive,
+  onDelete,
+}: {
+  pinned: boolean;
+  pinsReady: boolean;
+  onRename: () => void;
+  onTogglePin: () => void;
+  /** Absent for a hub item's chat. */
+  onArchive?: () => void;
+  onDelete: () => void;
+}) {
+  const { copy, tr } = useChatCopy();
+  return (
+    <>
+      <DropdownMenuItem onSelect={onRename}>
+        <Pencil aria-hidden="true" />
+        {copy.renameChat}
+      </DropdownMenuItem>
+      <DropdownMenuItem disabled={!pinsReady} onSelect={onTogglePin}>
+        {pinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
+        {tr(pinned ? "unpinChat" : "pinChat")}
+      </DropdownMenuItem>
+      {onArchive && (
+        <DropdownMenuItem onSelect={onArchive}>
+          <Archive aria-hidden="true" />
+          {tr("archiveChat")}
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+        <Trash2 aria-hidden="true" />
+        {tr("deleteChat")}
+      </DropdownMenuItem>
+    </>
+  );
+}
+
+/**
+ * Recent chats in the sidebar: pinned first, then by day. Opening, sorting
+ * and pinning never touch the conversations themselves.
+ */
+export function ChatHistoryNav() {
+  const { session } = useApp();
+  const { copy, tr, language } = useChatCopy();
+  const client = useQueryClient();
+  const actions = useChatActions();
+  const { activeId } = actions;
+  const identityKey = session?.identityKey ?? "";
+  const chats = useInfiniteQuery({
+    queryKey: chatHistoryKey(identityKey),
+    enabled: !!session,
+    initialPageParam: null as string | null,
+    // Archived chats live in the account's archive, not here.
+    queryFn: ({ pageParam, signal }) =>
+      session!.readConversations(pageParam, signal, "active"),
+    getNextPageParam: (page) => page.nextAfter,
+  });
+  // Names used to live in this browser only; the server holds them now.
+  useEffect(() => {
+    if (!identityKey) return;
+    try {
+      localStorage.removeItem(conversationNamesKey(identityKey));
+    } catch {
+      /* Nothing to drop where storage is unavailable. */
+    }
+  }, [identityKey]);
+  // Renames and deletions from another device arrive as a new snapshot.
+  const subscribe = useCallback(
+    (listener: () => void) => session?.subscribe(listener) ?? (() => {}),
+    [session],
+  );
+  const directoryVersion = useSyncExternalStore(
+    subscribe,
+    () => session?.getDirectoryVersion() ?? 0,
+    () => 0,
+  );
+  useEffect(() => {
+    if (directoryVersion)
+      void client.invalidateQueries({ queryKey: chatHistoryKey(identityKey) });
+  }, [directoryVersion, client, identityKey]);
+  // The chat whose answer is on its way.
+  const runningId = useSyncExternalStore(
+    subscribe,
+    () => (session ? runningChat(session.getSnapshot()) : null),
+    () => null,
+  );
+  const titleOf = useChatTitle();
   if (!session) return null;
-  const titleOf = (conversation: ConversationSummary) =>
-    conversationTitle(conversation.title) ||
-    // A hub item's runs are followed in its own chat, which has no message title.
-    (conversation.id.startsWith("chat-hub-")
-      ? hub.overview
-      : tr("untitledChat"));
   const seen = new Set<string>();
   const loaded = (chats.data?.pages.flatMap((page) => page.conversations) ?? [])
     .filter((c) => !c.readOnly && !seen.has(c.id) && !!seen.add(c.id))
@@ -323,7 +535,7 @@ export function ChatHistoryNav() {
     );
   // Search has its own screen (/search, "Search" above).
   const rows = loaded;
-  const pinned = pins.data ?? [];
+  const pinned = actions.pinned;
   const groups = [
     ...(rows.some((c) => pinned.includes(c.id))
       ? [
@@ -348,9 +560,9 @@ export function ChatHistoryNav() {
       aria-label={copy.chats}
       className="contents group-data-[collapsible=icon]:hidden"
     >
-      {failure && (
+      {actions.failure && (
         <p role="alert" className="px-4 text-xs text-destructive">
-          {failure}
+          {actions.failure}
         </p>
       )}
       {chats.isPending ? (
@@ -390,35 +602,29 @@ export function ChatHistoryNav() {
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {group.conversations.map((conversation) => (
-                    <ChatRow
-                      key={conversation.id}
-                      conversation={conversation}
-                      title={titleOf(conversation)}
-                      onRename={(name) =>
-                        rename.mutate({ id: conversation.id, name })
-                      }
-                      onDelete={() => setDeleting(conversation)}
-                      onArchive={
-                        archivableConversation(conversation.id)
-                          ? () => archive.mutate({ id: conversation.id })
-                          : undefined
-                      }
-                      active={conversation.id === activeId}
-                      running={conversation.id === runningId}
-                      pinned={pinned.includes(conversation.id)}
-                      pinsReady={pins.isSuccess && !togglePin.isPending}
-                      copy={copy}
-                      archiveLabel={tr("archiveChat")}
-                      deleteLabel={tr("deleteChat")}
-                      pinLabel={tr(
-                        pinned.includes(conversation.id)
-                          ? "unpinChat"
-                          : "pinChat",
-                      )}
-                      onTogglePin={() => togglePin.mutate(conversation.id)}
-                    />
-                  ))}
+                  {group.conversations.map((conversation) => {
+                    const title = titleOf(conversation);
+                    return (
+                      <ChatRow
+                        key={conversation.id}
+                        conversation={conversation}
+                        title={title}
+                        onRename={(name) =>
+                          actions.rename(conversation.id, name)
+                        }
+                        onDelete={() =>
+                          actions.requestDelete({ id: conversation.id, title })
+                        }
+                        onArchive={actions.archive(conversation.id)}
+                        active={conversation.id === activeId}
+                        running={conversation.id === runningId}
+                        pinned={pinned.includes(conversation.id)}
+                        pinsReady={actions.pinsReady}
+                        copy={copy}
+                        onTogglePin={() => actions.togglePin(conversation.id)}
+                      />
+                    );
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -437,50 +643,7 @@ export function ChatHistoryNav() {
           </Button>
         </SidebarGroup>
       )}
-      <AlertDialog
-        open={!!deleting}
-        onOpenChange={(open) => {
-          if (!open) setDeleting(undefined);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{tr("deleteChatTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleting && (
-                <span className="font-medium text-foreground">
-                  {titleOf(deleting)}
-                </span>
-              )}{" "}
-              {tr("deleteChatHint")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{tr("cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                if (deleting) remove.mutate({ id: deleting.id });
-              }}
-            >
-              {tr("deleteChat")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      {refusal && (
-        <OpenWorkDialog
-          refusal={refusal}
-          onDismiss={() => setRefusal(undefined)}
-          onConfirm={({ conversationId, action }) => {
-            setRefusal(undefined);
-            (action === "archive" ? archive : remove).mutate({
-              id: conversationId,
-              cancelOpenWork: true,
-            });
-          }}
-        />
-      )}
+      {actions.dialogs}
     </nav>
   );
 }
@@ -493,9 +656,6 @@ function ChatRow({
   pinned,
   pinsReady,
   copy,
-  archiveLabel,
-  pinLabel,
-  deleteLabel,
   onTogglePin,
   onRename,
   onArchive,
@@ -509,9 +669,6 @@ function ChatRow({
   pinned: boolean;
   pinsReady: boolean;
   copy: ChatCopy;
-  archiveLabel: string;
-  pinLabel: string;
-  deleteLabel: string;
   onTogglePin: () => void;
   /** Names the chat for all devices; an empty name brings the title back. */
   onRename: (name: string) => void;
@@ -526,28 +683,9 @@ function ChatRow({
     return (
       <SidebarMenuItem>
         <SidebarInput
-          autoFocus
-          aria-label={copy.chatName}
-          defaultValue={title}
-          placeholder={title}
-          maxLength={160}
-          onFocus={(event) => event.currentTarget.select()}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              if (event.currentTarget.value.trim() !== title)
-                onRename(event.currentTarget.value);
-              setEditing(false);
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              setEditing(false);
-            }
-          }}
-          onBlur={(event) => {
-            if (event.currentTarget.value.trim() !== title)
-              onRename(event.currentTarget.value);
-            setEditing(false);
-          }}
+          {...chatNameField(title, copy.chatName, onRename, () =>
+            setEditing(false),
+          )}
         />
       </SidebarMenuItem>
     );
@@ -581,34 +719,17 @@ function ChatRow({
             event.preventDefault();
           }}
         >
-          <DropdownMenuItem
-            onSelect={() => {
+          <ChatMenuItems
+            pinned={pinned}
+            pinsReady={pinsReady}
+            onRename={() => {
               renaming.current = true;
               setEditing(true);
             }}
-          >
-            <Pencil aria-hidden="true" />
-            {copy.renameChat}
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={!pinsReady} onSelect={onTogglePin}>
-            {pinned ? (
-              <PinOff aria-hidden="true" />
-            ) : (
-              <Pin aria-hidden="true" />
-            )}
-            {pinLabel}
-          </DropdownMenuItem>
-          {onArchive && (
-            <DropdownMenuItem onSelect={onArchive}>
-              <Archive aria-hidden="true" />
-              {archiveLabel}
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-            <Trash2 aria-hidden="true" />
-            {deleteLabel}
-          </DropdownMenuItem>
+            onTogglePin={onTogglePin}
+            onArchive={onArchive}
+            onDelete={onDelete}
+          />
         </DropdownMenuContent>
       </DropdownMenu>
     </SidebarMenuItem>

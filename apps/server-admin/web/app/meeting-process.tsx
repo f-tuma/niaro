@@ -118,7 +118,7 @@ export function MeetingProcessSheet({
           if (!value) onClose();
         }}
       >
-        <SheetContent size="lg">
+        <SheetContent size="wide">
           <SheetHeader>
             <SheetTitle className="mr-8">{copy.continueProcess}</SheetTitle>
             <SheetDescription>{task.text}</SheetDescription>

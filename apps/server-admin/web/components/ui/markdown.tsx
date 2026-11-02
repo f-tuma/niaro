@@ -11,6 +11,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@admin/components/ui/tooltip";
+import { useToast } from "@admin/components/ui/toast";
 
 /** The labels of a code block's copy action; without them code has none. */
 export type MarkdownCodeCopy = { copy: string; copied: string };
@@ -33,13 +34,10 @@ export function Markdown({
   text,
   size = "default",
   codeCopy,
-  onCopied,
 }: {
   text: string;
   size?: "default" | "chat";
   codeCopy?: MarkdownCodeCopy;
-  /** After a code block was copied. */
-  onCopied?: () => void;
 }) {
   const tree = useMemo(
     () =>
@@ -104,14 +102,7 @@ export function Markdown({
       case "inlineCode":
         return <code key={key}>{node.value}</code>;
       case "code":
-        return (
-          <CodeBlock
-            key={key}
-            value={node.value}
-            labels={codeCopy}
-            onCopied={onCopied}
-          />
-        );
+        return <CodeBlock key={key} value={node.value} labels={codeCopy} />;
       case "heading": {
         // The page's title is its only h1: "#" is a section of the answer.
         const Heading = headingTags[Math.min(node.depth, 5) - 1]!;
@@ -197,16 +188,18 @@ export function Markdown({
   );
 }
 
-/** A code block; with labels, a copy action in its top right corner. */
+/**
+ * A code block; with labels, a copy action in its top right corner that
+ * also raises the app's "Copied" toast.
+ */
 function CodeBlock({
   value,
   labels,
-  onCopied,
 }: {
   value: string;
   labels?: MarkdownCodeCopy;
-  onCopied?: () => void;
 }) {
+  const toast = useToast();
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -237,7 +230,7 @@ function CodeBlock({
                 ?.writeText(value)
                 .then(() => {
                   setCopied(true);
-                  onCopied?.();
+                  toast?.copied();
                 })
                 .catch(() => {});
             }}

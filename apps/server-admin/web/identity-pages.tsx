@@ -369,7 +369,7 @@ function FormSheet({
       open={open}
       onOpenChange={(value) => !pending && onOpenChange(value)}
     >
-      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+      <SheetContent size="form">
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
           {description && <SheetDescription>{description}</SheetDescription>}
@@ -635,7 +635,7 @@ function People({
       />
       {manage && (
         <Sheet open={creating} onOpenChange={setCreating}>
-          <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+          <SheetContent size="form">
             <SheetHeader>
               <SheetTitle>{copy.inviteToWorkspace}</SheetTitle>
               {detail.workspaces.length === 1 && (
@@ -925,7 +925,7 @@ function WorkspaceList({
           if (!open) setMembersFor(null);
         }}
       >
-        <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+        <SheetContent size="form">
           {editing && (
             <WorkspaceMembers
               key={editing.id}
@@ -961,7 +961,7 @@ function WorkspaceList({
           if (!open) setPairingFor(null);
         }}
       >
-        <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+        <SheetContent size="form">
           <SheetHeader>
             <SheetTitle>{copy.inviteToWorkspace}</SheetTitle>
             <SheetDescription>{pairing?.name}</SheetDescription>

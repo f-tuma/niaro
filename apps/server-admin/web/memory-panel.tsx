@@ -614,7 +614,7 @@ function MemoryRecords({
         }}
       >
         {editor && (
-          <SheetContent size="lg">
+          <SheetContent size="wide">
             <form
               onSubmit={(event) => void submit(event)}
               className="flex min-h-0 flex-1 flex-col"

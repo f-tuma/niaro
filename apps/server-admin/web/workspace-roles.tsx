@@ -141,7 +141,7 @@ export function WorkspaceRoles({
         }
       }}
     >
-      <SheetContent size="lg">
+      <SheetContent size="wide">
         <SheetHeader>
           <SheetTitle>
             {draft

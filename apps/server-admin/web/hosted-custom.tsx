@@ -201,7 +201,7 @@ export function AddServerSheet({
   const copy = useCopy();
   return (
     <Sheet open={!!choice} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent size="lg">
+      <SheetContent size="wide">
         {choice === "custom" ? (
           <CustomForm
             copy={copy}

@@ -23,6 +23,10 @@ jest.mock(
       .hostModule(),
   { virtual: true },
 );
+const mockToast = { copied: jest.fn(), undo: jest.fn() };
+jest.mock("@admin/components/ui/toast", () => ({ useToast: () => mockToast }), {
+  virtual: true,
+});
 
 const text = (node: ReactTestInstance | string): string =>
   typeof node === "string" ? node : node.children.map(text).join("");
@@ -78,13 +82,12 @@ test("a code block copies exactly its text and says so for a moment", async () =
     value: { clipboard: { writeText } },
     configurable: true,
   });
-  const onCopied = jest.fn();
+  mockToast.copied.mockClear();
   try {
     const root = render(
       <Markdown
         text={'Run:\n\n```json\n{ "ok": true }\n```'}
         codeCopy={labels}
-        onCopied={onCopied}
       />,
     );
     expect(text(root.findByType("pre"))).toBe('{ "ok": true }');
@@ -92,7 +95,8 @@ test("a code block copies exactly its text and says so for a moment", async () =
     expect(button().props["aria-label"]).toBe("Copy code");
     await act(async () => button().props.onClick());
     expect(writeText).toHaveBeenCalledWith('{ "ok": true }');
-    expect(onCopied).toHaveBeenCalledTimes(1);
+    // NIAR-267: the app's one "Copied" toast.
+    expect(mockToast.copied).toHaveBeenCalledTimes(1);
     expect(button().props["aria-label"]).toBe("Copied");
     act(() => jest.advanceTimersByTime(1500));
     expect(button().props["aria-label"]).toBe("Copy code");

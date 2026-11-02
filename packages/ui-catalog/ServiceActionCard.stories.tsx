@@ -99,6 +99,21 @@ export const ProcessReviewNarrow: Story = {
     },
   },
 };
+/** NIAR-267: Decline then Approve, right-aligned, also at 320 px in Czech. */
+export const DecisionsNarrowCzech: Story = {
+  render: (args) => (
+    <View style={{ width: 320, maxWidth: "100%" }}>
+      <ServiceActionCard {...args} />
+    </View>
+  ),
+  args: { language: "cs" },
+};
+/** After a decline the card reads "Declined", not "Cancelled". */
+export const Declined: Story = {
+  args: {
+    result: { ...result, status: "rejected", fields: [], inputJson: "" },
+  },
+};
 export const ProcessReviewNarrowCzech: Story = {
   ...ProcessReviewNarrow,
   args: { ...ProcessReviewNarrow.args, language: "cs" },

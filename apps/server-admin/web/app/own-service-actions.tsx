@@ -137,7 +137,7 @@ export function FindActionsSheet({
   };
   return (
     <Sheet open={open} onOpenChange={(value) => !value && close()}>
-      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
+      <SheetContent size="wide">
         <SheetHeader>
           <SheetTitle>
             {copy.actionsFindTitle.replace("{name}", service.name)}
@@ -320,7 +320,7 @@ export function EditActionSheet({
   const target = { id: action.id, revision: action.revision ?? 0 };
   return (
     <Sheet open onOpenChange={(value) => !value && onClose()}>
-      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+      <SheetContent size="form">
         <form
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(event) => {

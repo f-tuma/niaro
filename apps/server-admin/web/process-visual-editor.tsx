@@ -1499,7 +1499,7 @@ export function ProcessVisualEditor({
           if (!saving) setInspector(open);
         }}
       >
-        <SheetContent size="lg" className="flex flex-col">
+        <SheetContent size="wide" className="flex flex-col">
           <SheetHeader>
             <SheetTitle>
               {selectedStep
@@ -1568,7 +1568,7 @@ export function ProcessVisualEditor({
           if (!saving) setSettings(open);
         }}
       >
-        <SheetContent size="lg" className="flex flex-col">
+        <SheetContent size="wide" className="flex flex-col">
           <SheetHeader>
             <SheetTitle>{copy.processSettings}</SheetTitle>
             <SheetDescription className="sr-only">

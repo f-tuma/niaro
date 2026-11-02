@@ -359,7 +359,8 @@ export function ChatAttachmentPreview({
       <DialogContent
         showCloseButton={false}
         aria-describedby={undefined}
-        className="flex max-h-[90dvh] max-w-[calc(100%-1rem)] flex-col overflow-y-auto sm:max-w-md"
+        size="form"
+        className="flex max-h-[90dvh] max-w-[calc(100%-1rem)] flex-col overflow-y-auto"
         onOpenAutoFocus={(event) => {
           const content = event.currentTarget as HTMLElement;
           const active = content.ownerDocument.activeElement;

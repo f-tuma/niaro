@@ -1,6 +1,6 @@
 import React from "react";
-import { Linking } from "react-native";
-import { render, fireEvent } from "@testing-library/react-native";
+import { Linking, StyleSheet } from "react-native";
+import { render, fireEvent, within } from "@testing-library/react-native";
 import {
   ServiceActionCard,
   type ServiceActionReviewFrame,
@@ -564,7 +564,7 @@ const canonicalStates = {
     succeeded: "Completed",
     failed: "Action failed",
     unknown: "Result unknown",
-    rejected: "Cancelled",
+    rejected: "Declined",
   },
   cs: {
     awaiting_approval: "Po potvrzení změní data.",
@@ -572,7 +572,7 @@ const canonicalStates = {
     succeeded: "Hotovo",
     failed: "Akce selhala",
     unknown: "Výsledek neznámý",
-    rejected: "Zrušeno",
+    rejected: "Odmítnuto",
   },
 };
 const languages = ["en", "cs"] as const;
@@ -795,7 +795,9 @@ test.each(languages)(
       }),
     );
     fireEvent.press(
-      ui.getByRole("button", { name: language === "cs" ? "Zrušit" : "Cancel" }),
+      ui.getByRole("button", {
+        name: language === "cs" ? "Odmítnout" : "Decline",
+      }),
     );
     expect(onDecide.mock.calls).toEqual([[true], [false]]);
     ui.rerender(
@@ -808,5 +810,37 @@ test.each(languages)(
     );
     expect(onDecide.mock.calls).toEqual([[true], [false]]);
     expect(input).toEqual(saved);
+  },
+);
+
+// NIAR-267: one footer on both clients.
+test.each(["en", "cs"] as const)(
+  "%s: the footer ends with Decline then Approve, right-aligned, and Decline is not the sheet's Cancel",
+  (language) => {
+    const tr = translate(language);
+    const onDecide = jest.fn();
+    const ui = render(
+      <ServiceActionCard
+        result={result}
+        language={language}
+        disabled={false}
+        onDecide={onDecide}
+      />,
+    );
+    const footer = ui.getByTestId("service-action-decisions");
+    expect(StyleSheet.flatten(footer.props.style).justifyContent).toBe(
+      "flex-end",
+    );
+    const buttons = within(footer).getAllByRole("button");
+    expect(buttons.map((button) => button.props.accessibilityLabel)).toEqual([
+      tr("serviceReject"),
+      tr("serviceApprove"),
+    ]);
+    expect(tr("serviceReject")).toBe(
+      language === "cs" ? "Odmítnout" : "Decline",
+    );
+    expect(tr("serviceReject")).not.toBe(tr("cancel"));
+    fireEvent.press(buttons[0]!);
+    expect(onDecide.mock.calls).toEqual([[false]]);
   },
 );

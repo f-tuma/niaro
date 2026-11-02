@@ -458,7 +458,7 @@ function ProviderSheet({
         onOpenChange(next);
       }}
     >
-      <SheetContent size="lg">
+      <SheetContent size="wide">
         <SheetHeader>
           <div className="pr-8">
             <SheetTitle>
@@ -918,7 +918,7 @@ function ProviderDetail({
           setCatalogOpen(open);
         }}
       >
-        <SheetContent size="lg">
+        <SheetContent size="wide">
           {catalogOpen && (
             <ProviderModelPicker
               key={`${state.target.workspaceId}:${provider.id}:${provider.revision}`}
@@ -943,7 +943,7 @@ function ProviderDetail({
         }}
       >
         <SheetContent
-          size="lg"
+          size="wide"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             document.getElementById("model-name")?.focus();

@@ -88,7 +88,7 @@ export function MeetingSpeakerDialog({
   };
   return (
     <Dialog open={voice !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="form">
         <DialogHeader>
           <DialogTitle>{copy.speakerTitle}</DialogTitle>
           <DialogDescription>

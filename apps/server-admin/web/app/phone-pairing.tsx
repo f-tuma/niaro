@@ -91,7 +91,7 @@ export function PhonePairing({ onClosed }: { onClosed?: () => void }) {
           {copy.open}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{copy.title}</DialogTitle>
           <DialogDescription>{copy.hint}</DialogDescription>

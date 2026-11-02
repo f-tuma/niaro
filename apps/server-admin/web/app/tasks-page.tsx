@@ -472,7 +472,7 @@ function TaskSheet({
         if (!open) onClose();
       }}
     >
-      <SheetContent size="lg">
+      <SheetContent size="wide">
         {task && origin && (
           <>
             <SheetHeader>
