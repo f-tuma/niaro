@@ -2,7 +2,16 @@
 
 ### Requirement: Lexical memory ranking
 
-Memory search SHALL rank the records it may return by a deterministic BM25 score (k1 = 1.2, b = 0.75) over accent- and case-folded tokens of at least two characters, leaving out a Czech and English stop list, where two tokens match when they are equal, share their first five characters, or the shorter has at least four characters and starts the longer. Preferences SHALL come first; other records SHALL need a score above zero; ties SHALL fall back to the newer update and then the record id. The score SHALL be computed per request over the plaintext already decrypted for it, and no plaintext index or token list SHALL be stored.
+Memory search SHALL rank the records it may return by a deterministic BM25 score (k1 = 1.2, b = 0.75) over accent- and case-folded tokens of at least two characters, leaving out a Czech and English stop list. Preferences SHALL come first; other records SHALL need a score above zero; ties SHALL fall back to the newer update and then the record id.
+
+#### Scenario: Same order every time
+
+- **WHEN** the same query runs twice over the same memories
+- **THEN** the same records come back in the same order
+
+### Requirement: Memory token matching
+
+Two memory search tokens SHALL match when they are equal, share their first five characters, or the shorter has at least four characters and starts the longer.
 
 #### Scenario: Czech inflection
 
@@ -14,10 +23,9 @@ Memory search SHALL rank the records it may return by a deterministic BM25 score
 - **WHEN** the query contains "CR" and a memory mentions "CRM"
 - **THEN** the memory is not recalled by that word
 
-#### Scenario: Same order every time
+### Requirement: No stored memory index
 
-- **WHEN** the same query runs twice over the same memories
-- **THEN** the same records come back in the same order
+The memory search score SHALL be computed per request over the plaintext already decrypted for it, and no plaintext index or token list SHALL be stored.
 
 #### Scenario: Nothing new on disk
 
