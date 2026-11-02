@@ -274,6 +274,14 @@ const open = async () => {
     await flush();
   });
 };
+/** New chat is in the menu; the top bar holds the chat's `…` instead. */
+const newChat = async () => {
+  await open();
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "New chat" }));
+    await flush();
+  });
+};
 const select = async (id: string) => {
   await open();
   await act(async () => {
@@ -287,19 +295,20 @@ test("New chat stays on this device until its first message, which saves it befo
   render(<f.Harness />);
   await act(flush);
   expect(f.session.readConversations).not.toHaveBeenCalled();
-  const newChat = () => screen.getByRole("button", { name: "New chat" });
-  expect(newChat().props.accessibilityState.disabled).toBe(false);
-  await act(async () => {
-    fireEvent.press(newChat());
-    await flush();
-  });
+  await newChat();
   // An empty chat never reaches the server.
   expect(f.session.send).not.toHaveBeenCalled();
   expect(f.session.selectConversation).toHaveBeenLastCalledWith(
     "chat-TEST-mobile-command",
   );
-  // Already in a fresh chat: another one would be the same empty chat.
-  expect(newChat().props.accessibilityState.disabled).toBe(true);
+  // A chat only on this device has nothing to rename, pin or delete yet.
+  expect(
+    screen.getByRole("button", { name: "Chat options" }).props
+      .accessibilityState.disabled,
+  ).toBe(true);
+  // Already in a fresh chat: New chat stays in the same empty chat.
+  await newChat();
+  expect(f.session.selectConversation).toHaveBeenCalledTimes(1);
   fireEvent.changeText(
     screen.getByLabelText("Type a message…"),
     "TEST new input",
@@ -331,19 +340,22 @@ test("New chat stays on this device until its first message, which saves it befo
   );
 });
 
-test("header cannot create offline or while answer recovery is blocked", async () => {
+test("the menu cannot create a chat offline or while answer recovery is blocked", async () => {
   const f = fixture();
   f.publish({ status: "offline" });
   render(<f.Harness />);
   await act(flush);
+  await open();
   const newChat = () => screen.getByRole("button", { name: "New chat" });
   expect(newChat().props.accessibilityState.disabled).toBe(true);
   fireEvent.press(newChat());
   expect(f.session.send).not.toHaveBeenCalled();
+  expect(f.session.selectConversation).not.toHaveBeenCalled();
   act(() => f.publish({ status: "online", answerRecoveryBlocked: true }));
   expect(newChat().props.accessibilityState.disabled).toBe(true);
   fireEvent.press(newChat());
   expect(f.session.send).not.toHaveBeenCalled();
+  expect(f.session.selectConversation).not.toHaveBeenCalled();
 });
 
 test("a first message that cannot save its chat keeps the draft; the previous chat keeps its own", async () => {
@@ -354,10 +366,7 @@ test("a first message that cannot save its chat keeps the draft; the previous ch
     screen.getByLabelText("Type a message…"),
     "TEST keep draft",
   );
-  await act(async () => {
-    fireEvent.press(screen.getByRole("button", { name: "New chat" }));
-    await flush();
-  });
+  await newChat();
   expect(screen.queryByText("TEST stored TEST-A")).toBeNull();
   expect(screen.getByLabelText("Type a message…").props.value).toBe("");
   fireEvent.changeText(screen.getByLabelText("Type a message…"), "TEST first");

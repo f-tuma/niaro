@@ -129,7 +129,9 @@ import {
   type HumanTaskReference,
 } from "../../packages/protocol";
 import type { HumanTask } from "../../packages/protocol/human-tasks";
-import { ChatHistory } from "./ChatHistory";
+import { ChatHistory, useChatChanges } from "./ChatHistory";
+import { ChatOptions } from "./ChatOptions";
+import { OpenWorkNotice } from "./OpenWorkNotice";
 import { ChatSearchScreen } from "./ChatSearch";
 import { tokens as t } from "../../packages/design-tokens";
 import {
@@ -873,11 +875,31 @@ export function Workspace({
     },
     [session, historyAfter],
   );
+  /** The open chat was deleted or archived: back to the main chat, freshly read. */
+  const leaveGoneChat = (id: string) => {
+    if (id !== conversationRef.current) return;
+    switchConversation("conversation-1");
+    void session?.refresh();
+  };
+  /** Names given here, shown in the top bar until the chat is read again. */
+  const [renamed, setRenamed] = useState<Record<string, string>>({});
+  /** The top bar's `…`: the same changes as a held row in the menu. */
+  const chatChanges = useChatChanges(session, {
+    onRenamed: (conversation, title) =>
+      setRenamed((current) => ({ ...current, [conversation.id]: title })),
+    onGone: (id) => leaveGoneChat(id),
+  });
   const openHistoryConversation = (
     selected: ConversationSummary,
     messageId?: string,
   ) => {
     switchConversation(selected.id);
+    // Read again, the chat's name is the server's.
+    setRenamed((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id]) => id !== selected.id),
+      ),
+    );
     if (messageId) {
       // Older pages are read until the message is there (see below).
       messageTarget.current = {
@@ -1743,6 +1765,9 @@ export function Workspace({
     },
   };
   const hasConversation = messages.length > 0 || work.length > 0;
+  const chatTitle = conversationTitle(
+    renamed[conversationId] ?? historySelection?.title ?? "",
+  );
   const pendingMessage = selectPendingChatMessage(state, conversationId);
   let validContext = false;
   if (isProcessReply(context)) {
@@ -2086,9 +2111,7 @@ export function Workspace({
               leading={
                 <IconButton icon="menu" label={tr("menu")} onPress={openMenu} />
               }
-              title={
-                conversationTitle(historySelection?.title ?? "") || "Niaro"
-              }
+              title={chatTitle || "Niaro"}
               lines={1}
               subtitle={statusLine}
               emblem={
@@ -2125,13 +2148,20 @@ export function Workspace({
                   />
                 ) : undefined
               }
+              // New chat lives in the menu; the chat's own actions take its place.
               trailing={
                 session ? (
-                  <IconButton
-                    icon="compose"
-                    label={tr("newChat")}
-                    disabled={!online || busy || conversationId === unsavedChat}
-                    onPress={startNewChat}
+                  <ChatOptions
+                    session={session}
+                    language={language}
+                    online={online}
+                    conversation={
+                      conversationId === unsavedChat ||
+                      historySelection?.readOnly
+                        ? undefined
+                        : { id: conversationId, title: chatTitle }
+                    }
+                    changes={chatChanges}
                   />
                 ) : null
               }
@@ -2189,6 +2219,24 @@ export function Workspace({
               }
             />
           )}
+          {section === "chat" && chatChanges.actionError ? (
+            <View style={{ paddingHorizontal: t.spacing.screenGutter }}>
+              <Notice error>{tr(chatChanges.actionError)}</Notice>
+            </View>
+          ) : null}
+          {section === "chat" && chatChanges.refusal ? (
+            <View style={{ paddingHorizontal: t.spacing.screenGutter }}>
+              <OpenWorkNotice
+                language={language}
+                refusal={chatChanges.refusal}
+                disabled={!online || chatChanges.cancelling}
+                onKeep={() => chatChanges.setRefusal(undefined)}
+                onCancelAndContinue={() =>
+                  void chatChanges.cancelAndContinue(chatChanges.refusal!)
+                }
+              />
+            </View>
+          ) : null}
           {section === "tasks" ? (
             <TaskTabs
               tab={tab}
@@ -2823,12 +2871,7 @@ export function Workspace({
         onClose={() => setHistoryOpen(false)}
         onSelect={openHistoryConversation}
         onNew={createConversation}
-        onDeleted={(id) => {
-          // The open chat is gone: back to the main chat, freshly read.
-          if (id !== conversationRef.current) return;
-          switchConversation("conversation-1");
-          void session?.refresh();
-        }}
+        onDeleted={leaveGoneChat}
         onNavigate={() => {
           setHistoryOpen(false);
           setSearchOpen(true);

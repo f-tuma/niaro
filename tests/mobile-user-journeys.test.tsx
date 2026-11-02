@@ -377,7 +377,12 @@ test.each([
     await act(async () => {
       for (let i = 0; i < 20; i++) await Promise.resolve();
     });
-    fireEvent.press(screen.getByRole("button", { name: "New chat" }));
+    // New chat is in the menu.
+    fireEvent.press(screen.getByRole("button", { name: "Menu" }));
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "New chat" }));
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    });
     if (cancellation === "send_then_voice") {
       fireEvent.changeText(
         screen.getByLabelText(en.composer),
@@ -910,7 +915,11 @@ test("an accepted first message keeps edits made while the new chat was being sa
     );
   }
   const view = render(<Harness />);
-  fireEvent.press(screen.getByRole("button", { name: "New chat" }));
+  fireEvent.press(screen.getByRole("button", { name: "Menu" }));
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "New chat" }));
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  });
   fireEvent.changeText(
     screen.getByLabelText(en.composer),
     "TEST original first message",

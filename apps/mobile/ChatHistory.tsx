@@ -171,29 +171,21 @@ function OpenChatHistory({
       },
     );
   };
-  const [actionError, setActionError] = useState<TranslationKey>();
-  /** Work still waits in the chat: the drawer names it and offers to cancel it. */
-  const [refusal, setRefusal] = useState<OpenWorkRefusal>();
-  const failed =
-    (owner: { active: boolean }, refused?: Omit<OpenWorkRefusal, "openWork">) =>
-    (e: unknown) => {
-      if (!owner.active) return;
-      if (refused && e instanceof ConversationOpenWorkError)
-        setRefusal({ ...refused, openWork: e.openWork });
-      else setActionError(chatChangeError(e));
-    };
-  /** Names the chat for every device; empty brings back the server's title. */
-  const rename = async (conversation: ConversationSummary, title: string) => {
-    if (!session) return;
-    const owner = lifecycle.current;
-    setActionError(undefined);
-    try {
-      await session.renameConversation(conversation.id, title, randomUUID());
-      if (!owner.active) return;
-      if (title.trim())
+  const {
+    rename,
+    remove,
+    archive,
+    cancelAndContinue,
+    actionError,
+    refusal,
+    setRefusal,
+    cancelling,
+  } = useChatChanges(session, {
+    onRenamed: (conversation, title) => {
+      if (title)
         setRows((current) =>
           current.map((row) =>
-            row.id === conversation.id ? { ...row, title: title.trim() } : row,
+            row.id === conversation.id ? { ...row, title } : row,
           ),
         );
       // The server's own title comes back with the list.
@@ -202,67 +194,13 @@ function OpenChatHistory({
         setLoading(true);
         setAttempt((value) => value + 1);
       }
-    } catch (e) {
-      failed(owner)(e);
-    }
-  };
-  const [cancelling, setCancelling] = useState(false);
-  /** `cancelOpenWork`: the server first cancels what waits in the chat. */
-  const remove = async (
-    conversation: Pick<ConversationSummary, "id">,
-    cancelOpenWork = false,
-  ) => {
-    if (!session) return;
-    const owner = lifecycle.current;
-    setActionError(undefined);
-    setRefusal(undefined);
-    try {
-      if (cancelOpenWork)
-        await session.deleteConversation(conversation.id, randomUUID(), {
-          cancelOpenWork,
-        });
-      else await session.deleteConversation(conversation.id, randomUUID());
-      if (!owner.active) return;
-      setRows((current) => current.filter((row) => row.id !== conversation.id));
-      if (pins.includes(conversation.id)) togglePin(conversation.id);
-      onDeleted?.(conversation.id);
-    } catch (e) {
-      failed(owner, { conversationId: conversation.id, action: "delete" })(e);
-    }
-  };
-  /** Moves the chat into the archive (Settings); it leaves this list. */
-  const archive = async (
-    conversation: Pick<ConversationSummary, "id">,
-    cancelOpenWork = false,
-  ) => {
-    if (!session) return;
-    const owner = lifecycle.current;
-    setActionError(undefined);
-    setRefusal(undefined);
-    try {
-      if (cancelOpenWork)
-        await session.archiveConversation(conversation.id, randomUUID(), {
-          cancelOpenWork,
-        });
-      else await session.archiveConversation(conversation.id, randomUUID());
-      if (!owner.active) return;
-      setRows((current) => current.filter((row) => row.id !== conversation.id));
-      onDeleted?.(conversation.id);
-    } catch (e) {
-      failed(owner, { conversationId: conversation.id, action: "archive" })(e);
-    }
-  };
-  const cancelAndContinue = async (refused: OpenWorkRefusal) => {
-    setCancelling(true);
-    try {
-      await (refused.action === "delete" ? remove : archive)(
-        { id: refused.conversationId },
-        true,
-      );
-    } finally {
-      if (lifecycle.current.active) setCancelling(false);
-    }
-  };
+    },
+    onGone: (id, action) => {
+      setRows((current) => current.filter((row) => row.id !== id));
+      if (action === "delete" && pins.includes(id)) togglePin(id);
+      onDeleted?.(id);
+    },
+  });
   const ordered = [...rows].sort(
     (a, b) =>
       b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
@@ -563,7 +501,7 @@ function OpenChatHistory({
           </SafeAreaView>
         </Animated.View>
         {menu ? (
-          <RowMenu
+          <ChatMenu
             language={language}
             conversation={menu.conversation}
             frame={menu.frame}
@@ -585,6 +523,124 @@ function OpenChatHistory({
     </Modal>
   );
 }
+/**
+ * Rename, delete and archive for a chat, shared by the drawer's menu and the
+ * chat's own `…` menu. A delete or archive the server refuses because work
+ * waits in the chat becomes `refusal`, which offers to cancel it and go on.
+ */
+export function useChatChanges(
+  session: ClientSession | null,
+  {
+    onRenamed,
+    onGone,
+  }: {
+    /** `title` is empty when the server's own title comes back. */
+    onRenamed?: (
+      conversation: Pick<ConversationSummary, "id">,
+      title: string,
+    ) => void;
+    onGone?: (id: string, action: "delete" | "archive") => void;
+  } = {},
+) {
+  const lifecycle = useRef<{ active: boolean }>({ active: true });
+  useEffect(() => {
+    const owner = { active: true };
+    lifecycle.current = owner;
+    return () => {
+      owner.active = false;
+    };
+  }, [session]);
+  const [actionError, setActionError] = useState<TranslationKey>();
+  /** Work still waits in the chat: the notice names it and offers to cancel it. */
+  const [refusal, setRefusal] = useState<OpenWorkRefusal>();
+  const [cancelling, setCancelling] = useState(false);
+  const failed =
+    (owner: { active: boolean }, refused?: Omit<OpenWorkRefusal, "openWork">) =>
+    (e: unknown) => {
+      if (!owner.active) return;
+      if (refused && e instanceof ConversationOpenWorkError)
+        setRefusal({ ...refused, openWork: e.openWork });
+      else setActionError(chatChangeError(e));
+    };
+  /** Names the chat for every device; empty brings back the server's title. */
+  const rename = async (
+    conversation: Pick<ConversationSummary, "id">,
+    title: string,
+  ) => {
+    if (!session) return;
+    const owner = lifecycle.current;
+    setActionError(undefined);
+    try {
+      await session.renameConversation(conversation.id, title, randomUUID());
+      if (owner.active) onRenamed?.(conversation, title.trim());
+    } catch (e) {
+      failed(owner)(e);
+    }
+  };
+  /** `cancelOpenWork`: the server first cancels what waits in the chat. */
+  const remove = async (
+    conversation: Pick<ConversationSummary, "id">,
+    cancelOpenWork = false,
+  ) => {
+    if (!session) return;
+    const owner = lifecycle.current;
+    setActionError(undefined);
+    setRefusal(undefined);
+    try {
+      if (cancelOpenWork)
+        await session.deleteConversation(conversation.id, randomUUID(), {
+          cancelOpenWork,
+        });
+      else await session.deleteConversation(conversation.id, randomUUID());
+      if (owner.active) onGone?.(conversation.id, "delete");
+    } catch (e) {
+      failed(owner, { conversationId: conversation.id, action: "delete" })(e);
+    }
+  };
+  /** Moves the chat into the archive (Settings); it leaves the chat list. */
+  const archive = async (
+    conversation: Pick<ConversationSummary, "id">,
+    cancelOpenWork = false,
+  ) => {
+    if (!session) return;
+    const owner = lifecycle.current;
+    setActionError(undefined);
+    setRefusal(undefined);
+    try {
+      if (cancelOpenWork)
+        await session.archiveConversation(conversation.id, randomUUID(), {
+          cancelOpenWork,
+        });
+      else await session.archiveConversation(conversation.id, randomUUID());
+      if (owner.active) onGone?.(conversation.id, "archive");
+    } catch (e) {
+      failed(owner, { conversationId: conversation.id, action: "archive" })(e);
+    }
+  };
+  const cancelAndContinue = async (refused: OpenWorkRefusal) => {
+    setCancelling(true);
+    try {
+      await (refused.action === "delete" ? remove : archive)(
+        { id: refused.conversationId },
+        true,
+      );
+    } finally {
+      if (lifecycle.current.active) setCancelling(false);
+    }
+  };
+  return {
+    rename,
+    remove,
+    archive,
+    cancelAndContinue,
+    actionError,
+    clearError: () => setActionError(undefined),
+    refusal,
+    setRefusal,
+    cancelling,
+  };
+}
+export type ChatChanges = ReturnType<typeof useChatChanges>;
 type Frame = { x: number; y: number; width: number; height: number };
 function HistoryRow({
   language,
@@ -671,19 +727,25 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   );
 }
 /** The day a chat was last active, or "Archived". */
-function chatDate(conversation: ConversationSummary, language: Language) {
+function chatDate(
+  conversation: Partial<Pick<ConversationSummary, "readOnly" | "updatedAt">>,
+  language: Language,
+) {
   return conversation.readOnly
     ? translate(language)("archivedChat")
-    : new Date(conversation.updatedAt).toLocaleDateString(
-        language === "cs" ? "cs-CZ" : "en-GB",
-        { day: "numeric", month: "short" },
-      );
+    : !conversation.updatedAt
+      ? ""
+      : new Date(conversation.updatedAt).toLocaleDateString(
+          language === "cs" ? "cs-CZ" : "en-GB",
+          { day: "numeric", month: "short" },
+        );
 }
 /**
  * The long-press menu: the chat lifts above a dimmed menu and its actions
- * appear right under it (above it near the bottom edge).
+ * appear right under it (above it near the bottom edge). From the chat's own
+ * `…` (`anchor="end"`) nothing lifts; the menu opens under the button.
  */
-function RowMenu({
+export function ChatMenu({
   language,
   conversation,
   frame,
@@ -695,11 +757,15 @@ function RowMenu({
   onArchive,
   onDelete,
   onClose,
+  anchor = "row",
 }: {
   language: Language;
-  conversation: ConversationSummary;
+  conversation: Pick<ConversationSummary, "id" | "title"> &
+    Partial<ConversationSummary>;
   /** Where the row is on screen; until measured the menu sits centred. */
   frame?: Frame;
+  /** `end`: opened from a button; the menu hangs under its right edge. */
+  anchor?: "row" | "end";
   pinned: boolean;
   pinsReady: boolean;
   online: boolean;
@@ -750,11 +816,19 @@ function RowMenu({
     }).start(() => then());
   };
   const menuHeight = step === "menu" ? (onArchive ? 224 : 172) : 152;
+  const end = anchor === "end";
   const below =
-    !frame || frame.y + frame.height + 8 + menuHeight < window.height - 16;
-  const width = frame ? Math.max(frame.width, 240) : 280;
+    end ||
+    !frame ||
+    frame.y + frame.height + 8 + menuHeight < window.height - 16;
+  const width = end ? 240 : frame ? Math.max(frame.width, 240) : 280;
   const left = frame
-    ? Math.min(frame.x, window.width - width - 12)
+    ? end
+      ? Math.max(
+          12,
+          Math.min(frame.x + frame.width - width, window.width - width - 12),
+        )
+      : Math.min(frame.x, window.width - width - 12)
     : (window.width - width) / 2;
   const top = frame ? frame.y : window.height / 2 - 60;
   return (
@@ -776,29 +850,31 @@ function RowMenu({
         style={StyleSheet.absoluteFill}
       />
       {/* The held row lifts slightly in place; nothing jumps to a new spot. */}
-      <Animated.View
-        style={[
-          styles.lifted,
-          {
-            top,
-            left,
-            width: frame ? frame.width : width,
-            transform: [
-              {
-                scale: progress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [1, 1.02],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        <Text numberOfLines={1}>{title}</Text>
-        <Text role="caption" tone="secondary" numberOfLines={1}>
-          {chatDate(conversation, language)}
-        </Text>
-      </Animated.View>
+      {end ? null : (
+        <Animated.View
+          style={[
+            styles.lifted,
+            {
+              top,
+              left,
+              width: frame ? frame.width : width,
+              transform: [
+                {
+                  scale: progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [1, 1.02],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Text numberOfLines={1}>{title}</Text>
+          <Text role="caption" tone="secondary" numberOfLines={1}>
+            {chatDate(conversation, language)}
+          </Text>
+        </Animated.View>
+      )}
       <Animated.View
         accessibilityRole="menu"
         style={[

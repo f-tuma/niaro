@@ -483,7 +483,9 @@ test("actual Workspace ignores a late Edit callback after New chat and newer dra
   try {
     fireEvent.press(await screen.findByRole("button", { name: "Edit" }));
     await waitFor(() => expect(references).toBe(2));
-    fireEvent.press(screen.getByRole("button", { name: "New chat" }));
+    // New chat is in the menu.
+    fireEvent.press(screen.getByRole("button", { name: "Menu" }));
+    fireEvent.press(await screen.findByRole("button", { name: "New chat" }));
     fireEvent.changeText(
       screen.getByLabelText(translate("en")("composer")),
       "TEST newer conversation",
@@ -683,7 +685,9 @@ test("actual Workspace attachment failure stays visible while unresolved and doe
         .getSnapshot()
         .entries.find((entry) => entry.filename === "B.txt")?.error,
     ).toBeTruthy();
-    fireEvent.press(screen.getByRole("button", { name: "New chat" }));
+    // New chat is in the menu.
+    fireEvent.press(screen.getByRole("button", { name: "Menu" }));
+    fireEvent.press(await screen.findByRole("button", { name: "New chat" }));
     await waitFor(() =>
       expect(f.session.attachments.getSnapshot().entries).toHaveLength(0),
     );
