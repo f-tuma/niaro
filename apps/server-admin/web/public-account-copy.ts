@@ -8,7 +8,8 @@ export const en = {
   reopen: "Open sign-in again from the app.",
   inviteAccepted: "Invitation accepted",
   inviteAcceptedHint:
-    "You can now sign in to the app with this server address.",
+    "Continue in the browser, or sign in to the Niaro app with this server address.",
+  openInBrowser: "Open Niaro",
   signedIn: "Signed in",
   returnToApp: "Return to the app.",
   inviteTitle: "Workspace invitation",
@@ -74,7 +75,8 @@ export const cs: typeof en = {
   reopen: "Otevři přihlášení znovu přímo z aplikace.",
   inviteAccepted: "Pozvánka přijata",
   inviteAcceptedHint:
-    "Nyní se můžeš přihlásit v aplikaci adresou tohoto serveru.",
+    "Pokračuj v prohlížeči, nebo se v aplikaci Niaro přihlas adresou tohoto serveru.",
+  openInBrowser: "Otevřít Niaro",
   signedIn: "Přihlášeno",
   returnToApp: "Vrať se do aplikace.",
   inviteTitle: "Pozvánka do pracovního prostoru",

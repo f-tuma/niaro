@@ -305,8 +305,8 @@ test("a phone connects a Microsoft account once through the browser and calls th
         serviceId,
         ...(attemptId ? { attemptId } : {}),
       });
-    const connect = async () => {
-      const begun = (await mobile("start")) as {
+    const connect = async (start = () => mobile("start")) => {
+      const begun = (await start()) as {
         attemptId: string;
         authorizationUrl: string;
       };
@@ -428,6 +428,21 @@ test("a phone connects a Microsoft account once through the browser and calls th
       ).includes("graph-"),
       "tokens are stored sealed",
     );
+
+    // Connected from the web chat on a computer, the page is not sent to niaro://.
+    const web = await owner("api/identity/app/session", target);
+    assert.equal(web.status, 200);
+    refuseRefresh = false;
+    const fromWeb = await connect(() =>
+      identity.mobileServiceConnection(
+        `Bearer ${web.data.credential.accessToken}`,
+        workspaceId,
+        serverId,
+        "start",
+        { serviceId },
+      ),
+    );
+    assert.deepEqual((await fromWeb.finish()).data, { ok: true, app: false });
   } finally {
     await identity.close?.();
     await new Promise<void>((r) => server.close(() => r()));

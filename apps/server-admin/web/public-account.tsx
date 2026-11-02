@@ -8,6 +8,7 @@ import {
   OrganizationDetailSchema,
 } from "../../../packages/protocol/identity";
 import { api, ApiError, authApi } from "./lib/api";
+
 import { cs, en, failureText, redirectFailure } from "./public-account-copy";
 import { ProviderSignIn } from "./provider-sign-in";
 import { AuthLayout } from "@admin/components/console/auth-layout";
@@ -30,6 +31,12 @@ import {
 } from "@admin/components/ui/select";
 import { Alert, AlertDescription } from "@admin/components/ui/alert";
 import { Spinner } from "@admin/components/ui/spinner";
+
+/** A phone or tablet browser, where people may rather use the app. */
+const phone = () =>
+  (navigator as Navigator & { userAgentData?: { mobile?: boolean } })
+    .userAgentData?.mobile ??
+  /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 /** No console session here: use the stored console choice, else the browser. */
 function pageLanguage(): "en" | "cs" {
@@ -161,16 +168,24 @@ function SignInAndInvite() {
     await client.invalidateQueries({ queryKey: ["invitation"] });
   }
   async function accept() {
+    const created = !invitation.data?.existing && !signInInstead;
     await api("identity/invitation", {
       token,
       accept: true,
-      ...(!invitation.data?.existing && !signInInstead
-        ? { name, password }
-        : {}),
+      ...(created ? { name, password } : {}),
     });
+    // A new account is not signed in by joining; sign in so Niaro opens ready.
+    if (created && invitation.data?.email)
+      await authApi("sign-in/email", {
+        email: invitation.data.email,
+        password,
+      }).catch(() => {});
     setPassword("");
-    setDone(true);
     window.history.replaceState(null, "", window.location.pathname);
+    // On a computer the web app is the app: go straight there. On a phone the
+    // page offers the browser and explains the app.
+    if (!phone()) window.location.assign("/");
+    else setDone(true);
   }
   async function connect() {
     const result = z
@@ -209,6 +224,11 @@ function SignInAndInvite() {
         title={invite ? copy.inviteAccepted : copy.signedIn}
         description={invite ? copy.inviteAcceptedHint : copy.returnToApp}
       >
+        {invite && (
+          <Button asChild>
+            <a href="/">{copy.openInBrowser}</a>
+          </Button>
+        )}
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>

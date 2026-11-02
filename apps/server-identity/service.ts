@@ -1620,8 +1620,20 @@ export class IdentityService {
             outcome: "succeeded",
             details: {},
           });
-          // The page hands a native app back through its deep link; web polls instead.
-          return { ok: true, app: flow.actor.sessionId.startsWith("mobile:") };
+          // The page hands a native app back through its deep link; the web
+          // chat on a computer polls instead, so it never asks to open niaro://.
+          let app = false;
+          try {
+            const started = this.mobile.authenticateDigest(
+              flow.actor.sessionId.slice("mobile:".length),
+              flow.target.workspaceId,
+              this.workflowServerId!,
+            );
+            app = !("web" in started && started.web);
+          } catch {
+            // A sign-in that ended meanwhile has no app to return to.
+          }
+          return { ok: true, app };
         }),
       );
     } catch (error) {

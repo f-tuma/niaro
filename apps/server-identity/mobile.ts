@@ -583,7 +583,14 @@ export class MobileSessionStore {
       },
       permissions: ["workflow.read", "workflow.write"],
     };
-    return { grant, role, session, credentialId };
+    return {
+      grant,
+      role,
+      session,
+      credentialId,
+      /** The web chat's credential, not an app on a phone. */
+      web: Number((grant as Grant & { web?: number }).web) === 1,
+    };
   }
   revoke(header: string) {
     this.devices.revokeAccess(hash(header.slice(7)));
