@@ -774,14 +774,19 @@ export function Home({
         compact && showPet && { minHeight: 0 },
       ]}
     >
-      {!voiceBusy && !compact ? (
+      {!voiceBusy && (!compact || showPet) ? (
+        // One pet for both: typing only shrinks it above the keyboard, so it keeps its GL
+        // context and its motion instead of a second, smaller pet starting from scratch.
         <View
-          testID="home-pet-stage"
-          onLayout={onStageLayout}
+          testID={compact ? "home-pet-compact" : "home-pet-stage"}
+          onLayout={compact ? undefined : onStageLayout}
           style={chrome.stage}
         >
           {showPet && (
-            <View testID="home-pet-bounds" onLayout={onPetLayout}>
+            <View
+              testID="home-pet-bounds"
+              onLayout={compact ? undefined : onPetLayout}
+            >
               <PetView
                 visible={petVisible}
                 occupied={petOccupied}
@@ -790,44 +795,32 @@ export function Home({
                 animate={petAnimate}
                 testID="home-pet"
                 label={companionCopy(language).petTouch}
-                interactive
+                interactive={!compact}
                 disabled={busy || meetingRecording}
                 state={petState}
-                size={220}
-                level={level}
+                size={compact ? 140 : 220}
+                drawingSize={220}
+                motionKey="home"
+                level={compact ? undefined : level}
               />
             </View>
           )}
-          <View style={chrome.headline}>
-            <Text
-              role="screenTitle"
-              accessibilityRole="header"
-              style={chrome.center}
-            >
-              {tr("hello")}
-            </Text>
-            {intro ? (
-              <Text tone="secondary" style={chrome.center}>
-                {tr(intro)}
+          {compact ? null : (
+            <View style={chrome.headline}>
+              <Text
+                role="screenTitle"
+                accessibilityRole="header"
+                style={chrome.center}
+              >
+                {tr("hello")}
               </Text>
-            ) : null}
-          </View>
-        </View>
-      ) : compact && !voiceBusy && showPet ? (
-        // Typing: a smaller pet keeps the room above the keyboard and watches.
-        <View testID="home-pet-compact" style={chrome.stage}>
-          <PetView
-            visible={petVisible}
-            occupied={petOccupied}
-            typed={petTyped}
-            appearance={petAppearance}
-            animate={petAnimate}
-            testID="home-pet"
-            label={companionCopy(language).petTouch}
-            disabled={busy || meetingRecording}
-            state={petState}
-            size={140}
-          />
+              {intro ? (
+                <Text tone="secondary" style={chrome.center}>
+                  {tr(intro)}
+                </Text>
+              ) : null}
+            </View>
+          )}
         </View>
       ) : null}
       {!voiceBusy && !compact ? (

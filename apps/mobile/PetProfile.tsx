@@ -228,7 +228,9 @@ export function PetProfile({
   // The pet grows with the room the stage leaves it, within the brief's clamp.
   const petMax = Math.min(PET_MAX, width - 72) / Math.max(1, fontScale);
   const petMin = Math.min(PET_MIN / Math.max(1, fontScale), petMax);
-  const [petSize, setPetSize] = useState(Math.round(petMax));
+  // Unknown until the pet's box is laid out: the pet waits for it instead of starting at a
+  // guessed size (NIAR-275).
+  const [petSize, setPetSize] = useState<number>();
   const [fill, setFill] = useState(0);
   const c = petCopy(language),
     f = petFormat(language);
@@ -517,21 +519,30 @@ export function PetProfile({
     });
   }, [setMemory, memoryValue, memoryDisabled]);
   useEffect(() => () => setMemory(null), [setMemory]);
-  const pet = (size: number, interactive: boolean, visible = true) =>
-    profile ? (
+  // The overview and the section strip are one pet that continues between them; it draws at
+  // the largest size the stage allows, so a measured box only scales it.
+  const pet = (
+    size: number | undefined,
+    interactive: boolean,
+    visible = true,
+    drawingSize = size,
+  ) =>
+    profile && size ? (
       <PetView
         visible={visible}
         size={size}
+        drawingSize={drawingSize}
+        motionKey="profile"
         label={profile.settings.name}
         appearance={look}
         animate={profile.settings.animate}
         interactive={interactive}
         state={resting ? "resting" : "idle"}
       />
-    ) : (
+    ) : size ? (
       // Holds the pet's room while the profile loads; no still drawing flashes.
       <View style={{ width: size, height: size }} />
-    );
+    ) : null;
   const overview = (
     <View style={[styles.page, fill > 0 && { minHeight: fill }]}>
       <View
@@ -558,7 +569,7 @@ export function PetProfile({
               if (next > 0) setPetSize(next);
             }}
           >
-            {pet(petSize, true, petVisible)}
+            {pet(petSize, true, petVisible, Math.round(petMax))}
           </View>
           {profile ? (
             <Text role="title" style={styles.centerText}>

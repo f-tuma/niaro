@@ -350,6 +350,10 @@ test("memory off puts the pet to rest with an asleep status and keeps the counts
   } as unknown as ClientSession;
   renderPet(session);
   await waitFor(() => expect(screen.getByText("Memory asleep")).toBeTruthy());
+  // The pet appears once its box is measured.
+  fireEvent(screen.getByTestId("profile-pet-bounds"), "layout", {
+    nativeEvent: { layout: { y: 150, height: 200 } },
+  });
   expect(
     screen.UNSAFE_getByProps({ label: "Niaro", interactive: true }).props.state,
   ).toBe("resting");
