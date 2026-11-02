@@ -1061,6 +1061,64 @@ export class FixtureStorage {
       "command",
     );
   }
+  /** At startup: attachments left queued or being read fail, on the message too. */
+  failInterruptedAttachments() {
+    for (const attempt of this.attachments.failInterrupted()) {
+      const row = this.db
+        .prepare(
+          "SELECT json_extract(state,'$.snapshot.scope') AS scope FROM workflows WHERE scope_key=?",
+        )
+        .get(attempt.scopeKey);
+      const command = CommandSchema.parse(JSON.parse(attempt.request));
+      if (row?.scope && command.type === "message.send")
+        this.attachmentProcessing(
+          ScopeSchema.parse(JSON.parse(String(row.scope))),
+          command,
+          () => undefined,
+        );
+    }
+  }
+  /**
+   * Changes an attachment attempt in the attachment store and shows its new
+   * state on the message, in one transaction; returns the chat's revision.
+   */
+  attachmentProcessing<T>(
+    scope: Scope,
+    command: Extract<Command, { type: "message.send" }>,
+    change: () => T,
+  ) {
+    return this.transaction(
+      true,
+      () => {
+        const value = change(),
+          attempt = this.attachments.attemptOf(scope, command.commandId)!,
+          ingestion = String(
+            this.attachments.db
+              .prepare(
+                "SELECT ingestion_id FROM attachment_attempts WHERE id=?",
+              )
+              .get(attempt.id)!.ingestion_id,
+          ),
+          snapshot = this.engine(
+            scope,
+            "command",
+            command.conversationId,
+          ).setAttachmentProcessing(
+            command,
+            this.attachments.processing(scope, ingestion),
+          );
+        const revision = snapshot.conversations.find(
+          (c) => c.id === command.conversationId,
+        )!.revision;
+        return {
+          value,
+          revision,
+          snapshot: this.attachments.decorate(snapshot),
+        };
+      },
+      "command",
+    );
+  }
   publishAttachmentResult(
     scope: Scope,
     attemptId: string,

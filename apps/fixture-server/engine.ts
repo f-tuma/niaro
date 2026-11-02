@@ -906,6 +906,24 @@ export class FixtureEngine {
       interpretation?.ui,
     );
   }
+  /** The accepted message's processing state, as its files are read. */
+  setAttachmentProcessing(
+    command: Extract<Command, { type: "message.send" }>,
+    processing: AttachmentProcessing,
+  ) {
+    this.selectConversation(command.conversationId);
+    const message = this.conversation().messages.find(
+      (m) =>
+        m.role === "user" &&
+        m.logicalMessageId === (command.logicalMessageId ?? command.commandId),
+    );
+    if (!message) return this.snapshot();
+    message.processing = processing;
+    this.conversation().revision++;
+    this.emit({ type: "conversation.upserted", entity: this.conversation() });
+    this.commit();
+    return this.snapshot();
+  }
   /** Assistant-only counterpart of acceptance; no second command receipt/user append. */
   publishAttachmentResult(
     command: Extract<Command, { type: "message.send" }>,

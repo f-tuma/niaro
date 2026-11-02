@@ -1,0 +1,5 @@
+# MarkItDown (MIT) with its Office and PDF readers; OCR is Tesseract
+# (Apache-2.0) from Debian. No plugins, no hosted OCR or LLM.
+markitdown[docx,pptx,xlsx,pdf]==0.1.9
+pypdfium2==5.14.0
+pillow==12.2.0

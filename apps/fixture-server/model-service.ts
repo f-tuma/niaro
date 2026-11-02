@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   AnswerStreamEvent,
   AnswerStreamListener,
@@ -54,6 +54,18 @@ import type {
   ServiceAnswer,
 } from "../server-identity/catalog-runtime";
 import { operatorLog } from "./operator-log";
+import {
+  attachmentEvidence,
+  convertDocument,
+  ConverterUnavailable,
+  type Conversion,
+  type ConverterConfig,
+} from "../server-attachments/converter";
+import { attachmentDigest } from "../server-attachments/store";
+import {
+  nativeAttachmentMessageHash,
+  type NativeAttachmentInput,
+} from "../server-identity/mastra-domain";
 import { en, translate, type TranslationKey } from "../../packages/i18n";
 import {
   MAX_ACTIVE_RUNS,
@@ -71,8 +83,20 @@ const DIRECTORY_COMMANDS = new Set<Command["type"]>([
   "work.cancel",
 ]);
 function historyText(message: Conversation["messages"][number]) {
-  if (message.attachments?.length || message.processing)
+  // Unread files leave no evidence, and their caption alone is no source.
+  // Read ones reached the model with that turn; history names them.
+  if (
+    (message.attachments?.length || message.processing) &&
+    message.processing?.state !== "published"
+  )
     return "An attachment message was accepted for retention; its file evidence is unavailable for interpretation.";
+  if (message.attachments?.length)
+    return [
+      message.text,
+      `(Attached: ${(message.attachments ?? []).map((file) => file.filename).join(", ") || "files"})`,
+    ]
+      .filter(Boolean)
+      .join("\n");
   // Source text and record names are display data, not previous assistant
   // instructions or evidence of authorization. Preserve only server-owned facts.
   if (message.result?.type === "service.action")
@@ -99,6 +123,8 @@ type InFlightRequest = NativeTrackedRequest & {
 
 /** No SQLite transaction is held over inference. Commit validates the captured cursor again. */
 export class ModelService {
+  /** Reads attached files for the model; without it they are only kept. */
+  converter?: ConverterConfig;
   private tools: ToolRegistry;
   private requestTracker = new NativeCommandRequests();
   private get active() {
@@ -900,6 +926,171 @@ export class ModelService {
       }
     return result;
   }
+  /**
+   * Reads the files of an accepted message with the converter, then asks the
+   * model once with the person's words and the files' text, and publishes
+   * its answer under the message. A file that cannot be read is named as
+   * such; only an unreachable converter or store fails the whole message,
+   * which Again then sends anew.
+   */
+  private async readAttachments(
+    scope: Scope,
+    command: Extract<Command, { type: "message.send" }>,
+    attemptId: string,
+    accepted: CommandResult,
+    run: <T>(fn: () => T) => Promise<T>,
+    signal: AbortSignal,
+    access: MobileRuntime,
+    entry?: InFlightRequest,
+  ): Promise<CommandResult> {
+    const key = personLane(scope);
+    if (this.active.has(key) || this.active.size >= MAX_ACTIVE_RUNS)
+      throw new ModelError("model_busy");
+    this.requestTracker.acquireScope(key, entry);
+    const activity = this.startActivity(scope, command);
+    let token: string | undefined;
+    try {
+      const { value: prepared } = await run(() =>
+        this.storage.attachmentProcessing(scope, command, () =>
+          this.storage.attachments.beginPreparing(scope, attemptId),
+        ),
+      );
+      const files: { name: string; conversion: Conversion }[] = [];
+      let conversationSession: string | undefined;
+      try {
+        conversationSession = await run(() =>
+          this.storage.conversationSession(scope, command.conversationId),
+        );
+        for (const file of prepared.files) {
+          const bytes = await this.storage.attachments
+            .objectStore()
+            .get(file.handle);
+          files.push({
+            name: file.name,
+            conversion: await convertDocument(
+              this.converter!,
+              bytes,
+              file.name,
+              signal,
+            ),
+          });
+        }
+      } catch (error) {
+        operatorLog(
+          "attachment_reading_failed",
+          {
+            error:
+              error instanceof ConverterUnavailable
+                ? error.message.slice(0, 60)
+                : error instanceof Error
+                  ? error.constructor.name.slice(0, 60)
+                  : typeof error,
+          },
+          "error",
+        );
+        activity.finish("failed");
+        const failed = await run(() =>
+          this.storage.attachmentProcessing(scope, command, () =>
+            this.storage.attachments.failPreparing(
+              scope,
+              attemptId,
+              "attachment_processing_unavailable",
+            ),
+          ),
+        );
+        return { ...accepted, snapshot: failed.snapshot };
+      }
+      activity.advance("preparing");
+      const evidence = attachmentEvidence(files);
+      const text = [command.text.trim(), evidence.text]
+        .filter(Boolean)
+        .join("\n\n");
+      const requestHash = attachmentDigest(command);
+      const context = {
+        conversationId: command.conversationId,
+        attachmentGeneration: command.attachments!.generation,
+        requestHash,
+        outerCommandId: command.commandId,
+        conversationSession,
+        legacyQuestionProof: (id: string) =>
+          this.storage.legacyQuestionProof(scope, id),
+      };
+      const input: NativeAttachmentInput = {
+        scope,
+        conversationId: command.conversationId,
+        generation: command.attachments!.generation,
+        conversationSession,
+        commandId: command.idempotencyKey,
+        outerCommandId: command.commandId,
+        logicalMessageId: command.logicalMessageId ?? command.commandId,
+        requestHash,
+        messageHash: nativeAttachmentMessageHash(
+          text,
+          command.language,
+          context,
+        ),
+        evidenceDigest: evidence.digest,
+        handoffId: randomUUID(),
+      };
+      const conversation = (
+        await run(() => this.storage.snapshot(scope, command.conversationId))
+      ).conversations.find((c) => c.id === command.conversationId)!;
+      token = await run(() =>
+        this.storage.attachments.recordHandoff(
+          scope,
+          attemptId,
+          input,
+          prepared.version,
+          conversation.revision,
+        ),
+      );
+      const history = conversation.messages
+        .filter(
+          (m) =>
+            m.logicalMessageId !==
+            (command.logicalMessageId ?? command.commandId),
+        )
+        .slice(-8)
+        .map((m) => ({ role: m.role, text: historyText(m) }));
+      const answer = await access.integrations!.message(
+        command.idempotencyKey,
+        text,
+        command.language,
+        history,
+        signal,
+        activity.tool,
+        activity.workflow,
+        command.timeZone,
+        {
+          ...context,
+          attachment: input,
+          reportDraft: activity.draft,
+          reportStep: activity.step,
+          reportApproval: activity.approval,
+        },
+      );
+      if (!answer) throw new ModelError("model_invalid_response");
+      const snapshot = await this.publishAttachmentResult(
+        scope,
+        attemptId,
+        token,
+        access,
+      );
+      activity.finish("succeeded");
+      return { ...accepted, snapshot };
+    } catch (error) {
+      activity.finish("failed");
+      if (token)
+        await run(() =>
+          this.storage.attachmentProcessing(scope, command, () =>
+            this.storage.attachments.failHandoff(scope, attemptId, token!),
+          ),
+        ).catch(() => {});
+      throw error;
+    } finally {
+      this.requestTracker.releaseScope(key, entry);
+    }
+  }
   private async executeInternal(
     scope: Scope,
     raw: unknown,
@@ -939,8 +1130,28 @@ export class ModelService {
       originalCommand.attachments
     ) {
       // Retention-only acceptance never prepares a caption-only native request.
-      return run(() =>
+      const accepted = await run(() =>
         this.storage.acceptAttachmentMessage(scope, originalCommand),
+      );
+      const attempt = await run(() =>
+        this.storage.attachments.attemptOf(scope, originalCommand.commandId),
+      );
+      if (
+        !this.converter ||
+        !access?.integrations?.message ||
+        accepted.status !== "accepted" ||
+        attempt?.state !== "queued"
+      )
+        return accepted;
+      return this.readAttachments(
+        scope,
+        originalCommand,
+        attempt.id,
+        accepted,
+        run,
+        signal,
+        access as MobileRuntime,
+        entry,
       );
     }
     await this.requestTracker.retireOwned();

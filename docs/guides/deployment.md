@@ -31,6 +31,8 @@ For a development checkout without containers see the
   certificate), or an internal CA.
 - Memory: the server idles at about 450 MB. Plan 1 GB for a pilot of tens of
   people; the compose files set a 2 GB limit. Model calls run at the provider.
+  Optional services add their own: document reading up to 3 GB, diarization
+  up to 4 GB.
 - CPU: one or two cores.
 - Disk: the image is about 630 MB. Data grows with conversations, the activity
   log, agent memory and meeting audio (processed sound moves to object storage when
@@ -179,12 +181,16 @@ Read by the server (image or `pnpm server`):
 | `NIARO_HOSTED_RUNTIME`                                                             | profile (`auto`)                         | Installed connectors: `auto`, `docker` or `process`.                                                |
 | `NIARO_PLUGIN_EDITING`                                                             | profile (on)                             | `0` makes plugin files read-only in administration.                                                 |
 | `NIARO_DIARIZATION_TOKEN`                                                          | compose: `DIARIZER_TOKEN`                | Token for the diarization service.                                                                  |
+| `NIARO_CONVERTER_URL`, `NIARO_CONVERTER_TOKEN`                                     | unset; compose: `CONVERTER_TOKEN`        | The document converter (`http://converter:8000`) and its token; unset keeps attachments unread.     |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | unset                                    | Mail; see [Mail](#mail).                                                                            |
 
 Compose only: `NIARO_DATA_VOLUME` (volume name, default `niaro-data`),
 `NIARO_IMAGE` (default `niaro:local`), `NIARO_GIT_REF` (Dokploy build ref),
-and for diarization `HF_TOKEN`, `DIARIZER_TOKEN`, `DIARIZER_THREADS`,
-`DIARIZER_MEMORY`, `DIARIZER_IMAGE`, `COMPOSE_PROFILES`.
+for diarization `HF_TOKEN`, `DIARIZER_TOKEN`, `DIARIZER_THREADS`,
+`DIARIZER_MEMORY`, `DIARIZER_IMAGE`, and for document reading
+`CONVERTER_TOKEN`, `CONVERTER_DOCKERFILE`, `CONVERTER_MEMORY`,
+`CONVERTER_THREADS`, `CONVERTER_TIMEOUT_SECONDS`, `CONVERTER_IMAGE`; plus
+`COMPOSE_PROFILES`.
 
 ### Automatic profile
 
@@ -435,6 +441,43 @@ The image is about 2 GB; the model (about 30 MB) is downloaded once into the
 `diarizer-models` volume. A two-hour meeting needs about 2 GB of memory on top
 of the model. To switch it off, leave out the profile or remove the
 `diarizer` service.
+
+## Optional document reading
+
+A separate CPU service, `services/converter`, reads attached PDFs, Word,
+Excel and PowerPoint files, CSV/TSV, text and photos for the assistant, with
+Tesseract OCR in Czech and English. Files never leave the machine: the service
+sits on an internal network with no way out, holds no credentials and reads
+each file in a child process with time and memory limits. Needs
+[object storage](object-storage.md) and `NIARO_ATTACHMENTS_ENABLED=true`.
+
+Two images share one API:
+
+| Engine            | Build                              | Memory                                                 | Speed (2 CPUs)                              | Notes                                                          |
+| ----------------- | ---------------------------------- | ------------------------------------------------------ | ------------------------------------------- | -------------------------------------------------------------- |
+| Docling (default) | `Dockerfile.docling`, about 4.4 GB | `CONVERTER_MEMORY=3g`; a 100-page scan peaks at 1.5 GB | a page in about 1 s, 100 pages in 2 minutes | tables come out as tables; pictures on text pages are read too |
+| MarkItDown        | `Dockerfile`, about 0.8 GB         | 0.5 GB is enough                                       | a text PDF at once, a scanned page in 0.5 s | PDF tables come out as loose lines of text                     |
+
+1. Add to `.env` (or Dokploy **Environment**):
+
+   ```sh
+   COMPOSE_PROFILES=documents
+   NIARO_ATTACHMENTS_ENABLED=true
+   NIARO_CONVERTER_URL=http://converter:8000
+   CONVERTER_TOKEN=<random shared secret>
+   # Optional
+   CONVERTER_DOCKERFILE=Dockerfile   # the MarkItDown engine
+   CONVERTER_MEMORY=3g
+   ```
+
+   Compose passes `CONVERTER_TOKEN` to the server as `NIARO_CONVERTER_TOKEN`.
+
+2. Start it: `docker compose --profile documents up -d --build`.
+
+The models are part of the image, so the service needs no network after the
+build. Limits per file: 25 MiB, 100 pages, 10 minutes; photos are scaled to
+16 MP before OCR. A file it cannot read is reported to the assistant as such.
+Compare the engines on your own files with `services/converter/compare.py`.
 
 ## Not in the image
 

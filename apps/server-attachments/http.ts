@@ -123,7 +123,7 @@ export async function attachmentHttp(
             scope: access.scope,
             enabled: store.config.enabled,
             storageAvailable: store.available(),
-            processingAvailable: false,
+            processingAvailable: store.processor && store.available(),
             reuseWithinGeneration: true,
             crossGenerationCopy: "upload",
             limits: store.config.limits,

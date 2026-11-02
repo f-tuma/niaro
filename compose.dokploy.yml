@@ -24,6 +24,9 @@
 # COMPOSE_PROFILES=diarization and HF_TOKEN (plus DIARIZER_TOKEN) in
 # Environment, redeploy, then turn it on in administration, Settings,
 # Meetings. Without the profile the diarizer is neither built nor started.
+# Optional reading of attached documents and photos: add the profile
+# "documents" and set NIARO_CONVERTER_URL=http://converter:8000 (plus
+# CONVERTER_TOKEN); see docs/guides/object-storage.md.
 name: niaro
 
 x-object-storage-environment: &object-storage-environment
@@ -76,6 +79,10 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       # Optional: the token the diarizer service expects (its DIARIZER_TOKEN).
       NIARO_DIARIZATION_TOKEN: ${DIARIZER_TOKEN:-}
+      # Optional: the converter that reads attachments (profile "documents"),
+      # http://converter:8000, and the token it expects (its CONVERTER_TOKEN).
+      NIARO_CONVERTER_URL: ${NIARO_CONVERTER_URL:-}
+      NIARO_CONVERTER_TOKEN: ${CONVERTER_TOKEN:-}
     volumes:
       - niaro-data:/data
     # Reached only through Traefik on Dokploy's network.
@@ -85,6 +92,7 @@ services:
       # The project's own network reaches the optional diarizer.
       - default
       - dokploy-network
+      - documents
     # Hardened: read-only root filesystem (the server writes only to /data and
     # /tmp), no Linux capabilities, no privilege gain through setuid binaries.
     read_only: true
@@ -175,8 +183,40 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
 
+  # Optional: reads attached documents and photos for the assistant, reached
+  # by Niaro at http://converter:8000 on a network with no way out. Docling by
+  # default; CONVERTER_DOCKERFILE=Dockerfile builds the lighter MarkItDown one.
+  converter:
+    profiles: ["documents"]
+    build:
+      context: https://github.com/f-tuma/niaro.git#${NIARO_GIT_REF:-main}:services/converter
+      dockerfile: ${CONVERTER_DOCKERFILE:-Dockerfile.docling}
+    image: ${CONVERTER_IMAGE:-niaro-converter:local}
+    restart: unless-stopped
+    environment:
+      # Shared with Niaro (NIARO_CONVERTER_TOKEN); recommended.
+      CONVERTER_TOKEN: ${CONVERTER_TOKEN:-}
+      CONVERTER_TIMEOUT_SECONDS: ${CONVERTER_TIMEOUT_SECONDS:-600}
+      # CPU threads for Docling's models.
+      CONVERTER_THREADS: ${CONVERTER_THREADS:-2}
+    networks: [documents]
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    # Docling reads a 100-page scan in about 1.5 GB; MarkItDown needs 0.5 GB.
+    mem_limit: ${CONVERTER_MEMORY:-3g}
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
 networks:
   default:
+  # Only Niaro and the converter: parsers of uploaded files reach nothing else.
+  documents:
+    internal: true
   dokploy-network:
     external: true
 

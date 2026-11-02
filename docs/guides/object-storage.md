@@ -106,15 +106,31 @@ node --import tsx tests/storage-rustfs.live.ts
 
 It creates uniquely named containers/volumes, tests bootstrap and permissions, recreates its container, checks exact persisted bytes, and removes only those resources. It does not touch an existing RustFS, live server, emulator or `.env`. Full checkpoint execution evidence and limits are recorded beside the change in `reviews/storage-checkpoint-verification.md`.
 
-## Attachment retention checkpoint
+## Attachments and reading them
 
-Attachment retention is opt-in: `NIARO_ATTACHMENTS_ENABLED=false` by default.
+Attachments are opt-in: `NIARO_ATTACHMENTS_ENABLED=false` by default.
 Capability discovery is `GET /v1/:workspace/attachments/capabilities?profile=agent-attachments%2F1`.
-It always reports `processingAvailable:false` at this checkpoint. An accepted
-file-bearing send stores its user message and original references atomically and
-reports `blocked_capability`; it performs no caption-only inference, conversion,
-OCR, image routing, CRM action or automatic paid retry. Uploading alone never
-interprets a file. Existing server-info output stays unchanged.
+`processingAvailable` is true only when a converter is configured
+(`NIARO_CONVERTER_URL`, see [document reading](deployment.md#optional-document-reading)).
+
+Without a converter an accepted file-bearing send stores its user message and
+original references atomically and reports `blocked_capability`; it makes no
+model call, not even on the caption. With one, the send is `queued`, then in
+the same request:
+
+1. `preparing`: each original is read from object storage and sent to the
+   converter, one at a time. A file it cannot read (password, damage, no text)
+   is named as such; an unreachable converter or store fails the message
+   (`failed`, `attachment_processing_unavailable`) without a model call, and
+   Again sends it anew.
+2. `handoff_started`: the person's words plus the files' text, marked as data
+   and bounded to about 80,000 characters, go to the model once, in the chat's
+   own thread. The text notes what is partial (OCR, cut, pictures omitted).
+3. `published`: the answer appears under the message. Later turns in the chat
+   see the files' text through the thread; the chat history names the files.
+
+A request cut off by a restart leaves no reader: attachments still `queued` or
+`preparing` turn `failed` at startup. Uploading alone never interprets a file.
 
 Use the strict shapes in `packages/protocol/attachments.ts`. Attachment routes
 require exactly one `profile=agent-attachments/1`; command/snapshot/event/stream
@@ -161,7 +177,7 @@ RustFS container/volume, samples the application in a separate process during
 25 MiB upload/download coexistence with meeting upload and native process model
 traffic, and reports RustFS separately. It does not qualify converters, OCR,
 real device capture, arbitrary host workloads or an unprovided Hetzner bucket.
-The application's existing 2 GiB cap is unchanged; keep processing activation off.
+The application's existing 2 GiB cap is unchanged; the converter has its own.
 
 Logical deletion immediately denies access, scrubs workflow/history/search/event
 source projections, retires local tokens and queues exact object/native erasure.

@@ -5,6 +5,7 @@ import {
   cleanupAttachmentSpools,
 } from "../server-attachments/admission";
 import { attachmentHttp, noDuplicateKeys } from "../server-attachments/http";
+import type { ConverterConfig } from "../server-attachments/converter";
 import {
   AttachmentError,
   type AttachmentConfiguration,
@@ -263,6 +264,8 @@ function connectorHandlers(
 export type FixtureServerOptions = {
   objectStorage?: StorageConfiguration;
   attachments?: AttachmentConfiguration;
+  /** The converter service that reads attached files (NIARO_CONVERTER_URL). */
+  converter?: ConverterConfig;
   identity?: Pick<
     IdentityService,
     | "attachWorkflow"
@@ -370,6 +373,9 @@ export function createFixtureServer(
       options.objectStorage ?? { state: "disabled" },
     );
     options.identity?.attachObjectStorage?.(() => storage.objectStorage);
+    storage.attachments.processor =
+      !!options.converter && storage.attachments.config.enabled;
+    storage.failInterruptedAttachments();
     storage.recordAttachmentOwners(
       options.identity?.attachmentIdentityDirectory() ?? null,
     );
@@ -417,6 +423,8 @@ export function createFixtureServer(
   const accountModels = options.identity
     ? new ModelService(storage, options.model, options.now)
     : undefined;
+  for (const service of [models, accountModels])
+    if (service) service.converter = options.converter;
   cleanupAttachmentSpools(directory);
   const attachmentAdmission = new AttachmentAdmission();
   const attachmentCleanup = new AttachmentCleanup(
@@ -1299,8 +1307,9 @@ export function createFixtureServer(
         typeof commandBody === "object" &&
         "attachments" in commandBody;
       const bridge = accountWorkspace
-        ? await (
-            attachmentRoute || attachmentCommand
+        ? await // Kept files need no model; files the converter reads do.
+          (
+            attachmentRoute || (attachmentCommand && !options.converter)
               ? options.identity!.mobileAttachmentAccess
               : options.identity!.mobileAccess
           ).call(

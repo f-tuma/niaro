@@ -743,7 +743,9 @@ export const NativeAttachmentInputSchema = z.strictObject({
   scope: ScopeSchema,
   conversationId: NativeAttachmentId,
   generation: NativeAttachmentUuid,
-  conversationSession: NativeAttachmentSha,
+  // Absent like the chat's own turns until it is started anew, so the
+  // attachment turn continues the chat's thread.
+  conversationSession: NativeAttachmentSha.optional(),
   commandId: NativeAttachmentId,
   outerCommandId: NativeAttachmentId,
   logicalMessageId: NativeAttachmentId,

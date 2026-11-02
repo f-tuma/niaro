@@ -2,6 +2,7 @@ import {
   loadAttachmentConfiguration,
   type AttachmentConfiguration,
 } from "../server-attachments/schema";
+import { converterConfig } from "../server-attachments/converter";
 import { loadStorageConfiguration } from "../server-storage/config";
 import type { StorageConfiguration } from "../server-storage/types";
 import type { IdentityService } from "../server-identity/service";
@@ -230,6 +231,7 @@ export function createReferenceServer(
     ...adapters,
     objectStorage: options.objectStorage ?? loadStorageConfiguration(),
     attachments: options.attachments ?? loadAttachmentConfiguration(),
+    converter: converterConfig(),
     management,
     identity,
     sessionTtlMs: config.sessionSeconds * 1000,

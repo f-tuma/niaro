@@ -93,6 +93,8 @@ export const attachmentDigest = (value: unknown) =>
 
 /** Metadata only. All writes share the workflow owner's connection and transaction. */
 export class AttachmentStore {
+  /** Set at startup when a converter reads accepted files for the model. */
+  processor = false;
   constructor(
     readonly db: DatabaseSync,
     private transaction: <T>(run: () => T) => T,
@@ -819,6 +821,9 @@ export class AttachmentStore {
   ) {
     this.requireEnabled();
     this.assertNoUnpublished(scope, command.conversationId, command.commandId);
+    const initial: AttachmentProcessing["state"] = this.processor
+      ? "queued"
+      : "blocked_capability";
     const refs = command.attachments;
     if (!refs) throw new AttachmentError("attachment_invalid");
     const key = scopeKey(scope),
@@ -899,15 +904,15 @@ export class AttachmentStore {
         .run(String(proof), command.commandId, String(parent.id));
       this.db
         .prepare(
-          "UPDATE attachment_ingestions SET state='blocked_capability',version=version+1 WHERE id=?",
+          "UPDATE attachment_ingestions SET state=?,version=version+1 WHERE id=?",
         )
-        .run(ingestionId);
+        .run(initial, ingestionId);
     } else {
       if (draft.state !== "open" || draft.expires_at <= this.now())
         throw new AttachmentError("attachment_stale", 409);
       this.db
         .prepare(
-          "INSERT INTO attachment_ingestions VALUES(?,?,?,?,?,?,?,?,'blocked_capability',1,?)",
+          "INSERT INTO attachment_ingestions VALUES(?,?,?,?,?,?,?,?,?,1,?)",
         )
         .run(
           ingestionId,
@@ -918,6 +923,7 @@ export class AttachmentStore {
           messageId,
           JSON.stringify(contents.map((c) => c.id)),
           intent(command),
+          initial,
           this.now(),
         );
       for (const [ordinal, c] of contents.entries())
@@ -944,7 +950,7 @@ export class AttachmentStore {
     const attemptId = randomUUID();
     this.db
       .prepare(
-        "INSERT INTO attachment_attempts(id,ingestion_id,scope_key,command_id,idempotency_key,request_hash,request,ordinal,state,version,boot_id,task_id,failure,created_at) VALUES(?,?,?,?,?,?,?,?,'blocked_capability',1,?,?,?,?)",
+        "INSERT INTO attachment_attempts(id,ingestion_id,scope_key,command_id,idempotency_key,request_hash,request,ordinal,state,version,boot_id,task_id,failure,created_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?)",
       )
       .run(
         attemptId,
@@ -955,17 +961,19 @@ export class AttachmentStore {
         attachmentDigest(command),
         JSON.stringify(command),
         ordinal,
+        initial,
         randomUUID(),
         randomUUID(),
-        "attachment_processing_unavailable",
+        initial === "queued" ? null : "attachment_processing_unavailable",
         this.now(),
       );
     const processing: AttachmentProcessing = {
       ingestionId,
       attempt: ordinal,
       version: 1,
-      state: "blocked_capability",
-      failure: "attachment_processing_unavailable",
+      state: initial,
+      failure:
+        initial === "queued" ? null : "attachment_processing_unavailable",
     };
     return {
       files: contents.map((c) => this.publicFile(c)),
@@ -993,7 +1001,7 @@ export class AttachmentStore {
       if (
         !a ||
         a.version !== expectedVersion ||
-        !["queued", "waiting_retry"].includes(String(a.state)) ||
+        !["queued", "preparing", "waiting_retry"].includes(String(a.state)) ||
         a.handoff_id ||
         scopeKey(input.scope) !== scopeKey(scope) ||
         input.generation !== a.generation_id ||
@@ -1116,6 +1124,116 @@ export class AttachmentStore {
         "UPDATE attachment_ingestions SET state='published',version=version+1 WHERE id=?",
       )
       .run(a.ingestionId);
+  }
+  /** The attempt a message.send command started, if it has attachments. */
+  attemptOf(scope: Scope, commandId: string) {
+    const row = this.db
+      .prepare(
+        "SELECT id,state,version FROM attachment_attempts WHERE scope_key=? AND command_id=?",
+      )
+      .get(scopeKey(scope), commandId);
+    return row
+      ? {
+          id: String(row.id),
+          state: String(row.state) as AttachmentProcessing["state"],
+          version: Number(row.version),
+        }
+      : undefined;
+  }
+  /** Marks a queued attempt as being read and returns its files, in order. */
+  beginPreparing(scope: Scope, attemptId: string) {
+    return this.write(() => {
+      this.requireEnabled();
+      const a = this.db
+        .prepare(
+          "SELECT a.state,a.version,a.ingestion_id,i.content_ids FROM attachment_attempts a JOIN attachment_ingestions i ON i.id=a.ingestion_id WHERE a.id=? AND a.scope_key=?",
+        )
+        .get(attemptId, scopeKey(scope));
+      if (!a || a.state !== "queued")
+        throw new AttachmentError("attachment_stale", 409);
+      const files = (JSON.parse(String(a.content_ids)) as string[]).map(
+        (id) => {
+          const c = this.authorizeRead(scope, id);
+          return { name: c.filename, handle: this.handle(c) };
+        },
+      );
+      this.setState(attemptId, String(a.ingestion_id), "preparing", null);
+      return { version: Number(a.version) + 1, files };
+    });
+  }
+  /** Reading failed before the model was asked; Again on the message retries. */
+  failPreparing(
+    scope: Scope,
+    attemptId: string,
+    failure: NonNullable<AttachmentProcessing["failure"]>,
+  ) {
+    return this.write(() => {
+      const a = this.db
+        .prepare(
+          "SELECT ingestion_id FROM attachment_attempts WHERE id=? AND scope_key=? AND state IN ('queued','preparing') AND handoff_id IS NULL",
+        )
+        .get(attemptId, scopeKey(scope));
+      if (a)
+        this.setState(attemptId, String(a.ingestion_id), "failed", failure);
+    });
+  }
+  /** The model was asked but gave no answer to publish; Again sends anew. */
+  failHandoff(scope: Scope, attemptId: string, token: string) {
+    return this.write(() => {
+      const a = this.db
+        .prepare(
+          "SELECT ingestion_id FROM attachment_attempts WHERE id=? AND scope_key=? AND token=? AND state='handoff_started' AND NOT EXISTS(SELECT 1 FROM attachment_publications WHERE attempt_id=?)",
+        )
+        .get(attemptId, scopeKey(scope), token, attemptId);
+      if (a)
+        this.setState(
+          attemptId,
+          String(a.ingestion_id),
+          "failed",
+          "attachment_retry_required",
+        );
+    });
+  }
+  /**
+   * Files are read inside the request that sent them. After a restart no
+   * such request is left, so an attempt still queued or being read fails and
+   * can be sent again; one already handed to the model is left to publish.
+   */
+  failInterrupted() {
+    if (!this.config.enabled) return [];
+    return this.write(() =>
+      this.db
+        .prepare(
+          "SELECT id,ingestion_id,scope_key,request FROM attachment_attempts WHERE state IN ('queued','preparing') AND handoff_id IS NULL",
+        )
+        .all()
+        .map((a) => {
+          this.setState(
+            String(a.id),
+            String(a.ingestion_id),
+            "failed",
+            "attachment_retry_required",
+          );
+          return { scopeKey: String(a.scope_key), request: String(a.request) };
+        }),
+    );
+  }
+  private setState(
+    attemptId: string,
+    ingestionId: string,
+    state: AttachmentProcessing["state"],
+    failure: AttachmentProcessing["failure"],
+  ) {
+    this.db
+      .prepare(
+        "UPDATE attachment_attempts SET state=?,failure=?,version=version+1 WHERE id=?",
+      )
+      .run(state, failure, attemptId);
+    this.db
+      .prepare(
+        "UPDATE attachment_ingestions SET state=?,version=version+1 WHERE id=?",
+      )
+      .run(state, ingestionId);
   }
   retryLocal(scope: Scope, id: string, input: unknown): never {
     this.requireServing();
