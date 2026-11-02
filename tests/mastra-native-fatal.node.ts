@@ -352,7 +352,8 @@ test("an answer prepared before fatal native retirement cannot publish success o
       h.workflow.snapshot(h.scope).conversations[0]!.messages.length,
       0,
     );
-    assert.equal(h.requests.length, 1); // only the domain's checker for the prepared answer
+    // No model call: a read-only answer is no longer checked (NIAR-229).
+    assert.equal(h.requests.length, 0);
   } finally {
     await h.close();
   }
@@ -1398,7 +1399,8 @@ for (const cleanup of ["interrupt", "fresh-access"] as const) {
       assert.equal(h.commandState(original.commandId).answer, undefined);
       assert.equal(h.commandState(original.commandId).inference, inference);
       assert.equal(h.workflow.replay(h.scope, original), undefined);
-      assert.equal(h.requests.length, requests + 2);
+      // The new request's answer; a read-only answer gets no checker call.
+      assert.equal(h.requests.length, requests + 1);
       assert.equal(h.network.length, 0);
     } finally {
       await h.close();

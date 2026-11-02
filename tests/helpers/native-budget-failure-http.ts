@@ -251,6 +251,20 @@ export async function runNativeBudgetFailureCase(
       modelStep++;
       if (scenario === "continuity-preflight")
         return call("ask_user", { question: "TEST which budget item Q19?" });
+      // A plain read-only answer goes out unchecked (NIAR-229); saving an item
+      // in Tasks makes the turn one the decision model must check, which is
+      // where the unpriced or exhausted budget fails.
+      if (
+        !isWrite &&
+        modelStep === 1 &&
+        (scenario === "decision-unpriced" || scenario === "exhausted")
+      )
+        return call("human_task_create", {
+          title: "TEST budget follow-up",
+          detail: "TEST missing budget decision",
+          assignee: null,
+          due: null,
+        });
       if (!isWrite) return { content: "TEST plain synthetic reply" };
       if (modelStep === 1)
         return call("find_actions", {
@@ -459,7 +473,14 @@ export async function runNativeBudgetFailureCase(
       );
       assert.equal(
         h.modelCount(),
-        isWrite ? 3 : scenario === "tools-unpriced" ? 0 : 1,
+        isWrite
+          ? 3
+          : scenario === "tools-unpriced"
+            ? 0
+            : // The task item, then the reply.
+              scenario === "decision-unpriced" || scenario === "exhausted"
+              ? 2
+              : 1,
       );
       if (isWrite) {
         assert(beforeFailure);

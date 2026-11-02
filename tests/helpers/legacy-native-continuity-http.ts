@@ -1819,7 +1819,8 @@ export async function runLegacyContinuityHttpCase(
       independentThread = root.threadId;
     }
     assert.equal(h.modelCount(), isolatedBaseline.models + 2);
-    assert.equal(decisions.length, isolatedBaseline.decisions + 2);
+    // Read-only public replies go out without a checker decision (NIAR-229).
+    assert.equal(decisions.length, isolatedBaseline.decisions);
     assert.deepEqual(h.dispatches, isolatedBaseline.dispatches);
     assert.deepEqual(savedTurn(), before);
     negativeResults.push(

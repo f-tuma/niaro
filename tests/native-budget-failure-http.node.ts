@@ -99,7 +99,10 @@ for (const scenario of [
                 ? 3
                 : scenario === "tools-unpriced"
                   ? 0
-                  : 1,
+                  : // The task item, then the reply the decision would check.
+                    scenario === "decision-unpriced" || scenario === "exhausted"
+                    ? 2
+                    : 1,
               decisionCalls: scenario.startsWith("write-") ? 1 : 0,
               writes: scenario.startsWith("write-") ? ["POST"] : [],
               reopens: 2,

@@ -38,7 +38,8 @@ function harness(
 ) {
   const db = new DatabaseSync(":memory:");
   db.exec(
-    `CREATE TABLE agent_workspace(id TEXT PRIMARY KEY, organization_id TEXT); INSERT INTO agent_workspace VALUES ('${target.workspaceId}', 'org'); CREATE TABLE member(id TEXT PRIMARY KEY, "organizationId" TEXT, "userId" TEXT); INSERT INTO member VALUES ('alice-member','org','alice'),('bob-member','org','bob');`,
+    // The auth library's organization table, which output-voice epochs reference.
+    `CREATE TABLE organization(id TEXT PRIMARY KEY); INSERT INTO organization VALUES ('org'); CREATE TABLE agent_workspace(id TEXT PRIMARY KEY, organization_id TEXT); INSERT INTO agent_workspace VALUES ('${target.workspaceId}', 'org'); CREATE TABLE member(id TEXT PRIMARY KEY, "organizationId" TEXT, "userId" TEXT); INSERT INTO member VALUES ('alice-member','org','alice'),('bob-member','org','bob');`,
   );
   const oauth = new ServiceOAuthStore(
     db,
