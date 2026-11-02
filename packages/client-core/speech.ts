@@ -20,7 +20,7 @@ type SpeechState = {
   phase: "idle" | "loading" | "playing" | "error";
   error?: string;
 };
-export const AUTOMATIC_SPEECH_START_MS = 8000;
+export const AUTOMATIC_SPEECH_START_MS = 12000;
 /** A single explicit playback owner; a late response can never restart a stopped reply. */
 export class ReplySpeech {
   private state: SpeechState = { phase: "idle" };

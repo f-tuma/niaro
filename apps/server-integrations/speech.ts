@@ -217,6 +217,41 @@ export function readerStream(stream: string): {
     transcript,
   };
 }
+/** About this much of a reply is read aloud; the whole reply stays in chat. */
+const SPOKEN_CHARACTERS = 400;
+/**
+ * The part of a reply worth hearing: Markdown marks, links, code, tables and
+ * list bullets removed, then the first sentences up to about 400 characters.
+ * A reply with generated UI keeps its numbers and tables on screen; read
+ * whole, it took too long to start and the reader paraphrased its markup.
+ */
+export function speakableText(text: string) {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .split("\n")
+    // Table rows and separators are for the eyes.
+    .filter((line) => !/^\s*\|/.test(line))
+    .map((line) =>
+      line
+        .replace(/^\s{0,3}#{1,6}\s+/, "")
+        .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
+        .replace(/^\s*>\s?/, ""),
+    )
+    .join("\n")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/(\*\*|__|\*|_|~~)(?=\S)([^*_~]+?)\1/g, "$2")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (plain.length <= SPOKEN_CHARACTERS) return plain;
+  const sentences = plain.match(/[^.!?…]+[.!?…]+(?=\s|$)/gu) ?? [];
+  let spoken = "";
+  for (const sentence of sentences) {
+    if ((spoken + sentence).length > SPOKEN_CHARACTERS) break;
+    spoken += sentence;
+  }
+  return (spoken || plain.slice(0, SPOKEN_CHARACTERS)).trim();
+}
 export async function synthesizeSpeech(
   transport: IntegrationTransport,
   selection: SpeechSelection,
@@ -227,6 +262,8 @@ export async function synthesizeSpeech(
 ): Promise<SpeechAudio> {
   if (!text.trim() || text.length > SPEECH_TEXT_LENGTH)
     throw new SpeechError("speech_too_long", 413);
+  text = speakableText(text);
+  if (!text) throw new SpeechError("speech_too_long", 413);
   signal.throwIfAborted();
   const reader = selection.method === "reader";
   if (!reader)
@@ -305,10 +342,11 @@ async function requestSpeech(
         },
   });
   signal.throwIfAborted();
+  // OpenRouter refuses a model none of whose providers meet the data policy
+  // (zero data retention, no data collection); its wording varies.
   if (
-    reader &&
     response.status === 404 &&
-    response.text.includes("Zero data retention")
+    /zero data retention|data policy|\bzdr\b|privacy/i.test(response.text)
   )
     throw new SpeechError("speech_privacy_unavailable", 503);
   if (response.status < 200 || response.status >= 300)

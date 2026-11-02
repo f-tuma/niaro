@@ -1611,6 +1611,11 @@ export function createFixtureServer(
               audio,
             }),
           );
+        } catch (error) {
+          // The person sees only "unavailable"; the operator sees why.
+          if (error instanceof SpeechError && !controller.signal.aborted)
+            operatorLog("speech_failed", { code: error.code }, "warn");
+          throw error;
         } finally {
           clearTimeout(timeout);
           res.off("close", cancel);

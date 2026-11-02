@@ -1,6 +1,7 @@
 import {
   readerAudio,
   readsVerbatim,
+  speakableText,
   SpeechError,
   synthesizeSpeech,
   type SpeechSelection,
@@ -409,4 +410,22 @@ test("a paraphrased reading is retried once and never played", async () => {
   }));
   await expect(run()).rejects.toThrow(/speech_unavailable/);
   expect(transport).toHaveBeenCalledTimes(2);
+});
+
+test("a reply is read without its Markdown, tables or links, and only its first sentences", () => {
+  expect(
+    speakableText(
+      "## Výsledek\n\nMěděný drát stojí **1 250 Kč** a [plech](https://example.test) `900 Kč`.\n\n| Položka | Cena |\n| --- | --- |\n| Drát | 1250 |\n\n- první bod\n- druhý bod",
+    ),
+  ).toBe(
+    "Výsledek Měděný drát stojí 1 250 Kč a plech 900 Kč. první bod druhý bod",
+  );
+  const long = Array.from(
+    { length: 30 },
+    (_, i) => `Věta číslo ${i + 1} je tady.`,
+  ).join(" ");
+  const spoken = speakableText(long);
+  expect(spoken.length).toBeLessThanOrEqual(400);
+  expect(spoken.endsWith("je tady.")).toBe(true);
+  expect(long.startsWith(spoken)).toBe(true);
 });
