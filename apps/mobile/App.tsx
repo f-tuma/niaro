@@ -10,9 +10,7 @@ import {
 import { useNativePetProfile, nativePetAppearance } from "./pet-profile-model";
 import {
   useMobileComposerMentions,
-  MobileMentionSuggestions,
   MobileMentionSheet,
-  MobileMentionTray,
 } from "./MobileMentions";
 import type { MessageMention } from "../../packages/protocol/mentions";
 import { VoiceServiceCard } from "../../packages/ui-catalog/VoiceServiceCard";
@@ -23,9 +21,7 @@ import {
 } from "./home-pet-visibility";
 import {
   useMobileAttachments,
-  MobileAttachmentDraft,
   MobileAttachmentPreview,
-  MobileMessageAttachments,
 } from "./AttachmentControls";
 import { AttachmentPicker } from "../../packages/ui-catalog/AttachmentPicker";
 import { useCompanionFonts } from "./CompanionFonts";
@@ -119,7 +115,6 @@ import {
   selectConversationWork,
   selectWorkMessageAnchors,
   selectPresentedWork,
-  isTerminalNativeWork,
 } from "../../packages/client-core/store";
 import { translate, en, type TranslationKey } from "../../packages/i18n";
 import {
@@ -139,11 +134,8 @@ import {
   Button,
   Notice,
   ActionToast,
-  FadeEdge,
   Group,
-  Icon,
   ListRow,
-  Row,
 } from "../../packages/ui";
 import { MobileWorkItemCard } from "./MobileWorkItemCard";
 import { ProcessAnswerRecoveryCard } from "../../packages/ui-catalog/ProcessAnswerRecoveryCard";
@@ -162,41 +154,31 @@ import {
   withChatSession,
 } from "./chat-session";
 import {
-  VoiceReply,
   createVoiceReply,
   isProcessReply,
   type VoiceReplyContext,
 } from "./VoiceReply";
-import { ServiceConnection } from "./ServiceConnection";
 import { ProcessLaunch } from "./ProcessLaunch";
 import { ProcessApprovalRecovery } from "./ProcessApprovalRecovery";
 import { feedback, setFeedbackEnabled } from "./feedback";
 import type { VoiceDraft } from "../../packages/client-core/voice";
 import { Entrance, MotionProvider } from "../../packages/ui/motion";
 import { WorkItemSummary } from "../../packages/ui-catalog/WorkItemSummary";
-import { ServiceActionCard } from "../../packages/ui-catalog/ServiceActionCard";
-import { GenerativeUiView } from "../../packages/ui-catalog/GenerativeUiView";
-import { cardDocumentText } from "../../packages/protocol/card-document";
-import { ProcessOfferCard } from "../../packages/ui-catalog/ProcessOfferCard";
 import type { ProcessOfferResult } from "../../packages/protocol/process-offer";
-import { processProposalWebUrl } from "../../packages/protocol/process-proposal";
-import { MarkdownText } from "../../packages/ui-catalog/MarkdownText";
-import { splitDraft } from "../../packages/openui-library/program";
 
-import { CrmContactResults } from "../../packages/ui-catalog/CrmContactCard";
-import { RequestProgressCard } from "../../packages/ui-catalog/RequestProgressCard";
+import { ChatThread } from "./chat/ChatThread";
+import { ChatFooter } from "./chat/composer";
+import { MobileChatProvider, type MobileChat } from "./chat/parts";
+import { projectThread, trailingWork, visibleMessages } from "./chat/thread";
 import {
   chrome as styles,
   TopBar,
   StatusLine,
   Home,
   TaskTabs,
-  Composer,
-  ReadOnlyComposer,
   DetailSheet,
   EmptyState,
   IconButton,
-  AssistantMessage,
   Navigation,
   type Section,
   type TaskTab,
@@ -1302,14 +1284,7 @@ export function Workspace({
         : (conversation?.messages ?? []),
     [conversation, historyMessages, historySelection, online],
   );
-  const boundary = chatStart?.afterMessageId
-    ? allMessages.findIndex((m) => m.id === chatStart.afterMessageId)
-    : -1;
-  const messages = historySelection
-    ? allMessages
-    : chatStart
-      ? allMessages.slice(boundary + 1)
-      : [];
+  const messages = visibleMessages(allMessages, historySelection, chatStart);
   // A sound for what arrives while the chat is open; history loaded at start is silent.
   const heard = useRef<Map<string, string> | undefined>(undefined);
   useEffect(() => {
@@ -1533,9 +1508,6 @@ export function Workspace({
       openLabel={tr("openInChat")}
     />
   );
-  const cards = work.map(
-    section === "chat" ? (item) => renderWork(item) : summary,
-  );
   const processAnnouncement = selectProcessCommandNotice(state, noticeOwner);
   const errorKey = chatErrorKey(
     replyError,
@@ -1543,36 +1515,12 @@ export function Workspace({
     state.error,
     isProcessReply(context),
   );
-  const cardsById = new Map(work.map((w, i) => [w.id, cards[i]]));
   const referencedWork = store
     ? selectPresentedWork(store, conversationId, messages)
     : new Set<string>();
   const workMessageAnchors = store
     ? selectWorkMessageAnchors(store, conversationId, messages)
     : new Map<string, string>();
-  /** An answer's text, then its generated UI; system cards follow it. */
-  const answer = (m: (typeof messages)[number], text = true) => (
-    <>
-      {text && m.text ? (
-        <View style={styles.answer}>
-          <MarkdownText text={m.text} />
-        </View>
-      ) : null}
-      {m.role === "assistant" && m.ui ? (
-        <GenerativeUiView
-          program={m.ui.program}
-          language={language}
-          disabled={!!historySelection?.readOnly}
-          onFollowUp={(followUp) => {
-            // A follow-up is a new message the person reviews and sends.
-            setContext(undefined);
-            setDraft(followUp);
-            requestAnimationFrame(() => composerInput.current?.focus());
-          }}
-        />
-      ) : null}
-    </>
-  );
   const reuseAttachmentMessage = (
     message: (typeof messages)[number],
     send: boolean,
@@ -1632,226 +1580,54 @@ export function Workspace({
         }
       });
   };
-  const transcript = messages.map((m) => {
-    if (
-      heldReply &&
-      m.role === "assistant" &&
-      m.replyToCommandId === heldReply
-    ) {
-      if (m.workItemId) referencedWork.add(m.workItemId);
-      if (m.result?.type === "service.action") {
-        const operationId = m.result.operationId;
-        for (const item of work)
-          if (item.native?.action?.operationId === operationId)
-            referencedWork.add(item.id);
-      }
-      return null;
-    }
-    if (m.role === "user")
-      return (
-        <View
-          key={m.id}
-          style={[
-            styles.message,
-            m.attachments?.length ? { width: "85%" } : null,
-          ]}
-        >
-          {m.humanTask ? (
-            <Row
-              accessible
-              accessibilityLabel={`${tr("humanTaskAttached")}: ${m.humanTask.title}`}
-              style={{ gap: 6 }}
-            >
-              <Icon name="tasks" size={14} color={t.color.text.secondary} />
-              <Text
-                role="caption"
-                tone="secondary"
-                numberOfLines={1}
-                style={{ flexShrink: 1 }}
-              >
-                {m.humanTask.title}
-              </Text>
-            </Row>
-          ) : null}
-          {m.text ? <Text selectable>{m.text}</Text> : null}
-          {session && m.attachments?.length ? (
-            <MobileMessageAttachments
-              session={session}
-              language={language}
-              files={m.attachments}
-              processing={m.processing}
-              onEdit={
-                !historySelection?.readOnly && !busy && online
-                  ? () => reuseAttachmentMessage(m, false)
-                  : undefined
-              }
-              onAgain={
-                !historySelection?.readOnly && !busy && online
-                  ? () => reuseAttachmentMessage(m, true)
-                  : undefined
-              }
-            />
-          ) : null}
-        </View>
-      );
-    if (m.result?.type === "service.connection") {
-      return (
-        <AssistantMessage key={m.id}>
-          {answer(m)}
-          {session ? (
-            <ServiceConnection
-              key={`${session.identityKey}:${m.result.serviceId}:${m.id}`}
-              session={session}
-              result={m.result}
-              language={language}
-              disabled={busy || !online}
-              online={online}
-              onContinue={(text) => submitMessage(text, null)}
-            />
-          ) : null}
-        </AssistantMessage>
-      );
-    }
-    if (m.result?.type === "process.offer") {
-      const offer = m.result;
-      const index = messages.indexOf(m);
-      const request = messages
-        .slice(0, index)
-        .reverse()
-        .find((message) => message.role === "user");
-      const current = messages.at(-1)?.id === m.id;
-      return (
-        <AssistantMessage key={m.id}>
-          {answer(m)}
-          <ProcessOfferCard
-            offer={offer}
-            language={language}
-            disabled={
-              busy || !online || !current || !!historySelection?.readOnly
-            }
-            onReview={() => openProcesses(offer)}
-            onDecline={() =>
-              request?.text &&
-              submitMessage(request.text, null, undefined, {
-                withoutProcess: true,
-              })
-            }
-          />
-        </AssistantMessage>
-      );
-    }
-    // A process drafted in chat is reviewed and saved in the web app.
-    if (m.result?.type === "process.proposal") {
-      const web = session
-        ? processProposalWebUrl(session.address, m.result)
-        : null;
-      return (
-        <AssistantMessage key={m.id}>
-          {answer(m)}
-          <Text role="caption" tone="secondary">
-            {`${tr("processProposalTitle")}: ${m.result.name}`}
-          </Text>
-          {web ? (
-            <Button
-              label={tr("processProposalOpenWeb")}
-              variant="secondary"
-              size="small"
-              onPress={() => void Linking.openURL(web).catch(() => {})}
-            />
-          ) : null}
-        </AssistantMessage>
-      );
-    }
-    // A skill drafted in chat is saved in the web app; here it is only named.
-    if (m.result?.type === "skill.proposal")
-      return (
-        <AssistantMessage key={m.id}>
-          {answer(m)}
-          <Text role="caption" tone="secondary">
-            {`${tr("skillProposalTitle")}: ${m.result.name}. ${tr("skillProposalMobile")}`}
-          </Text>
-        </AssistantMessage>
-      );
-    // Answers no longer compose cards; a stored one reads as its text.
-    if (m.result?.type === "card.document")
-      return (
-        <AssistantMessage key={m.id}>
-          {answer(m)}
-          <Text selectable>{cardDocumentText(m.result.document)}</Text>
-        </AssistantMessage>
-      );
-    // Only a write waiting for the person's decision is a card; anything
-    // else an action did, the answer tells in words, like any AI chat.
-    if (
-      m.result?.type === "service.action" &&
-      m.result.status !== "awaiting_approval"
-    )
-      return m.text.trim() || m.ui ? (
-        <AssistantMessage key={m.id}>{answer(m)}</AssistantMessage>
-      ) : null;
-    if (m.result?.type === "service.action") {
-      const result = m.result;
-      return (
-        <AssistantMessage key={m.id}>
-          {answer(m)}
-          <ServiceActionCard
-            result={result}
-            language={language}
-            disabled={busy || !online || !!historySelection?.readOnly}
-            onDecide={(approved) => {
-              if (!session || !conversation) return;
-              const id = randomUUID();
-              void session.send({
-                type: "service.resolve",
-                commandId: id,
-                idempotencyKey: id,
-                conversationId: conversation.id,
-                operationId: result.operationId,
-                approved,
-                language,
-              });
-            }}
-          />
-        </AssistantMessage>
-      );
-    }
-    if (m.result?.type === "crm.contacts")
-      return (
-        <AssistantMessage key={m.id}>
-          {answer(m, false)}
-          <CrmContactResults result={m.result} language={language} />
-        </AssistantMessage>
-      );
-    if (
-      m.workItemId &&
-      cardsById.has(m.workItemId) &&
-      workMessageAnchors.get(m.workItemId) === m.id
-    ) {
-      referencedWork.add(m.workItemId);
-      const anchored = work.find((w) => w.id === m.workItemId);
-      // A finished action needs no card: the answer says what happened.
-      if (
-        anchored?.native?.action &&
-        !anchored.native.process &&
-        isTerminalNativeWork(anchored)
-      )
-        return m.text.trim() || m.ui ? (
-          <AssistantMessage key={m.id}>{answer(m)}</AssistantMessage>
-        ) : null;
-      return (
-        <View
-          key={m.id}
-          onLayout={(e) => locateWork(m.workItemId!, e.nativeEvent.layout.y)}
-        >
-          <AssistantMessage>
-            {answer(m, false)}
-            {cardsById.get(m.workItemId)}
-          </AssistantMessage>
-        </View>
-      );
-    }
-    return <AssistantMessage key={m.id}>{answer(m)}</AssistantMessage>;
+  const threadEntries = projectThread({
+    messages,
+    work,
+    heldReply,
+    anchors: workMessageAnchors,
+    referencedWork,
   });
+  const trailing = trailingWork({
+    work,
+    referencedWork,
+    openedWork,
+    pending: state.pending,
+    conversationId,
+  });
+  const chat: MobileChat = {
+    session,
+    language,
+    busy,
+    online,
+    readOnly: !!historySelection?.readOnly,
+    followUp: (followUp) => {
+      // A follow-up is a new message the person reviews and sends.
+      setContext(undefined);
+      setDraft(followUp);
+      requestAnimationFrame(() => composerInput.current?.focus());
+    },
+    continueWith: (text) => submitMessage(text, null),
+    reviewOffer: (offer) => openProcesses(offer),
+    declineOffer: (text) =>
+      submitMessage(text, null, undefined, { withoutProcess: true }),
+    reuseAttachments: reuseAttachmentMessage,
+    decide: (operationId, approved) => {
+      if (!session || !conversation) return;
+      const id = randomUUID();
+      void session.send({
+        type: "service.resolve",
+        commandId: id,
+        idempotencyKey: id,
+        conversationId: conversation.id,
+        operationId,
+        approved,
+        language,
+      });
+    },
+    renderWork: (w) => renderWork(w),
+    work: (id) => work.find((w) => w.id === id),
+    locateWork,
+  };
   const hasConversation = messages.length > 0 || work.length > 0;
   const pendingMessage = selectPendingChatMessage(state, conversationId);
   let validContext = false;
@@ -2730,279 +2506,107 @@ export function Workspace({
                   onConnect={() => changeSection("more")}
                 />
               ) : (
-                <>
-                  {transcript}
-                  {pendingMessage ? (
-                    <View testID="pending-message" style={styles.message}>
-                      {pendingMessage.kind === "answer" ? (
-                        <Text role="caption" tone="secondary">
-                          {tr("process_question_pending")}
-                        </Text>
-                      ) : null}
-                      <Text selectable>{pendingMessage.text}</Text>
-                    </View>
-                  ) : null}
-                  {work
-                    .filter(
-                      (w) =>
-                        !referencedWork.has(w.id) &&
-                        (!!w.native?.process ||
-                          !isTerminalNativeWork(w) ||
-                          openedWork.has(w.id)) &&
-                        // The run of the message being answered is the
-                        // Thinking line, not a "waiting for server" card.
-                        !(
-                          state.pending?.type === "message.send" &&
-                          state.pending.conversationId === conversationId &&
-                          !w.native?.process &&
-                          ["queued", "running", "waiting_system"].includes(
-                            w.status,
-                          )
-                        ),
-                    )
-                    .map((w) => (
-                      <View
-                        key={w.id}
-                        onLayout={(e) =>
-                          locateWork(w.id, e.nativeEvent.layout.y)
-                        }
-                      >
-                        <AssistantMessage>{renderWork(w)}</AssistantMessage>
-                      </View>
-                    ))}
-                  {heldReply && !state.pending ? (
-                    <AssistantMessage key={`voice-${heldReply}`}>
-                      <RequestProgressCard
-                        language={language}
-                        activity={state.activity}
-                        voice
-                      />
-                    </AssistantMessage>
-                  ) : null}
-                  {state.pending?.type === "message.send" &&
-                  state.pending.conversationId === conversationId ? (
-                    <AssistantMessage
-                      key={`activity-${state.pending.commandId}`}
-                    >
-                      <RequestProgressCard
-                        language={language}
-                        activity={state.activity}
-                        connection={state.activityConnection}
-                        failed={!!state.error?.startsWith("model_")}
-                        onRetry={
-                          canRetryPending(state)
-                            ? () => {
-                                void session?.retry(noticeOwner);
-                              }
-                            : undefined
-                        }
-                        retryDisabled={!online}
-                        interrupted={
-                          !online ||
-                          Object.values(state.commandStates).includes(
-                            "network_error",
-                          )
-                        }
-                      />
-                      {state.activity?.draft ? (
-                        <AnswerDraft
-                          draft={state.activity.draft}
-                          language={language}
-                        />
-                      ) : null}
-                    </AssistantMessage>
-                  ) : null}
-                </>
+                <MobileChatProvider value={chat}>
+                  <ChatThread
+                    entries={threadEntries}
+                    pendingMessage={pendingMessage}
+                    trailing={trailing}
+                    heldReply={heldReply}
+                    state={state}
+                    conversationId={conversationId}
+                    onRetry={
+                      canRetryPending(state)
+                        ? () => {
+                            void session?.retry(noticeOwner);
+                          }
+                        : undefined
+                    }
+                  />
+                </MobileChatProvider>
               )}
             </Entrance>
           </ScrollView>
         </Entrance>
         {/* Without a server there is nobody to write to; the intro offers Connect. */}
         {section === "chat" && session ? (
-          <View testID="screen-footer" style={styles.footer}>
-            <FadeEdge />
-            {processAnnouncement.notice ? (
-              <ProcessCommandNoticeView
-                language={language}
-                notice={processAnnouncement.notice}
-              />
-            ) : null}
-            {errorKey ? (
-              <View style={{ gap: t.spacing.sm }}>
-                {errorKey === "connection_failed" &&
-                state.connectionDiagnostic ? (
-                  <ConnectionFailureNotice
-                    language={language}
-                    diagnostic={state.connectionDiagnostic}
-                  />
-                ) : (
-                  <Notice error>{tr(errorKey)}</Notice>
-                )}
-              </View>
-            ) : null}
-            {speech.state.phase === "playing" ? (
-              <Row style={{ justifyContent: "space-between" }}>
-                <Text role="caption" tone="secondary">
-                  {companionCopy(language).speaking}
-                </Text>
-                <IconButton
-                  icon="stop"
-                  label={companionCopy(language).stopSpeech}
-                  onPress={speech.player.stop}
-                />
-              </Row>
-            ) : null}
-            {speech.state.phase === "error" ? (
-              <ActionToast
-                message={tr(
-                  speech.state.error === "speech_privacy_unavailable"
-                    ? "speech_privacy_short"
-                    : "spoken_replies_failed",
-                )}
-                description={
-                  speech.state.error === "speech_privacy_unavailable"
-                    ? tr("speech_privacy_unavailable")
-                    : undefined
-                }
-                actionLabel={tr("close")}
-                onAction={speech.player.stop}
-              />
-            ) : null}
-            {context ? (
-              <View style={styles.reply}>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text role="caption" tone="secondary">
-                    {tr(
-                      waitingForProcessAnswer
-                        ? "process_question_pending"
-                        : validContext
-                          ? "replyTo"
-                          : "inputContextChanged",
-                    )}
-                  </Text>
-                  <Text role="caption" numberOfLines={2}>
-                    {isProcessReply(context)
-                      ? context.target.question.question
-                      : context.question}
-                  </Text>
-                </View>
-                <IconButton
-                  icon="close"
-                  label={tr("clearContext")}
-                  onPress={() => {
-                    closeVoice();
-                    if (isProcessReply(context)) setDraft("");
-                    setContext(undefined);
-                  }}
-                />
-              </View>
-            ) : attachedTask?.conversationId === conversationId ? (
-              <View testID="composer-task" style={styles.reply}>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text role="caption" tone="secondary">
-                    {tr("humanTaskAttached")}
-                  </Text>
-                  <Text role="caption" numberOfLines={2}>
-                    {attachedTask.task.title}
-                  </Text>
-                </View>
-                <IconButton
-                  icon="close"
-                  label={tr("humanTaskDetach")}
-                  onPress={() => setAttachedTask(undefined)}
-                />
-              </View>
-            ) : null}
-            {voice && online && (!context || validContext) ? (
-              <VoiceReply
-                draft={voice}
-                language={language}
-                blocked={busy}
-                onClose={closeVoice}
-                level={voiceLevel}
-                petAppearance={petLook}
-                petAnimate={petProfile.profile?.settings.animate ?? true}
-              />
-            ) : historySelection?.readOnly ? (
-              <ReadOnlyComposer
-                language={language}
-                onNewChat={online && !busy ? startNewChat : undefined}
-                onRestore={
-                  online && !busy && !restoring ? restoreOpenChat : undefined
-                }
-                error={restoreError}
-              />
-            ) : (
-              <View>
-                <MobileAttachmentDraft value={attachments} />
-                <MobileMentionSuggestions
-                  items={mentions.items}
-                  language={language}
-                  onPick={mentions.pick}
-                />
-                <Composer
-                  inputRef={composerInput}
-                  language={language}
-                  value={draft}
-                  onChange={mentions.type}
-                  onSelectionChange={mentions.select}
-                  selection={mentions.selection}
-                  onFocus={() => setOwnedComposerFocus(true)}
-                  onBlur={() => {
-                    setOwnedComposerFocus(false);
-                    mentions.blur();
-                  }}
-                  references={
-                    <MobileMentionTray
-                      selected={mentions.selected}
-                      language={language}
-                    />
+          <ChatFooter
+            language={language}
+            notice={processAnnouncement.notice ?? undefined}
+            errorKey={errorKey}
+            diagnostic={state.connectionDiagnostic}
+            speech={speech}
+            context={context}
+            validContext={validContext}
+            waitingForProcessAnswer={waitingForProcessAnswer}
+            onClearContext={() => {
+              closeVoice();
+              if (isProcessReply(context)) setDraft("");
+              setContext(undefined);
+            }}
+            attachedTask={
+              attachedTask?.conversationId === conversationId
+                ? attachedTask.task
+                : undefined
+            }
+            onDetachTask={() => setAttachedTask(undefined)}
+            voice={voice}
+            voiceOpen={!!voice && online && (!context || validContext)}
+            voiceBlocked={busy}
+            onCloseVoice={closeVoice}
+            voiceLevel={voiceLevel}
+            petAppearance={petLook}
+            petAnimate={petProfile.profile?.settings.animate ?? true}
+            readOnly={!!historySelection?.readOnly}
+            onNewChat={online && !busy ? startNewChat : undefined}
+            onRestore={
+              online && !busy && !restoring ? restoreOpenChat : undefined
+            }
+            restoreError={restoreError}
+            attachments={attachments}
+            mentions={mentions}
+            inputRef={composerInput}
+            draft={draft}
+            onFocus={() => setOwnedComposerFocus(true)}
+            onBlur={() => {
+              setOwnedComposerFocus(false);
+              mentions.blur();
+            }}
+            onSend={() => submitMessage()}
+            onVoice={openVoice}
+            onAttach={() => {
+              Keyboard.dismiss();
+              setContextMenu(true);
+            }}
+            disabled={
+              !online ||
+              busy ||
+              !!historySelection?.readOnly ||
+              historyLoading ||
+              (!!context && !validContext)
+            }
+            sending={Object.values(state.commandStates).includes("sending")}
+            onStop={
+              state.pending?.type === "message.send" &&
+              state.pending.conversationId === conversationId
+                ? () => {
+                    void session?.interruptPending();
                   }
-                  hasAttachments={attachments.state.entries.length > 0}
-                  sendBlocked={
-                    attachments.state.entries.length > 0 && !attachments.ready
-                  }
-                  onSend={() => submitMessage()}
-                  onVoice={openVoice}
-                  onAttach={() => {
-                    Keyboard.dismiss();
-                    setContextMenu(true);
-                  }}
-                  disabled={
-                    !online ||
-                    busy ||
-                    !!historySelection?.readOnly ||
-                    historyLoading ||
-                    (!!context && !validContext)
-                  }
-                  sending={Object.values(state.commandStates).includes(
-                    "sending",
-                  )}
-                  onStop={
-                    state.pending?.type === "message.send" &&
-                    state.pending.conversationId === conversationId
-                      ? () => {
-                          void session?.interruptPending();
-                        }
-                      : undefined
-                  }
-                  stopLabel={
-                    state.error === "requestInterruptFailed"
-                      ? tr("progressInterruptRetry")
-                      : tr("progressInterrupt")
-                  }
-                  stopDisabled={!online}
-                  voice={
-                    meetingRecording || attachments.state.entries.length > 0
-                      ? "disabled"
-                      : voiceAvailability === "available"
-                        ? "ready"
-                        : "settings"
-                  }
-                />
-              </View>
-            )}
-          </View>
+                : undefined
+            }
+            stopLabel={
+              state.error === "requestInterruptFailed"
+                ? tr("progressInterruptRetry")
+                : tr("progressInterrupt")
+            }
+            stopDisabled={!online}
+            voiceMode={
+              meetingRecording || attachments.state.entries.length > 0
+                ? "disabled"
+                : voiceAvailability === "available"
+                  ? "ready"
+                  : "settings"
+            }
+          />
         ) : null}
         {/* While typing, the keyboard needs the room more than the tabs do. */}
         {/* The tabs are the one way between sections, in a chat as well. */}
@@ -3501,36 +3105,3 @@ export default function App() {
     </CompanionFontContext.Provider>
   );
 }
-
-/**
- * The answer while it is written. It is not the answer yet: the stored
- * message replaces it, and nothing in it can be acted on.
- */
-function AnswerDraft({
-  draft,
-  language,
-}: {
-  draft: string;
-  language: Language;
-}) {
-  const { text, program } = splitDraft(draft);
-  return (
-    <View testID="answer-draft">
-      {text ? (
-        <View style={styles.answer}>
-          <MarkdownText text={text} />
-        </View>
-      ) : null}
-      {program ? (
-        <GenerativeUiView
-          program={program}
-          streaming
-          disabled
-          language={language}
-          onFollowUp={noFollowUp}
-        />
-      ) : null}
-    </View>
-  );
-}
-const noFollowUp = () => {};
