@@ -425,6 +425,10 @@ export const en = {
   process_approval_conflict:
     "The process or its pending action changed. Review the current task before deciding again.",
   browserSignIn: "Continue with account",
+  pairLinkTitle: "Connect to this server?",
+  pairLinkConfirm:
+    "Niaro connects to {host} and signs out of the current connection. Continue only if the code comes from your account.",
+  pairLinkConnect: "Connect",
   browserOpenSignIn: "Open sign-in",
   browserWaiting: "Waiting for confirmation in your browser…",
   browserMatchCode: "Confirm this code in your browser",
@@ -1378,6 +1382,10 @@ export const cs: Record<TranslationKey, string> = {
   process_approval_conflict:
     "Proces nebo jeho čekající akce se změnily. Před dalším rozhodnutím zkontroluj aktuální úlohu.",
   browserSignIn: "Pokračovat s účtem",
+  pairLinkTitle: "Připojit k serveru?",
+  pairLinkConfirm:
+    "Niaro se připojí k {host} a odhlásí současné přihlášení. Pokračuj, jen když kód pochází z tvého účtu.",
+  pairLinkConnect: "Připojit",
   browserOpenSignIn: "Otevřít přihlášení",
   browserWaiting: "Čekám na potvrzení v prohlížeči…",
   browserMatchCode: "Potvrď tento kód v prohlížeči",

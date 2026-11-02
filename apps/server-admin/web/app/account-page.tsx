@@ -39,6 +39,7 @@ import { useApp } from "./context";
 import { MenuPage } from "./menu-page";
 import { OutputVoiceSettings } from "./output-voice-settings";
 import { ArchivedChats } from "./archived-chats";
+import { PhonePairing } from "./phone-pairing";
 
 const en = {
   title: "Account",
@@ -264,6 +265,7 @@ export function AccountPage() {
             copy={copy}
             busy={busy}
             revoke={revoke}
+            refresh={() => void client.invalidateQueries({ queryKey: key })}
           />
           <Browsers
             access={query.data}
@@ -437,11 +439,14 @@ function Devices({
   copy,
   busy,
   revoke,
+  refresh,
 }: {
   access: Access;
   copy: Copy;
   busy: boolean;
   revoke: (id: string) => Promise<void>;
+  /** A phone connected meanwhile shows up in the list. */
+  refresh: () => void;
 }) {
   const rows = [
     ...access.devices.map((d) => ({
@@ -463,9 +468,12 @@ function Devices({
     <Section
       title={copy.devices}
       actions={
-        <span className="text-sm text-muted-foreground tabular-nums">
-          {access.used} {copy.of} {access.limit}
-        </span>
+        <>
+          <span className="text-sm text-muted-foreground tabular-nums">
+            {access.used} {copy.of} {access.limit}
+          </span>
+          <PhonePairing onClosed={refresh} />
+        </>
       }
     >
       {access.used >= access.limit && (

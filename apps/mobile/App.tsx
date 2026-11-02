@@ -1,5 +1,6 @@
 import { fetch as expoFetch } from "expo/fetch";
 import { ensureMicrophone } from "./voice-capture";
+import { pairingLink } from "./pairing-link";
 import {
   PetProfile,
   PetTopBarActions,
@@ -50,6 +51,7 @@ import React, {
   useMemo,
 } from "react";
 import {
+  Alert,
   Animated,
   AppState,
   BackHandler,
@@ -3337,9 +3339,9 @@ export default function App() {
       connections.dispose();
     };
   }, [connections]);
-  const connect = (code: string) => {
+  const connect = (code: string, target = address) => {
     setError(null);
-    void connections.pair(address, code).then((paired) => {
+    void connections.pair(target, code).then((paired) => {
       if (!paired) return;
       const current = connections.getSnapshot();
       if (current.status !== "connected" || !current.address) return;
@@ -3347,6 +3349,41 @@ export default function App() {
       setSection("chat");
     });
   };
+  // A QR code from the web account page opens the app with a one-time code;
+  // the person confirms the server before anything changes.
+  const connectRef = useRef(connect);
+  useLayoutEffect(() => {
+    connectRef.current = connect;
+  });
+  useEffect(() => {
+    if (!ready) return;
+    const tr = translate(language);
+    const handle = (url: string | null) => {
+      const link = pairingLink(url);
+      if (!link) return;
+      Alert.alert(
+        tr("pairLinkTitle"),
+        tr("pairLinkConfirm").replace("{host}", link.host),
+        [
+          { text: tr("cancel"), style: "cancel" },
+          {
+            text: tr("pairLinkConnect"),
+            onPress: () => {
+              setAddress(link.address);
+              connectRef.current(link.code, link.address);
+            },
+          },
+        ],
+      );
+    };
+    void Linking.getInitialURL()
+      .then(handle)
+      .catch(() => {});
+    const subscription = Linking.addEventListener("url", ({ url }) =>
+      handle(url),
+    );
+    return () => subscription.remove();
+  }, [ready, language]);
   const browserSignIn = () => {
     setError(null);
     const popup =

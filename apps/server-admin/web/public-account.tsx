@@ -11,6 +11,7 @@ import { api, ApiError, authApi } from "./lib/api";
 
 import { cs, en, failureText, redirectFailure } from "./public-account-copy";
 import { ProviderSignIn } from "./provider-sign-in";
+import { PublicPhonePairing } from "./public-phone-pairing";
 import { AuthLayout } from "@admin/components/console/auth-layout";
 import { Button } from "@admin/components/ui/button";
 import { Input } from "@admin/components/ui/input";
@@ -79,6 +80,8 @@ function useFragmentToken() {
 export function PublicAccount() {
   return window.location.pathname.endsWith("/reset") ? (
     <PasswordReset />
+  ) : window.location.pathname.endsWith("/phone") ? (
+    <PublicPhonePairing language={pageLanguage()} />
   ) : (
     <SignInAndInvite />
   );
