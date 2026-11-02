@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# Niaro speaker diarization: pyannote on the CPU. See docs/meetings.md,
-# "Speaker diarization". Optional: started with the compose profile
+# Niaro speaker diarization: pyannote on the CPU. See docs/guides/deployment.md,
+# "Optional speaker diarization". Optional: started with the compose profile
 # "diarization", removed by leaving it out.
 FROM python:3.12-slim@sha256:12316debbfb86890f6b2d825820612741ba527ad5a44e3902759141d572bfe8f
 

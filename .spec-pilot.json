@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "mode": "delivery",
+  "goal": "Develop Niaro through OpenSpec changes: openspec/specs is the canonical behavior, each change carries proposal, design, tasks and spec deltas",
+  "stop_condition": "Each change ends when its tasks are done, checks pass and the change is archived into openspec/specs",
+  "documents": {
+    "brief": [
+      "docs/brief.md",
+      "README.md"
+    ],
+    "instructions": [
+      "CONTRIBUTING.md",
+      "docs/guides/development.md"
+    ],
+    "architecture": [
+      "docs/architecture.md"
+    ],
+    "specification": [
+      "openspec/specs/administration/spec.md",
+      "openspec/specs/agent-runtime/spec.md",
+      "openspec/specs/app-pairing/spec.md",
+      "openspec/specs/chat/spec.md",
+      "openspec/specs/chat-delivery/spec.md",
+      "openspec/specs/chat-search/spec.md",
+      "openspec/specs/deployment/spec.md",
+      "openspec/specs/generative-ui/spec.md",
+      "openspec/specs/hosted-mcp-servers/spec.md",
+      "openspec/specs/hub/spec.md",
+      "openspec/specs/identity-access/spec.md",
+      "openspec/specs/inference-budget/spec.md",
+      "openspec/specs/mcp-server/spec.md",
+      "openspec/specs/meetings/spec.md",
+      "openspec/specs/memory/spec.md",
+      "openspec/specs/models-and-providers/spec.md",
+      "openspec/specs/plugins/spec.md",
+      "openspec/specs/process-definitions/spec.md",
+      "openspec/specs/process-design/spec.md",
+      "openspec/specs/process-execution/spec.md",
+      "openspec/specs/process-qualification/spec.md",
+      "openspec/specs/service-catalog/spec.md",
+      "openspec/specs/service-sign-in/spec.md",
+      "openspec/specs/skills/spec.md",
+      "openspec/specs/tasks/spec.md",
+      "openspec/specs/voice/spec.md",
+      "openspec/specs/web-access/spec.md"
+    ],
+    "visual_design": [
+      "docs/ui-system.md",
+      "apps/server-admin/DESIGN.md"
+    ],
+    "commands": [
+      "package.json"
+    ],
+    "release": [
+      "docs/guides/deployment.md",
+      "docs/guides/pilot.md"
+    ],
+    "technical_design": [
+      "openspec/changes/chat-attachments-camera-s3/design.md"
+    ],
+    "tasks": [
+      "openspec/changes/chat-attachments-camera-s3/tasks.md"
+    ]
+  },
+  "checks": {
+    "fast": [
+      "node",
+      "--import",
+      "tsx",
+      "--test",
+      "tests/attachment-memory-integration.node.ts",
+      "tests/attachment-client-http.node.ts"
+    ],
+    "full": [
+      "npm",
+      "run",
+      "check"
+    ],
+    "specs": [
+      "spec",
+      "openspec",
+      "--project",
+      ".",
+      "--",
+      "validate",
+      "--all",
+      "--strict"
+    ],
+    "ui": [
+      "node_modules/.bin/jest",
+      "--runInBand",
+      "tests/attachment-client-ui.test.tsx",
+      "tests/attachment-device.test.ts"
+    ]
+  }
+}

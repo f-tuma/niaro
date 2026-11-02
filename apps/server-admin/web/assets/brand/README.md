@@ -8,5 +8,5 @@ the lockup on sign-in and approval pages, preserving their status icon overrides
 Import SVGs through Vite so it can embed them into the existing bundle.
 
 Restore with `npm run assets:pull`. Exact source/version IDs, recipes and transformed
-links are in [delivery.json](../../../../../../assets/brand/delivery.json); the root
+links are in [delivery.json](../../../../../assets/brand/delivery.json); the root
 `.vardum.lock` pins byte checksums. Never use private delivery URLs in browser code.

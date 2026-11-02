@@ -28,7 +28,7 @@ import webModule from "../../plugins/web/index";
  * skipped; the server keeps the built-in, or runs without it.
  *
  * Plugins run in-process: a plugin is trusted code with the server's
- * permissions. See docs/plugins.md.
+ * permissions. See docs/guides/plugins.md.
  */
 export type PluginSource = "built-in" | "override" | "operator";
 export type LoadedPlugin = {

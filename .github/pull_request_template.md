@@ -1,3 +1,7 @@
+## Change
+
+OpenSpec change (`openspec/changes/<id>`) and issue key (`NIAR-123`), or why this needs none:
+
 ## User-visible behavior
 
 Describe the trigger and resulting behavior. Distinguish sending, input resolution and business completion.
@@ -11,4 +15,4 @@ Describe the trigger and resulting behavior. Distinguish sending, input resoluti
 - Unverified native/device/audio behavior:
 - Protocol, scope, replay or approval impact:
 
-Add an ADR when a lasting decision changes. Do not mark planned tests or JS exports as device passes.
+Record decisions in the change's `design.md`; add lasting ones to `docs/architecture.md`. Do not mark planned tests or JS exports as device passes.

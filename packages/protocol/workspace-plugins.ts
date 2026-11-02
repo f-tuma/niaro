@@ -98,7 +98,7 @@ export type WorkspacePluginPreview = z.infer<
 
 /**
  * Plugin files in Administration → Plugins: plugin.json and index.ts of one
- * plugin. Owners only; saving runs the code on the server. See docs/plugins.md.
+ * plugin. Owners only; saving runs the code on the server. See docs/guides/plugins.md.
  */
 export const PLUGIN_FILES_PROFILE = "agent-plugin-files/1" as const;
 const FileText = z.string().max(256 * 1024);

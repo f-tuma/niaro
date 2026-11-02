@@ -13,7 +13,7 @@
  *      the server's meeting notes.
  *
  * plugin.json next to this file declares the same tool (name, read access,
- * no approval). See docs/plugins.md.
+ * no approval). See docs/guides/plugins.md.
  */
 import type { PluginSdk, PureToolResult } from "@niaro/plugin-sdk";
 

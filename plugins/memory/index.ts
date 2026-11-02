@@ -9,12 +9,12 @@
  *     it ("Remember: …", "Forget …", "Revise memory: "OLD" -> "NEW"");
  *   - in the server: one transaction per change, exact retries returning the
  *     first result, attribution to the actual chat message, revisions,
- *     retention, encryption and erasure (docs/adr/016-scoped-agent-memory.md).
+ *     retention, encryption and erasure (openspec/specs/memory/spec.md).
  *
  * plugin.json declares the three write tools with approval
  * `explicit_command`: they never ask for a click, because the person's own
  * words are the approval. A model's guess, a quoted instruction or a service
- * result is not. See docs/plugins.md.
+ * result is not. See docs/guides/plugins.md.
  */
 import type { PluginSdk } from "@niaro/plugin-sdk";
 

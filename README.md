@@ -1,66 +1,78 @@
-# Agent Client
+# Niaro
 
-A self-hosted AI assistant for teams: a chat and voice app for iOS, Android and the web, and a server that owns the models, credentials, permissions, memory and actions.
+A self-hosted company assistant: one server with a web app, administration and
+a mobile app for iOS and Android. People chat with an agent that works in the
+company's own services (CRM, Microsoft 365, MCP services); the server owns the
+models, credentials, permissions, memory, usage limits and approvals.
 
-The app never talks to a model provider or a company tool directly. It renders typed cards (questions, approvals, results, progress) that the server produces. The server decides which model runs, which service actions a person may use and when a write needs explicit approval.
+The apps never talk to a model provider or a company service directly. The
+server decides which model runs, which service actions a person may use and
+when a write needs explicit approval.
 
-> **Status: development preview.** Everything described here works locally and is covered by tests, but it is not yet a production release or a security-audited service. See [current operating limits](docs/service-catalog.md#current-operating-limits).
+> **Status: pilot.** Running in a first company pilot. It is not yet a general
+> release or a security-audited service. See the
+> [pilot guide](docs/guides/pilot.md) for known limitations.
 
 ## Features
 
-**Assistant app** (`apps/mobile`, Expo / React Native)
+Each area links to its specification, which describes current behavior.
 
-- Chat and push-to-talk voice input with a live voice visualizer; optional spoken replies.
-- Answers that show their numbers, records, schedules and comparisons as generated UI (OpenUI Lang: metrics, tables, charts, lists, forms) in the app's own design; explicit action approvals.
-- Approvals are explicit, revision-bound and never implied by text or speech.
-- Browser-based account sign-in with a device session stored in secure storage.
-- A fresh chat after every launch and after long inactivity; history stays on the server.
-- English and Czech.
+- **Chat** with an agent that reads and writes in connected services, asks
+  questions and waits for approval of writes:
+  [chat](openspec/specs/chat/spec.md),
+  [chat delivery](openspec/specs/chat-delivery/spec.md),
+  [chat search](openspec/specs/chat-search/spec.md),
+  [agent runtime](openspec/specs/agent-runtime/spec.md),
+  [generated UI](openspec/specs/generative-ui/spec.md).
+- **Overview**, a personal dashboard of widgets filled from the person's
+  services: [hub](openspec/specs/hub/spec.md).
+- **Tasks**, what is left to resolve: [tasks](openspec/specs/tasks/spec.md).
+- **Meetings**: recording, transcription, summary and follow-up tasks:
+  [meetings](openspec/specs/meetings/spec.md).
+- **Processes**, repeatable company and personal work, designed, tested,
+  activated and run:
+  [definitions](openspec/specs/process-definitions/spec.md),
+  [design](openspec/specs/process-design/spec.md),
+  [qualification](openspec/specs/process-qualification/spec.md),
+  [execution](openspec/specs/process-execution/spec.md).
+- **Skills** and **memory**: [skills](openspec/specs/skills/spec.md),
+  [memory](openspec/specs/memory/spec.md).
+- **Voice** requests and spoken replies in the mobile app:
+  [voice](openspec/specs/voice/spec.md).
+- **Services and actions** over MCP and OpenAPI, with personal sign-in:
+  [service catalog](openspec/specs/service-catalog/spec.md),
+  [service sign-in](openspec/specs/service-sign-in/spec.md),
+  [installed connectors](openspec/specs/hosted-mcp-servers/spec.md),
+  [plugins](openspec/specs/plugins/spec.md),
+  [web access](openspec/specs/web-access/spec.md).
+- **External AI apps** use a workspace over MCP:
+  [MCP server](openspec/specs/mcp-server/spec.md).
+- **People and access**: organizations, workspaces, roles, invitations and
+  app sign-in: [identity and access](openspec/specs/identity-access/spec.md),
+  [app pairing](openspec/specs/app-pairing/spec.md).
+- **Administration**, models and usage limits:
+  [administration](openspec/specs/administration/spec.md),
+  [models and providers](openspec/specs/models-and-providers/spec.md),
+  [inference budget](openspec/specs/inference-budget/spec.md).
+- **Deployment**: one container image, one data volume, backups:
+  [deployment](openspec/specs/deployment/spec.md).
 
-**Server** (`apps/reference-server` and friends)
+English and Czech; light and dark themes.
 
-- Organizations, workspaces, roles and per-person access, backed by Better Auth.
-- Services connected through OpenAPI or MCP; actions are discovered as disabled drafts and enabled deliberately.
-- An organization-owned AI provider and model catalog, with per-workspace model routing for chat, decision, speech-to-text and voice replies.
-- Durable command receipts: retrying a request never repeats a completed action.
-- Activity log of configuration changes and tool runs (metadata only, no payloads or secrets).
-- Encrypted credentials, strict origin checks and an explicit outbound allowlist.
+## Repository layout
 
-**Server console** (`apps/server-admin`, React, TanStack Router/Query, shadcn/ui, Tailwind CSS v4)
-
-- Overview of the assistant runtime, setup progress and recent activity.
-- Services, plugins, model routing, usage limits, AI providers, people, workspaces, sign-in methods and audit log.
-- A process designer with an AI conversation beside a visual canvas.
-- External AI apps over MCP: Runs actions (call the workspace's services directly) or Hands over tasks (submit tasks Niaro runs on the server).
-- Light and dark themes, English and Czech, usable down to phone width.
-
-## Architecture
-
-```mermaid
-flowchart LR
-  app["Assistant app<br/>(Expo)"] -- "typed commands / snapshots" --> server
-  console["Server console<br/>(React)"] -- "admin API" --> server
-  subgraph server ["Reference server (Node)"]
-    identity["Identity, roles,<br/>catalog, audit"]
-    workflow["Workflow runtime,<br/>receipts, memory"]
-    integrations["OpenAPI / MCP<br/>transport"]
-  end
-  server --> models["Model providers<br/>(e.g. OpenRouter)"]
-  integrations --> tools["Company services<br/>(CRM, calendar, …)"]
-```
-
-| Area                                     | Location                                    |
-| ---------------------------------------- | ------------------------------------------- |
-| Server entry and configuration           | `apps/reference-server`                     |
-| Identity, authorization, catalog, audit  | `apps/server-identity`                      |
-| API/MCP transport and discovery          | `apps/server-integrations`                  |
-| Native Mastra agent and checkpoint store | `apps/server-agent`                         |
-| Workflow persistence and command runtime | `apps/fixture-server`                       |
-| Server console                           | `apps/server-admin`                         |
-| Assistant app and its cards              | `apps/mobile`, `packages/ui-catalog`        |
-| Shared contracts and client transport    | `packages/protocol`, `packages/client-core` |
-
-The workflow runtime keeps its historical `fixture-server` directory name; the reference server composes it.
+| Area                                        | Location                                            |
+| ------------------------------------------- | --------------------------------------------------- |
+| Server entry and configuration              | `apps/reference-server`                             |
+| Identity, authorization, catalog, processes | `apps/server-identity`                              |
+| Service transport, discovery, model calls   | `apps/server-integrations`                          |
+| Agent runtime (Mastra)                      | `apps/server-agent`                                 |
+| Workflow storage and app API                | `apps/fixture-server`                               |
+| MCP endpoint for external AI apps           | `apps/server-mcp`                                   |
+| Installed connectors, plugins               | `apps/server-hosting`, `apps/server-plugins`        |
+| Web app and administration                  | `apps/server-admin`                                 |
+| Mobile app and its cards                    | `apps/mobile`, `packages/ui-catalog`, `packages/ui` |
+| Shared contracts and client transport       | `packages/protocol`, `packages/client-core`         |
 
 ## Quick start
 
@@ -74,78 +86,56 @@ cp examples/self-hosted/server.local.json .servers/local/server.json
 npm run server -- .servers/local/server.json
 ```
 
-1. Open `http://localhost:8793/admin/` and create the organization and its owner: on a new server the first account becomes the owner, and you land signed in with a first workspace.
-2. Add an AI provider and the services you want the assistant to use.
-3. Start the app in another terminal with `npm run android`, `npm run ios` or `npm run web` and sign in with the server address. The browser client runs on `http://localhost:8081`; add that origin to `allowedOrigins` in the profile and restart the server first.
+1. Open `http://localhost:8793/admin/` and create the organization and its
+   owner. On a new server the first account becomes the owner.
+2. Add an AI provider, a model and the services the assistant should use.
+3. Open `http://localhost:8793/` for the web app. For the mobile app, run
+   `npm run android` or `npm run ios` in another terminal and sign in with the
+   server address.
 
-The example profile makes no paid calls and has no real CRM or calendar connection. Keep everything under `.servers/` out of version control; `npm run server:admin-rotate-key -- .servers/local/server.json` prints a recovery key for emergencies. For HTTPS, reverse proxies and backups see [self-hosting](docs/self-hosting.md). To run the server as one container image with compose, Caddy HTTPS, backups and upgrades, see [deployment](docs/deployment.md).
+The example profile makes no paid calls and has no real CRM or calendar.
+Keep `.servers/` out of version control.
+`npm run server:admin-rotate-key -- .servers/local/server.json` prints a
+recovery key.
 
-For a phone on Wi-Fi, use `pnpm start --lan --port 8081` and open its QR code in the installed development build. The phone must reach the computer's LAN address on that port. `pnpm android --device` builds/installs a current Android client when native dependencies have changed; restarting Metro alone does not update native modules. See [mobile development troubleshooting](docs/self-hosting.md#mobile-development-over-wi-fi).
-
-Expo scripts disable automatic dotenv loading: the root `.env` belongs to the server's SMTP configuration. Supply any additional public client variables explicitly to the frontend command.
+To run Niaro as a container with HTTPS, backups and upgrades, see
+[deployment](docs/guides/deployment.md). For phones on Wi-Fi, console hot
+reload and tests, see [development](docs/guides/development.md).
 
 ## Development
 
-New catalog commands use a native Mastra Agent with durable runs, conversation
-memory, direct Niaro tools and per-step authorization processors. Niaro owns
-identity, exact approvals, business receipts, long-term memory policy and the
-guarded provider transport. Historical saved runs retain a temporary drain path.
-Native [Tasks and goal return](docs/native-tasks.md) retain pending questions and
-service approvals through detours, new chats and restarts. Opening is passive;
-answers and approvals remain explicit. Transport profile 0.7 requires updating
-the server and clients together.
-See [Mastra integration](docs/mastra-integration.md) for ownership, storage and
-remaining rollout checks; the original [prototype](spikes/mastra/README.md) stays
-isolated.
-
-No new start command or external Mastra service is required. The server opens
-`<identity-db>.mastra.sqlite` beside its identity database, with file mode 0600.
-Include both databases and SQLite journal files in a consistent stopped-server
-backup. In-memory tests use isolated ephemeral stores. The mobile client and
-console do not import Mastra. Existing provider/model and optional decision
-verification settings remain in the console.
-
-Custom service definitions now have an internal runner for typed native
-action/agent workflows and standalone agents, with branching, exact approvals,
-native conversation Memory, restart/resume and scoped
-Loops. Native chat and Jev now share a [durable usage budget](docs/inference-budget.md),
-with explicitly configured enforcement. Custom agent steps share their parent
-budget, narrowed by frozen process limits, and can retrieve read-only saved
-memory. Product Tasks identity, the public builder, activation and mobile
-execution remain planned. See [service processes](docs/service-processes.md).
-
 ```sh
-npm run check            # lint, boundaries, TypeScript, unit and identity tests
-npm run test:agent       # native runtime, trust, approvals and crash regression
-npm run test:processes   # registry, metadata HTTP, native workflows/agents and crash regression
-npm run test:budget      # shared usage ledger, policy HTTP, native runtime and SIGKILL
-npm run admin:build      # server console bundle
+npm run check            # lint, boundaries, types, Jest and server tests
+npm run admin:build      # web app and administration bundle
 npm run build            # app export for web, iOS and Android
 npm run storybook:web    # component catalog for the app's cards
-pnpm eval:trust         # offline loop scenarios; exit 2 reports any recorded gap
+pnpm eval:trust          # scripted agent trust scenarios
 ```
 
-For console work with hot reload, run `npx vite --config apps/server-admin/vite.config.ts` next to a running server and open `http://localhost:5174/admin/`.
-
-Tests use synthetic data, local transports and isolated servers. Live provider, CRM and voice checks are explicit opt-in scripts and never part of CI. See [contributing](CONTRIBUTING.md) before opening a pull request.
+Behavior changes go through an OpenSpec change; see
+[development](docs/guides/development.md#working-with-openspec) and
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Documentation
 
-- [Self-hosting, HTTPS and backups](docs/self-hosting.md)
-- [Hosted MCP servers: definitions, runtimes and compose services](docs/hosted-servers.md)
-- [Services, actions, models and limits](docs/service-catalog.md)
-- [Custom service process definitions and version registry](docs/service-processes.md)
-- [Generative UI in answers: output contract, component library and validation](docs/generative-ui.md)
-- [Agent loop trust scenarios, results and known gaps](docs/agent-trust.md)
-- [Server console and identity](docs/server-admin.md) · [Console design rules](apps/server-admin/DESIGN.md)
-- [App sign-in](docs/app-sign-in.md) · [Service authentication](docs/service-authentication.md)
-- [Use Niaro from an external MCP agent](docs/incoming-mcp.md) · [MCP authentication and OAuth](docs/mcp-auth-design.md)
-- [Product goal and pilot readiness](docs/goal.md) · [UI system](docs/ui-system.md)
-- [Protocol](docs/protocol.md) · [Decision records](docs/adr) · [Development history](docs/development-history.md)
+- [Specifications](openspec/specs): current behavior, one per capability
+- [Changes](openspec/changes): proposed and archived changes
+- Guides: [deployment](docs/guides/deployment.md) ·
+  [administration](docs/guides/administration.md) ·
+  [installed connectors](docs/guides/hosted-connectors.md) ·
+  [plugins](docs/guides/plugins.md) ·
+  [development](docs/guides/development.md) ·
+  [pilot](docs/guides/pilot.md)
+- [Architecture](docs/architecture.md): lasting design decisions
+- [Product brief](docs/brief.md)
+- [UI system](docs/ui-system.md) ·
+  [administration design rules](apps/server-admin/DESIGN.md)
 
 ## Contributing and security
 
-Contributions are welcome; start with [CONTRIBUTING.md](CONTRIBUTING.md) and follow the [code of conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), never in a public issue.
+Contributions are welcome; start with [CONTRIBUTING.md](CONTRIBUTING.md) and
+follow the [code of conduct](CODE_OF_CONDUCT.md). Report vulnerabilities
+privately as described in [SECURITY.md](SECURITY.md), never in a public issue.
 
 ## License
 

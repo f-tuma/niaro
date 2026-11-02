@@ -12,7 +12,7 @@ import { z } from "zod";
  *   export default ({ definePlugin, defineTool, z }: PluginSdk) =>
  *     definePlugin({ tools: [defineTool({ ... })] });
  *
- * See docs/plugins.md.
+ * See docs/guides/plugins.md.
  */
 export * from "./manifest";
 

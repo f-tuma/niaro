@@ -11,7 +11,7 @@
  *     into readable text, the search through the workspace's model with its
  *     inference budget, a cap on calls per agent run, operator logs without
  *     content, and the note on every result that web content is untrusted
- *     data (see docs/web.md).
+ *     data (see openspec/specs/web-access/spec.md).
  *
  * Both tools only read. They need no approval: a search or a page read
  * changes nothing anywhere, like a person opening a page in a browser.

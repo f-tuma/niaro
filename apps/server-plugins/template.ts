@@ -1,7 +1,7 @@
 /**
  * What "New plugin" in Administration → Plugins starts from: a pure plugin
  * with one tool and one setting, small enough to read in a minute. The same
- * plugin is walked through in docs/plugins.md ("Write your first plugin").
+ * plugin is walked through in docs/guides/plugins.md ("Write your first plugin").
  */
 export function pluginTemplate(id: string) {
   const prefix = `internal_${id.replaceAll("-", "_")}_`;
@@ -42,7 +42,7 @@ export function pluginTemplate(id: string) {
  *
  * plugin.json says what the plugin is: its id, names, the tool the model may
  * call (read only, no approval) and one workspace setting. This file says how
- * the tool works. Change both, then Check and Save; docs/plugins.md explains
+ * the tool works. Change both, then Check and Save; docs/guides/plugins.md explains
  * every field.
  */
 import type { PluginSdk } from "@niaro/plugin-sdk";

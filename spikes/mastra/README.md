@@ -63,7 +63,7 @@ agent APIs are beta. This spike uses native Agent suspension plus a separate
 workflow checkpoint probe, not `createDurableAgent` or Redis-backed streaming.
 Observability/exporters are not configured; input/output tracing is suppressed.
 
-See the [integration design](../../docs/mastra-integration.md) for the replacement
+See the [integration design](../../docs/architecture.md) for the replacement
 map, required policy transfer and cutover criteria. Prototype results do not
 stand in for production acceptance.
 

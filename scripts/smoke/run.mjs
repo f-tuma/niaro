@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Pilot smoke test (docs/goal.md, checklist item 14): builds the image (or
+// Pilot smoke test (openspec/specs/deployment/spec.md): builds the image (or
 // uses NIARO_IMAGE), starts a fresh container on a fresh volume and a free
 // loopback port, runs the API journey and the browser journey, prints a
 // PASS / FAIL summary per step and always removes the container and volume.

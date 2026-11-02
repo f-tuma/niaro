@@ -1,6 +1,6 @@
 # Security policy
 
-Agent Client is a development preview, not a security-audited public service. The supported setup is one unprivileged Node process with local SQLite storage behind an HTTPS reverse proxy. See [self-hosting](docs/self-hosting.md) for origin checks, private endpoint allowlists, credentials and backups.
+Niaro is in a pilot, not a security-audited public service. The supported setup is one container with local SQLite storage in one data volume behind an HTTPS reverse proxy. See the [deployment guide](docs/guides/deployment.md) for origin checks, proxy trust, credentials, backups and the operator security checklist, and [docs/architecture.md](docs/architecture.md) for the trust boundaries.
 
 ## Reporting a vulnerability
 

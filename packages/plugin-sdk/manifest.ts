@@ -4,7 +4,7 @@ import { z } from "zod";
  * `plugin.json`: what a plugin is and what it may do, readable without running
  * its code. The server validates it before it imports the entry module, and the
  * administration shows it as the plugin's card and technical details.
- * See docs/plugins.md for every field.
+ * See docs/guides/plugins.md for every field.
  */
 export const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]{1,39}$/;
 export const PluginId = z.string().regex(PLUGIN_ID_PATTERN);
@@ -64,7 +64,7 @@ export type ToolManifest = z.infer<typeof ToolManifestSchema>;
 /**
  * Host capabilities a plugin may ask for. memory: the person's saved memory
  * (the memory plugin only). web: public web pages and web search through the
- * server's guarded transport and the workspace's model (see docs/web.md).
+ * server's guarded transport and the workspace's model (see openspec/specs/web-access/spec.md).
  */
 export const PluginCapability = z.enum(["memory", "web"]);
 

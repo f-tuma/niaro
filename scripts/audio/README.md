@@ -1,6 +1,6 @@
 # Android emulator recording soak test
 
-For short Czech request quality and silence endpointing, see the separate [voice evaluation runbook](../../docs/voice-quality.md). Its optional Piper generator and `npm run test:voice:quality` use synthetic files without ADB, a host microphone or cloud inference. The soak procedures below test a different, isolated recording app.
+For short Czech request quality and silence endpointing, see the separate [voice evaluation runbook](../../docs/guides/development.md). Its optional Piper generator and `npm run test:voice:quality` use synthetic files without ADB, a host microphone or cloud inference. The soak procedures below test a different, isolated recording app.
 
 This is an opt-in local QA command, not an application feature or a scheduled job. It controls only the isolated `dev.agentclient.demo.audio` app on a named Android emulator. It disables host microphone forwarding and leaves that forwarding disabled. No physical phone, real speech, upload or live voice provider is used.
 
