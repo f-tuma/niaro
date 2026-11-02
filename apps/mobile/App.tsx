@@ -145,6 +145,7 @@ import {
   ListRow,
 } from "../../packages/ui";
 import { MobileWorkItemCard } from "./MobileWorkItemCard";
+import { MemberServices } from "./ServiceConnection";
 import { ProcessAnswerRecoveryCard } from "../../packages/ui-catalog/ProcessAnswerRecoveryCard";
 import { recordedProcessAnswer } from "../../packages/client-core/reply-context";
 import {
@@ -265,6 +266,9 @@ function Settings({
         browserLogin={connection.browserLogin}
         onDisconnect={disconnect}
       />
+      {connection.session ? (
+        <MemberServices session={connection.session} language={language} />
+      ) : null}
       {connection.session ? (
         <VoiceSettings
           session={connection.session}

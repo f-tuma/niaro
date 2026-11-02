@@ -13,7 +13,7 @@ Requirement references are to this change's `service-sign-in` and `service-catal
 - [x] 2.1 `ClientSession.readMemberServices()` (null on an older server, workspace check). (Connections screen)
 - [x] 2.2 Web: **Your account** and **Company account** groups on Connections, read-only company service page, account badges and **Your activity** on service pages, EN/CS copy in `app/member-services-copy.ts`; verify with `npx jest tests/web-personal-permissions.test.tsx`. (Connections screen)
 - [x] 2.3 Phone: `MemberServicesView` (+ story, EN/CS copy) in `packages/ui-catalog` and `MemberServices` in `apps/mobile/ServiceConnection.tsx`; verify with `npx jest tests/member-services-mobile.test.tsx`. (Connections screen)
-- [ ] 2.4 Mount `MemberServices` in the phone settings in `apps/mobile/App.tsx` once `phone-chat-split` has landed. (Connections screen)
+- [x] 2.4 Mount `MemberServices` in the phone settings in `apps/mobile/App.tsx` once `phone-chat-split` has landed. (Connections screen)
 
 ## 3. Integration
 
