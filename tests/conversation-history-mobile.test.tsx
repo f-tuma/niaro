@@ -243,7 +243,18 @@ function fixture(unsupported = false, withWaitingNativeQuestion = false) {
       />
     );
   }
-  return { session, state: () => state, publish, settle, Harness };
+  const refuse = () => {
+    const command = state.pending!;
+    publish({
+      pending: null,
+      commandStates: {
+        ...state.commandStates,
+        [commandTarget(command)]: "rejected",
+      },
+    });
+    delivery.resolve();
+  };
+  return { session, state: () => state, publish, settle, refuse, Harness };
 }
 const local = new Map<string, string>();
 beforeEach(() => {
@@ -523,11 +534,11 @@ test.each([false, true])(
       "TEST retained A draft",
     );
     fireEvent.press(screen.getByRole("button", { name: "Send" }));
+    // The text leaves the composer on send, as on the web.
+    expect(screen.getByLabelText("Type a message…").props.value).toBe("");
     await select("TEST-B");
     await select("TEST-A");
-    expect(screen.getByLabelText("Type a message…").props.value).toBe(
-      "TEST retained A draft",
-    );
+    expect(screen.getByLabelText("Type a message…").props.value).toBe("");
     if (newerEdit)
       fireEvent.changeText(
         screen.getByLabelText("Type a message…"),
@@ -539,6 +550,33 @@ test.each([false, true])(
     });
     expect(screen.getByLabelText("Type a message…").props.value).toBe(
       newerEdit ? "TEST retained A draft" : "",
+    );
+  },
+);
+
+test.each([false, true])(
+  "a refused send puts its text back unless something new was typed; typed=%s",
+  async (typed) => {
+    const f = fixture();
+    render(<f.Harness />);
+    await select("TEST-A");
+    fireEvent.changeText(
+      screen.getByLabelText("Type a message…"),
+      "TEST refused text",
+    );
+    fireEvent.press(screen.getByRole("button", { name: "Send" }));
+    expect(screen.getByLabelText("Type a message…").props.value).toBe("");
+    if (typed)
+      fireEvent.changeText(
+        screen.getByLabelText("Type a message…"),
+        "TEST newer text",
+      );
+    await act(async () => {
+      f.refuse();
+      await flush();
+    });
+    expect(screen.getByLabelText("Type a message…").props.value).toBe(
+      typed ? "TEST newer text" : "TEST refused text",
     );
   },
 );

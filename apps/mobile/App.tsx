@@ -1170,6 +1170,29 @@ export function Workspace({
         command,
       };
     }
+    // As on the web, the text leaves the composer on send; a send the server
+    // does not take puts it back unless something new was typed meanwhile.
+    let clearedRevision: number | undefined;
+    if (
+      !isProcessReply(replyContext) &&
+      draftRevision.current === submittedDraftRevision &&
+      conversationRef.current === command.conversationId
+    ) {
+      setDraft("");
+      clearedRevision = draftRevision.current;
+    }
+    const ownsDraft = () =>
+      draftRevision.current === submittedDraftRevision ||
+      (clearedRevision !== undefined &&
+        draftRevision.current === clearedRevision);
+    const restore = () => {
+      if (
+        clearedRevision !== undefined &&
+        draftRevision.current === clearedRevision &&
+        conversationRef.current === command.conversationId
+      )
+        setDraft(value);
+    };
     void session
       .send(command, false, undefined, noticeOwner)
       .then(() => {
@@ -1198,7 +1221,7 @@ export function Workspace({
           if (
             consumed &&
             conversationRef.current === command.conversationId &&
-            draftRevision.current === submittedDraftRevision &&
+            ownsDraft() &&
             contextRef.current === (replyContext ?? undefined)
           ) {
             setDraft("");
@@ -1223,6 +1246,7 @@ export function Workspace({
         ) {
           if (nativeSubmission.current?.commandId === command.commandId)
             nativeSubmission.current.deliveryFailed = true;
+          restore();
           return;
         }
         if (isProcessReply(replyContext)) {
@@ -1234,7 +1258,7 @@ export function Workspace({
           }
         } else {
           if (
-            draftRevision.current === submittedDraftRevision &&
+            ownsDraft() &&
             conversationRef.current === command.conversationId
           ) {
             setDraft("");
@@ -1243,6 +1267,7 @@ export function Workspace({
         }
       })
       .catch((error: unknown) => {
+        restore();
         if (
           contextGeneration.current !== generation ||
           contextRef.current !== (replyContext ?? undefined)
