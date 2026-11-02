@@ -17,16 +17,40 @@ export const LoopStatus = z.enum([
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export type LoopStatus = z.infer<typeof LoopStatus>;
 export const LoopId = z.string().regex(/^[a-f0-9]{64}$/);
-export const LoopQuery = z.strictObject({
-  organizationId: IdentityId,
-  workspaceId: IdentityId.optional(),
-  status: LoopStatus.optional(),
-  before: z
-    .string()
-    .regex(/^[1-9][0-9]{0,15}$/)
-    .refine((value) => Number.isSafeInteger(Number(value)))
-    .optional(),
-});
+/** Where a run started (NIAR-273); derived by the server from what the run list already shows. */
+export const LoopOrigin = z.enum(["chat", "hub", "meeting", "processes"]);
+// Schema and inferred type intentionally share the public contract name.
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export type LoopOrigin = z.infer<typeof LoopOrigin>;
+export const LoopQuery = z
+  .strictObject({
+    organizationId: IdentityId,
+    workspaceId: IdentityId.optional(),
+    status: LoopStatus.optional(),
+    before: z
+      .string()
+      .regex(/^[1-9][0-9]{0,15}$/)
+      .refine((value) => Number.isSafeInteger(Number(value)))
+      .optional(),
+    // NIAR-273 filters. A version needs its process; `from` is inclusive, `to` exclusive.
+    processId: IdentityId.optional(),
+    version: z
+      .string()
+      .regex(/^[1-9][0-9]{0,8}$/)
+      .optional(),
+    actorId: IdentityId.optional(),
+    origin: LoopOrigin.optional(),
+    from: z.iso.datetime().optional(),
+    to: z.iso.datetime().optional(),
+  })
+  .refine((query) => !query.version || !!query.processId, {
+    path: ["version"],
+  })
+  .refine(
+    (query) =>
+      !query.from || !query.to || Date.parse(query.from) < Date.parse(query.to),
+    { path: ["to"] },
+  );
 export const LoopSummarySchema = z.strictObject({
   id: LoopId,
   workspaceId: IdentityId,
@@ -47,6 +71,8 @@ export const LoopSummarySchema = z.strictObject({
   inferenceCalls: z.number().int().nonnegative(),
   traceMode: z.enum(["recorded", "reconstructed"]),
   process: ProcessProvenanceSchema.optional(),
+  /** Set only when the run's own record shows where it started. */
+  origin: LoopOrigin.optional(),
 });
 export type LoopSummary = z.infer<typeof LoopSummarySchema>;
 const LoopActionField = z.strictObject({
@@ -148,3 +174,30 @@ export const LoopDetailSchema = z.strictObject({
   truncated: z.boolean(),
 });
 export type LoopDetail = z.infer<typeof LoopDetailSchema>;
+/** Filter choices, built only from runs the administrator can already list (NIAR-273). */
+export const LoopFiltersQuery = z.strictObject({
+  organizationId: IdentityId,
+  workspaceId: IdentityId.optional(),
+});
+export const LoopFiltersSchema = z.strictObject({
+  profile: z.literal(LOOPS_PROFILE),
+  organizationId: IdentityId,
+  processes: z
+    .array(
+      z.strictObject({
+        processId: IdentityId,
+        name: z.string().max(160),
+        versions: z.array(z.number().int().positive()).max(50),
+      }),
+    )
+    .max(100),
+  people: z
+    .array(
+      z.strictObject({
+        actorId: IdentityId,
+        name: IdentityName.nullable(),
+      }),
+    )
+    .max(100),
+});
+export type LoopFilters = z.infer<typeof LoopFiltersSchema>;

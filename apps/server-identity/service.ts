@@ -102,7 +102,11 @@ import {
 } from "../../packages/protocol";
 import type { CalendarOutcome } from "../fixture-server/engine";
 import { AuditQuery, type AuditRecord } from "../../packages/protocol/audit";
-import { LoopId, LoopQuery } from "../../packages/protocol/loops";
+import {
+  LoopFiltersQuery,
+  LoopId,
+  LoopQuery,
+} from "../../packages/protocol/loops";
 import { LoopsStore } from "./loops";
 import { AuthError } from "../fixture-server/auth";
 import {
@@ -6936,7 +6940,11 @@ export class IdentityService {
           (url.pathname === "/admin/api/identity/loops" ||
             url.pathname.startsWith("/admin/api/identity/loops/"))
         ) {
-          const query = LoopQuery.parse(Object.fromEntries(url.searchParams));
+          // NIAR-273: filter choices use the same authority as the run list.
+          const filters = url.pathname === "/admin/api/identity/loops/filters";
+          const query = (filters ? LoopFiltersQuery : LoopQuery).parse(
+            Object.fromEntries(url.searchParams),
+          );
           const actor = await this.actor(req, query.organizationId);
           if (actor.role === "member")
             throw new IdentityError(403, "identity_forbidden");
@@ -6945,8 +6953,9 @@ export class IdentityService {
               organizationId: query.organizationId,
               workspaceId: query.workspaceId,
             });
+          if (filters) return respond(200, this.loops.filters(query));
           if (url.pathname === "/admin/api/identity/loops")
-            return respond(200, this.loops.page(query));
+            return respond(200, this.loops.page(LoopQuery.parse(query)));
           const id = LoopId.parse(
             url.pathname.slice("/admin/api/identity/loops/".length),
           );

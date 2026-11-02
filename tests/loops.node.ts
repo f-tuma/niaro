@@ -23,6 +23,7 @@ import { openIdentity } from "../apps/server-identity/service";
 import { issueAdminKey } from "../apps/server-admin/auth";
 import {
   LoopDetailSchema,
+  LoopFiltersSchema,
   LoopPageSchema,
   type LoopStatus,
 } from "../packages/protocol/loops";
@@ -836,11 +837,71 @@ test("loops HTTP uses current organization administration roles and scoped read-
           { before: "0" },
           { before: "9007199254740992" },
           { status: "done" },
-          { actorId: state.user!.id },
+          { version: "2" },
+          { origin: "email" },
+          { from: "yesterday" },
         ];
         for (const changes of invalidQueries)
           assert.equal((await owner(pagePath(changes))).status, 400);
         assert.equal((await owner(detailPath("not-a-loop-id"))).status, 400);
+        assert.equal(
+          (
+            await owner(
+              `api/identity/loops/filters?${new URLSearchParams({ organizationId, status: "failed" })}`,
+            )
+          ).status,
+          400,
+        );
+      },
+    );
+    await t.test(
+      "run filters and their choices keep the run list's authority and scope",
+      async () => {
+        const filtersPath = (changes: Record<string, string> = {}) =>
+          `api/identity/loops/filters?${new URLSearchParams({ organizationId, ...changes })}`;
+        assert.deepEqual(
+          LoopPageSchema.parse(
+            (await owner(pagePath({ actorId: state.user!.id, origin: "chat" })))
+              .data,
+          ).entries.map((run) => run.id),
+          [second, first],
+        );
+        assert.deepEqual(
+          LoopPageSchema.parse(
+            (await owner(pagePath({ actorId: memberInfo.userId }))).data,
+          ).entries,
+          [],
+        );
+        assert.deepEqual(
+          LoopPageSchema.parse(
+            (
+              await owner(
+                pagePath({ workspaceId, from: "2026-10-01T00:00:00.000Z" }),
+              )
+            ).data,
+          ).entries.map((run) => run.id),
+          [first],
+        );
+        const choices = LoopFiltersSchema.parse(
+          (await admin(filtersPath())).data,
+        );
+        assert.deepEqual(
+          choices.people.map((person) => person.actorId),
+          [state.user!.id],
+        );
+        assert.deepEqual(choices.processes, []);
+        for (const denied of [member, anonymous, operator])
+          assert([401, 403].includes((await denied(filtersPath())).status));
+        assert.equal(
+          (await owner(filtersPath({ organizationId: "TEST-foreign-org" })))
+            .status,
+          403,
+        );
+        assert.equal(
+          (await owner(filtersPath({ workspaceId: "TEST-foreign-workspace" })))
+            .status,
+          404,
+        );
       },
     );
     await t.test(

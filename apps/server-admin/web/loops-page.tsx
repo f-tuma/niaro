@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronLeft, ChevronRight, Workflow } from "lucide-react";
 import {
+  LoopFiltersSchema,
+  LoopOrigin,
   LoopPageSchema,
   LoopDetailSchema,
   LoopStatus,
@@ -122,6 +124,24 @@ function statusTone(status: LoopSummary["status"]): Tone {
           : "neutral";
 }
 
+// NIAR-273: date presets are local calendar days, sent to the server as instants.
+const PERIODS = ["today", "7", "30"] as const;
+function periodStart(period: string, now = new Date()) {
+  if (!period) return undefined;
+  const days = period === "today" ? 0 : Number(period) - 1;
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - days,
+  ).toISOString();
+}
+const originLabels = {
+  chat: "originChat",
+  hub: "originHub",
+  meeting: "originMeeting",
+  processes: "originProcesses",
+} as const satisfies Record<LoopOrigin, string>;
+
 export function LoopsPage() {
   const copy = useLoopsCopy();
   const { data } = useAdmin();
@@ -148,6 +168,11 @@ function LoopsFeed({ detail }: { detail: OrganizationDetail }) {
       : "",
   );
   const [status, setStatus] = useState("");
+  const [processId, setProcessId] = useState("");
+  const [version, setVersion] = useState("");
+  const [actorId, setActorId] = useState("");
+  const [origin, setOrigin] = useState("");
+  const [period, setPeriod] = useState("");
   const [cursors, setCursors] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const before = cursors.at(-1);
@@ -157,7 +182,16 @@ function LoopsFeed({ detail }: { detail: OrganizationDetail }) {
       "loops",
       data.authentication.principalId,
       detail.organizationId,
-      { workspaceId, status, before },
+      {
+        workspaceId,
+        status,
+        processId,
+        version,
+        actorId,
+        origin,
+        period,
+        before,
+      },
     ],
     queryFn: async ({ signal }) => {
       const params = new URLSearchParams({
@@ -165,6 +199,12 @@ function LoopsFeed({ detail }: { detail: OrganizationDetail }) {
       });
       if (workspaceId) params.set("workspaceId", workspaceId);
       if (status) params.set("status", status);
+      if (processId) params.set("processId", processId);
+      if (processId && version) params.set("version", version);
+      if (actorId) params.set("actorId", actorId);
+      if (origin) params.set("origin", origin);
+      const from = periodStart(period);
+      if (from) params.set("from", from);
       if (before) params.set("before", before);
       return LoopPageSchema.parse(
         await api(`identity/loops?${params}`, undefined, signal),
@@ -182,6 +222,32 @@ function LoopsFeed({ detail }: { detail: OrganizationDetail }) {
           ? 2_000
           : 10_000,
   });
+  // Filter choices come from the server, from runs this administrator can list.
+  const choices = useQuery({
+    queryKey: [
+      "admin",
+      "loops-filters",
+      data.authentication.principalId,
+      detail.organizationId,
+      workspaceId,
+    ],
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({
+        organizationId: detail.organizationId,
+      });
+      if (workspaceId) params.set("workspaceId", workspaceId);
+      return LoopFiltersSchema.parse(
+        await api(`identity/loops/filters?${params}`, undefined, signal),
+      );
+    },
+    enabled: detail.canManageWorkspaces,
+    staleTime: 30_000,
+  });
+  const processes = choices.data?.processes ?? [];
+  const people = choices.data?.people ?? [];
+  const versions =
+    processes.find((process) => process.processId === processId)?.versions ??
+    [];
   const entries = query.data?.entries ?? [];
   // Side by side the first run opens by default; on narrower screens the list
   // comes first and a tapped run replaces it (master → detail).
@@ -199,6 +265,37 @@ function LoopsFeed({ detail }: { detail: OrganizationDetail }) {
     setCursors([]);
   };
   const denied = !detail.canManageWorkspaces;
+  const pager = (before || query.data?.nextBefore) && (
+    <div className="flex shrink-0 items-center justify-between gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={!before || query.isFetching}
+        onClick={() => {
+          setSelectedId(null);
+          setCursors((values) => values.slice(0, -1));
+        }}
+      >
+        <ChevronLeft data-icon="inline-start" aria-hidden="true" />
+        {common.auditNewer}
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={!query.data?.nextBefore || query.isFetching}
+        onClick={() => {
+          const cursor = query.data?.nextBefore;
+          if (cursor) {
+            setSelectedId(null);
+            setCursors((values) => [...values, cursor]);
+          }
+        }}
+      >
+        {common.auditOlder}
+        <ChevronRight data-icon="inline-end" aria-hidden="true" />
+      </Button>
+    </div>
+  );
   // A single person's runs don't need their name on every row.
   const manyActors = new Set(entries.map((entry) => entry.actorName)).size > 1;
   return (
@@ -234,6 +331,82 @@ function LoopsFeed({ detail }: { detail: OrganizationDetail }) {
                   })),
                 ]}
               />
+              {(processes.length > 0 || processId) && (
+                <LoopFilter
+                  label={copy.filterProcess}
+                  value={processId}
+                  onChange={(value) =>
+                    change(() => {
+                      setProcessId(value);
+                      setVersion("");
+                    })
+                  }
+                  options={[
+                    { value: "", label: copy.allProcesses },
+                    ...processes.map((process) => ({
+                      value: process.processId,
+                      label: process.name || process.processId,
+                    })),
+                  ]}
+                />
+              )}
+              {processId && versions.length > 0 && (
+                <LoopFilter
+                  label={copy.filterVersion}
+                  value={version}
+                  onChange={(value) => change(() => setVersion(value))}
+                  options={[
+                    { value: "", label: copy.allVersions },
+                    ...versions.map((value) => ({
+                      value: String(value),
+                      label: copy.versionOption.replace("{n}", String(value)),
+                    })),
+                  ]}
+                />
+              )}
+              {(people.length > 1 || actorId) && (
+                <LoopFilter
+                  label={copy.filterPerson}
+                  value={actorId}
+                  onChange={(value) => change(() => setActorId(value))}
+                  options={[
+                    { value: "", label: copy.everyone },
+                    ...people.map((person) => ({
+                      value: person.actorId,
+                      label: person.name ?? person.actorId,
+                    })),
+                  ]}
+                />
+              )}
+              <LoopFilter
+                label={copy.filterOrigin}
+                value={origin}
+                onChange={(value) => change(() => setOrigin(value))}
+                options={[
+                  { value: "", label: copy.allOrigins },
+                  ...LoopOrigin.options.map((value) => ({
+                    value,
+                    label: copy[originLabels[value]],
+                  })),
+                ]}
+              />
+              <LoopFilter
+                label={copy.filterDate}
+                value={period}
+                onChange={(value) => change(() => setPeriod(value))}
+                options={[
+                  { value: "", label: copy.anyTime },
+                  ...PERIODS.map((value) => ({
+                    value,
+                    label:
+                      value === "today"
+                        ? copy.today
+                        : value === "7"
+                          ? copy.last7Days
+                          : copy.last30Days,
+                  })),
+                ]}
+              />
             </>
           )
         }
@@ -249,7 +422,18 @@ function LoopsFeed({ detail }: { detail: OrganizationDetail }) {
       ) : query.isError ? (
         <LoopError error={query.error} retry={() => void query.refetch()} />
       ) : !entries.length ? (
-        <LoopEmpty title={copy.empty} description={copy.emptyHint} />
+        query.data?.nextBefore ? (
+          // A filtered page can end early in a long history; offer older runs.
+          <div className="flex flex-col gap-3">
+            <LoopEmpty
+              title={copy.noMatchesYet}
+              description={copy.noMatchesYetHint}
+            />
+            {pager}
+          </div>
+        ) : (
+          <LoopEmpty title={copy.empty} description={copy.emptyHint} />
+        )
       ) : (
         <div data-loops-layout>
           {!showList && (
@@ -327,37 +511,7 @@ function LoopsFeed({ detail }: { detail: OrganizationDetail }) {
                 </Item>
               ))}
             </Card>
-            {(before || query.data?.nextBefore) && (
-              <div className="flex shrink-0 items-center justify-between gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!before || query.isFetching}
-                  onClick={() => {
-                    setSelectedId(null);
-                    setCursors((values) => values.slice(0, -1));
-                  }}
-                >
-                  <ChevronLeft data-icon="inline-start" aria-hidden="true" />
-                  {common.auditNewer}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!query.data?.nextBefore || query.isFetching}
-                  onClick={() => {
-                    const cursor = query.data?.nextBefore;
-                    if (cursor) {
-                      setSelectedId(null);
-                      setCursors((values) => [...values, cursor]);
-                    }
-                  }}
-                >
-                  {common.auditOlder}
-                  <ChevronRight data-icon="inline-end" aria-hidden="true" />
-                </Button>
-              </div>
-            )}
+            {pager}
           </section>
           {selected && (
             <LoopRun
@@ -585,6 +739,14 @@ function RunDetails({ run }: { run: LoopSummary }) {
                       {
                         label: copy.processVersion,
                         value: String(process.version),
+                      },
+                    ]
+                  : []),
+                ...(run.origin
+                  ? [
+                      {
+                        label: copy.filterOrigin,
+                        value: copy[originLabels[run.origin]],
                       },
                     ]
                   : []),

@@ -163,6 +163,27 @@ const en = {
   retryLater: "A later attempt may be possible after the service recovers.",
   retryVerifyFirst:
     "Check whether the action took effect in the service before repeating it.",
+  // NIAR-273: run filters.
+  filterProcess: "Process",
+  allProcesses: "All processes",
+  filterVersion: "Version",
+  allVersions: "All versions",
+  versionOption: "Version {n}",
+  filterPerson: "Person",
+  everyone: "Everyone",
+  filterOrigin: "Started from",
+  allOrigins: "Anywhere",
+  originChat: "Chat",
+  originHub: "Overview",
+  originMeeting: "Meeting",
+  originProcesses: "Processes page",
+  filterDate: "Date",
+  anyTime: "Any time",
+  today: "Today",
+  last7Days: "Last 7 days",
+  last30Days: "Last 30 days",
+  noMatchesYet: "No matches in the newest runs",
+  noMatchesYetHint: "Look further back with Older.",
 };
 const cs: typeof en = {
   pinnedProcess: "Připnutý proces",
@@ -319,6 +340,27 @@ const cs: typeof en = {
   retryLater: "Další pokus může být možný po obnovení služby.",
   retryVerifyFirst:
     "Před opakováním ověř ve službě, zda se akce už neprovedla.",
+  // NIAR-273: run filters.
+  filterProcess: "Proces",
+  allProcesses: "Všechny procesy",
+  filterVersion: "Verze",
+  allVersions: "Všechny verze",
+  versionOption: "Verze {n}",
+  filterPerson: "Osoba",
+  everyone: "Všichni",
+  filterOrigin: "Spuštěno z",
+  allOrigins: "Odkudkoli",
+  originChat: "Chat",
+  originHub: "Přehled",
+  originMeeting: "Schůzka",
+  originProcesses: "Stránka Procesy",
+  filterDate: "Datum",
+  anyTime: "Kdykoli",
+  today: "Dnes",
+  last7Days: "Posledních 7 dní",
+  last30Days: "Posledních 30 dní",
+  noMatchesYet: "V nejnovějších bězích nic neodpovídá",
+  noMatchesYetHint: "Další běhy načteš tlačítkem Starší.",
 };
 export type LoopsCopy = typeof en;
 export function loopFailureLabel(

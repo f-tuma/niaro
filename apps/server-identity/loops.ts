@@ -3,13 +3,17 @@ import { z } from "zod";
 import {
   LOOPS_PROFILE,
   LoopDetailSchema,
+  LoopFiltersQuery,
+  LoopFiltersSchema,
   LoopPageSchema,
   LoopQuery,
   type LoopSummary,
   type LoopNode,
   type LoopEdge,
+  type LoopOrigin,
   type LoopStatus,
 } from "../../packages/protocol/loops";
+import { hubConversationId } from "../../packages/protocol/hub";
 import { LoopTraceSchema, finishLoopTrace, toolOutcome } from "./loop-trace";
 import type { ServiceCatalogStore, StoredInvocation } from "./service-catalog";
 import {
@@ -30,6 +34,33 @@ type Row = Record<string, SQLOutputValue>;
 const supportedKindsSQL =
   "(json_extract(t.data,'$.kind') IN ('agent-1','mastra-1','service-process-1') AND (json_extract(t.data,'$.kind')!='mastra-1' OR json_type(t.data,'$.runId') IS NULL OR json_extract(t.data,'$.runId')=t.id))";
 const statusSQL = `CASE WHEN json_type(t.data,'$.trace.status')='text' THEN json_extract(t.data,'$.trace.status') WHEN json_type(t.data,'$.pending')='text' OR json_extract(t.data,'$.paused')=1 THEN 'waiting' WHEN json_type(t.data,'$.answer')='object' THEN 'succeeded' WHEN json_extract(t.data,'$.kind')='mastra-1' THEN 'unknown' ELSE 'interrupted' END`;
+// NIAR-273: hub chats and hub-started processes use this conversation prefix.
+const HUB_PREFIX = hubConversationId("");
+const conversationSQL = "json_extract(t.data,'$.conversationId')";
+const startedSQL =
+  "COALESCE(julianday(COALESCE(json_extract(t.data,'$.trace.startedAt'),json_extract(t.data,'$.clock.referenceNow'))),julianday('1970-01-01T00:00:00.000Z'))";
+/** Loose SQL pre-filters; `matches()` then decides on the summary the administrator reads. */
+const originSQL: Record<LoopOrigin, string> = {
+  chat: `json_extract(t.data,'$.kind')!='service-process-1' AND (${conversationSQL} IS NULL OR substr(${conversationSQL},1,${HUB_PREFIX.length})!='${HUB_PREFIX}')`,
+  hub: `(json_extract(t.data,'$.kind')='service-process-1' OR substr(${conversationSQL},1,${HUB_PREFIX.length})='${HUB_PREFIX}')`,
+  meeting: "json_extract(t.data,'$.kind')='service-process-1'",
+  processes: "json_extract(t.data,'$.kind')='service-process-1'",
+};
+/** Rows read per batch, and at most per page, when filters leave gaps. */
+const SCAN_BATCH = 200;
+const SCAN_LIMIT = 5000;
+function matches(entry: LoopSummary, query: z.infer<typeof LoopQuery>) {
+  const at = Date.parse(entry.startedAt);
+  return (
+    (!query.status || entry.status === query.status) &&
+    (!query.actorId || entry.actorId === query.actorId) &&
+    (!query.processId || entry.process?.processId === query.processId) &&
+    (!query.version || entry.process?.version === Number(query.version)) &&
+    (!query.origin || entry.origin === query.origin) &&
+    (!query.from || at >= Date.parse(query.from)) &&
+    (!query.to || at < Date.parse(query.to))
+  );
+}
 const count = (value: unknown) =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0
     ? value
@@ -60,6 +91,7 @@ function summary(row: Row): LoopSummary {
 }
 const projection = `t.rowid AS cursor,t.id,t.workspace_id,t.user_id,w.name AS workspace_name,u.name AS actor_name,
  json_extract(t.data,'$.kind') AS kind,json_extract(t.data,'$.runId') AS process_run_id,
+ json_extract(t.data,'$.conversationId') AS conversation_id,
  json_extract(t.data,'$.processId') AS process_id,json_extract(t.data,'$.version') AS process_version,
  json_extract(t.data,'$.artifactDigest') AS artifact_digest,
  CASE WHEN json_type(t.data,'$.goal')='text' AND json_extract(t.data,'$.goal')!='' THEN substr(json_extract(t.data,'$.goal'),1,8000) ELSE substr(json_extract(t.data,'$.text'),1,8000) END AS request,
@@ -116,7 +148,16 @@ export class LoopsStore {
       value = { ...value, statusEvidence: "last_saved_unverified" };
     if (row.failure_candidate === 1)
       value = { ...value, unconfirmedFailure: true };
-    if (row.kind !== "service-process-1") return value;
+    if (row.kind !== "service-process-1")
+      return {
+        ...value,
+        origin:
+          typeof row.conversation_id === "string" &&
+          row.conversation_id.startsWith(HUB_PREFIX)
+            ? "hub"
+            : "chat",
+      };
+    let origin: LoopOrigin | undefined;
     let provenance: Partial<ProcessProvenance> = {
       runId: String(row.process_run_id),
       processId: String(row.process_id),
@@ -175,11 +216,21 @@ export class LoopsStore {
             admissionId: receipt.receiptId,
             conversationId: receipt.origin?.conversationId,
           };
+          origin =
+            receipt.origin?.type === "meeting"
+              ? "meeting"
+              : receipt.origin?.type !== "command"
+                ? undefined
+                : String(receipt.origin.conversationId).startsWith(HUB_PREFIX)
+                  ? "hub"
+                  : "processes";
         }
       }
     }
     const parsed = ProcessProvenanceSchema.safeParse(provenance);
-    return parsed.success ? { ...value, process: parsed.data } : value;
+    return parsed.success
+      ? { ...value, process: parsed.data, ...(origin ? { origin } : {}) }
+      : value;
   }
   page(raw: z.infer<typeof LoopQuery>) {
     const query = LoopQuery.parse(raw);
@@ -197,20 +248,132 @@ export class LoopsStore {
       where.push(`${statusSQL}=?`);
       args.push(query.status);
     }
-    if (query.before) {
-      where.push("t.rowid<?");
-      args.push(Number(query.before));
+    if (query.actorId) {
+      where.push("t.user_id=?");
+      args.push(query.actorId);
     }
-    const rows = this.db
-      .prepare(
-        `SELECT ${projection} FROM agent_service_turn t JOIN agent_workspace w ON w.id=t.workspace_id LEFT JOIN user u ON u.id=t.user_id WHERE ${where.join(" AND ")} ORDER BY t.rowid DESC LIMIT 51`,
-      )
-      .all(...args);
+    if (query.processId) {
+      where.push(
+        "json_extract(t.data,'$.kind')='service-process-1' AND json_extract(t.data,'$.processId')=?",
+      );
+      args.push(query.processId);
+    }
+    if (query.version) {
+      where.push("json_extract(t.data,'$.version')=?");
+      args.push(Number(query.version));
+    }
+    if (query.origin) where.push(originSQL[query.origin]);
+    if (query.from) {
+      where.push(`${startedSQL}>=julianday(?)`);
+      args.push(query.from);
+    }
+    if (query.to) {
+      where.push(`${startedSQL}<julianday(?)`);
+      args.push(query.to);
+    }
+    const select = this.db.prepare(
+      `SELECT ${projection} FROM agent_service_turn t JOIN agent_workspace w ON w.id=t.workspace_id LEFT JOIN user u ON u.id=t.user_id WHERE ${where.join(" AND ")} AND t.rowid<? ORDER BY t.rowid DESC LIMIT ${SCAN_BATCH}`,
+    );
+    // Every filter is applied again to the summary the administrator reads,
+    // after redaction and provenance checks, so a filter can never select a
+    // run by something the list does not show.
+    const found: { entry: LoopSummary; cursor: number }[] = [];
+    let cursor = query.before ? Number(query.before) : Number.MAX_SAFE_INTEGER;
+    let scanned = 0,
+      exhausted = false;
+    scan: for (;;) {
+      const rows = select.all(...args, cursor);
+      for (const row of rows) {
+        scanned++;
+        cursor = Number(row.cursor);
+        const entry = this.summary(row);
+        if (matches(entry, query)) found.push({ entry, cursor });
+        if (found.length > 50) break scan;
+      }
+      if (rows.length < SCAN_BATCH) {
+        exhausted = true;
+        break;
+      }
+      if (scanned >= SCAN_LIMIT) break;
+    }
     return LoopPageSchema.parse({
       profile: LOOPS_PROFILE,
       organizationId: query.organizationId,
-      entries: rows.slice(0, 50).map((row) => this.summary(row)),
-      nextBefore: rows.length > 50 ? String(rows[49]!.cursor) : null,
+      entries: found.slice(0, 50).map(({ entry }) => entry),
+      nextBefore:
+        found.length > 50
+          ? String(found[49]!.cursor)
+          : exhausted
+            ? null
+            : String(cursor),
+    });
+  }
+  /** Process and person choices, taken from the summaries the run list shows. */
+  filters(raw: z.infer<typeof LoopFiltersQuery>) {
+    const query = LoopFiltersQuery.parse(raw);
+    const where = [
+      "w.organization_id=?",
+      "json_valid(t.data)",
+      supportedKindsSQL,
+    ];
+    const args: string[] = [query.organizationId];
+    if (query.workspaceId) {
+      where.push("t.workspace_id=?");
+      args.push(query.workspaceId);
+    }
+    const from = `FROM agent_service_turn t JOIN agent_workspace w ON w.id=t.workspace_id LEFT JOIN user u ON u.id=t.user_id WHERE ${where.join(" AND ")}`;
+    const processes = new Map<
+      string,
+      { processId: string; name: string; versions: Set<number> }
+    >();
+    for (const row of this.db
+      .prepare(
+        `SELECT ${projection} ${from} AND json_extract(t.data,'$.kind')='service-process-1' ORDER BY t.rowid DESC LIMIT ${SCAN_LIMIT}`,
+      )
+      .all(...args)) {
+      const process = this.summary(row);
+      if (!process.process) continue;
+      const known = processes.get(process.process.processId) ?? {
+        processId: process.process.processId,
+        // The newest run's request is the process name the list shows.
+        name: process.request.slice(0, 160),
+        versions: new Set<number>(),
+      };
+      known.versions.add(process.process.version);
+      processes.set(known.processId, known);
+    }
+    const people = new Map<string, string | null>();
+    for (const row of this.db
+      .prepare(
+        `SELECT t.user_id,MAX(u.name) AS actor_name ${from} GROUP BY t.user_id`,
+      )
+      .all(...args))
+      people.set(
+        String(row.user_id),
+        row.actor_name === null ? null : loopText(row.actor_name, 100),
+      );
+    const byName = (a: string | null, b: string | null) =>
+      (a ?? "").localeCompare(b ?? "", "en");
+    return LoopFiltersSchema.parse({
+      profile: LOOPS_PROFILE,
+      organizationId: query.organizationId,
+      processes: [...processes.values()]
+        .sort(
+          (a, b) =>
+            byName(a.name, b.name) || a.processId.localeCompare(b.processId),
+        )
+        .slice(0, 100)
+        .map((process) => ({
+          ...process,
+          versions: [...process.versions].sort((a, b) => b - a).slice(0, 50),
+        })),
+      people: [...people]
+        .map(([actorId, name]) => ({ actorId, name }))
+        .sort(
+          (a, b) =>
+            byName(a.name, b.name) || a.actorId.localeCompare(b.actorId),
+        )
+        .slice(0, 100),
     });
   }
   detail(organizationId: string, id: string) {
