@@ -231,13 +231,9 @@ export function WebAttachmentMenu({
       disabled={disabled || value.state.busy || value.selection.busy}
       choices={{
         ...(onTask ? { task: { onPress: onTask } } : {}),
+        // One picker on the web: it takes photos and documents alike.
         ...(value.available
-          ? Object.fromEntries(
-              (["camera", "photos", "file"] as const).map((kind) => [
-                kind,
-                { onPress: () => value.choose(kind) },
-              ]),
-            )
+          ? { file: { onPress: () => value.choose("file") } }
           : {}),
       }}
     />
