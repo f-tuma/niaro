@@ -4180,6 +4180,9 @@ export class ClientSession {
       this.state.pending?.commandId !== raw.commandId
     )
       return delivery;
+    // Taken: its files leave the composer's tray with it. The command keeps
+    // the frozen draft for its check, a Retry or Try again.
+    if (raw.attachments) this.attachments.settleSend(raw.attachments, "taken");
     return delivery.then(
       () => this.keepUnsent(raw),
       (error: unknown) => {

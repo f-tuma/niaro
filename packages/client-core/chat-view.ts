@@ -83,15 +83,16 @@ export function processDecisionWorking(
 }
 
 /**
- * The text being sent in this chat, shown until the server records it. A
- * process answer shows here too while it is on its way or being checked; one
- * the server answered for, or whose delivery failed, has its own card instead.
+ * The text being sent in this chat, with its number of files, shown until
+ * the server records it. A process answer shows here too while it is on its
+ * way or being checked; one the server answered for, or whose delivery
+ * failed, has its own card instead.
  */
 export function selectPendingChatMessage(
   state: Pick<SessionState, "pending" | "answerAttempts" | "store"> &
     Partial<Pick<SessionState, "commandStates" | "deliveryCheck">>,
   conversationId: string,
-): { kind: "message" | "answer"; text: string } | null {
+): { kind: "message" | "answer"; text: string; files: number } | null {
   const pending = state.pending;
   if (
     (pending?.type !== "message.send" && pending?.type !== "process.answer") ||
@@ -114,9 +115,14 @@ export function selectPendingChatMessage(
             m.id.startsWith(`message-${pending.commandId}-`))),
   );
   if (recorded) return null;
+  // A message's files left the composer with it and show here with it.
   return pending.type === "process.answer"
-    ? { kind: "answer", text: pending.answer }
-    : { kind: "message", text: pending.text };
+    ? { kind: "answer", text: pending.answer, files: 0 }
+    : {
+        kind: "message",
+        text: pending.text,
+        files: pending.attachments?.items.length ?? 0,
+      };
 }
 
 /**
@@ -177,14 +183,21 @@ export function selectFailedMessages(
   );
 }
 
+/** "Attached files: n." for a message that is not stored yet; empty without files. */
+export function messageFilesCaption(
+  files: number,
+  tr: (key: TranslationKey) => string,
+) {
+  return files ? tr("messageFiles").replace("{n}", String(files)) + "." : "";
+}
+
 /** The line under a failed message: its files, "Not sent" and why. */
 export function failedMessageCaption(
   entry: FailedMessage,
   tr: (key: TranslationKey) => string,
 ) {
-  const files = entry.command.attachments?.items.length ?? 0;
   return [
-    files ? tr("messageFiles").replace("{n}", String(files)) + "." : "",
+    messageFilesCaption(entry.command.attachments?.items.length ?? 0, tr),
     `${tr("messageNotSent")}.`,
     tr(failedMessageReason(entry.error)),
   ]

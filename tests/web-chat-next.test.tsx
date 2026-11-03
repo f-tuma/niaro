@@ -632,6 +632,44 @@ test("NIAR-286: a sent message leaves the composer at once and never returns; re
   expect(root.findByType("textarea").props.value).toBe("");
 });
 
+test("NIAR-286: a message with files on its way shows them with it", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 1,
+    messages: [],
+  };
+  const { session, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  await act(async () =>
+    publish({
+      pending: {
+        type: "message.send",
+        commandId: "TEST-files",
+        idempotencyKey: "TEST-files",
+        conversationId: "conv-1",
+        text: "",
+        language: "cs",
+        attachments: {
+          profile: "agent-attachments/1",
+          draftId: "TEST-draft",
+          draftRevision: 2,
+          generation: "00000000-0000-4000-8000-000000000001",
+          items: [
+            { contentId: "TEST-a", sha256: "a".repeat(64) },
+            { contentId: "TEST-b", sha256: "b".repeat(64) },
+          ],
+        },
+      },
+      commandStates: { chat: "sending" },
+    }),
+  );
+  expect(text(byTestId(root, "pending-message"))).toContain(
+    "Přiložené soubory: 2.",
+  );
+});
+
 test("NIAR-286: a send the session did not take keeps its words in the composer", async () => {
   const conversation: Conversation = {
     id: "conv-1",

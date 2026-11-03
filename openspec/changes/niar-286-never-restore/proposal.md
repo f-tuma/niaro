@@ -21,6 +21,7 @@ Other paths wrote sent words back, or would lose them:
 
 ## What Changes
 
+- **Files leave with the message.** Once the session takes a message with files, the composer's tray empties at once (the command keeps its frozen draft for checks, Retry and Try again) and the files show with the message on its way ("Attached files: n").
 - **The session keeps failed messages.** A chat message the session took (it is pending as soon as `send` returns) and that ends neither kept for its check nor recorded nor accepted is kept in `state.failedMessages` with its command and error code: a server refusal, a local storage failure before delivery, a refusal answered to a check or a Retry. `retryFailedMessage` sends its words, files and context as a new command; `dismissFailedMessage` lets it go. Its files leave the composer with it.
 - **Clients never write sent words back.** Phone (typed and voice) and web drop every restore: on refusal, error, lost answer, timeout and Dismiss. Only a send the session did not take at all (nothing became pending, nothing left the device) keeps its words in the composer.
 - **Failed messages in the thread.** Phone and web show a failed message under the stored ones with its words, "Not sent." and the reason, Try again and Dismiss. A failed first message keeps the phone's chat open instead of Home.
@@ -31,7 +32,6 @@ Other paths wrote sent words back, or would lose them:
 
 - Keeping failed messages across an app restart: they live in the session's memory; a lost answer's command is still persisted and checked as before.
 - Process answers (`process.answer`): they keep their own recovery card (Retry, Review, Discard). The phone keeps a process answer's text in the composer while it is sent (it was never cleared there); left for NIAR-284's process work. The web no longer restores a taken process answer; the recovery card holds it.
-- Hiding a message's frozen attachments from the composer tray while it is pending.
 
 ## Risk
 

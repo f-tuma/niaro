@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { ClientSession } from "../packages/client-core/session";
 import { messageCommand } from "../packages/client-core/commands";
+import { selectPendingChatMessage } from "../packages/client-core/chat-view";
 import { attachmentClientHttp } from "./helpers/attachment-client-http";
 import { AttachmentSelectionFlow } from "../packages/client-core/attachment-selection";
 import { identifyAttachment } from "../packages/client-core/attachment-files";
@@ -194,7 +195,7 @@ test("quarantine stays uncertain across status, explicit retry and reconnect wit
     await f.close();
   }
 });
-test("uncertain command survives reconnect without resend and explicit retry reuses the receipt", async () => {
+test("uncertain command survives reconnect without resend and explicit retry reuses the receipt; its files left the tray when it was taken (NIAR-286)", async () => {
   let loseCommand = true;
   const f = await setup(async (url, init) => {
     const response = await fetch(url, init);
@@ -215,12 +216,21 @@ test("uncertain command survives reconnect without resend and explicit retry reu
       undefined,
       attachments,
     );
-    await f.session.send(command);
+    const delivery = f.session.send(command);
+    // Taken at once: the files leave the composer's tray with the message
+    // and show with it in the chat; the command keeps the frozen draft.
     assert.deepEqual(f.session.getSnapshot().pending, command);
-    await f.session.send(command);
-    await f.runtime.remove(f.runtime.getSnapshot().entries[0]!.id);
-    assert.equal(f.runtime.getSnapshot().entries.length, 1);
+    assert.equal(f.runtime.getSnapshot().entries.length, 0);
+    assert.equal(f.runtime.getSnapshot().draft, null);
     assert.equal(f.runtime.ready, false);
+    await delivery;
+    assert.deepEqual(f.session.getSnapshot().pending, command);
+    assert.deepEqual(
+      selectPendingChatMessage(f.session.getSnapshot(), "conversation-1"),
+      { kind: "message", text: "TEST caption", files: 1 },
+    );
+    await f.session.send(command);
+    assert.equal(f.runtime.getSnapshot().entries.length, 0);
     await f.session.refresh();
     await f.session.sync();
     assert.equal(f.h.commands, 1);
@@ -501,7 +511,9 @@ test("never-dispatched storage failure keeps the message as failed with its file
       undefined,
       f.runtime.takeForSend(),
     );
-    await f.session.send(command);
+    const delivery = f.session.send(command);
+    assert.equal(f.runtime.getSnapshot().entries.length, 0);
+    await delivery;
     assert.equal(f.h.commands, 0);
     assert.equal(f.session.getSnapshot().pending, null);
     assert.equal(f.session.getSnapshot().error, "storage_error");

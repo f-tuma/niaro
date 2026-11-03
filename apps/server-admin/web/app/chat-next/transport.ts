@@ -206,12 +206,20 @@ export function storedMessage(
 export function pendingMessage(
   commandId: string,
   text: string,
+  /** The files that left the composer with it, as a line under it. */
+  hint?: string,
 ): ThreadMessageLike {
   return {
     id: `pending:${commandId}`,
     role: "user",
     content: [{ type: "text", text }],
-    metadata: { custom: { kind: "pending", tags: [] } satisfies NextMeta },
+    metadata: {
+      custom: {
+        kind: "pending",
+        ...(hint ? { hint } : {}),
+        tags: [],
+      } satisfies NextMeta,
+    },
   };
 }
 

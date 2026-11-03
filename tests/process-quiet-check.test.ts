@@ -419,6 +419,7 @@ test("an answer whose ACK was lost shows as the person's message on its way, is 
   expect(selectPendingChatMessage(state, command.conversationId)).toEqual({
     kind: "answer",
     text: command.answer,
+    files: 0,
   });
   await jest.advanceTimersByTimeAsync(1500);
   state = session.getSnapshot();

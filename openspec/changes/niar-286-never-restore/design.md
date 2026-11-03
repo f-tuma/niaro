@@ -28,7 +28,7 @@ Alternative considered: `retryMessageCommand` (native retry with `retryOf`). Rej
 
 ### D3. Attachments leave with the message
 
-`AttachmentRuntime.settleSend` gets `failed`: the message left the composer and failed, so the tray is cleared like on `accepted`. `confirmCommand` (not accepted), the pre-delivery failure in `deliver`'s `finally`, and `releaseUnrecorded` (Dismiss) use it. `rejected` (the session never took the message) still unfreezes the files in the tray. Try again sends the failed command's own `attachments` (draft id, revision, items).
+`AttachmentRuntime.settleSend` gets `failed`: the message left the composer and failed, so the tray is cleared like on `accepted`. `confirmCommand` (not accepted), the pre-delivery failure in `deliver`'s `finally`, and `releaseUnrecorded` (Dismiss) use it. `rejected` (the session never took the message) still unfreezes the files in the tray. `taken`: the public `send` settles a taken message's files with it right after `deliver` returns, so the tray is empty while the message is pending; every later outcome finds no frozen draft and changes nothing. A taken message never goes back to the tray, so nothing needs the local entries any more; the command carries the draft id, revision and items. `selectPendingChatMessage` returns the message's number of files, and the phone and the web show "Attached files: n." under the message on its way. Try again sends the failed command's own `attachments` (draft id, revision, items).
 
 ### D4. A check is not a running request
 

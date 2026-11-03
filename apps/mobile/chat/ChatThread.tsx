@@ -4,7 +4,10 @@ import type {
   FailedMessage,
   SessionState,
 } from "../../../packages/client-core/session";
-import { failedMessageCaption } from "../../../packages/client-core/chat-view";
+import {
+  failedMessageCaption,
+  messageFilesCaption,
+} from "../../../packages/client-core/chat-view";
 import type { Language, WorkItem } from "../../../packages/protocol";
 import { translate } from "../../../packages/i18n";
 import { Button, Text } from "../../../packages/ui";
@@ -37,7 +40,12 @@ export function ChatThread({
   /** Sends a failed message again as a new message; absent while it cannot. */
   onRetryFailed?: (commandId: string) => void;
   onDismissFailed?: (commandId: string) => void;
-  pendingMessage: { kind: "message" | "answer"; text: string } | null;
+  pendingMessage: {
+    kind: "message" | "answer";
+    text: string;
+    /** Files that left the composer with the message. */
+    files?: number;
+  } | null;
   trailing: readonly WorkItem[];
   heldReply?: string;
   state: SessionState;
@@ -94,7 +102,14 @@ export function ChatThread({
               {tr("process_question_pending")}
             </Text>
           ) : null}
-          <Text selectable>{pendingMessage.text}</Text>
+          {pendingMessage.text ? (
+            <Text selectable>{pendingMessage.text}</Text>
+          ) : null}
+          {pendingMessage.files ? (
+            <Text role="caption" tone="secondary">
+              {messageFilesCaption(pendingMessage.files, tr)}
+            </Text>
+          ) : null}
         </View>
       ) : null}
       {trailing.map((w) => (

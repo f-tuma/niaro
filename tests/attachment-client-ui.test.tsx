@@ -188,6 +188,86 @@ test("actual mobile composer selection/cancel preserves text and a file-only sen
     await h.close();
   }
 });
+test("NIAR-286: once a message with a file is taken, the tray empties, no disabled Send stays and the file shows with the message on its way", async () => {
+  const h = await attachmentClientHttp();
+  let hold: (() => void) | undefined;
+  const held = new Promise<void>((resolve) => {
+    hold = resolve;
+  });
+  let holding = true;
+  const request: typeof fetch = async (url, init) => {
+    if (holding && String(url).includes("/commands?")) {
+      holding = false;
+      await held;
+    }
+    return nodeFetch(url, init);
+  };
+  const session = new ClientSession(
+    h.address,
+    memory(),
+    h.actor,
+    request,
+    undefined,
+    undefined,
+    false,
+    { attachments: true, attachmentId: randomUUID },
+  );
+  await session.start(false);
+  const view = render(<Harness session={session} />);
+  const tr = translate("en");
+  try {
+    const bytes = new TextEncoder().encode("TEST photo bytes");
+    const selection = {
+      filename: "TEST.txt",
+      mediaType: "text/plain",
+      size: bytes.length,
+      read: async () => bytes,
+      release: jest.fn(),
+    };
+    mockPick.mockResolvedValueOnce({
+      selection,
+      release: selection.release,
+      confirm: async () => selection,
+    });
+    fireEvent.press(screen.getByRole("button", { name: "Add context" }));
+    fireEvent.press(await screen.findByRole("button", { name: "File" }));
+    await waitFor(() => expect(session.attachments.ready).toBe(true));
+    fireEvent.changeText(
+      screen.getByLabelText(tr("composer")),
+      "TEST with a file",
+    );
+    fireEvent.press(screen.getByRole("button", { name: tr("send") }));
+    await waitFor(() =>
+      expect(session.getSnapshot().pending?.type).toBe("message.send"),
+    );
+    // On its way: the tray is empty and no disabled Send waits beside Stop,
+    // which stands where the microphone is while the request runs.
+    expect(session.attachments.getSnapshot().entries).toHaveLength(0);
+    expect(screen.queryByText("Uploaded")).toBeNull();
+    expect(screen.getByLabelText(tr("composer")).props.value).toBe("");
+    expect(screen.queryByRole("button", { name: tr("send") })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: tr("progressInterrupt") }),
+    ).toBeTruthy();
+    // The file shows with the message in the chat.
+    const pending = screen.getByTestId("pending-message");
+    expect(pending).toHaveTextContent(/TEST with a file/);
+    expect(pending).toHaveTextContent(/Attached files: 1\./);
+    await act(async () => hold!());
+    await waitFor(() => expect(h.commands).toBe(1));
+    await waitFor(() =>
+      expect(screen.queryByTestId("pending-message")).toBeNull(),
+    );
+    expect(h.snapshot.conversations[0]!.messages[0]!.attachments).toHaveLength(
+      1,
+    );
+  } finally {
+    hold?.();
+    view.unmount();
+    session.stop();
+    await h.close();
+  }
+});
 test.each(["en", "cs"] as const)(
   "%s sendBlocked keeps text editable and prevents the actual Send callback",
   (language) => {

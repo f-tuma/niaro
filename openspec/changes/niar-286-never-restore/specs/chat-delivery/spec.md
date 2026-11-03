@@ -119,6 +119,15 @@ Try again SHALL send a refused message's text, files and context as a new messag
 - **THEN** the photo is not back in the composer
 - **AND** Try again sends the message with the photo
 
+### Requirement: A message's files leave the composer with it
+
+Once the client takes a message with files, its files SHALL leave the composer's tray at once and SHALL show with the message in its chat while it is on its way. The composer SHALL then look as it does without files: the microphone, or Stop while the request runs, and no disabled Send for the files. A message that fails SHALL keep its files for Try again; they SHALL NOT go back into the tray. A send the client did not take SHALL keep its files in the tray.
+
+#### Scenario: Message with a photo on its way
+
+- **WHEN** the person sends a message with a photo and the client takes it
+- **THEN** the tray is empty, no disabled Send is shown, and the chat shows the message with "Attached files: 1"
+
 ### Requirement: No turning Send while a request is pending
 
 While a chat request is pending or its outcome is checked, the composer SHALL keep its ordinary look: the microphone (phone) or Send (web), Stop only while the request runs and the client is online, and never a Send button with a spinner.

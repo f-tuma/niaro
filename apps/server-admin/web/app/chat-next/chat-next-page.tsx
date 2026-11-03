@@ -81,6 +81,7 @@ import {
   isFailedMessage,
   commandRunning,
   failedMessageCaption,
+  messageFilesCaption,
   isUserMessageRecorded,
   runningChat,
   selectFailedMessages,
@@ -1021,7 +1022,13 @@ export function ChatNextConversation({
       );
     // A process answer on its way or being checked shows the same way.
     if (pending && state.pending)
-      thread.push(pendingMessage(state.pending.commandId, pending.text));
+      thread.push(
+        pendingMessage(
+          state.pending.commandId,
+          pending.text,
+          messageFilesCaption(pending.files, tr),
+        ),
+      );
     if (progressCommand)
       thread.push(
         liveMessage({
@@ -1795,6 +1802,9 @@ function UserMessage() {
                 <MessagePrimitive.Parts components={userParts} />
               </FoldedText>
             </div>
+          ) : null}
+          {!failed && pending && meta.hint ? (
+            <p className="text-xs text-muted-foreground">{meta.hint}</p>
           ) : null}
           {failed && meta.failedCommandId ? (
             <div className="flex flex-col items-end gap-1.5">

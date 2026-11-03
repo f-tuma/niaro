@@ -124,6 +124,7 @@ async function lostAndChecking(s: ReturnType<typeof server>, id: string) {
   expect(selectPendingChatMessage(state, command.conversationId)).toEqual({
     kind: "message",
     text: "Choose Peter",
+    files: 0,
   });
   expect(chatRequestFailed(state, command.conversationId)).toBe(false);
   return command;
