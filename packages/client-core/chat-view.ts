@@ -84,6 +84,18 @@ export function canRetryPending(
   );
 }
 
+/**
+ * The session still keeps this exact command after its send ended: the server
+ * may have recorded it, so its words are not unsent. Retry or Dismiss settles
+ * it; only a Dismiss the server confirms gives the words back.
+ */
+export function heldForRecovery(
+  state: Pick<SessionState, "pending">,
+  command: Pick<SessionCommand, "commandId">,
+) {
+  return state.pending?.commandId === command.commandId;
+}
+
 /** The chat whose command is on its way to the server, if any. */
 export function runningChat(
   state: Pick<SessionState, "pending" | "commandStates">,

@@ -158,6 +158,7 @@ import { recordedProcessAnswer } from "../../packages/client-core/reply-context"
 import {
   canRetryPending,
   chatErrorKey,
+  heldForRecovery,
   isUserMessageRecorded,
   runningChat,
   selectPendingChatMessage,
@@ -1281,6 +1282,8 @@ export function Workspace({
     }
     // As on the web, the text leaves the composer on send; a send the server
     // does not take puts it back unless something new was typed meanwhile.
+    // A send whose outcome is unknown stays out: its chat offers Retry and
+    // Dismiss, and only a Dismiss the server confirms gives the text back.
     let clearedRevision: number | undefined;
     if (
       !isProcessReply(replyContext) &&
@@ -1297,6 +1300,7 @@ export function Workspace({
     const restore = () => {
       if (
         clearedRevision !== undefined &&
+        !heldForRecovery(session.getSnapshot(), command) &&
         draftRevision.current === clearedRevision &&
         conversationRef.current === command.conversationId
       )
@@ -2901,6 +2905,8 @@ export function Workspace({
             }
             sending={Object.values(state.commandStates).includes("sending")}
             onStop={
+              // Offline nothing can be stopped: the sending spinner stays.
+              online &&
               state.pending?.type === "message.send" &&
               runningChat(state) === conversationId
                 ? () => {

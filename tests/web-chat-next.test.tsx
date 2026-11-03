@@ -580,6 +580,76 @@ test("a sent message leaves the composer at once and returns if it isn't accepte
   expect(root.findByType("textarea").props.value).toBe("Najdi Jana");
 });
 
+test("a message whose answer was lost stays out of the composer until a confirmed Dismiss (NIAR-279)", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 1,
+    messages: [],
+  };
+  const { session, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  (session.send as jest.Mock).mockImplementationOnce(
+    async (command: unknown) => {
+      publish({
+        pending: command as never,
+        commandStates: { chat: "network_error" },
+        error: "network_error",
+      });
+    },
+  );
+  (session.discardPending as jest.Mock).mockImplementation(async () => {
+    publish({ pending: null, commandStates: { chat: "idle" }, error: null });
+    return true;
+  });
+  const root = (await render(session, "conv-1")).root;
+  await type(root, "Najdi Jana");
+  await act(async () => {});
+  // The server may have it: the words are not offered to send again.
+  expect(root.findByType("textarea").props.value).toBe("");
+  await act(async () =>
+    button(byTestId(root, "request-progress"), "Zahodit").props.onClick(),
+  );
+  expect(root.findByType("textarea").props.value).toBe("Najdi Jana");
+  expect(session.send).toHaveBeenCalledTimes(1);
+});
+
+test("offline, a request still on its way offers no Stop (NIAR-279)", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 1,
+    messages: [],
+  };
+  const { session, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const pending = {
+    type: "message.send" as const,
+    commandId: "c-2",
+    idempotencyKey: "c-2",
+    conversationId: "conv-1",
+    text: "Najdi Jana",
+    language: "cs" as const,
+  };
+  await act(async () =>
+    publish({ pending, commandStates: { chat: "sending" }, status: "offline" }),
+  );
+  expect(
+    root.findAll(
+      (node) =>
+        node.type === "button" && node.props["aria-label"] === "Zastavit",
+    ),
+  ).toHaveLength(0);
+  await act(async () => publish({ status: "online" }));
+  expect(
+    root.findAll(
+      (node) =>
+        node.type === "button" && node.props["aria-label"] === "Zastavit",
+    ),
+  ).toHaveLength(1);
+});
+
 test("stored messages read as the person's bubble and the answer's Markdown, with a day divider", async () => {
   const conversation: Conversation = {
     id: "conv-1",

@@ -76,6 +76,7 @@ import {
   canRetryPending,
   chatErrorKey,
   chatOwnsError,
+  heldForRecovery,
   isUserMessageRecorded,
   runningChat,
   selectPendingChatMessage,
@@ -665,6 +666,10 @@ export function ChatNextConversation({
         mentions,
       );
     const restore = () => {
+      // A message whose outcome is unknown stays out of the composer: its
+      // chat offers Retry and Dismiss, and a confirmed Dismiss gives it back.
+      if (!processReply && heldForRecovery(session.getSnapshot(), command))
+        return;
       if (!options.detached && !draftRef.current.trim()) setComposerText(value);
     };
     const attachmentCaptionRevision = options.withAttachments
@@ -1059,11 +1064,13 @@ export function ChatNextConversation({
   const isRunning =
     !!progressCommand &&
     state.commandStates[commandTarget(progressCommand)] === "sending";
+  // Offline nothing can be stopped, so Stop and Esc wait for the connection.
   const stoppable =
-    isRunning ||
-    (state.pending?.type === "process.answer" &&
-      state.pending.conversationId === id &&
-      state.commandStates[commandTarget(state.pending)] === "sending");
+    state.status === "online" &&
+    (isRunning ||
+      (state.pending?.type === "process.answer" &&
+        state.pending.conversationId === id &&
+        state.commandStates[commandTarget(state.pending)] === "sending"));
   const failedMessage =
     progressCommand?.type === "message.send" && !isRunning && retryable
       ? progressCommand

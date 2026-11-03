@@ -187,6 +187,87 @@ test("a Dismiss the server cannot confirm keeps Retry and Dismiss", async () => 
   expect(screen.getByLabelText("Type a message…").props.value).toBe("");
 });
 
+const composerValue = () =>
+  screen.getByLabelText("Type a message…").props.value;
+const typeAndSend = async (text: string) => {
+  await act(async () => {
+    fireEvent.changeText(screen.getByLabelText("Type a message…"), text);
+    await flush();
+  });
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: tr("send") }));
+    await flush();
+  });
+};
+
+test("a message whose answer was lost stays out of the composer; only a confirmed Dismiss gives it back", async () => {
+  const f = chatFixture();
+  // The connection dropped mid-answer: the session keeps the exact command.
+  f.session.send.mockImplementation(async (command: SessionCommand) => {
+    f.publish({
+      pending: command,
+      commandStates: { chat: "network_error" },
+      error: "network_error",
+    });
+  });
+  f.session.discardPending.mockImplementation(async () => {
+    f.publish({ pending: null, commandStates: { chat: "idle" }, error: null });
+    return true;
+  });
+  render(<f.Harness />);
+  await act(flush);
+  await openChat();
+  await typeAndSend("TEST lost autumn poem");
+  expect(f.session.send).toHaveBeenCalledTimes(1);
+  // Not unsent: sending it again could repeat it.
+  expect(composerValue()).toBe("");
+  expect(stop()).toBeNull();
+  expect(
+    screen.getByRole("button", { name: tr("progressRetry") }),
+  ).toBeTruthy();
+  await act(async () => {
+    fireEvent.press(
+      screen.getByRole("button", { name: tr("progressDismiss") }),
+    );
+    await flush();
+  });
+  expect(composerValue()).toBe("TEST lost autumn poem");
+  expect(f.session.send).toHaveBeenCalledTimes(1);
+});
+
+test("a message the server refused goes back into the composer at once", async () => {
+  const f = chatFixture();
+  f.session.send.mockImplementation(async () => {
+    f.publish({
+      pending: null,
+      commandStates: { chat: "rejected" },
+      error: "catalog_conflict",
+    });
+  });
+  render(<f.Harness />);
+  await act(flush);
+  await openChat();
+  await typeAndSend("TEST refused question");
+  expect(composerValue()).toBe("TEST refused question");
+});
+
+test("offline, a request still on its way offers no Stop", async () => {
+  const f = chatFixture();
+  render(<f.Harness />);
+  await act(flush);
+  await openChat();
+  await act(async () =>
+    f.publish({
+      pending: failedSend,
+      commandStates: { chat: "sending" },
+      status: "offline",
+    }),
+  );
+  expect(stop()).toBeNull();
+  await act(async () => f.publish({ status: "online" }));
+  expect(stop()).toBeTruthy();
+});
+
 test("other screens offer no Retry of the chat's failed message", async () => {
   const f = chatFixture();
   render(<f.Harness />);
