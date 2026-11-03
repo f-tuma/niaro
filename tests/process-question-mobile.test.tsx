@@ -383,7 +383,7 @@ test.each([
   ["cs", false],
   ["cs", true],
 ] as const)(
-  "%s voice=%s acknowledged but unconsumed failure preserves original answer and explanation",
+  "%s voice=%s acknowledged but unconsumed failure keeps the question and explanation; the answer never goes back into the composer (NIAR-286)",
   async (language, voice) => {
     const f = fixture(language),
       answer = "  TEST unconsumed answer\n";
@@ -393,7 +393,7 @@ test.each([
       await flush();
     });
     expect(f.getState().pending).toBeNull();
-    expect(screen.getByLabelText(f.tr("composer")).props.value).toBe(answer);
+    expect(screen.getByLabelText(f.tr("composer")).props.value).toBe("");
     expect(
       screen.getByRole("button", { name: f.tr("clearContext") }),
     ).toBeTruthy();
@@ -405,7 +405,7 @@ test.each([
   },
 );
 test.each([false, true])(
-  "voice=%s retires original draft only after delayed canonical consumed projection",
+  "voice=%s keeps the question until the delayed canonical consumed projection; the answer left the composer when it was sent",
   async (voice) => {
     const f = fixture(),
       answer = "  TEST delayed canonical\n";
@@ -414,7 +414,7 @@ test.each([false, true])(
       acknowledgeDelivery(f, null);
       await flush();
     });
-    expect(screen.getByLabelText(f.tr("composer")).props.value).toBe(answer);
+    expect(screen.getByLabelText(f.tr("composer")).props.value).toBe("");
     expect(
       screen.getByRole("button", { name: f.tr("clearContext") }),
     ).toBeTruthy();
@@ -433,18 +433,21 @@ test.each([false, true])(
 );
 
 test.each(["network_error", "conflict", "rejected"] as const)(
-  "%s preserves answer and its frozen native context",
+  "%s keeps the frozen native context; the answer left the composer at once and does not come back (NIAR-286)",
   async (status) => {
     const f = fixture();
     await f.openReply();
     const answer = "  TEST A exact answer\n";
     fireEvent.changeText(screen.getByLabelText(f.tr("composer")), answer);
     fireEvent.press(screen.getByRole("button", { name: f.tr("send") }));
+    // Taken: the answer leaves the composer and shows on its way.
+    expect(screen.getByLabelText(f.tr("composer")).props.value).toBe("");
+    expect(screen.getByTestId("pending-message")).toBeTruthy();
     await act(async () => {
       f.settle(status);
       await flush();
     });
-    expect(screen.getByLabelText(f.tr("composer")).props.value).toBe(answer);
+    expect(screen.getByLabelText(f.tr("composer")).props.value).toBe("");
     expect(
       screen.getByRole("button", { name: f.tr("clearContext") }),
     ).toBeTruthy();
@@ -720,7 +723,9 @@ test("native voice failure keeps reviewed exact text bound; clear and delayed de
     type: "process.answer",
     answer,
   });
-  expect(screen.getByLabelText(f.tr("composer")).props.value).toBe(answer);
+  // A spoken answer shows on its way; it never goes into the composer.
+  expect(screen.getByLabelText(f.tr("composer")).props.value).toBe("");
+  expect(screen.getByTestId("pending-message")).toBeTruthy();
   fireEvent.press(screen.getByRole("button", { name: f.tr("clearContext") }));
   fireEvent.changeText(
     screen.getByLabelText(f.tr("composer")),
@@ -738,7 +743,7 @@ test("native voice failure keeps reviewed exact text bound; clear and delayed de
   ).toBeNull();
 });
 
-test("rejected native voice retains its reviewed answer and question for an explicit text retry", async () => {
+test("rejected native voice keeps its question but never puts the answer into the composer (NIAR-286)", async () => {
   const f = fixture();
   await f.openReply();
   await act(async () => {
@@ -752,27 +757,20 @@ test("rejected native voice retains its reviewed answer and question for an expl
   const answer = "  TEST voice exact retry\n";
   fireEvent.changeText(screen.getByLabelText(f.tr("voice_transcript")), answer);
   fireEvent.press(screen.getByRole("button", { name: f.tr("voice_send") }));
+  expect(screen.getByLabelText(f.tr("composer")).props.value).toBe("");
   await act(async () => {
     f.settle("rejected");
     await flush();
   });
-  expect(screen.getByLabelText(f.tr("composer")).props.value).toBe(answer);
+  // The refused answer is the session's failed answer in the thread, with
+  // Try again; the composer stays empty, the question stays for a new one.
+  expect(screen.getByLabelText(f.tr("composer")).props.value).toBe("");
   expect(
     screen.getByRole("button", { name: f.tr("clearContext") }),
   ).toBeTruthy();
   expect(screen.queryByTestId("pending-message")).toBeNull();
-  expect(screen.queryByText(answer)).toBeNull();
-  expect(screen.getByLabelText(f.tr("composer")).props.value).toBe(answer);
-  await act(async () => {
-    fireEvent.press(screen.getByRole("button", { name: f.tr("send") }));
-    await flush();
-  });
-  expect(f.session.send).toHaveBeenCalledTimes(2);
-  expect(f.session.send.mock.calls[1]?.[0]).toMatchObject({
-    type: "process.answer",
-    questionId: "TEST-question-A",
-    answer,
-  });
+  expect(screen.queryByRole("button", { name: f.tr("send") })).toBeNull();
+  expect(f.session.send).toHaveBeenCalledTimes(1);
 });
 
 test("closing before a late native transcript cancels capture ownership and sends nothing", async () => {

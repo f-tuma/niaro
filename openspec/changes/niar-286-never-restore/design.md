@@ -45,6 +45,13 @@ The phone composer gets no `sending` prop: while anything is pending, `busy` alr
 - The reason is shown once. `errorShownByFailedMessage(state)` is true while the session's error is the reason of its latest failed message, or of a refused message it is still settling (pending, command state `rejected`); the phone's and web's error notices then leave `state.error` out, and a send's `.catch` sets no notice for a message kept as failed (`isFailedMessage`). `dismissFailedMessage` of the latest failed message also clears that error (and the rejection a reconnect would republish).
 - `failedMessageReason`: the code's copy, except `network_error` ("Delivery unclear", NIAR-280 forbids it) and `storage_error` (reads as a setting); those and unknown codes read as `requestRejected`.
 
+### D7. Process answers on the phone
+
+- `submitMessage` clears the composer for a process answer as for a message when the session takes it (pending right after `send`), and puts it back only when it was not taken. `nativeSubmission.draftRevision` follows the cleared composer, so the record still clears the question if nothing was typed meanwhile. The voice path no longer writes a spoken answer into the composer.
+- The saved-answer cards of the open chat render in its `ChatThread` (after failed messages, before the answer on its way); other chats' cards stay at the top of the chat screen and all of them in Tasks.
+- A refused card (`outcome: "rejected"`, no local save to repeat) shows "Not sent." and the reason, **Try again** and Discard; Review is gone for it. Try again calls `ClientSession.retryProcessAnswer(commandId, newId, owner)`: it rebuilds the answer with `processAnswerCommand` for the attempt's frozen target (refused with `process_question_changed` when the question moved on), sends it, and once taken discards the refused attempt.
+- `errorShownByFailedMessage` also covers a refused answer (`answerAttempts` rejected with the session's error), and discarding a refused answer clears that error and the rejection a reconnect would republish.
+
 ### D6. Copy
 
 Added `messageNotSent` ("Not sent" / "Neodesláno") and `messageFiles` ("Attached files: {n}" / "Přiložené soubory: {n}").

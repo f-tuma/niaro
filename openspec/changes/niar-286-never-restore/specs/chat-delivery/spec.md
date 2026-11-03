@@ -128,6 +128,34 @@ Once the client takes a message with files, its files SHALL leave the composer's
 - **WHEN** the person sends a message with a photo and the client takes it
 - **THEN** the tray is empty, no disabled Send is shown, and the chat shows the message with "Attached files: 1"
 
+### Requirement: A process answer leaves the composer
+
+When the person answers a process question from the phone's composer or by voice and the client takes the answer, its text SHALL leave the composer at once and SHALL show in the chat as the person's answer on its way. The question SHALL stay above the composer until the run records the answer. The answer's text SHALL NOT go back into the composer, whatever its outcome. An answer the client did not take SHALL keep its text in the composer.
+
+#### Scenario: Typed answer
+
+- **WHEN** the person sends a typed answer to a process question
+- **THEN** the composer is empty and the chat shows the answer on its way
+
+#### Scenario: Spoken answer
+
+- **WHEN** the person sends a spoken answer to a process question
+- **THEN** the transcript is not put into the composer and the chat shows it on its way
+
+### Requirement: A refused process answer stays in its chat
+
+On the phone, a process answer the server refused SHALL show in its chat's thread with its text, "Not sent", the reason once and **Try again**, and SHALL NOT offer to put its text back into the composer. Try again SHALL send the same text to the same question as a new answer while that question is still open, and the refused answer SHALL then be let go. Discard SHALL let it go without sending anything.
+
+#### Scenario: Refused answer
+
+- **WHEN** the server refuses a process answer
+- **THEN** the chat shows it as not sent with its reason and Try again, and the composer stays empty
+
+#### Scenario: Try again of a refused answer
+
+- **WHEN** the person presses Try again on a refused answer whose question is still open
+- **THEN** the same text is sent to that question as a new answer and the refused one leaves the chat
+
 ### Requirement: No turning Send while a request is pending
 
 While a chat request is pending or its outcome is checked, the composer SHALL keep its ordinary look: the microphone (phone) or Send (web), Stop only while the request runs and the client is online, and never a Send button with a spinner.

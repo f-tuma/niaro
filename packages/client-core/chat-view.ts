@@ -206,13 +206,16 @@ export function failedMessageCaption(
 }
 
 /**
- * The session's error is the reason a failed message shows under its words,
- * or is about to (a refused message the session is still settling). The
- * reason is shown once, there; no footer notice repeats it.
+ * The session's error is the reason a failed message or a refused process
+ * answer shows under its words, or is about to (a refused message the session
+ * is still settling). The reason is shown once, there; no footer notice
+ * repeats it.
  */
 export function errorShownByFailedMessage(
   state: Pick<SessionState, "error" | "pending"> &
-    Partial<Pick<SessionState, "failedMessages" | "commandStates">>,
+    Partial<
+      Pick<SessionState, "failedMessages" | "commandStates" | "answerAttempts">
+    >,
 ) {
   const { error, pending } = state;
   if (!error) return false;
@@ -221,7 +224,12 @@ export function errorShownByFailedMessage(
       pending.type === "message.send" &&
       state.commandStates?.[commandTarget(pending)] === "rejected"
     );
-  return state.failedMessages?.at(-1)?.error === error;
+  return (
+    state.failedMessages?.at(-1)?.error === error ||
+    (state.answerAttempts ?? []).some(
+      (attempt) => attempt.outcome === "rejected" && attempt.error === error,
+    )
+  );
 }
 
 /** The message was taken and then failed: it stays in its chat as failed. */

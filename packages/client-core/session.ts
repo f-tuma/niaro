@@ -3265,7 +3265,16 @@ export class ClientSession {
         : Promise.resolve();
       if (discardedFlight && this.submitting === discardedFlight)
         this.submitting = null;
+      // A refused answer's reason goes with it (NIAR-286).
+      const reason =
+        attempt.outcome === "rejected" &&
+        !this.state.pending &&
+        !!attempt.error &&
+        this.state.error === attempt.error;
+      if (reason && this.commandRejection === attempt.error)
+        this.commandRejection = null;
       this.publish({
+        ...(reason ? { error: null } : {}),
         answerAttempts: this.state.answerAttempts.filter(
           (value) => value.command.commandId !== commandId,
         ),
@@ -4254,6 +4263,49 @@ export class ClientSession {
           entry,
         ]),
       });
+    return delivery;
+  }
+  /**
+   * Try again of a refused process answer: the same words to the same
+   * question as a new answer, while that question is still open (otherwise
+   * `process_question_changed`). Once the new answer is taken, the refused
+   * one is let go; it never goes back to the composer.
+   */
+  retryProcessAnswer(
+    commandId: string,
+    newCommandId: string,
+    noticeOwner?: ProcessNoticeOwner,
+  ): Promise<void> {
+    const attempt = this.state.answerAttempts.find(
+      (value) => value.command.commandId === commandId,
+    );
+    const store = this.state.store;
+    if (
+      !attempt ||
+      attempt.outcome !== "rejected" ||
+      !store ||
+      this.stopped ||
+      this.invalid ||
+      this.submitting ||
+      this.state.pending ||
+      this.state.answerRecoveryBlocked ||
+      this.state.status !== "online"
+    )
+      return Promise.resolve();
+    let command: ProcessAnswerCommand;
+    try {
+      command = processAnswerCommand(store, attempt.target, {
+        commandId: newCommandId,
+        idempotencyKey: newCommandId,
+        answer: attempt.command.answer,
+        language: attempt.command.language,
+      });
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const delivery = this.send(command, false, undefined, noticeOwner);
+    if (this.getSnapshot().pending?.commandId === command.commandId)
+      void this.discardProcessAnswerAttempt(commandId);
     return delivery;
   }
   /**

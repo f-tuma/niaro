@@ -100,6 +100,7 @@ import {
   captureProcessAnswerTarget,
   processAnswerCommand,
 } from "../../packages/client-core/process-answers";
+import type { ProcessAnswerAttempt } from "../../packages/client-core/process-answer-attempts";
 import { followSpokenReply } from "../../packages/client-core/automatic-speech";
 import { conversationTitle } from "../../packages/client-core/conversation-title";
 import { selectRecentProcessRuns } from "../../packages/client-core/process-run-history";
@@ -1294,12 +1295,11 @@ export function Workspace({
       };
     }
     // As on the web, the text leaves the composer on send and never comes
-    // back: a message the session took is in the chat (still working, failed
-    // with Try again, or answered). Only a send the session did not take at
-    // all stays in the composer.
+    // back: a message or process answer the session took is in the chat
+    // (on its way, failed with Try again, or answered). Only a send the
+    // session did not take at all stays in the composer.
     let clearedRevision: number | undefined;
     if (
-      !isProcessReply(replyContext) &&
       draftRevision.current === submittedDraftRevision &&
       conversationRef.current === command.conversationId
     ) {
@@ -1318,6 +1318,10 @@ export function Workspace({
       conversationRef.current === command.conversationId
     )
       setDraft(value);
+    // The answer's question leaves the composer once the run records it, if
+    // nothing was typed meanwhile.
+    if (nativeSubmission.current?.commandId === command.commandId)
+      nativeSubmission.current.draftRevision = draftRevision.current;
     void delivery
       .then(() => {
         const current = session.getSnapshot();
@@ -1886,15 +1890,130 @@ export function Workspace({
     },
   };
   const failedMessages = selectFailedMessages(state, conversationId);
+  // This chat's saved process answers with a card show in its thread.
+  const chatAnswers = (state.answerAttempts ?? []).filter(
+    (attempt) =>
+      attempt.target.conversationId === conversationId &&
+      processAnswerCardShown(state, attempt),
+  );
   // A failed message keeps its chat open, even as the chat's first message.
   const hasConversation =
-    messages.length > 0 || work.length > 0 || failedMessages.length > 0;
+    messages.length > 0 ||
+    work.length > 0 ||
+    failedMessages.length > 0 ||
+    chatAnswers.length > 0;
   // A screen the app's one pet stands on fades in without sliding: the pet is drawn over it by
   // the stage, which sees where a native-driven slide ends only once it has ended (NIAR-276).
   const petStage = petOpen || (section === "chat" && !hasConversation && !busy);
   const chatTitle = conversationTitle(
     renamed[conversationId] ?? historySelection?.title ?? "",
   );
+  /** A saved process answer the server answered for, or whose delivery failed. */
+  const answerCard = (attempt: ProcessAnswerAttempt) => {
+    // An answer on its way or being checked shows as the
+    // person's message in its chat, with no card (NIAR-284).
+    if (!processAnswerCardShown(state, attempt)) return null;
+    let canReview = false;
+    if (online && store && !busy && attempt.outcome !== "unknown") {
+      try {
+        assertProcessAnswerTarget(store, attempt.target);
+        canReview = true;
+      } catch {
+        // A retained answer cannot silently move to a later question.
+      }
+    }
+    const canRetry =
+      !state.answerRecoveryBlocked &&
+      online &&
+      state.pending?.commandId === attempt.command.commandId &&
+      state.commandStates[commandTarget(attempt.command)] !== "sending";
+    return (
+      <ProcessAnswerRecoveryCard
+        key={attempt.command.commandId}
+        language={language}
+        question={attempt.target.question.question}
+        answer={attempt.command.answer}
+        outcome={attempt.outcome}
+        explanation={
+          state.processNotice?.notice.commandId === attempt.command.commandId
+            ? (() => {
+                if (state.processNotice.errorSource.kind === "local")
+                  return tr(state.processNotice.errorSource.code);
+                const copy = processNoticeCopy(state.processNotice.notice);
+                return copy
+                  ? tr(copy.key) +
+                      (copy.detailKey ? ` ${tr(copy.detailKey)}` : "")
+                  : undefined;
+              })()
+            : attempt.outcome === "accepted"
+              ? tr("processResultUnavailable")
+              : attempt.error
+                ? tr(
+                    !isReservedProcessRecoveryCopy(attempt.error) &&
+                      attempt.error in en
+                      ? (attempt.error as TranslationKey)
+                      : "process_question_rejected",
+                  )
+                : undefined
+        }
+        canReview={canReview}
+        canRetry={canRetry}
+        // A refused answer is failed: Try again sends its words to the
+        // same question as a new answer while that question is open.
+        canTryAgain={
+          canReview &&
+          attempt.outcome === "rejected" &&
+          !state.pending &&
+          !state.answerRecoveryBlocked &&
+          !historySelection?.readOnly
+        }
+        onTryAgain={() => {
+          nearBottom.current = true;
+          void session
+            ?.retryProcessAnswer(
+              attempt.command.commandId,
+              randomUUID(),
+              noticeOwner,
+            )
+            .catch(() => setReplyError("process_question_changed"));
+        }}
+        canDiscard={!state.answerRecoveryBlocked}
+        onRetry={() => {
+          void session?.retry(noticeOwner);
+        }}
+        onReview={() => {
+          const current = session?.getSnapshot();
+          if (
+            !current?.store ||
+            current.answerRecoveryBlocked ||
+            current.status !== "online" ||
+            current.pending
+          )
+            return;
+          try {
+            assertProcessAnswerTarget(current.store, attempt.target);
+          } catch {
+            setReplyError("process_question_changed");
+            return;
+          }
+          closeVoice();
+          switchConversation(attempt.target.conversationId);
+          setContext(
+            Object.freeze({
+              kind: "process",
+              target: attempt.target,
+            }),
+          );
+          setDraft(attempt.command.answer);
+          setSection("chat");
+          composerInput.current?.focus();
+        }}
+        onDiscard={() => {
+          void session?.discardProcessAnswerAttempt(attempt.command.commandId);
+        }}
+      />
+    );
+  };
   const pendingMessage = selectPendingChatMessage(state, conversationId);
   let validContext = false;
   if (isProcessReply(context)) {
@@ -2044,7 +2163,8 @@ export function Workspace({
               );
         }
         if (native) {
-          setDraft(text);
+          // A spoken answer shows in the chat on its way; its words never go
+          // into the composer.
           setAnswerCaption({
             context: contextRef.current!,
             target,
@@ -2542,111 +2662,14 @@ export function Workspace({
               />
             ) : null}
             {section === "chat" || section === "tasks"
-              ? (state.answerAttempts ?? []).map((attempt) => {
-                  // An answer on its way or being checked shows as the
-                  // person's message in its chat, with no card (NIAR-284).
-                  if (!processAnswerCardShown(state, attempt)) return null;
-                  let canReview = false;
-                  if (
-                    online &&
-                    store &&
-                    !busy &&
-                    attempt.outcome !== "unknown"
-                  ) {
-                    try {
-                      assertProcessAnswerTarget(store, attempt.target);
-                      canReview = true;
-                    } catch {
-                      // A retained answer cannot silently move to a later question.
-                    }
-                  }
-                  const canRetry =
-                    !state.answerRecoveryBlocked &&
-                    online &&
-                    state.pending?.commandId === attempt.command.commandId &&
-                    state.commandStates[commandTarget(attempt.command)] !==
-                      "sending";
-                  return (
-                    <ProcessAnswerRecoveryCard
-                      key={attempt.command.commandId}
-                      language={language}
-                      question={attempt.target.question.question}
-                      answer={attempt.command.answer}
-                      outcome={attempt.outcome}
-                      explanation={
-                        state.processNotice?.notice.commandId ===
-                        attempt.command.commandId
-                          ? (() => {
-                              if (
-                                state.processNotice.errorSource.kind === "local"
-                              )
-                                return tr(state.processNotice.errorSource.code);
-                              const copy = processNoticeCopy(
-                                state.processNotice.notice,
-                              );
-                              return copy
-                                ? tr(copy.key) +
-                                    (copy.detailKey
-                                      ? ` ${tr(copy.detailKey)}`
-                                      : "")
-                                : undefined;
-                            })()
-                          : attempt.outcome === "accepted"
-                            ? tr("processResultUnavailable")
-                            : attempt.error
-                              ? tr(
-                                  !isReservedProcessRecoveryCopy(
-                                    attempt.error,
-                                  ) && attempt.error in en
-                                    ? (attempt.error as TranslationKey)
-                                    : "process_question_rejected",
-                                )
-                              : undefined
-                      }
-                      canReview={canReview}
-                      canRetry={canRetry}
-                      canDiscard={!state.answerRecoveryBlocked}
-                      onRetry={() => {
-                        void session?.retry(noticeOwner);
-                      }}
-                      onReview={() => {
-                        const current = session?.getSnapshot();
-                        if (
-                          !current?.store ||
-                          current.answerRecoveryBlocked ||
-                          current.status !== "online" ||
-                          current.pending
-                        )
-                          return;
-                        try {
-                          assertProcessAnswerTarget(
-                            current.store,
-                            attempt.target,
-                          );
-                        } catch {
-                          setReplyError("process_question_changed");
-                          return;
-                        }
-                        closeVoice();
-                        switchConversation(attempt.target.conversationId);
-                        setContext(
-                          Object.freeze({
-                            kind: "process",
-                            target: attempt.target,
-                          }),
-                        );
-                        setDraft(attempt.command.answer);
-                        setSection("chat");
-                        composerInput.current?.focus();
-                      }}
-                      onDiscard={() => {
-                        void session?.discardProcessAnswerAttempt(
-                          attempt.command.commandId,
-                        );
-                      }}
-                    />
-                  );
-                })
+              ? (state.answerAttempts ?? [])
+                  // In a chat, its own answers show in its thread.
+                  .filter(
+                    (attempt) =>
+                      section !== "chat" ||
+                      attempt.target.conversationId !== conversationId,
+                  )
+                  .map(answerCard)
               : null}
             {session ? (
               <MeetingLibrary
@@ -2838,6 +2861,7 @@ export function Workspace({
                         ? (commandId) => session.dismissFailedMessage(commandId)
                         : undefined
                     }
+                    answers={chatAnswers.map(answerCard)}
                     pendingMessage={pendingMessage}
                     trailing={trailing}
                     heldReply={heldReply}

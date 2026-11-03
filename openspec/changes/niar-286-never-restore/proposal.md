@@ -26,12 +26,13 @@ Other paths wrote sent words back, or would lose them:
 - **Clients never write sent words back.** Phone (typed and voice) and web drop every restore: on refusal, error, lost answer, timeout and Dismiss. Only a send the session did not take at all (nothing became pending, nothing left the device) keeps its words in the composer.
 - **Failed messages in the thread.** Phone and web show a failed message under the stored ones with its words, "Not sent." and the reason, Try again and Dismiss. A failed first message keeps the phone's chat open instead of Home.
 - **No turning Send, no Stop for a check.** The phone composer no longer gets a `sending` state: a pending request already disables Send, so Send never spins. A background check's re-post is not "running" until the server streams the answer it joined (`commandRunning`, `runningChat`), so the composer keeps the microphone (phone) or Send (web) instead of Stop during checks.
+- **Process answers on the phone.** A typed or spoken answer to a process question leaves the composer once taken and shows in the chat on its way; the question stays until the run records it. A refused answer shows in its chat's thread as "Not sent" with its reason and **Try again** (the same words to the same question as a new answer, while it is still open) instead of Review, which put its words back into the composer.
 - **Dismiss only lets go.** A confirmed `not_running` Dismiss clears the request; nothing goes to the composer.
 
 ## Non-goals
 
 - Keeping failed messages across an app restart: they live in the session's memory; a lost answer's command is still persisted and checked as before.
-- Process answers (`process.answer`): they keep their own recovery card (Retry, Review, Discard). The phone keeps a process answer's text in the composer while it is sent (it was never cleared there); left for NIAR-284's process work. The web no longer restores a taken process answer; the recovery card holds it.
+- The web's saved-answer card for a refused process answer keeps Review and Discard; Try again for it is on the phone only. The web no longer restores a taken process answer; the card holds it.
 
 ## Risk
 

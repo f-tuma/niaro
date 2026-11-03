@@ -8,7 +8,10 @@ import { Surface, Text, Row, Button, Notice } from "../ui";
  * Local delivery evidence; this card does not claim a canonical process
  * result. An answer still on its way, or one the session is checking by
  * itself, shows as the person's message instead (NIAR-284): "unknown" here
- * is an answer whose delivery failed, with Try again.
+ * is an answer whose delivery failed, with Try again. A refused answer is
+ * failed too: "Not sent", the reason and Try again, which sends its words to
+ * the same question as a new answer; its words never go back to the composer
+ * (NIAR-286).
  */
 export function ProcessAnswerRecoveryCard({
   question,
@@ -19,8 +22,10 @@ export function ProcessAnswerRecoveryCard({
   canReview = false,
   canRetry = false,
   canDiscard = true,
+  canTryAgain = false,
   onReview,
   onRetry,
+  onTryAgain,
   onDiscard,
 }: {
   question: string;
@@ -33,6 +38,9 @@ export function ProcessAnswerRecoveryCard({
   canDiscard?: boolean;
   onReview: () => void;
   onRetry?: () => void;
+  /** Sends a refused answer's words again as a new answer. */
+  canTryAgain?: boolean;
+  onTryAgain?: () => void;
   onDiscard: () => void;
 }) {
   const tr = translate(language);
@@ -64,13 +72,11 @@ export function ProcessAnswerRecoveryCard({
       <Notice
         error={outcome === "rejected" || outcome === "unknown" || !!explanation}
       >
-        {tr(
-          outcome === "unknown"
-            ? "progressFailedHint"
-            : outcome === "rejected"
-              ? "savedProcessAnswerRejected"
-              : "savedProcessAnswerAccepted",
-        )}
+        {outcome === "unknown"
+          ? tr("progressFailedHint")
+          : outcome === "rejected"
+            ? `${tr("messageNotSent")}.`
+            : tr("savedProcessAnswerAccepted")}
         {explanation ? ` ${explanation}` : ""}
       </Notice>
       <Row style={{ flexWrap: "wrap" }}>
@@ -81,14 +87,23 @@ export function ProcessAnswerRecoveryCard({
             disabled={!canRetry}
             onPress={onRetry}
           />
+        ) : outcome === "rejected" && !canRetry ? (
+          <Button
+            size="small"
+            label={tr("progressRetry")}
+            disabled={!canTryAgain || !onTryAgain}
+            onPress={onTryAgain}
+          />
         ) : (
           <>
-            <Button
-              size="small"
-              label={tr("savedProcessAnswerReview")}
-              disabled={!canReview}
-              onPress={onReview}
-            />
+            {outcome === "accepted" ? (
+              <Button
+                size="small"
+                label={tr("savedProcessAnswerReview")}
+                disabled={!canReview}
+                onPress={onReview}
+              />
+            ) : null}
             {canRetry ? (
               <Button
                 size="small"

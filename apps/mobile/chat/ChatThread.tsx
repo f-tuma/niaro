@@ -25,6 +25,7 @@ export function ChatThread({
   failedMessages = [],
   onRetryFailed,
   onDismissFailed,
+  answers,
   pendingMessage,
   trailing,
   heldReply,
@@ -40,6 +41,8 @@ export function ChatThread({
   /** Sends a failed message again as a new message; absent while it cannot. */
   onRetryFailed?: (commandId: string) => void;
   onDismissFailed?: (commandId: string) => void;
+  /** Saved process answers of this chat: refused, failed, or not yet used. */
+  answers?: readonly React.ReactNode[];
   pendingMessage: {
     kind: "message" | "answer";
     text: string;
@@ -95,6 +98,7 @@ export function ChatThread({
           </View>
         </View>
       ))}
+      {answers?.length ? <View testID="thread-answers">{answers}</View> : null}
       {pendingMessage ? (
         <View testID="pending-message" style={styles.message}>
           {pendingMessage.kind === "answer" ? (

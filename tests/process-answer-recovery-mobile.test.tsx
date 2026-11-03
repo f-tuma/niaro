@@ -506,3 +506,88 @@ test("Retry saving repairs a known delivered answer without another command POST
   expect(screen.getByTestId("saved-process-answer")).toBeTruthy();
   mounted.unmount();
 });
+
+test("NIAR-286: a refused answer shows in its chat's thread as not sent with its reason once, and Try again sends the same words to the same question as a new answer", async () => {
+  const f = fixture("en");
+  f.setOutcome("rejected");
+  const session = f.open();
+  const command = await f.send(session);
+  await act(async () => {
+    await session.refresh();
+    await flush();
+  });
+  const mounted = await mount(session, "en", "chat");
+  const tr = translate("en");
+  try {
+    expect(session.getSnapshot().answerAttempts[0]?.outcome).toBe("rejected");
+    const card = screen.getByTestId("saved-process-answer");
+    // In its chat's thread, where the answer was sent, not above the chat.
+    expect(
+      screen.getByTestId("thread-answers").findAll((node) => node === card),
+    ).toHaveLength(1);
+    expect(screen.getByText(command.answer)).toBeTruthy();
+    expect(
+      screen.getByText(new RegExp(`^${tr("messageNotSent")}\\.`)),
+    ).toBeTruthy();
+    // The reason shows once, on the card; no notice repeats it.
+    expect(
+      screen.getAllByText(new RegExp(tr("process_question_rejected"))),
+    ).toHaveLength(1);
+    // A sent answer is never offered back into the composer.
+    expect(
+      screen.queryByRole("button", { name: tr("savedProcessAnswerReview") }),
+    ).toBeNull();
+    expect(screen.getByLabelText(tr("composer")).props.value).toBe("");
+    f.setOutcome("accepted");
+    await act(async () => {
+      fireEvent.press(
+        screen.getByRole("button", { name: tr("progressRetry") }),
+      );
+      await flush();
+    });
+    expect(f.commands).toHaveLength(2);
+    expect(f.commands[1]).toEqual({
+      ...command,
+      commandId: "TEST-reviewed-answer",
+      idempotencyKey: "TEST-reviewed-answer",
+    });
+    // The refused one is let go; the new answer is the only one kept.
+    expect(
+      session
+        .getSnapshot()
+        .answerAttempts.map((attempt) => attempt.command.commandId),
+    ).toEqual(["TEST-reviewed-answer"]);
+    expect(
+      screen.queryByText(new RegExp(`^${tr("messageNotSent")}\\.`)),
+    ).toBeNull();
+    expect(screen.getByLabelText(tr("composer")).props.value).toBe("");
+  } finally {
+    mounted.unmount();
+    session.stop();
+  }
+});
+
+test("NIAR-286: Try again of a refused answer is not offered once its question moved on; it never answers the next question", async () => {
+  const f = fixture("en");
+  f.setOutcome("rejected");
+  const first = f.open();
+  await f.send(first);
+  first.stop();
+  f.work.native!.process!.question!.questionId = "TEST-question-B";
+  f.work.native!.process!.journalRevision = 8;
+  const session = f.open();
+  const mounted = await mount(session, "en", "chat");
+  const tr = translate("en");
+  try {
+    const retry = screen.getByRole("button", { name: tr("progressRetry") });
+    expect(retry.props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(retry);
+    await expect(
+      session.retryProcessAnswer("TEST-answer-A", "TEST-other"),
+    ).rejects.toThrow("process_question_changed");
+    expect(f.commands).toHaveLength(1);
+  } finally {
+    mounted.unmount();
+    session.stop();
+  }
+});
