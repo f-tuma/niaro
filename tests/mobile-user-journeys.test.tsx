@@ -808,13 +808,16 @@ test.each([
 );
 
 // NIAR-279: only a running request is stopped before a meeting records; a
-// failed one stays in its chat with Retry and Dismiss.
+// failed one stays in its chat with Retry and Dismiss. NIAR-286: a background
+// check's resend of a lost answer is not running either; recording starts at
+// once.
 test.each([
-  ["failed", "network_error", false],
-  ["running", "sending", true],
+  ["failed", "network_error", false, null],
+  ["running", "sending", true, null],
+  ["checked (resend in flight)", "sending", false, "checking"],
 ] as const)(
   "a %s chat request and a meeting recording",
-  async (_name, commandState, interrupts) => {
+  async (_name, commandState, interrupts, deliveryCheck) => {
     const f = await fixture();
     const snapshot = emptySnapshot();
     const pending: SessionCommand = {
@@ -840,6 +843,7 @@ test.each([
       error: commandState === "sending" ? null : "model_unavailable",
       activity: null,
       activityConnection: "waiting",
+      deliveryCheck,
     };
     const session = {
       ...f.session,
@@ -849,7 +853,7 @@ test.each([
       stop: jest.fn(),
       refresh: jest.fn(async () => {}),
       // A failed request cannot be stopped: the server answers not_running.
-      interruptPending: jest.fn(async () => commandState === "sending"),
+      interruptPending: jest.fn(async () => interrupts),
       discardPending: jest.fn(async () => true),
       readHumanTasks: jest.fn(async () => ({
         tasks: [],

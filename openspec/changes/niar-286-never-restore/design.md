@@ -34,6 +34,8 @@ Alternative considered: `retryMessageCommand` (native retry with `retryOf`). Rej
 
 `commandRunning(state, command)`: the command state is `sending` and either no check is in progress or the server is streaming (`activityConnection === "live"`). `runningChat` uses it (phone Stop, the web's other-chat notice and history), and so does the web's `isRunning` (Stop, Esc, assistant-ui's running flag). A check that joins a running answer offers Stop as soon as the answer streams.
 
+Starting a meeting recording on the phone interrupts the pending request only when `commandRunning` says it runs; during a check's resend it starts recording at once.
+
 The phone composer gets no `sending` prop: while anything is pending, `busy` already disables Send, so a spinner on Send has nothing left to say. The `ChatFooter` prop is removed; `Composer` keeps its optional `sending` for other screens.
 
 ### D5. Thread

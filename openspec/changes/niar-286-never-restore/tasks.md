@@ -28,3 +28,7 @@
 - [x] 4.3 Web tests: refusal, not taken, the owner's sequence, Dismiss.
 - [x] 4.4 Lint, typecheck, admin build, full Jest, and the interruption, answer stream and conversation node suites.
 - [ ] 4.5 Phone and web by hand against a dev server: lost answer mid-stream, refusal, Dismiss, a refused message with a photo and its Try again.
+
+## 5. Leftovers
+
+- [x] 5.1 Phone meeting recording interrupts only a request that really runs (`commandRunning`), not a background check's resend.

@@ -165,6 +165,7 @@ import {
   canRetryPending,
   chatRequestFailed,
   chatErrorKey,
+  commandRunning,
   isUserMessageRecorded,
   processAnswerCardShown,
   runningChat,
@@ -2657,12 +2658,12 @@ export function Workspace({
                 onRecording={setMeetingRecording}
                 onRecordingControls={setMeetingRecordingControl}
                 onStartRecording={() => {
-                  // Only a running request is stopped first; a failed one
-                  // stays in its chat with Retry and Dismiss.
+                  // Only a request that really runs is stopped first; a
+                  // failed one stays in its chat with Retry and Dismiss, and
+                  // a background check's resend is not running (NIAR-286).
                   const current = session.getSnapshot();
                   return current.pending &&
-                    current.commandStates[commandTarget(current.pending)] ===
-                      "sending"
+                    commandRunning(current, current.pending)
                     ? session.interruptPending()
                     : true;
                 }}

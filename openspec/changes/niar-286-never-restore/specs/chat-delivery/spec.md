@@ -24,6 +24,11 @@ A client SHALL offer Stop, and the web app SHALL send an interrupt on Esc, only 
 - **THEN** the composer shows the microphone (phone) or Send (web), not Stop
 - **AND** the chat shows the message and Thinking
 
+#### Scenario: Meeting recording during a check
+
+- **WHEN** the person starts a meeting recording on the phone while a lost message's command is resent in the background and the server has not streamed anything yet
+- **THEN** recording starts at once and nothing is interrupted
+
 ### Requirement: Dismissing a failed request
 
 Dismiss SHALL ask the server about the exact command through `commands/interrupt` and SHALL NOT resend it. A `settled` answer SHALL show the recorded outcome. An `unknown` answer with `not_running` SHALL clear the request without an outcome; its text and files SHALL NOT go back into the composer. Any other answer SHALL keep the request with Retry and Dismiss and say that the stop was not confirmed.
