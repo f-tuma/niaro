@@ -384,7 +384,52 @@ test("/me/memory shows the saved list, the keep switch and a confirmed erase", a
       .some(([, body]) => (body as { type?: string })?.type === "forgetAll"),
   ).toBe(true);
   expect(view.root.findAllByProps({ role: "alertdialog" }).length).toBe(0);
-  expect(view.root.findByProps({ role: "status" }).children).toEqual(["Saved"]);
+  // The closed dialog is the confirmation; "Saved" is for screen readers only.
+  const saved = view.root.findByProps({ role: "status" });
+  expect(saved.children).toEqual(["Saved"]);
+  expect(saved.props.className).toBe("sr-only");
+  act(() => view.unmount());
+});
+
+test("a saved appearance closes its sheet and shows no toast (NIAR-278)", async () => {
+  const view = await mount();
+  await act(async () => button(view, "Appearance").props.onClick());
+  const name = view.root
+    .findAllByType("input")
+    .find((i) => i.props.value === "Niaro")!;
+  act(() => name.props.onChange({ target: { value: "Edited" } }));
+  mockApi.mockImplementation((url: string, body: unknown) =>
+    Promise.resolve(
+      body
+        ? {
+            ...profile,
+            revision: 1,
+            settings: { ...profile.settings, name: "Edited" },
+          }
+        : url.includes("/memory?")
+          ? page
+          : profile,
+    ),
+  );
+  await act(async () =>
+    view.root.findByType("form").props.onSubmit({ preventDefault: () => {} }),
+  );
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20));
+  });
+  // The form is gone: the sheet closed on the confirmed save.
+  expect(view.root.findAllByType("form").length).toBe(0);
+  const status = view.root.findByProps({ role: "status" });
+  expect(status.children).toEqual(["Saved"]);
+  expect(status.props.className).toBe("sr-only");
+  // Nothing floats over the page.
+  expect(
+    view.root.findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        String(node.props.className ?? "").includes("fixed"),
+    ),
+  ).toHaveLength(0);
   act(() => view.unmount());
 });
 

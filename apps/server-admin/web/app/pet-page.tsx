@@ -453,16 +453,12 @@ function PetPageOwner({ manager }: { manager: boolean }) {
       {retry}
     </div>
   );
-  // Saved feedback floats over the page as a toast; it never takes layout.
+  // A save shows in place: the sheet or dialog closes, the switch or the
+  // edited memory shows its new state. No toast (toasts are only Copied and
+  // Undo); a screen reader hears "Saved" from this hidden region.
   const live = (
-    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center">
-      <div
-        role="status"
-        aria-live="polite"
-        className="pet-fade rounded-lg border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md empty:hidden"
-      >
-        {status}
-      </div>
+    <div role="status" aria-live="polite" className="sr-only">
+      {status}
     </div>
   );
   // The six section tiles fill their column; the keys row sits under them.
