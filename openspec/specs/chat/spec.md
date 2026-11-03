@@ -221,12 +221,31 @@ A write that needs the person's decision SHALL appear in the chat as an approval
 
 ### Requirement: Approval card footer
 
-On every client the approval card SHALL end with **Decline** and then **Approve**, right-aligned, with Approve as the only primary action. The decline action SHALL be labelled "Decline" / "Odmítnout", never with the word that closes a sheet, and a declined card SHALL read "Declined" / "Odmítnuto".
+On every client the approval card, and the meeting proposal card, SHALL end with **Decline** and then **Approve**, right-aligned, with Approve as the only primary action. The decline action SHALL be labelled "Decline" / "Odmítnout", never with the word that closes a sheet, and the approve action "Approve" / "Potvrdit", for a demo and a real write alike. A declined card SHALL read "Declined" / "Odmítnuto".
 
 #### Scenario: Declined card
 
 - **WHEN** the person declines a pending write
 - **THEN** the card reads "Declined" / "Odmítnuto"
+
+#### Scenario: Meeting proposal
+
+- **WHEN** a meeting proposal waits for the person's decision on the web or on the phone
+- **THEN** it ends with **Decline** then **Approve**, right-aligned, labelled as on the approval card, and its effect line says whether a calendar event is created or it is a demo
+
+#### Scenario: Approved meeting not started yet
+
+- **WHEN** an approved meeting proposal's operation has not started
+- **THEN** the card offers **Decline** and no second **Approve**
+
+### Requirement: Approval card side actions
+
+The effect line next to the approval decisions SHALL say what approving does. Other actions of an approval or meeting proposal card, such as **Edit** on the phone's meeting proposal, SHALL NOT be primary and SHALL stay to the left of the decisions.
+
+#### Scenario: Edit on a meeting proposal
+
+- **WHEN** the phone shows a meeting proposal that can be edited
+- **THEN** Edit sits left of Decline and Approve and is not a primary button
 
 ### Requirement: Composer
 
@@ -383,7 +402,7 @@ The web chat page SHALL start with one line holding the chat's name and a `…` 
 
 ### Requirement: Copied and Undo confirmations
 
-The web app SHALL confirm a copy with a short "Copied" toast and offer **Undo** after archiving a chat ("Chat archived"), which restores the chat and reopens it when it was open. The toast SHALL be used for nothing else: never for errors, approvals or questions. One toast SHALL be shown at a time and SHALL be announced politely to screen readers.
+The web app SHALL confirm a copy with a short "Copied" toast and offer **Undo** after archiving a chat ("Chat archived"), which restores the chat and reopens it when it was open. The toast SHALL be used for nothing else: never for errors, approvals, questions or saves. One toast SHALL be shown at a time and SHALL be announced politely to screen readers.
 
 #### Scenario: Undo an archive
 
@@ -394,6 +413,20 @@ The web app SHALL confirm a copy with a short "Copied" toast and offer **Undo** 
 
 - **WHEN** archiving a chat fails
 - **THEN** the error is shown where the action was pressed and no toast appears
+
+#### Scenario: Pet appearance saved
+
+- **WHEN** the person saves the pet's appearance on the web
+- **THEN** the sheet closes, the pet shows the new appearance and no toast or floating "Saved" appears
+
+### Requirement: Saves confirm in place
+
+A save SHALL confirm in place on every client: the form, sheet or dialog returns to its clean or closed state and the saved value is shown, with no toast. Screen readers MAY be told "Saved" through a visually hidden polite status or an accessibility announcement.
+
+#### Scenario: Appearance saved
+
+- **WHEN** the person saves the pet's appearance
+- **THEN** the sheet closes, the new look is shown and no toast appears
 
 ### Requirement: Days in chats
 
@@ -416,7 +449,7 @@ Clients SHALL group the chat list and divide a chat's messages by local calendar
 
 ### Requirement: Attachments wait before sending
 
-The composer SHALL NOT send while an attachment is still being prepared, uploaded or checked, or when one failed. Each attachment chip SHALL show its own state (preparing, uploading, checking, ready or failed, with a retry when the upload can be retried). The mobile app SHALL also say why Send waits, above the composer and in the Send button's label.
+The composer SHALL NOT send while an attachment is still being prepared, uploaded or checked, or when one failed. Each attachment chip SHALL show its own state (preparing, uploading, checking, ready or failed, with a retry when the upload can be retried).
 
 #### Scenario: Slow upload
 
@@ -426,4 +459,18 @@ The composer SHALL NOT send while an attachment is still being prepared, uploade
 #### Scenario: Failed upload
 
 - **WHEN** an attachment failed to upload
-- **THEN** Send stays disabled, the phone composer says an attachment failed and the chip shows the failure
+- **THEN** Send stays disabled, the composer says an attachment failed and the chip shows the failure
+
+#### Scenario: Web composer
+
+- **WHEN** a file added in the web composer is still uploading
+- **THEN** the Send button is named "Wait for the attachment" and the line under the composer says the same, until the file is ready
+
+### Requirement: Send says why it waits
+
+Every client SHALL say why Send waits for an attachment, next to the composer and in the Send button's accessible name, with the same words: "Wait for the attachment" / "Počkej na přílohu" while a file is not ready, "An attachment failed" / "Příloha se nenahrála" when one failed.
+
+#### Scenario: Upload still running on the web
+
+- **WHEN** a file is still uploading in the web composer
+- **THEN** Send is disabled and both its name and the line under the composer say "Wait for the attachment"
