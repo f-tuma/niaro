@@ -13,6 +13,7 @@ import {
   type SessionState,
 } from "../packages/client-core/session";
 import type { Store } from "../packages/client-core/store";
+import type { AttachmentEntry } from "../packages/client-core/attachments";
 import type {
   Conversation,
   ConversationSummary,
@@ -1813,3 +1814,74 @@ test.each(["newer equal-text draft", "new picker", "unmount"])(
     expect(focus.attach.focus).not.toHaveBeenCalled();
   },
 );
+
+/** An attachment runtime double: its files and readiness are set by the test. */
+function fakeAttachments(entries: AttachmentEntry[], ready: boolean) {
+  let state = {
+    capabilities: { enabled: true, limits: { maxFileBytes: 1_000_000 } },
+    discovering: false,
+    target: null,
+    draft: null,
+    entries,
+    busy: false,
+    error: null,
+  };
+  const listeners = new Set<() => void>();
+  const runtime = {
+    available: true,
+    ready,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getSnapshot: () => state,
+    select: jest.fn(),
+    discover: jest.fn(async () => {}),
+    remove: jest.fn(async () => {}),
+    retry: jest.fn(async () => {}),
+    refresh: jest.fn(async () => {}),
+  };
+  return {
+    runtime,
+    set(next: AttachmentEntry[], nextReady: boolean) {
+      state = { ...state, entries: next };
+      runtime.ready = nextReady;
+      listeners.forEach((listener) => listener());
+    },
+  };
+}
+const draftFile = (state: AttachmentEntry["state"]): AttachmentEntry => ({
+  id: "file-1",
+  filename: "nabidka.pdf",
+  mediaType: "application/pdf",
+  size: 2048,
+  state,
+  retryable: state === "failed",
+});
+
+test("Send says why it waits for a file: while it uploads, when it failed, and not once it is ready (NIAR-278)", async () => {
+  const { session, sent } = fakeSession(storeWith([chat([])]));
+  const files = fakeAttachments([draftFile("uploading")], false);
+  (session as unknown as { attachments: unknown }).attachments = files.runtime;
+  const root = await renderChat(session, "conv-1");
+  await typeInto(root, "Tady je nabídka");
+  const send = () =>
+    root.find((node) => node.type === "button" && node.props.type === "submit");
+  expect(send().props["aria-label"]).toBe("Počkej na přílohu");
+  expect(send().props["aria-disabled"]).toBe(true);
+  expect(text(byTestId(root, "composer-send-reason"))).toBe(
+    "Počkej na přílohu",
+  );
+  await press(root, "Enter");
+  expect(sent).toHaveLength(0);
+
+  await act(async () => files.set([draftFile("failed")], false));
+  expect(send().props["aria-label"]).toBe("Příloha se nenahrála");
+  expect(text(byTestId(root, "composer-send-reason"))).toBe(
+    "Příloha se nenahrála",
+  );
+
+  await act(async () => files.set([draftFile("uploaded")], true));
+  expect(send().props["aria-label"]).toBe("Odeslat");
+  expect(allByTestId(root, "composer-send-reason")).toHaveLength(0);
+});

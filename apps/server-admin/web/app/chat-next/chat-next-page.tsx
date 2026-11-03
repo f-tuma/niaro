@@ -71,6 +71,7 @@ import {
   type SessionState,
 } from "../../../../../packages/client-core/session";
 import { messageCommand } from "../../../../../packages/client-core/commands";
+import { attachmentSendReason } from "../../../../../packages/client-core/attachment-send-reason";
 import {
   canRetryPending,
   chatErrorKey,
@@ -2027,6 +2028,13 @@ function Composer({
     !sendBlocked &&
     !disabled &&
     !chat.readOnly;
+  // Why Send waits for a file, as on the phone: on the button and under the
+  // composer, until every file is ready or the failed one is removed.
+  const waitReason = attachmentSendReason(
+    attachments.state.entries,
+    attachments.ready,
+  );
+  const sendReason = waitReason && tr(waitReason);
   const submit = () => {
     if (!canSend) return;
     // The text leaves the composer with the send; a refused send puts it
@@ -2252,7 +2260,7 @@ function Composer({
               variant={canSend ? "default" : "secondary"}
               size="icon-sm"
               className="ml-auto"
-              aria-label={copy.send}
+              aria-label={sendReason || copy.send}
               aria-disabled={!canSend}
             >
               <ArrowUp aria-hidden="true" />
@@ -2260,6 +2268,14 @@ function Composer({
           )}
         </InputGroupAddon>
       </InputGroup>
+      {sendReason && (
+        <p
+          data-testid="composer-send-reason"
+          className="pt-1 text-xs text-muted-foreground"
+        >
+          {sendReason}
+        </p>
+      )}
       {length > COUNTER_FROM && (
         <div className="flex gap-2 pt-1 text-xs">
           {tooLong && (

@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { setStringAsync } from "expo-clipboard";
 import { ChatSearchScreen } from "../apps/mobile/ChatSearch";
 import { Composer } from "../apps/mobile/ScreenChrome";
-import { attachmentSendReason } from "../apps/mobile/chat/composer";
+import { attachmentSendReason } from "../packages/client-core/attachment-send-reason";
 import { projectThread, type ChatMessage } from "../apps/mobile/chat/thread";
 import { resetChatSession } from "../apps/mobile/chat-session";
 import type { ClientSession } from "../packages/client-core/session";

@@ -2,7 +2,7 @@ import React from "react";
 import { Animated, TextInput, View } from "react-native";
 import type { Language, HumanTaskReference } from "../../../packages/protocol";
 import type { VoiceDraft } from "../../../packages/client-core/voice";
-import type { AttachmentEntry } from "../../../packages/client-core/attachments";
+import { attachmentSendReason } from "../../../packages/client-core/attachment-send-reason";
 import { translate, type TranslationKey } from "../../../packages/i18n";
 import { tokens as t } from "../../../packages/design-tokens";
 import { ActionToast, FadeEdge, Notice, Row, Text } from "../../../packages/ui";
@@ -34,21 +34,6 @@ import type { useReplySpeech } from "../ReplySpeech";
 
 type Mentions = ReturnType<typeof useMobileComposerMentions>;
 
-/**
- * Why Send waits for the files in the composer, from the attachment
- * runtime's own states: one failed or expired, or one is still being
- * prepared, uploaded or checked (an uncertain upload is checked from its
- * chip). Nothing when they are ready.
- */
-export function attachmentSendReason(
-  entries: readonly Pick<AttachmentEntry, "state">[],
-  ready: boolean,
-): TranslationKey | undefined {
-  if (!entries.length || ready) return undefined;
-  return entries.some((entry) => ["failed", "expired"].includes(entry.state))
-    ? "attachmentFailedSend"
-    : "attachmentWait";
-}
 type Speech = ReturnType<typeof useReplySpeech>;
 
 /**
