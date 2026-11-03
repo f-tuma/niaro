@@ -1,5 +1,6 @@
 import React from "react";
 import TestRenderer, { act, type ReactTestInstance } from "react-test-renderer";
+import { waitFor } from "@testing-library/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ClientSession } from "../packages/client-core/session";
 import { ConversationOpenWorkError } from "../packages/client-core/conversation-directory";
@@ -170,9 +171,12 @@ test("Escape keeps the old name and sends nothing", async () => {
 test("Pin keeps the chat on top of the list in this browser", async () => {
   const { root } = await render();
   await act(async () => item(root, "Připnout chat").props.onSelect());
-  await act(async () => {});
-  expect([...stored.values()].join()).toContain("conv-1");
-  expect(item(root, "Odepnout chat")).toBeTruthy();
+  // The pin is stored at once; the menu re-reads it on a later render, which
+  // can come a tick later under a loaded test run.
+  await waitFor(() => {
+    expect([...stored.values()].join()).toContain("conv-1");
+    expect(item(root, "Odepnout chat")).toBeTruthy();
+  });
 });
 
 test("Archive leaves the open chat and offers Undo, which brings it back", async () => {
