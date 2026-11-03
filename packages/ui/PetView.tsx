@@ -114,6 +114,11 @@ export type { PetState } from "./pet-motion";
 export type PetControls = {
   /** The pet's own size in points: touches arrive in it. */
   size: number;
+  /**
+   * Whether what it shows is drawn on its current card (`background`): just after the card
+   * changes, the live pet still shows its last frame, drawn on the old one.
+   */
+  upToDate: () => boolean;
   handlers: Partial<React.ComponentProps<typeof View>> &
     Record<string, unknown>;
 };
@@ -284,6 +289,8 @@ export const PetView = memo(function PetView({
     snapshotKey,
     still: still ? (still.exact ? "exact" : "near") : "drawing",
   });
+  // The card of the last frame drawn live.
+  const drawnCard = useRef<string | null>(null);
   const [initialMotion] = useState(() => createPetMotion(state));
   const motion = useRef<PetMotion>(initialMotion);
   const restored = useRef(false);
@@ -498,6 +505,7 @@ export const PetView = memo(function PetView({
             latest.current.background,
           );
           gl?.endFrameEXP();
+          if (renderer) drawnCard.current = latest.current.background;
           if (!renderer) {
             const settled =
               motion.current.touch < 0.001 &&
@@ -958,7 +966,14 @@ export const PetView = memo(function PetView({
   };
   // Every render: the placeholder calls the newest handlers when the person touches it.
   useLayoutEffect(() => {
-    if (controls) controls.current = { size: dimensions.logical, handlers };
+    if (controls)
+      controls.current = {
+        size: dimensions.logical,
+        handlers,
+        // Until it draws live, its stand-in follows the card at once.
+        upToDate: () =>
+          !ready || drawnCard.current === latest.current.background,
+      };
   });
   return (
     <View

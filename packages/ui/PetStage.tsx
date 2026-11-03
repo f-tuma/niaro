@@ -7,9 +7,20 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Platform, type GestureResponderEvent } from "react-native";
-import type { PetAppearance } from "./pet-motion";
+import {
+  Image,
+  PixelRatio,
+  Platform,
+  StyleSheet,
+  View,
+  type GestureResponderEvent,
+} from "react-native";
+import { tokens as t } from "../design-tokens";
+import { useReducedMotion } from "./motion";
+import { PetFallback } from "./PetFallback";
+import { petRenderSize, type PetAppearance, type PetState } from "./pet-motion";
 import { petPerfNote } from "./pet-perf";
+import { petStill, type PetSnapshot } from "./pet-snapshot";
 import {
   attachFollow,
   Follower,
@@ -26,6 +37,11 @@ import { PetView, type PetControls, type PetViewProps } from "./PetView";
  * following it on the UI thread. The slot is what the person touches and what a screen reader
  * reads; the drawn pet only draws. Without a stage (the browser, tests, stories) a slot is simply
  * a `PetView` of its own.
+ *
+ * Handing the pet to a new slot takes the UI thread a frame or more after the new screen shows.
+ * Meanwhile the drawn pet is out of sight and the slot shows the pet's still itself, inside the
+ * new screen from its first frame: never an empty slot, never the pet at the old place on the new
+ * slot's card (NIAR-277).
  */
 export type PetSlotProps = Omit<PetViewProps, "controls"> & {
   size: number;
@@ -46,6 +62,10 @@ type Stage = {
   /** Names the screen's scrolling area, which clips slots marked `clipped`. */
   setClip(clip: FollowRef | null): void;
   look: PetAppearance | null | undefined;
+  /** The newest slot, which holds the pet. */
+  active: number | null;
+  /** The slot the drawn pet is shown over; until then the active slot shows a still. */
+  covered: number | null;
 };
 const StageContext = createContext<Stage | null>(null);
 
@@ -79,7 +99,7 @@ export function PetStage({
     last: PetSlotProps | null;
   }>({ slots: [], last: null });
   const [clip, setClip] = useState<FollowRef | null>(null);
-  const [stage] = useState<Omit<Stage, "look">>(() => ({
+  const [stage] = useState<Omit<Stage, "look" | "active" | "covered">>(() => ({
     add: (slot) =>
       setSlots(({ slots }) => ({ slots: [...slots, slot], last: slot.props })),
     update: (id, props) =>
@@ -97,9 +117,40 @@ export function PetStage({
     // A ref is a function: wrapped, so React does not take it for an updater.
     setClip: (next) => setClip(() => next),
   }));
-  const value = useMemo(() => ({ ...stage, look }), [stage, look]);
   const active = slots.at(-1);
+  const activeId = active?.id ?? null;
+  const [covered, setCovered] = useState<number | null>(null);
+  // A new slot is covered only once the pet has been placed over it.
+  if (covered !== null && covered !== activeId) setCovered(null);
+  const value = useMemo(
+    () => ({ ...stage, look, active: activeId, covered }),
+    [stage, look, activeId, covered],
+  );
+  const current = useRef(active);
+  useLayoutEffect(() => {
+    current.current = active;
+  });
+  // Placed on the UI thread: shown once the live pet also shows the slot's card, so its old
+  // card is never seen as a box on the new one.
+  const placed = useCallback((id: number) => {
+    let frames = 0;
+    const settle = () => {
+      const slot = current.current;
+      if (slot?.id !== id) return;
+      if (slot.controls.current?.upToDate() === false && ++frames < 30) {
+        requestAnimationFrame(settle);
+        return;
+      }
+      petPerfNote(
+        `stage: shown over ${slot.props.testID ?? "niaro-pet"}${frames ? ` after ${frames} frames for its card` : ""}`,
+      );
+      setCovered(id);
+    };
+    settle();
+  }, []);
   const props = active?.props ?? last;
+  // A slot that is not visible (under a sheet, scrolled away) keeps its pet, only paused: hiding
+  // it would empty the slot for the frames before the sheet covers it.
   const shown = !!active && active.props.visible !== false;
   const [idle] = useState(() => ({ current: null as PetControls | null }));
   const announced = useRef<number | null>(null);
@@ -128,7 +179,10 @@ export function PetStage({
           target={active?.target ?? null}
           clip={active?.props.clipped ? clip : null}
           size={PET_STAGE_SIZE}
-          shown={shown}
+          shown={!!active}
+          slot={activeId}
+          onPlaced={placed}
+          revealed={covered !== null}
         >
           <PetView
             {...props}
@@ -221,6 +275,8 @@ function StagedSlot({ stage, ...props }: PetSlotProps & { stage: Stage }) {
     visible = true,
     state = "idle",
   } = props;
+  // Newest, not yet covered by the drawn pet: this slot shows the pet itself meanwhile.
+  const standIn = stage.active === id && stage.covered !== id;
   const actionable = interactive || !!onPress;
   const enabled =
     actionable &&
@@ -265,9 +321,91 @@ function StagedSlot({ stage, ...props }: PetSlotProps & { stage: Stage }) {
       {...Object.fromEntries(RESPONDER.map((name) => [name, forward(name)]))}
       onResponderTerminationRequest={() => true}
       style={{ width: side, height: side }}
-    />
+    >
+      {standIn ? (
+        <SlotStill
+          size={side}
+          appearance={props.appearance}
+          background={props.background}
+          state={state}
+          animate={props.animate}
+        />
+      ) : null}
+    </FollowView>
   );
 }
+
+/**
+ * The stage pet's still for a slot (its first frame at the stage's drawing size, else a near one),
+ * over the drawing of its look until the still is decoded: what the slot shows until the drawn
+ * pet stands over it.
+ */
+function SlotStill({
+  size,
+  appearance,
+  background = t.color.background,
+  state,
+  animate = true,
+}: {
+  size: number;
+  appearance?: PetAppearance;
+  background?: string;
+  state: PetState;
+  animate?: boolean;
+}) {
+  const reduced = useReducedMotion() || !animate;
+  const pixels = petRenderSize(
+    PET_STAGE_SIZE,
+    Math.max(1, PixelRatio.get()),
+  ).pixels;
+  const still = useMemo(
+    () => petStill({ appearance, background, state, pixels, reduced }),
+    [appearance, background, state, pixels, reduced],
+  );
+  const [decoded, setDecoded] = useState<PetSnapshot | null>(null);
+  const source = still?.source ?? null;
+  return (
+    <View
+      pointerEvents="none"
+      aria-hidden
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      testID="pet-slot-still"
+      style={styles.still}
+    >
+      {source === null || decoded !== source ? (
+        <PetFallback
+          appearance={appearance}
+          size={size}
+          resting={state === "resting"}
+        />
+      ) : null}
+      {source !== null ? (
+        <Image
+          source={typeof source === "number" ? source : { uri: source }}
+          fadeDuration={0}
+          // One decoded bitmap per still, whatever the slot's size: shown from memory at once.
+          resizeMethod="scale"
+          onLoad={() => setDecoded(source)}
+          style={[styles.image, { width: size, height: size }]}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  still: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  image: { position: "absolute", left: 0, top: 0 },
+});
 
 function shallowEqual(a: object, b: object) {
   const x = a as Record<string, unknown>,

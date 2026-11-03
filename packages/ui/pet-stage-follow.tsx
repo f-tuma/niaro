@@ -8,6 +8,7 @@ import Animated, {
   useSharedValue,
   type AnimatedRef,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { petPlacement } from "./pet-stage-place";
 
 /** A view the stage can find on the UI thread: a slot, or the area that clips it. */
@@ -36,12 +37,20 @@ const UNPLACED = {
  * opacity change, so each frame's placement is drawn in that frame. Until the slot is measured the
  * pet is not shown; before any slot it still lays out at full size (hidden), so its GL surface is
  * created and its shader compiles while the app starts.
+ *
+ * A new slot is followed only once the screen that holds it has committed, a frame or more after
+ * that screen shows (NIAR-277): until the UI thread has placed the pet over it (`onPlaced`) the
+ * stage keeps the pet out of sight with `revealed`, a prop committed together with that screen,
+ * so the pet is never seen at the old slot's place.
  */
 export function Follower({
   target,
   clip,
   size,
   shown,
+  slot,
+  onPlaced,
+  revealed,
   children,
 }: {
   target: FollowRef | null;
@@ -49,16 +58,27 @@ export function Follower({
   /** The pet's own size in points; a slot of another size scales it. */
   size: number;
   shown: boolean;
+  /** The slot followed, named in `onPlaced`. */
+  slot: number | null;
+  /** Once the pet stands over `slot` on the UI thread; stable. */
+  onPlaced: (slot: number) => void;
+  /** Shows the pet; false while it is handed to a new slot. */
+  revealed: boolean;
   children: React.ReactNode;
 }) {
   const host = useAnimatedRef<View>();
   const active = useSharedValue(shown);
   const placed = useSharedValue(0);
   const place = useSharedValue(UNPLACED);
+  // The slot last reported as placed; a new slot is reported again.
+  const told = useSharedValue<number | null>(null);
   // Before paint, so the pet is placed in the frame its slot first shows.
   useLayoutEffect(() => {
     active.set(shown && !!target);
   }, [active, shown, target]);
+  useLayoutEffect(() => {
+    told.set(null);
+  }, [told, slot]);
   const follow = useCallback(() => {
     "worklet";
     if (!active.get() || !target) {
@@ -85,7 +105,11 @@ export function Follower({
     )
       place.set(next);
     if (placed.get() !== 1) placed.set(1);
-  }, [active, clip, host, place, placed, size, target]);
+    if (slot !== null && told.get() !== slot) {
+      told.set(slot);
+      scheduleOnRN(onPlaced, slot);
+    }
+  }, [active, clip, host, place, placed, size, target, slot, onPlaced, told]);
   useFrameCallback(follow);
   const outer = useAnimatedStyle(() => ({
     opacity: placed.get(),
@@ -112,7 +136,7 @@ export function Follower({
       ref={host}
       collapsable={false}
       pointerEvents="none"
-      style={StyleSheet.absoluteFill}
+      style={[StyleSheet.absoluteFill, { opacity: revealed ? 1 : 0 }]}
     >
       <Animated.View pointerEvents="none" style={[styles.layer, outer]}>
         <Animated.View pointerEvents="none" style={[styles.layer, inner]}>
