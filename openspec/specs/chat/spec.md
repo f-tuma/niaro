@@ -25,6 +25,21 @@ The mobile app SHALL start the main chat empty after an app launch and after fou
 - **THEN** the previous main chat appears in the archive as a read-only chat
 - **AND** the assistant answers without the earlier session's short-term context
 
+#### Scenario: Task of the earlier session
+
+- **WHEN** the main chat holds a task that read a service and the first message after an app launch starts a new session
+- **THEN** the task names the session archive and the archive's messages stay unchanged
+- **AND** the phone stays online and receives the answer
+
+### Requirement: Tasks that follow a session into its archive
+
+A task of the earlier session that follows it into the session archive SHALL be served with the archive as an empty, read-only reference, and the person's snapshot, events and commands SHALL keep working.
+
+#### Scenario: Failed turn from the earlier session
+
+- **WHEN** the first message of a new session archives the main chat while an earlier failed turn is still in the task window
+- **THEN** the person's snapshot, events and commands keep answering and the app stays online
+
 ### Requirement: Renaming a chat
 
 The system SHALL rename a chat for all of the person's clients with `conversation.rename {conversationId, title}`; `title` SHALL be trimmed and at most 160 characters, and an empty title SHALL restore the server's title (the first request). Renaming SHALL NOT change any message or a reply in flight, and an archived chat SHALL be renameable.
