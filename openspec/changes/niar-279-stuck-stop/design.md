@@ -34,9 +34,16 @@ Alternative considered: clear the request locally without asking. Rejected: afte
 
 The failed message stays in its chat: the phone's `RequestProgressCard` and the web's progress line show Retry and Dismiss. The phone's global Retry skips `message.send`; the web already shows only "An unfinished request is waiting in another chat" with Open elsewhere. After a Dismiss that released an unrecorded message, its text returns to the composer when the composer is empty and the same chat is open.
 
+On the phone, another chat that holds the request is named above the composer (`apps/mobile/chat/OtherChatNotice.tsx`, English and Czech copy in one block, the same words as the web's `chat-copy.ts`). Open reads that chat's summary (`readConversation`) and opens it as a chat from the menu does; if the read fails it switches to the chat by id. Stop is offered there only while `runningChat` names that chat, and only for `message.send` and `process.answer`, as on the web.
+
+### D4. A meeting does not depend on a failed request
+
+`MeetingLibrary` asks `onStartRecording` before it records, and refuses with `meeting_interrupt_failed` when that answers false. The phone answered with `interruptPending()` for any pending command, so a failed message (`not_running`) blocked every recording. It now interrupts only a command whose state is `sending`; otherwise recording starts at once and the failed message keeps its Retry and Dismiss.
+
 ## Verification
 
 - `tests/failed-request-recovery.test.ts` (client-core, real `ClientSession` over a fake fetch): every model 503 code, a 500 and a dropped connection leave a kept, not-running request; Stop's interrupt is refused (`not_running`) as before; Dismiss clears on `not_running`, shows the receipt on `settled`, keeps Retry and Dismiss on `not_settled` / lost / 500, refuses while running and while offline, and works for a request restored from the outbox. The failed command is posted once; Retry posts the identical body.
-- `tests/failed-request-mobile.test.tsx`: the phone composer leaves Stop for the microphone, the card offers Retry and Dismiss, Dismiss restores the text, an unconfirmed Dismiss keeps both, and Meetings, Tasks and Library show no Retry.
+- `tests/failed-request-mobile.test.tsx`: the phone composer leaves Stop for the microphone, the card offers Retry and Dismiss, Dismiss restores the text, an unconfirmed Dismiss keeps both, and Meetings, Tasks and Library show no Retry; another chat's waiting or running message is named with Open (and Stop only while running), in English and Czech.
+- `tests/mobile-user-journeys.test.tsx`: a meeting records at once beside a failed chat request (no interrupt), and stops a running one first.
 - `tests/web-chat-next.test.tsx`: the web composer leaves Stop for Send, the progress line offers Retry and Dismiss, Dismiss restores the text. Esc shares `stoppable` with the Stop button; the node test environment has no `window` key listener, so Esc is not exercised.
 - Existing interruption, answer stream and work cancel suites unchanged.

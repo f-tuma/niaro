@@ -807,6 +807,93 @@ test.each([
   },
 );
 
+// NIAR-279: only a running request is stopped before a meeting records; a
+// failed one stays in its chat with Retry and Dismiss.
+test.each([
+  ["failed", "network_error", false],
+  ["running", "sending", true],
+] as const)(
+  "a %s chat request and a meeting recording",
+  async (_name, commandState, interrupts) => {
+    const f = await fixture();
+    const snapshot = emptySnapshot();
+    const pending: SessionCommand = {
+      type: "message.send",
+      commandId: "TEST-failed-C",
+      idempotencyKey: "TEST-failed-C",
+      conversationId: "conversation-1",
+      text: "TEST find Peter",
+      language: "en",
+    };
+    const state: SessionState = {
+      store: fromSnapshot(
+        "https://fixture.test/v1/a",
+        snapshot.scope,
+        snapshot,
+      ),
+      status: "online",
+      pending,
+      processPending: null,
+      answerAttempts: [],
+      answerRecoveryBlocked: false,
+      commandStates: { [commandTarget(pending)]: commandState },
+      error: commandState === "sending" ? null : "model_unavailable",
+      activity: null,
+      activityConnection: "waiting",
+    };
+    const session = {
+      ...f.session,
+      getSnapshot: () => state,
+      subscribe: () => () => {},
+      start: jest.fn(async () => {}),
+      stop: jest.fn(),
+      refresh: jest.fn(async () => {}),
+      // A failed request cannot be stopped: the server answers not_running.
+      interruptPending: jest.fn(async () => commandState === "sending"),
+      discardPending: jest.fn(async () => true),
+      readHumanTasks: jest.fn(async () => ({
+        tasks: [],
+        next: null,
+        counts: { open: 0, done: 0 },
+      })),
+      readConversations: jest.fn(async () => ({
+        profile: CONVERSATION_HISTORY_PROFILE,
+        scope: snapshot.scope,
+        conversations: [],
+        nextAfter: null,
+      })),
+    } as unknown as ClientSession;
+    function Harness() {
+      const [section, setSection] = useState<Section>("meetings");
+      return (
+        <Workspace
+          session={session}
+          language="en"
+          section={section}
+          setSection={setSection}
+          settings={null}
+          authError={null}
+          spokenReplies={false}
+        />
+      );
+    }
+    const flush = async () => {
+      for (let i = 0; i < 30; i++) await Promise.resolve();
+    };
+    const view = render(<Harness />);
+    await act(flush);
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: en.meetingRecord }));
+      await flush();
+    });
+    expect(session.interruptPending).toHaveBeenCalledTimes(interrupts ? 1 : 0);
+    expect(session.discardPending).not.toHaveBeenCalled();
+    expect(screen.queryByText(en.meeting_interrupt_failed)).toBeNull();
+    expect(f.capture.getSnapshot().phase).toBe("recording");
+    view.unmount();
+  },
+);
+
 test("an accepted first message keeps edits made while the new chat was being saved", async () => {
   const f = await fixture();
   const snapshot = emptySnapshot();

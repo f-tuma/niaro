@@ -16,6 +16,8 @@
 - [x] 3.1 Phone: Stop only while running; the progress card offers Retry and Dismiss; Dismiss returns an unrecorded message to an empty composer.
 - [x] 3.2 Phone: the global Retry no longer offers a chat message.
 - [x] 3.3 Web: Stop and Esc only while running; the progress line offers Retry and Dismiss; Dismiss returns an unrecorded message to an empty composer.
+- [x] 3.4 Phone: a meeting recording interrupts a chat request only while it runs; test that a failed one neither blocks nor is interrupted (D4).
+- [x] 3.5 Phone: another chat holding the request is named with Open, and Stop only while it runs, in English and Czech; test both states and Open.
 
 ## 4. Verification
 

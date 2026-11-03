@@ -40,3 +40,22 @@ The phone app SHALL NOT offer a Retry of a chat message on any screen other than
 
 - **WHEN** a chat message failed and the person opens Meetings, Tasks or Library
 - **THEN** no Retry for that message is shown there
+
+### Requirement: Another chat holds the request
+
+When a chat cannot send because another chat holds the person's request, the phone app and the web app SHALL say so next to the composer, waiting or still running, with Open to that chat. They SHALL offer Stop there only while that request runs.
+
+#### Scenario: Failed message in another chat
+
+- **WHEN** a message failed in one chat and the person opens another chat
+- **THEN** that chat says an unfinished request is waiting in another chat, with Open and without Stop
+- **AND** Open shows the failed message in its own chat with Retry and Dismiss
+
+### Requirement: A meeting does not wait for a failed request
+
+Starting a meeting recording SHALL stop a chat request first only while it runs. A failed request SHALL NOT keep a recording from starting and SHALL stay in its chat.
+
+#### Scenario: Recording beside a failed message
+
+- **WHEN** a chat message failed and the person starts a meeting recording
+- **THEN** the recording starts without asking the server to stop anything

@@ -17,13 +17,13 @@ When the server answered a chat message with an error (a model error such as `mo
 - A request that failed, or that was found in the outbox after a restart, shows its failure in its chat with **Retry** (the exact command, as before) and **Dismiss**. The composer is back to the microphone or Send.
 - Dismiss (`ClientSession.discardPending`) asks the server about the exact command through the existing `commands/interrupt`. `settled` shows the recorded outcome; `unknown` / `not_running` (neither running nor recorded) clears the request without an outcome, and a message the server never recorded goes back into an empty composer; any other answer keeps the request with Retry and Dismiss and says the stop was not confirmed. Dismiss never resends anything.
 - The phone's global "Retry same command" no longer offers a chat message; that message is retried or dismissed in its chat.
+- Starting a meeting recording on the phone stops a chat request first only while it runs. A failed one no longer blocks recording ("meeting_interrupt_failed" came from asking to stop a request that was not running); it stays in its chat.
+- A phone chat that cannot send because another chat holds the request says so, as the web does: "An unfinished request is waiting in another chat" or "An answer is still running in another chat", with **Open** to that chat and **Stop** only while it runs.
 
 ## Non-goals
 
 - Server changes. `commands/interrupt` already answers what Dismiss needs.
 - Process commands (`process.start`, `process.answer`, …) keep their own recovery cards.
-- Starting a meeting recording while a failed message is kept still asks to stop it first (`onStartRecording` calls `interruptPending`); reported separately.
-- Telling the person on the phone which other chat holds a failed message (the web already says so).
 
 ## Risk
 

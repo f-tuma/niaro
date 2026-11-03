@@ -44,6 +44,7 @@ type Speech = ReturnType<typeof useReplySpeech>;
 export function ChatFooter({
   language,
   notice,
+  otherChat,
   errorKey,
   diagnostic,
   speech,
@@ -82,6 +83,8 @@ export function ChatFooter({
 }: {
   language: Language;
   notice?: React.ComponentProps<typeof ProcessCommandNoticeView>["notice"];
+  /** Another chat holds the request that keeps this one from sending. */
+  otherChat?: React.ReactNode;
   errorKey: TranslationKey | null;
   diagnostic?: React.ComponentProps<
     typeof ConnectionFailureNotice
@@ -129,6 +132,7 @@ export function ChatFooter({
       {notice ? (
         <ProcessCommandNoticeView language={language} notice={notice} />
       ) : null}
+      {otherChat}
       {errorKey ? (
         <View style={{ gap: t.spacing.sm }}>
           {errorKey === "connection_failed" && diagnostic ? (

@@ -183,6 +183,7 @@ import { WorkItemSummary } from "../../packages/ui-catalog/WorkItemSummary";
 import type { ProcessOfferResult } from "../../packages/protocol/process-offer";
 
 import { ChatThread } from "./chat/ChatThread";
+import { OtherChatNotice } from "./chat/OtherChatNotice";
 import { answerAnnouncement } from "./chat/announce";
 import { ChatFooter } from "./chat/composer";
 import { MobileChatProvider, type MobileChat } from "./chat/parts";
@@ -1683,6 +1684,23 @@ export function Workspace({
     canRetryPending(state, conversationId)
       ? state.pending
       : null;
+  // Another chat holds the one request at a time: this chat says so and
+  // leads there, as on the web.
+  const otherChat =
+    state.pending &&
+    state.pending.conversationId !== conversationId &&
+    !state.pending.type.startsWith("conversation.")
+      ? state.pending
+      : null;
+  const otherChatRunning =
+    !!otherChat && runningChat(state) === otherChat.conversationId;
+  const openOtherChat = (id: string) => {
+    if (!session) return;
+    void session.readConversation(id).then(
+      (page) => openHistoryConversation(page.conversation),
+      () => switchConversation(id),
+    );
+  };
   const dismissFailed = () => {
     const failed = failedMessage;
     if (!session || !failed || dismissing) return;
@@ -2631,7 +2649,12 @@ export function Workspace({
                 onRecording={setMeetingRecording}
                 onRecordingControls={setMeetingRecordingControl}
                 onStartRecording={() => {
-                  return session.getSnapshot().pending
+                  // Only a running request is stopped first; a failed one
+                  // stays in its chat with Retry and Dismiss.
+                  const current = session.getSnapshot();
+                  return current.pending &&
+                    current.commandStates[commandTarget(current.pending)] ===
+                      "sending"
                     ? session.interruptPending()
                     : true;
                 }}
@@ -2806,6 +2829,24 @@ export function Workspace({
           <ChatFooter
             language={language}
             notice={processAnnouncement.notice ?? undefined}
+            otherChat={
+              otherChat && !historySelection?.readOnly ? (
+                <OtherChatNotice
+                  language={language}
+                  running={otherChatRunning}
+                  onOpen={() => openOtherChat(otherChat.conversationId)}
+                  onStop={
+                    otherChat.type === "message.send" ||
+                    otherChat.type === "process.answer"
+                      ? () => {
+                          void session.interruptPending();
+                        }
+                      : undefined
+                  }
+                  disabled={!online}
+                />
+              ) : undefined
+            }
             errorKey={errorKey}
             diagnostic={state.connectionDiagnostic}
             speech={speech}
