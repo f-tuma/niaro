@@ -77,9 +77,11 @@ import {
   chatRequestFailed,
   chatErrorKey,
   chatOwnsError,
-  heldForRecovery,
+  commandRunning,
+  failedMessageCaption,
   isUserMessageRecorded,
   runningChat,
+  selectFailedMessages,
   selectPendingChatMessage,
   processAnswerCardShown,
 } from "../../../../../packages/client-core/chat-view";
@@ -175,6 +177,7 @@ import {
 } from "./parts";
 import {
   appendedText,
+  failedMessage as failedThreadMessage,
   liveMessage,
   nextMeta,
   pendingMessage,
@@ -571,8 +574,9 @@ export function ChatNextConversation({
   };
   /**
    * Sends a message. The composer's own text has left it already (assistant-ui
-   * resets it on send); a send the server does not accept puts the text
-   * back unless something new was typed meanwhile.
+   * resets it on send) and never comes back once the session takes it: the
+   * message is then in the chat, still working, failed with Try again, or
+   * answered. Only a send the session did not take returns to the composer.
    */
   const submitMessage = (
     value: string,
@@ -667,27 +671,28 @@ export function ChatNextConversation({
         [...picked, ...sentMentions(value, directory)],
         mentions,
       );
-    const restore = () => {
-      // A message whose outcome is unknown stays out of the composer: its
-      // chat offers Retry and Dismiss, and a confirmed Dismiss gives it back.
-      if (!processReply && heldForRecovery(session.getSnapshot(), command))
-        return;
-      if (!options.detached && !draftRef.current.trim()) setComposerText(value);
-    };
     const attachmentCaptionRevision = options.withAttachments
       ? draftRevision.current
       : undefined;
-    void session
-      .send(command, false, undefined, noticeOwner)
+    const delivery = session.send(command, false, undefined, noticeOwner);
+    if (session.getSnapshot().pending?.commandId !== command.commandId) {
+      // Never taken: the words did not leave this device.
+      if (!options.detached && !draftRef.current.trim()) setComposerText(value);
+    } else if (
+      attachmentCaptionRevision !== undefined &&
+      draftRevision.current === attachmentCaptionRevision
+    )
+      // "Again" with files showed its words in the composer while the files
+      // were pinned; once sent, they are in the chat only.
+      setComposerText("");
+    void delivery
       .then(() => {
         const current = session.getSnapshot();
         const accepted =
           current.commandStates[commandTarget(command)] === "accepted";
         if (processReply) {
-          if (!accepted) {
-            restore();
-            return;
-          }
+          // A refused or lost answer is kept below the thread for review.
+          if (!accepted) return;
           // The question stays shown until the run records the answer.
           if (contextRef.current === replyContext)
             setAnswerCaption({
@@ -702,21 +707,12 @@ export function ChatNextConversation({
           setAttachedTask((attached) =>
             attached?.id === task.id ? undefined : attached,
           );
-        if (!accepted && !recorded) {
-          restore();
-          return;
-        }
-        if (
-          attachmentCaptionRevision !== undefined &&
-          alive.current &&
-          draftRevision.current === attachmentCaptionRevision
-        )
-          setComposerText("");
+        // A message that did not go through stays in the chat as failed.
+        if (!accepted && !recorded) return;
         if (contextRef.current === (replyContext ?? undefined))
           setContext(undefined);
       })
       .catch((error: unknown) => {
-        restore();
         setReplyError(
           sendErrorKey(
             error,
@@ -938,6 +934,11 @@ export function ChatNextConversation({
   // The thread: stored messages with the day they start, the message on its
   // way and the answer being written.
   const pending = selectPendingChatMessage(state, id);
+  const failedMessages = useMemo(
+    () => selectFailedMessages(state, id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.failedMessages, id],
+  );
   // The run continues after an approval: its draft and steps are shown the
   // same way as the message's own run.
   const progressCommand =
@@ -1006,6 +1007,14 @@ export function ChatNextConversation({
       });
       if (converted) thread.push(converted);
     });
+    for (const failed of failedMessages)
+      thread.push(
+        failedThreadMessage(
+          failed.command.commandId,
+          failed.command.text,
+          failedMessageCaption(failed, tr),
+        ),
+      );
     // A process answer on its way or being checked shows the same way.
     if (pending && state.pending)
       thread.push(pendingMessage(state.pending.commandId, pending.text));
@@ -1047,6 +1056,7 @@ export function ChatNextConversation({
     directory,
     readOnly,
     pending,
+    failedMessages,
     progressCommand,
     state.activity,
     state.activitySteps,
@@ -1058,9 +1068,7 @@ export function ChatNextConversation({
   ]);
   // Stop is for a request that still runs. One that failed is kept for an
   // exact Retry or a Dismiss instead.
-  const isRunning =
-    !!progressCommand &&
-    state.commandStates[commandTarget(progressCommand)] === "sending";
+  const isRunning = !!progressCommand && commandRunning(state, progressCommand);
   // Offline nothing can be stopped, so Stop and Esc wait for the connection.
   const stoppable =
     state.status === "online" &&
@@ -1076,21 +1084,10 @@ export function ChatNextConversation({
     const failed = failedMessage;
     if (!failed || dismissing) return;
     setDismissing(true);
-    void session
-      .discardPending()
-      .then((released) => {
-        // A message the server never recorded goes back to an empty composer.
-        if (
-          released &&
-          alive.current &&
-          !isUserMessageRecorded(session.getSnapshot().store, failed) &&
-          !draftRef.current.trim()
-        )
-          setComposerText(failed.text);
-      })
-      .finally(() => {
-        if (alive.current) setDismissing(false);
-      });
+    // Dismiss only lets the message go; its words never go to the composer.
+    void session.discardPending().finally(() => {
+      if (alive.current) setDismissing(false);
+    });
   };
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     messages: threadMessages,
@@ -1234,6 +1231,12 @@ export function ChatNextConversation({
     retry: retryable ? () => void session.retry(noticeOwner) : undefined,
     dismiss: failedMessage ? dismiss : undefined,
     dismissing,
+    retryFailed:
+      online && !busy && !readOnly
+        ? (commandId) =>
+            void session.retryFailedMessage(commandId, newId()).catch(() => {})
+        : undefined,
+    dismissFailed: (commandId) => session.dismissFailedMessage(commandId),
   };
 
   if (!valid)
@@ -1739,7 +1742,9 @@ function UserMessage() {
   const chat = useNextChat();
   const { copy, language } = useChatCopy();
   const meta = nextMeta(message);
-  const pending = meta.kind === "pending";
+  // A failed message is not stored either: no message actions, no anchor.
+  const failed = meta.kind === "failed";
+  const pending = meta.kind === "pending" || failed;
   const text = threadText(message);
   // A search jump shows its hit whole.
   const linked = linkedMessageId(
@@ -1754,7 +1759,9 @@ function UserMessage() {
       >
         <article
           aria-label={copy.you}
-          data-testid={pending ? "pending-message" : undefined}
+          data-testid={
+            failed ? "failed-message" : pending ? "pending-message" : undefined
+          }
           className="flex flex-col items-end gap-1 pl-10 sm:pl-16"
         >
           {meta.task && (
@@ -1774,12 +1781,37 @@ function UserMessage() {
           ) : null}
           {text.trim() ? (
             <div
-              data-pending={pending}
+              data-pending={pending && !failed}
               className="flex max-w-full flex-col items-start rounded-2xl bg-muted px-4 py-2.5 text-md leading-chat break-words whitespace-pre-wrap data-[pending=true]:opacity-60"
             >
               <FoldedText text={text} foldable={linked !== message.id}>
                 <MessagePrimitive.Parts components={userParts} />
               </FoldedText>
+            </div>
+          ) : null}
+          {failed && meta.failedCommandId ? (
+            <div className="flex flex-col items-end gap-1.5">
+              <p role="status" className="text-xs text-muted-foreground">
+                {meta.hint}
+              </p>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!chat.retryFailed}
+                  onClick={() => chat.retryFailed?.(meta.failedCommandId!)}
+                >
+                  <RefreshCw data-icon="inline-start" aria-hidden="true" />
+                  {copy.retry}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => chat.dismissFailed(meta.failedCommandId!)}
+                >
+                  {copy.dismiss}
+                </Button>
+              </div>
             </div>
           ) : null}
         </article>

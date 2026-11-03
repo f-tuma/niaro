@@ -587,6 +587,8 @@ export const en = {
   progressFailedHint: "Couldn't finish. Try again.",
   progressRetry: "Try again",
   progressDismiss: "Dismiss",
+  messageNotSent: "Not sent",
+  messageFiles: "Attached files: {n}",
   progressInterrupt: "Stop this request",
   progressInterruptRetry: "Retry stopping this request",
   catalog_budget_exhausted:
@@ -1582,6 +1584,8 @@ export const cs: Record<TranslationKey, string> = {
   progressFailedHint: "Nepodařilo se dokončit. Zkus to znovu.",
   progressRetry: "Zkusit znovu",
   progressDismiss: "Zahodit",
+  messageNotSent: "Neodesláno",
+  messageFiles: "Přiložené soubory: {n}",
   progressInterrupt: "Přerušit tento požadavek",
   progressInterruptRetry: "Zkusit požadavek znovu přerušit",
   catalog_budget_exhausted:

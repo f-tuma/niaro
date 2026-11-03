@@ -165,10 +165,10 @@ import {
   canRetryPending,
   chatRequestFailed,
   chatErrorKey,
-  heldForRecovery,
   isUserMessageRecorded,
   processAnswerCardShown,
   runningChat,
+  selectFailedMessages,
   selectPendingChatMessage,
 } from "../../packages/client-core/chat-view";
 import {
@@ -1290,10 +1290,10 @@ export function Workspace({
         command,
       };
     }
-    // As on the web, the text leaves the composer on send; a send the server
-    // does not take puts it back unless something new was typed meanwhile.
-    // A send whose outcome is unknown stays out: its chat offers Retry and
-    // Dismiss, and only a Dismiss the server confirms gives the text back.
+    // As on the web, the text leaves the composer on send and never comes
+    // back: a message the session took is in the chat (still working, failed
+    // with Try again, or answered). Only a send the session did not take at
+    // all stays in the composer.
     let clearedRevision: number | undefined;
     if (
       !isProcessReply(replyContext) &&
@@ -1307,17 +1307,15 @@ export function Workspace({
       draftRevision.current === submittedDraftRevision ||
       (clearedRevision !== undefined &&
         draftRevision.current === clearedRevision);
-    const restore = () => {
-      if (
-        clearedRevision !== undefined &&
-        !heldForRecovery(session.getSnapshot(), command) &&
-        draftRevision.current === clearedRevision &&
-        conversationRef.current === command.conversationId
-      )
-        setDraft(value);
-    };
-    void session
-      .send(command, false, undefined, noticeOwner)
+    const delivery = session.send(command, false, undefined, noticeOwner);
+    if (
+      session.getSnapshot().pending?.commandId !== command.commandId &&
+      clearedRevision !== undefined &&
+      draftRevision.current === clearedRevision &&
+      conversationRef.current === command.conversationId
+    )
+      setDraft(value);
+    void delivery
       .then(() => {
         const current = session.getSnapshot();
         const recorded = isUserMessageRecorded(current.store, command);
@@ -1369,7 +1367,6 @@ export function Workspace({
         ) {
           if (nativeSubmission.current?.commandId === command.commandId)
             nativeSubmission.current.deliveryFailed = true;
-          restore();
           return;
         }
         if (isProcessReply(replyContext)) {
@@ -1390,7 +1387,6 @@ export function Workspace({
         }
       })
       .catch((error: unknown) => {
-        restore();
         if (
           contextGeneration.current !== generation ||
           contextRef.current !== (replyContext ?? undefined)
@@ -1720,19 +1716,8 @@ export function Workspace({
     const failed = failedMessage;
     if (!session || !failed || dismissing) return;
     setDismissing(true);
-    void session
-      .discardPending()
-      .then((released) => {
-        // A message the server never recorded goes back to an empty composer.
-        if (
-          released &&
-          !isUserMessageRecorded(session.getSnapshot().store, failed) &&
-          !draftRef.current &&
-          conversationRef.current === failed.conversationId
-        )
-          setDraft(failed.text);
-      })
-      .finally(() => setDismissing(false));
+    // Dismiss only lets the message go; its words never go to the composer.
+    void session.discardPending().finally(() => setDismissing(false));
   };
   const referencedWork = store
     ? selectPresentedWork(store, conversationId, messages)
@@ -1894,7 +1879,10 @@ export function Workspace({
       );
     },
   };
-  const hasConversation = messages.length > 0 || work.length > 0;
+  const failedMessages = selectFailedMessages(state, conversationId);
+  // A failed message keeps its chat open, even as the chat's first message.
+  const hasConversation =
+    messages.length > 0 || work.length > 0 || failedMessages.length > 0;
   // A screen the app's one pet stands on fades in without sliding: the pet is drawn over it by
   // the stage, which sees where a native-driven slide ends only once it has ended (NIAR-276).
   const petStage = petOpen || (section === "chat" && !hasConversation && !busy);
@@ -2102,7 +2090,8 @@ export function Workspace({
               release();
               if (nativeSubmission.current?.commandId === commandId)
                 nativeSubmission.current.deliveryFailed = true;
-              if (!native) setDraft((current) => current || text);
+              // A spoken message that failed stays in the chat as failed
+              // with Try again; its words never go into the composer.
             } else {
               if (voiceTask)
                 setAttachedTask((attached) =>
@@ -2823,6 +2812,22 @@ export function Workspace({
                 <MobileChatProvider value={chat}>
                   <ChatThread
                     entries={threadEntries}
+                    failedMessages={failedMessages}
+                    onRetryFailed={
+                      session && online && !busy && !historySelection?.readOnly
+                        ? (commandId) => {
+                            nearBottom.current = true;
+                            void session
+                              .retryFailedMessage(commandId, randomUUID())
+                              .catch(() => {});
+                          }
+                        : undefined
+                    }
+                    onDismissFailed={
+                      session
+                        ? (commandId) => session.dismissFailedMessage(commandId)
+                        : undefined
+                    }
                     pendingMessage={pendingMessage}
                     trailing={trailing}
                     heldReply={heldReply}
@@ -2918,9 +2923,8 @@ export function Workspace({
               historyLoading ||
               (!!context && !validContext)
             }
-            sending={Object.values(state.commandStates).includes("sending")}
             onStop={
-              // Offline nothing can be stopped: the sending spinner stays.
+              // Offline nothing can be stopped; a background check is not running.
               online &&
               state.pending?.type === "message.send" &&
               runningChat(state) === conversationId

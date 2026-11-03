@@ -3,7 +3,6 @@ import { messageCommand } from "../packages/client-core/commands";
 import {
   canRetryPending,
   chatRequestFailed,
-  heldForRecovery,
   runningChat,
 } from "../packages/client-core/chat-view";
 import { FixtureEngine } from "../apps/fixture-server/engine";
@@ -165,7 +164,8 @@ test.each([
       expect(state.pending).toEqual(command);
       expect(runningChat(state)).toBeNull();
       // The words are not unsent, and nothing says the result is unconfirmed.
-      expect(heldForRecovery(state, command)).toBe(true);
+      expect(state.pending?.commandId).toBe(command.commandId);
+      expect(state.failedMessages).toEqual([]);
       expect(quiet(state, command.conversationId)).toBe(true);
       // Two minutes without a server: offline, still quiet, nothing posted.
       await jest.advanceTimersByTimeAsync(120_000);
@@ -249,7 +249,7 @@ test("a server that answers every read with 500 keeps the phone offline and quie
     await jest.advanceTimersByTimeAsync(0);
     await sent;
     expect(runningChat(s.session.getSnapshot())).toBeNull();
-    expect(heldForRecovery(s.session.getSnapshot(), command)).toBe(true);
+    expect(s.session.getSnapshot().pending?.commandId).toBe(command.commandId);
     // Two minutes of a broken server: retries are spaced out, nothing posted.
     const before = s.reads.length;
     await jest.advanceTimersByTimeAsync(120_000);

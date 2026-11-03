@@ -147,6 +147,8 @@ export function chatFixture(paged = false) {
     retry: jest.fn(async () => {}),
     interruptPending: jest.fn(async () => true),
     discardPending: jest.fn(async () => true),
+    retryFailedMessage: jest.fn(async () => {}),
+    dismissFailedMessage: jest.fn(),
   };
   function Harness() {
     const [section, setSection] = useState<Section>("chat");

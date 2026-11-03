@@ -75,7 +75,6 @@ export function ChatFooter({
   onVoice,
   onAttach,
   disabled,
-  sending,
   onStop,
   stopLabel,
   stopDisabled,
@@ -119,7 +118,6 @@ export function ChatFooter({
   onVoice: () => void;
   onAttach: () => void;
   disabled: boolean;
-  sending: boolean;
   onStop?: () => void;
   stopLabel: string;
   stopDisabled: boolean;
@@ -269,7 +267,6 @@ export function ChatFooter({
             onVoice={onVoice}
             onAttach={onAttach}
             disabled={disabled}
-            sending={sending}
             onStop={onStop}
             stopLabel={stopLabel}
             stopDisabled={stopDisabled}

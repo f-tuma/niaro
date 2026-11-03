@@ -245,12 +245,16 @@ function fixture(unsupported = false, withWaitingNativeQuestion = false) {
   }
   const refuse = () => {
     const command = state.pending!;
+    // As the session does: a refused message it took stays as failed.
     publish({
       pending: null,
       commandStates: {
         ...state.commandStates,
         [commandTarget(command)]: "rejected",
       },
+      ...(command.type === "message.send"
+        ? { failedMessages: [{ command, error: "requestRejected" }] }
+        : {}),
     });
     delivery.resolve();
   };
@@ -564,7 +568,7 @@ test.each([false, true])(
 );
 
 test.each([false, true])(
-  "a refused send puts its text back unless something new was typed; typed=%s",
+  "NIAR-286: a refused send never puts its text back; it stays in the chat as failed; typed=%s",
   async (typed) => {
     const f = fixture();
     render(<f.Harness />);
@@ -585,8 +589,10 @@ test.each([false, true])(
       await flush();
     });
     expect(screen.getByLabelText("Type a message…").props.value).toBe(
-      typed ? "TEST newer text" : "TEST refused text",
+      typed ? "TEST newer text" : "",
     );
+    expect(screen.getByTestId("failed-message")).toBeTruthy();
+    expect(screen.getByText("TEST refused text")).toBeTruthy();
   },
 );
 

@@ -406,6 +406,8 @@ function fakeSession(
     retry: jest.fn(async () => {}),
     interruptPending: jest.fn(async () => true),
     discardPending: jest.fn(async () => true),
+    retryFailedMessage: jest.fn(async () => {}),
+    dismissFailedMessage: jest.fn(),
     canRetryNativeWork: () => false,
     getRetrySource: () => undefined,
     discardProcessAnswerAttempt: jest.fn(async () => true),
@@ -431,14 +433,25 @@ function fakeSession(
       ),
       nextAfter: null,
     })),
-    send: jest.fn(async (command: SessionCommand) => {
+    // Like the session: a command it takes is pending at once.
+    send: jest.fn((command: SessionCommand) => {
       sent.push(command);
       publish({
+        pending: command,
         commandStates: {
           ...state.commandStates,
-          [commandTarget(command)]: "accepted",
+          [commandTarget(command)]: "sending",
         },
       });
+      return Promise.resolve().then(() =>
+        publish({
+          pending: null,
+          commandStates: {
+            ...state.commandStates,
+            [commandTarget(command)]: "accepted",
+          },
+        }),
+      );
     }),
   };
   return { session: session as unknown as ClientSession, sent, publish };
@@ -557,7 +570,7 @@ test("a new chat is created on the server before its first message, then gets it
   expect(root.findByType("textarea").props.value).toBe("");
 });
 
-test("a sent message leaves the composer at once and returns if it isn't accepted", async () => {
+test("NIAR-286: a sent message leaves the composer at once and never returns; refused, it stays in the chat as failed with Try again", async () => {
   const conversation: Conversation = {
     id: "conv-1",
     revision: 1,
@@ -567,20 +580,112 @@ test("a sent message leaves the composer at once and returns if it isn't accepte
     "conv-1": { conversation: summary("conv-1") },
   });
   let finish!: () => void;
+  let sentCommand!: Extract<SessionCommand, { type: "message.send" }>;
   (session.send as jest.Mock).mockImplementationOnce(
-    () => new Promise<void>((resolve) => (finish = resolve)),
+    (command: Extract<SessionCommand, { type: "message.send" }>) => {
+      sentCommand = command;
+      publish({ pending: command, commandStates: { chat: "sending" } });
+      return new Promise<void>((resolve) => (finish = resolve));
+    },
   );
   const root = (await render(session, "conv-1")).root;
   await type(root, "Najdi Jana");
   expect(root.findByType("textarea").props.value).toBe("");
   await act(async () => {
-    publish({ commandStates: { chat: "rejected" } });
+    publish({
+      pending: null,
+      commandStates: { chat: "rejected" },
+      error: "catalog_conflict",
+      failedMessages: [{ command: sentCommand, error: "catalog_conflict" }],
+    });
     finish();
   });
+  expect(root.findByType("textarea").props.value).toBe("");
+  const failed = byTestId(root, "failed-message");
+  expect(text(failed)).toContain("Najdi Jana");
+  expect(text(failed)).toContain("Neodesláno.");
+  await act(async () => button(failed, "Zkusit znovu").props.onClick());
+  expect(session.retryFailedMessage).toHaveBeenCalledWith(
+    sentCommand.commandId,
+    expect.any(String),
+  );
+  await act(async () => button(failed, "Zahodit").props.onClick());
+  expect(session.dismissFailedMessage).toHaveBeenCalledWith(
+    sentCommand.commandId,
+  );
+  await act(async () => publish({ failedMessages: [] }));
+  expect(
+    root.findAll((node) => node.props["data-testid"] === "failed-message"),
+  ).toHaveLength(0);
+  expect(root.findByType("textarea").props.value).toBe("");
+});
+
+test("NIAR-286: a send the session did not take keeps its words in the composer", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 1,
+    messages: [],
+  };
+  const { session } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  (session.send as jest.Mock).mockImplementationOnce(async () => {});
+  const root = (await render(session, "conv-1")).root;
+  await type(root, "Najdi Jana");
   expect(root.findByType("textarea").props.value).toBe("Najdi Jana");
 });
 
-test("a message whose answer was lost stays out of the composer until a confirmed Dismiss (NIAR-279)", async () => {
+test("NIAR-286, the owner's sequence on the web: lost answer, background check, refusal; no Stop during the check and the words never return", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 1,
+    messages: [],
+  };
+  const { session, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  let sentCommand!: Extract<SessionCommand, { type: "message.send" }>;
+  (session.send as jest.Mock).mockImplementationOnce(
+    async (command: Extract<SessionCommand, { type: "message.send" }>) => {
+      sentCommand = command;
+      publish({ pending: command, commandStates: { chat: "sending" } });
+      await Promise.resolve();
+      publish({
+        commandStates: { chat: "network_error" },
+        error: null,
+        deliveryCheck: "checking",
+      });
+    },
+  );
+  const root = (await render(session, "conv-1")).root;
+  await type(root, "Najdi Jana");
+  await act(async () => {});
+  expect(root.findByType("textarea").props.value).toBe("");
+  // The background check posts the same command again.
+  await act(async () => publish({ commandStates: { chat: "sending" } }));
+  expect(hasButton(root, "Zastavit")).toBe(false);
+  expect(root.findByType("textarea").props.value).toBe("");
+  expect(text(byTestId(root, "pending-message"))).toContain("Najdi Jana");
+  expect(byTestId(root, "request-progress")).toBeTruthy();
+  // Once the server streams the answer it joined, it runs: Stop is back.
+  await act(async () => publish({ activityConnection: "live" }));
+  expect(hasButton(root, "Zastavit")).toBe(true);
+  await act(async () =>
+    publish({
+      pending: null,
+      deliveryCheck: null,
+      activityConnection: "waiting",
+      commandStates: { chat: "rejected" },
+      error: "catalog_conflict",
+      failedMessages: [{ command: sentCommand, error: "catalog_conflict" }],
+    }),
+  );
+  expect(root.findByType("textarea").props.value).toBe("");
+  expect(text(byTestId(root, "failed-message"))).toContain("Najdi Jana");
+  expect(session.send).toHaveBeenCalledTimes(1);
+});
+
+test("a message whose answer was lost stays out of the composer, a confirmed Dismiss too (NIAR-279, NIAR-286)", async () => {
   const conversation: Conversation = {
     id: "conv-1",
     revision: 1,
@@ -616,7 +721,9 @@ test("a message whose answer was lost stays out of the composer until a confirme
   await act(async () =>
     button(byTestId(root, "request-progress"), "Zahodit").props.onClick(),
   );
-  expect(root.findByType("textarea").props.value).toBe("Najdi Jana");
+  // NIAR-286: Dismiss lets it go; nothing returns to the composer.
+  expect(session.discardPending).toHaveBeenCalledTimes(1);
+  expect(root.findByType("textarea").props.value).toBe("");
   expect(session.send).toHaveBeenCalledTimes(1);
 });
 
@@ -909,7 +1016,7 @@ test.each(["model_unavailable", "model_limit", "network_error"])(
     expect(
       root.findAll((node) => node.props["data-testid"] === "request-progress"),
     ).toHaveLength(0);
-    expect(root.findByType("textarea").props.value).toBe("Najdi Jana");
+    expect(root.findByType("textarea").props.value).toBe("");
   },
 );
 

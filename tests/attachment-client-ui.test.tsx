@@ -165,11 +165,18 @@ test("actual mobile composer selection/cancel preserves text and a file-only sen
     );
     expect(h.commands).toBe(0);
     expect(session.getSnapshot().pending).toBeNull();
-    await waitFor(() => expect(session.attachments.ready).toBe(true));
+    // NIAR-286: the file left the composer; the message stays in the chat as
+    // failed and Try again sends it with the same file.
+    expect(await screen.findByTestId("failed-message")).toBeTruthy();
+    expect(session.attachments.getSnapshot().entries).toHaveLength(0);
+    expect(
+      screen.queryByRole("button", { name: translate("en")("send") }),
+    ).toBeNull();
     fireEvent.press(
-      screen.getByRole("button", { name: translate("en")("send") }),
+      screen.getByRole("button", { name: translate("en")("progressRetry") }),
     );
     await waitFor(() => expect(h.commands).toBe(1));
+    expect(screen.queryByTestId("failed-message")).toBeNull();
     await waitFor(() =>
       expect(screen.getByText("Processing unavailable")).toBeTruthy(),
     );

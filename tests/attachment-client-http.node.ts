@@ -484,7 +484,7 @@ test("middle reference loss retains the complete ordered Again intent and resume
   }
 });
 
-test("never-dispatched storage failure unlocks uploaded files for explicit removal", async () => {
+test("never-dispatched storage failure keeps the message as failed with its files; they leave the composer and Try again sends them (NIAR-286)", async () => {
   const f = await setup();
   try {
     await f.runtime.add(candidate(), digest);
@@ -494,22 +494,29 @@ test("never-dispatched storage failure unlocks uploaded files for explicit remov
         throw Error("TEST local storage failure");
       await write(key, value);
     };
-    await f.session.send(
-      messageCommand(
-        "",
-        "en",
-        randomUUID(),
-        undefined,
-        f.runtime.takeForSend(),
-      ),
+    const command = messageCommand(
+      "",
+      "en",
+      randomUUID(),
+      undefined,
+      f.runtime.takeForSend(),
     );
+    await f.session.send(command);
     assert.equal(f.h.commands, 0);
     assert.equal(f.session.getSnapshot().pending, null);
     assert.equal(f.session.getSnapshot().error, "storage_error");
-    assert.equal(f.runtime.ready, true);
-    f.storage.setItem = write;
-    await f.runtime.remove(f.runtime.getSnapshot().entries[0]!.id);
+    assert.deepEqual(f.session.getSnapshot().failedMessages, [
+      { command, error: "storage_error" },
+    ]);
     assert.equal(f.runtime.getSnapshot().entries.length, 0);
+    f.storage.setItem = write;
+    await f.session.retryFailedMessage(command.commandId, randomUUID());
+    assert.equal(f.h.commands, 1);
+    assert.deepEqual(f.session.getSnapshot().failedMessages, []);
+    assert.equal(
+      f.h.snapshot.conversations[0]!.messages[0]!.attachments!.length,
+      1,
+    );
     assert.equal(f.h.puts, 1);
   } finally {
     await f.close();

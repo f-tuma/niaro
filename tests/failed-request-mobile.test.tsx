@@ -6,6 +6,10 @@ import { OtherChatNotice } from "../apps/mobile/chat/OtherChatNotice";
 import { translate } from "../packages/i18n";
 import type { SessionCommand } from "../packages/client-core/session";
 import { chatFixture, flush } from "./helpers/mobile-chat-fixture";
+import { AppState } from "react-native";
+import { createVoiceCapture } from "../apps/mobile/voice-capture";
+import { microphoneAllowed } from "../apps/mobile/microphone-permission";
+import { voiceCapabilities } from "../packages/protocol/voice";
 
 /*
  * NIAR-279: a request that failed is not stopped. Its chat keeps it with
@@ -119,7 +123,7 @@ test.each([
   },
 );
 
-test("Dismiss lets go of the failed request and puts its text back in the composer", async () => {
+test("NIAR-286: Dismiss lets go of the failed request and the composer stays empty", async () => {
   const f = chatFixture();
   f.session.discardPending.mockImplementation(async () => {
     f.publish({ pending: null, commandStates: { chat: "idle" }, error: null });
@@ -148,10 +152,9 @@ test("Dismiss lets go of the failed request and puts its text back in the compos
   expect(
     screen.queryByRole("button", { name: tr("progressDismiss") }),
   ).toBeNull();
-  expect(screen.getByLabelText("Type a message…").props.value).toBe(
-    "TEST find Peter",
-  );
-  expect(screen.getByRole("button", { name: tr("send") })).toBeTruthy();
+  // Sent words never go back to the composer.
+  expect(screen.getByLabelText("Type a message…").props.value).toBe("");
+  expect(screen.queryByRole("button", { name: tr("send") })).toBeNull();
 });
 
 test("a Dismiss the server cannot confirm keeps Retry and Dismiss", async () => {
@@ -315,7 +318,7 @@ test("NIAR-280: with no activity feed, a lost answer being checked offers no Sto
   expect(stop()).toBeNull();
 });
 
-test("a message whose answer was lost stays out of the composer; only a confirmed Dismiss gives it back", async () => {
+test("a message whose answer was lost stays out of the composer, through a confirmed Dismiss too (NIAR-286)", async () => {
   const f = chatFixture();
   // The connection dropped mid-answer: the session keeps the exact command
   // and checks it by itself.
@@ -355,24 +358,278 @@ test("a message whose answer was lost stays out of the composer; only a confirme
     );
     await flush();
   });
-  expect(composerValue()).toBe("TEST lost autumn poem");
+  expect(f.session.discardPending).toHaveBeenCalledTimes(1);
+  expect(composerValue()).toBe("");
   expect(f.session.send).toHaveBeenCalledTimes(1);
 });
 
-test("a message the server refused goes back into the composer at once", async () => {
-  const f = chatFixture();
-  f.session.send.mockImplementation(async () => {
-    f.publish({
-      pending: null,
-      commandStates: { chat: "rejected" },
-      error: "catalog_conflict",
+/** A send the session takes at once (pending), settled later by `settle`. */
+const takenSend = (f: ReturnType<typeof chatFixture>) => {
+  let settle!: (patch: Parameters<typeof f.publish>[0]) => void;
+  f.session.send.mockImplementation((command: SessionCommand) => {
+    f.publish({ pending: command, commandStates: { chat: "sending" } });
+    return new Promise<void>((resolve) => {
+      settle = (patch) => {
+        f.publish(patch);
+        resolve();
+      };
     });
   });
+  return {
+    settle: async (patch: Parameters<typeof f.publish>[0]) =>
+      act(async () => {
+        settle(patch);
+        await flush();
+      }),
+  };
+};
+const sentCommand = (f: ReturnType<typeof chatFixture>) =>
+  f.session.send.mock.calls[0]![0] as Extract<
+    SessionCommand,
+    { type: "message.send" }
+  >;
+/** No Send button turning while a request is pending or checked. */
+const noSendSpinner = () => {
+  const send = screen.queryByRole("button", { name: tr("send") });
+  if (send) expect(send.props.accessibilityState?.busy).toBeFalsy();
+};
+
+test("NIAR-286: a message the server refused stays in the chat as failed with Try again; the composer stays empty", async () => {
+  const f = chatFixture();
+  const send = takenSend(f);
   render(<f.Harness />);
   await act(flush);
   await openChat();
   await typeAndSend("TEST refused question");
-  expect(composerValue()).toBe("TEST refused question");
+  expect(composerValue()).toBe("");
+  const command = sentCommand(f);
+  await send.settle({
+    pending: null,
+    commandStates: { chat: "rejected" },
+    error: "catalog_conflict",
+    failedMessages: [{ command, error: "catalog_conflict" }],
+  });
+  expect(composerValue()).toBe("");
+  expect(screen.getByTestId("failed-message")).toBeTruthy();
+  expect(screen.getByText("TEST refused question")).toBeTruthy();
+  expect(screen.getByText(/Not sent\./)).toBeTruthy();
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: tr("progressRetry") }));
+    await flush();
+  });
+  expect(f.session.retryFailedMessage).toHaveBeenCalledWith(
+    command.commandId,
+    expect.any(String),
+  );
+  await act(async () => {
+    fireEvent.press(
+      screen.getByRole("button", { name: tr("progressDismiss") }),
+    );
+    await flush();
+  });
+  expect(f.session.dismissFailedMessage).toHaveBeenCalledWith(
+    command.commandId,
+  );
+  await act(async () => f.publish({ failedMessages: [] }));
+  expect(screen.queryByTestId("failed-message")).toBeNull();
+  expect(composerValue()).toBe("");
+});
+
+test("NIAR-286: a send the session did not take at all keeps its words in the composer", async () => {
+  const f = chatFixture();
+  // Not taken: nothing became pending, nothing left the phone.
+  f.session.send.mockImplementation(async () => {});
+  render(<f.Harness />);
+  await act(flush);
+  await openChat();
+  await typeAndSend("TEST never left");
+  expect(composerValue()).toBe("TEST never left");
+});
+
+test.each([
+  [
+    "refused",
+    (command: SessionCommand) => ({
+      pending: null,
+      deliveryCheck: null,
+      commandStates: { chat: "rejected" as const },
+      error: "catalog_conflict",
+      failedMessages: [
+        {
+          command: command as Extract<SessionCommand, { type: "message.send" }>,
+          error: "catalog_conflict",
+        },
+      ],
+    }),
+  ],
+  [
+    "model error",
+    () => ({
+      commandStates: { chat: "network_error" as const },
+      deliveryCheck: "failed" as const,
+      error: "model_unavailable",
+    }),
+  ],
+  [
+    "checks gave up (timeouts)",
+    () => ({
+      commandStates: { chat: "network_error" as const },
+      deliveryCheck: "failed" as const,
+      error: null,
+    }),
+  ],
+])(
+  "NIAR-286, the owner's sequence: send, lost answer, background check, then %s; the composer never gets the words back and never shows a turning Send",
+  async (_name, outcome) => {
+    const f = chatFixture();
+    const send = takenSend(f);
+    render(<f.Harness />);
+    await act(flush);
+    await openChat();
+    await typeAndSend("TEST owner's question");
+    const command = sentCommand(f);
+    expect(composerValue()).toBe("");
+    // The answer was lost: the session keeps the command and checks it.
+    await send.settle({
+      commandStates: { chat: "network_error" },
+      error: null,
+      deliveryCheck: "checking",
+    });
+    // The background check posts it again: "sending", yet still a check.
+    await act(async () =>
+      f.publish({
+        commandStates: { chat: "sending" },
+        activityConnection: "waiting",
+      }),
+    );
+    expect(composerValue()).toBe("");
+    noSendSpinner();
+    expect(screen.queryByRole("button", { name: tr("send") })).toBeNull();
+    expect(stop()).toBeNull();
+    expect(screen.getByText(tr("progressThinking"))).toBeTruthy();
+    expect(screen.getByText("TEST owner's question")).toBeTruthy();
+    noUnconfirmedCard();
+    // Typing the next message meanwhile shows Send, never turning.
+    await act(async () => {
+      fireEvent.changeText(
+        screen.getByLabelText("Type a message…"),
+        "TEST next",
+      );
+      await flush();
+    });
+    noSendSpinner();
+    await act(async () => {
+      fireEvent.changeText(screen.getByLabelText("Type a message…"), "");
+      await flush();
+    });
+    // The check settles.
+    await act(async () => f.publish(outcome(command)));
+    expect(composerValue()).toBe("");
+    noSendSpinner();
+    expect(screen.getByText("TEST owner's question")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: tr("progressRetry") }),
+    ).toBeTruthy();
+    // Dismiss: the composer stays empty.
+    if (_name === "refused") {
+      await act(async () => {
+        fireEvent.press(
+          screen.getByRole("button", { name: tr("progressDismiss") }),
+        );
+        await flush();
+      });
+      expect(f.session.dismissFailedMessage).toHaveBeenCalledWith(
+        command.commandId,
+      );
+      await act(async () => f.publish({ failedMessages: [] }));
+    } else {
+      f.session.discardPending.mockImplementation(async () => {
+        f.publish({
+          pending: null,
+          deliveryCheck: null,
+          commandStates: { chat: "idle" },
+          error: null,
+        });
+        return true;
+      });
+      await act(async () => {
+        fireEvent.press(
+          screen.getByRole("button", { name: tr("progressDismiss") }),
+        );
+        await flush();
+      });
+      expect(f.session.discardPending).toHaveBeenCalledTimes(1);
+    }
+    expect(composerValue()).toBe("");
+    expect(f.session.send).toHaveBeenCalledTimes(1);
+  },
+);
+
+test("NIAR-286, the owner's report: a spoken message whose answer was lost never lands in the composer, and the background check shows no turning Send", async () => {
+  const f = chatFixture();
+  const send = takenSend(f);
+  AppState.currentState = "active";
+  microphoneAllowed();
+  jest.mocked(createVoiceCapture).mockReturnValue({
+    supported: () => true,
+    start: jest.fn(async () => {}),
+    stop: jest.fn(async () => ({
+      mimeType: "audio/wav" as const,
+      base64: "YWJjZA==",
+    })),
+    discard: jest.fn(async () => {}),
+  });
+  Object.assign(f.session, {
+    voiceCapabilities: jest.fn(async () => voiceCapabilities(true)),
+    transcribe: jest.fn(async () => ({
+      text: "TEST spoken question",
+      reviewReasons: [],
+    })),
+  });
+  render(<f.Harness />);
+  await act(flush);
+  await openChat();
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: tr("voice_reply") }));
+    await flush();
+  });
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Done" }));
+    await flush();
+  });
+  expect(f.session.send).toHaveBeenCalledTimes(1);
+  expect(sentCommand(f).text).toBe("TEST spoken question");
+  // The answer was lost; before NIAR-286 the transcript went into the
+  // composer here.
+  await send.settle({
+    commandStates: { chat: "network_error" },
+    error: null,
+    deliveryCheck: "checking",
+  });
+  expect(composerValue()).toBe("");
+  // The background check posts it again: before, Send turned beside the text.
+  await act(async () => f.publish({ commandStates: { chat: "sending" } }));
+  expect(composerValue()).toBe("");
+  expect(screen.queryByRole("button", { name: tr("send") })).toBeNull();
+  expect(stop()).toBeNull();
+  expect(screen.getByText(tr("progressThinking"))).toBeTruthy();
+  expect(screen.getByText("TEST spoken question")).toBeTruthy();
+  // Refused in the end: a failed message with Try again, the composer empty.
+  await act(async () =>
+    f.publish({
+      pending: null,
+      deliveryCheck: null,
+      commandStates: { chat: "rejected" },
+      error: "catalog_conflict",
+      failedMessages: [{ command: sentCommand(f), error: "catalog_conflict" }],
+    }),
+  );
+  expect(composerValue()).toBe("");
+  expect(screen.getByTestId("failed-message")).toBeTruthy();
+  expect(screen.getByText("TEST spoken question")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: tr("progressRetry") }),
+  ).toBeTruthy();
 });
 
 test("offline, a request still on its way offers no Stop", async () => {

@@ -47,7 +47,9 @@ export const TOOL = {
 
 /** What the message components read beside the parts. */
 export type NextMeta = {
-  kind: "stored" | "pending" | "live";
+  kind: "stored" | "pending" | "live" | "failed";
+  /** A failed message: its command, for Try again and Dismiss. */
+  failedCommandId?: string;
   createdAt?: string;
   attachments?: ChatMessage["attachments"];
   processing?: ChatMessage["processing"];
@@ -62,7 +64,7 @@ export type NextMeta = {
   requestMessageId?: string;
   /** The last request: "Edit" brings it back to the composer. */
   editable?: boolean;
-  /** Why the live answer stopped, in the person's language. */
+  /** Why the live answer stopped, or why a message failed, in the person's language. */
   hint?: string;
 };
 export const nextMeta = (message: {
@@ -210,6 +212,27 @@ export function pendingMessage(
     role: "user",
     content: [{ type: "text", text }],
     metadata: { custom: { kind: "pending", tags: [] } satisfies NextMeta },
+  };
+}
+
+/** A message that failed after it left the composer: its words stay in the chat. */
+export function failedMessage(
+  commandId: string,
+  text: string,
+  hint: string,
+): ThreadMessageLike {
+  return {
+    id: `failed:${commandId}`,
+    role: "user",
+    content: [{ type: "text", text }],
+    metadata: {
+      custom: {
+        kind: "failed",
+        failedCommandId: commandId,
+        hint,
+        tags: [],
+      } satisfies NextMeta,
+    },
   };
 }
 

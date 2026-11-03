@@ -698,12 +698,17 @@ export class AttachmentRuntime {
     this.publish();
     return this.frozenSend;
   }
+  /**
+   * `accepted`: the message has its files. `failed`: the message left the
+   * composer and failed; its files stay with it, never back in the composer.
+   * `rejected`: the session never took the message; the files stay here.
+   */
   settleSend(
     attachments: AttachmentSend,
-    outcome: "accepted" | "rejected" | "unknown",
+    outcome: "accepted" | "failed" | "rejected" | "unknown",
   ) {
     if (this.frozenSend?.draftId !== attachments.draftId) return;
-    if (outcome === "accepted") this.clear();
+    if (outcome === "accepted" || outcome === "failed") this.clear();
     else if (outcome === "rejected") {
       this.frozenSend = undefined;
       this.publish();

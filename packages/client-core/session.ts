@@ -326,6 +326,19 @@ const deliveryCheckDelay = (failures: number) =>
  * it (shown with Retry and Dismiss, or Try again for a process command).
  */
 export type DeliveryCheck = "checking" | "failed";
+/**
+ * A chat message the session took but that ended neither kept for its check
+ * nor recorded: the server refused it, or it could not be delivered. It stays
+ * in its chat with its words; they never go back to the composer. Try again
+ * sends it as a new command; Dismiss lets it go.
+ */
+export type FailedMessage = Readonly<{
+  command: Extract<SessionCommand, { type: "message.send" }>;
+  /** Why it failed: a server or local code. */
+  error: string;
+}>;
+/** Failed messages kept at once; the oldest goes first. */
+const FAILED_MESSAGES_LIMIT = 20;
 function immutableJson<T>(value: T): T {
   if (value && typeof value === "object") {
     for (const child of Object.values(value)) immutableJson(child);
@@ -423,6 +436,8 @@ export type SessionState = {
   activityApproval?: AnswerStreamApproval | null;
   /** How the kept chat request's lost outcome is settled; null for any other pending command. */
   deliveryCheck?: DeliveryCheck | null;
+  /** Chat messages that failed after they left the composer, oldest first. */
+  failedMessages?: readonly FailedMessage[];
 };
 export const commandTarget = (c: SessionCommand) =>
   c.type === "conversation.create"
@@ -485,6 +500,7 @@ export class ClientSession {
     activityApproval: null,
     activityConnection: "waiting",
     deliveryCheck: null,
+    failedMessages: [],
   };
   private listeners = new Set<() => void>();
   /** The kept chat request whose lost outcome is checked; it follows `pending`. */
@@ -512,6 +528,8 @@ export class ClientSession {
   private submitting: CommandFlight | null = null;
   private commandFlight: CommandFlight | null = null;
   private commandRejection: string | null = null;
+  /** The chat message the server accepted last; it is not a failed message. */
+  private acceptedCommandId: string | null = null;
   private timer?: ReturnType<typeof setInterval>;
   private writes: Promise<void> = Promise.resolve();
   private cacheKey: string;
@@ -2120,6 +2138,7 @@ export class ClientSession {
       pending: null,
       answerAttempts: [],
       answerRecoveryBlocked: false,
+      failedMessages: [],
       commandStates: {},
       status: "unauthorized",
       error: "auth_expired",
@@ -3843,12 +3862,16 @@ export class ClientSession {
       throw new Error("scope_mismatch");
     if (!this.currentFlight(flight) || flight.outcomeKnown) return;
     let store = this.mergeProjection(result.snapshot);
+    // A refused message keeps its files for Try again; they do not go back
+    // to the composer.
     if (flight.command.type === "message.send" && flight.command.attachments)
       this.attachments.settleSend(
         flight.command.attachments,
-        result.status === "accepted" ? "accepted" : "rejected",
+        result.status === "accepted" ? "accepted" : "failed",
       );
     if (flight.command.type === "message.send") {
+      if (result.status === "accepted")
+        this.acceptedCommandId = flight.command.commandId;
       // The pending outbox remains durable until the exact native retry source
       // has been saved. Once the server response is authoritative, interruption
       // must not turn it back into an unknown delivery while local storage waits.
@@ -4139,7 +4162,108 @@ export class ClientSession {
         return;
     this.attachments.settleSend(command.attachments, "rejected");
   }
-  async send(
+  /**
+   * Sends a command. A chat message the session takes is pending at once, so
+   * a caller can tell synchronously whether it left the composer. Once taken
+   * it never comes back: it is kept for its check, recorded, or kept in its
+   * chat as a failed message.
+   */
+  send(
+    raw: SessionCommand,
+    retry = false,
+    processTarget?: ProcessCommandTarget,
+    noticeOwner?: ProcessNoticeOwner,
+  ): Promise<void> {
+    const delivery = this.deliver(raw, retry, processTarget, noticeOwner);
+    if (
+      raw.type !== "message.send" ||
+      this.state.pending?.commandId !== raw.commandId
+    )
+      return delivery;
+    return delivery.then(
+      () => this.keepUnsent(raw),
+      (error: unknown) => {
+        this.keepUnsent(raw, error);
+        throw error;
+      },
+    );
+  }
+  /** A taken chat message that ended neither kept nor recorded stays in its chat as failed. */
+  private keepUnsent(command: SessionCommand, error?: unknown) {
+    if (command.type !== "message.send" || this.stopped || this.invalid) return;
+    const state = this.state;
+    const failed = state.failedMessages ?? [];
+    const logicalMessageId = command.logicalMessageId ?? command.commandId;
+    if (
+      state.pending?.commandId === command.commandId ||
+      this.acceptedCommandId === command.commandId ||
+      failed.some((entry) => entry.command.commandId === command.commandId) ||
+      state.store?.conversations[command.conversationId]?.messages.some(
+        (message) =>
+          message.role === "user" &&
+          (message.logicalMessageId === logicalMessageId ||
+            (!message.logicalMessageId &&
+              message.id.startsWith(`message-${command.commandId}-`))),
+      )
+    )
+      return;
+    const code =
+      error instanceof Error && /^[a-z][a-z0-9_]{0,159}$/i.test(error.message)
+        ? error.message
+        : (state.error ?? "requestRejected");
+    this.publish({
+      failedMessages: Object.freeze(
+        [...failed, Object.freeze({ command, error: code })].slice(
+          -FAILED_MESSAGES_LIMIT,
+        ),
+      ),
+    });
+  }
+  /**
+   * Try again of a failed message: the same words, files and context as a new
+   * command. It stays failed when it cannot leave now.
+   */
+  retryFailedMessage(commandId: string, newCommandId: string): Promise<void> {
+    const failed = this.state.failedMessages ?? [];
+    const entry = failed.find((value) => value.command.commandId === commandId);
+    if (
+      !entry ||
+      this.stopped ||
+      this.invalid ||
+      this.submitting ||
+      this.state.pending ||
+      this.state.status !== "online"
+    )
+      return Promise.resolve();
+    const command = CommandSchema.parse({
+      ...entry.command,
+      commandId: newCommandId,
+      idempotencyKey: newCommandId,
+    }) as Extract<SessionCommand, { type: "message.send" }>;
+    this.publish({
+      failedMessages: Object.freeze(failed.filter((value) => value !== entry)),
+    });
+    const delivery = this.send(command);
+    if (this.getSnapshot().pending?.commandId !== command.commandId)
+      this.publish({
+        failedMessages: Object.freeze([
+          ...(this.state.failedMessages ?? []),
+          entry,
+        ]),
+      });
+    return delivery;
+  }
+  /** Dismiss of a failed message: it leaves the chat; nothing goes to the composer. */
+  dismissFailedMessage(commandId: string) {
+    const failed = this.state.failedMessages ?? [];
+    if (!failed.some((value) => value.command.commandId === commandId)) return;
+    this.publish({
+      failedMessages: Object.freeze(
+        failed.filter((value) => value.command.commandId !== commandId),
+      ),
+    });
+  }
+  private async deliver(
     raw: SessionCommand,
     retry = false,
     processTarget?: ProcessCommandTarget,
@@ -4542,13 +4666,14 @@ export class ClientSession {
     } finally {
       // A positively unattempted command has no server outcome to recover.
       // Keep uncertain dispatched commands frozen under the existing outbox.
+      // It left the composer and failed: its files stay with the failed message.
       if (
         !flight.deliveryStarted &&
         this.state.pending?.commandId !== command.commandId &&
         command.type === "message.send" &&
         command.attachments
       )
-        this.attachments.settleSend(command.attachments, "rejected");
+        this.attachments.settleSend(command.attachments, "failed");
       flight.stopActivity();
       flight.markReady();
       if (this.submitting === flight) this.submitting = null;
@@ -4650,8 +4775,9 @@ export class ClientSession {
       activitySteps: null,
       activityApproval: null,
     });
-    // Attachments of a message the server never recorded go back to the draft.
-    this.releaseUnsubmittedAttachments(command);
+    // A dismissed message's files leave with it; nothing goes back to the composer.
+    if (command.type === "message.send" && command.attachments)
+      this.attachments.settleSend(command.attachments, "failed");
     flight.stopActivity();
     flight.controller.abort();
     flight.markReady();

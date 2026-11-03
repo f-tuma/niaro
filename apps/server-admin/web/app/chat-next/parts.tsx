@@ -77,6 +77,10 @@ export type NextChat = {
   dismiss?: () => void;
   /** A Dismiss waits for the server's answer. */
   dismissing?: boolean;
+  /** Sends a failed message again as a new message; absent while it cannot. */
+  retryFailed?: (commandId: string) => void;
+  /** Lets a failed message go; nothing goes back to the composer. */
+  dismissFailed: (commandId: string) => void;
 };
 const NextChatContext = createContext<NextChat | null>(null);
 export const NextChatProvider = NextChatContext.Provider;

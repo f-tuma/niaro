@@ -2,6 +2,7 @@ import { en, type TranslationKey } from "../i18n";
 import { isReservedProcessRecoveryCopy } from "./process-command-notice";
 import {
   commandTarget,
+  type FailedMessage,
   type SessionCommand,
   type SessionState,
 } from "./session";
@@ -166,27 +167,68 @@ export function chatRequestFailed(
   );
 }
 
-/**
- * The session still keeps this exact command after its send ended: the server
- * may have recorded it, so its words are not unsent. The session's own check,
- * a Retry or a Dismiss settles it; only a Dismiss the server confirms gives
- * the words back.
- */
-export function heldForRecovery(
-  state: Pick<SessionState, "pending">,
-  command: Pick<SessionCommand, "commandId">,
+/** The chat's messages that failed after they left the composer, oldest first. */
+export function selectFailedMessages(
+  state: Partial<Pick<SessionState, "failedMessages">>,
+  conversationId: string,
 ) {
-  return state.pending?.commandId === command.commandId;
+  return (state.failedMessages ?? []).filter(
+    (entry) => entry.command.conversationId === conversationId,
+  );
+}
+
+/** The line under a failed message: its files, "Not sent" and why. */
+export function failedMessageCaption(
+  entry: FailedMessage,
+  tr: (key: TranslationKey) => string,
+) {
+  const files = entry.command.attachments?.items.length ?? 0;
+  return [
+    files ? tr("messageFiles").replace("{n}", String(files)) + "." : "",
+    `${tr("messageNotSent")}.`,
+    tr(failedMessageReason(entry.error)),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** Why a failed message did not go through, as display copy. */
+export function failedMessageReason(error: string): TranslationKey {
+  // Delivery and storage codes read as settings or "unclear" copy here.
+  return error !== "network_error" &&
+    error !== "storage_error" &&
+    !isReservedProcessRecoveryCopy(error) &&
+    error in en
+    ? (error as TranslationKey)
+    : "requestRejected";
+}
+
+/**
+ * This pending command really runs: it is on its way to the server. A
+ * background check of a lost outcome counts only once the server streams the
+ * answer it joined; until then the chat shows Thinking and the composer stays
+ * as it is, without Stop.
+ */
+export function commandRunning(
+  state: Pick<SessionState, "commandStates"> &
+    Partial<Pick<SessionState, "deliveryCheck" | "activityConnection">>,
+  command: SessionCommand,
+) {
+  return (
+    state.commandStates[commandTarget(command)] === "sending" &&
+    (state.deliveryCheck !== "checking" || state.activityConnection === "live")
+  );
 }
 
 /** The chat whose command is on its way to the server, if any. */
 export function runningChat(
-  state: Pick<SessionState, "pending" | "commandStates">,
+  state: Pick<SessionState, "pending" | "commandStates"> &
+    Partial<Pick<SessionState, "deliveryCheck" | "activityConnection">>,
 ): string | null {
   const pending = state.pending;
   return pending &&
     !pending.type.startsWith("conversation.") &&
-    state.commandStates[commandTarget(pending)] === "sending"
+    commandRunning(state, pending)
     ? pending.conversationId
     : null;
 }
