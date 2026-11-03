@@ -596,7 +596,8 @@ test("native designer qualification and public paired Session preserve the exact
                 ? await answer(session, setup)
                 : await approve(session, setup);
             assert.deepEqual(session.getSnapshot().pending, command);
-            assert.equal(session.getSnapshot().error, "network_error");
+            // A lost process outcome is checked quietly (NIAR-284): no error shown.
+            assert.equal(session.getSnapshot().error, null);
             const original = transport.posts.at(-1)!;
             const before = await h.inspect();
             await h.restart();
