@@ -73,6 +73,10 @@ export type NextChat = {
   edit: (text: string, sourceMessageId?: string) => void;
   /** Resends the pending request when its delivery is uncertain. */
   retry?: () => void;
+  /** Lets go of a failed request; the server decides it is safe, nothing is resent. */
+  dismiss?: () => void;
+  /** A Dismiss waits for the server's answer. */
+  dismissing?: boolean;
 };
 const NextChatContext = createContext<NextChat | null>(null);
 export const NextChatProvider = NextChatContext.Provider;

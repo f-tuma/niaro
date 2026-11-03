@@ -489,6 +489,8 @@ export function ChatNextConversation({
   }, []);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<TranslationKey | null>(null);
+  // Dismiss of a failed request waits for the server's answer.
+  const [dismissing, setDismissing] = useState(false);
   const restoreChat = async () => {
     if (restoring) return;
     setRestoring(true);
@@ -942,7 +944,10 @@ export function ChatNextConversation({
   const requestInterrupted =
     !!progressCommand &&
     (!online ||
-      state.commandStates[commandTarget(progressCommand)] === "network_error");
+      state.commandStates[commandTarget(progressCommand)] === "network_error" ||
+      // A known outcome whose local save failed is kept too, not running.
+      (retryable &&
+        state.commandStates[commandTarget(progressCommand)] !== "sending"));
   const progressHint =
     modelFailed && state.error! in en
       ? tr(state.error as TranslationKey)
@@ -1049,11 +1054,40 @@ export function ChatNextConversation({
     progressHint,
     id,
   ]);
-  const isRunning = !!progressCommand;
+  // Stop is for a request that still runs. One that failed is kept for an
+  // exact Retry or a Dismiss instead.
+  const isRunning =
+    !!progressCommand &&
+    state.commandStates[commandTarget(progressCommand)] === "sending";
   const stoppable =
     isRunning ||
     (state.pending?.type === "process.answer" &&
-      state.pending.conversationId === id);
+      state.pending.conversationId === id &&
+      state.commandStates[commandTarget(state.pending)] === "sending");
+  const failedMessage =
+    progressCommand?.type === "message.send" && !isRunning && retryable
+      ? progressCommand
+      : null;
+  const dismiss = () => {
+    const failed = failedMessage;
+    if (!failed || dismissing) return;
+    setDismissing(true);
+    void session
+      .discardPending()
+      .then((released) => {
+        // A message the server never recorded goes back to an empty composer.
+        if (
+          released &&
+          alive.current &&
+          !isUserMessageRecorded(session.getSnapshot().store, failed) &&
+          !draftRef.current.trim()
+        )
+          setComposerText(failed.text);
+      })
+      .finally(() => {
+        if (alive.current) setDismissing(false);
+      });
+  };
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     messages: threadMessages,
     convertMessage: sameMessage,
@@ -1195,6 +1229,8 @@ export function ChatNextConversation({
     again,
     edit: editMessage,
     retry: retryable ? () => void session.retry(noticeOwner) : undefined,
+    dismiss: failedMessage ? dismiss : undefined,
+    dismissing,
   };
 
   if (!valid)
@@ -1395,7 +1431,8 @@ export function ChatNextConversation({
               {errorKey && (
                 <Alert variant="destructive" data-testid="chat-error">
                   <AlertDescription>{tr(errorKey)}</AlertDescription>
-                  {!isRunning &&
+                  {/* A request in this chat has its own Retry and Dismiss. */}
+                  {!progressCommand &&
                     (retryable || (hasDraft && !busy && online)) && (
                       <AlertAction>
                         <Button
@@ -1843,17 +1880,30 @@ function AssistantMessage() {
                     tr(failed ? "progressFailedHint" : "progressUnavailable")}
                 </p>
               )}
-              {stopped && chat.retry && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="self-start"
-                  disabled={!chat.online}
-                  onClick={chat.retry}
-                >
-                  <RefreshCw data-icon="inline-start" aria-hidden="true" />
-                  {copy.retry}
-                </Button>
+              {stopped && (chat.retry || chat.dismiss) && (
+                <div className="flex flex-wrap gap-2">
+                  {chat.retry && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!chat.online || chat.dismissing}
+                      onClick={chat.retry}
+                    >
+                      <RefreshCw data-icon="inline-start" aria-hidden="true" />
+                      {copy.retry}
+                    </Button>
+                  )}
+                  {chat.dismiss && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={!chat.online || chat.dismissing}
+                      onClick={chat.dismiss}
+                    >
+                      {copy.dismiss}
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           )}

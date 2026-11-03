@@ -405,6 +405,7 @@ function fakeSession(
     selectConversation: jest.fn(),
     retry: jest.fn(async () => {}),
     interruptPending: jest.fn(async () => true),
+    discardPending: jest.fn(async () => true),
     canRetryNativeWork: () => false,
     getRetrySource: () => undefined,
     discardProcessAnswerAttempt: jest.fn(async () => true),
@@ -705,6 +706,59 @@ test("while the assistant works, the chat thinks until the first word, offers st
   );
   expect(session.retry).toHaveBeenCalled();
 });
+
+// NIAR-279: a failed request is not stopped; it is retried or dismissed.
+const hasButton = (root: ReactTestInstance, label: string) => {
+  try {
+    return !!button(root, label);
+  } catch {
+    return false;
+  }
+};
+test.each(["model_unavailable", "model_limit", "network_error"])(
+  "after %s the composer is back to Send and the chat offers Retry and Dismiss",
+  async (error) => {
+    const conversation: Conversation = {
+      id: "conv-1",
+      revision: 4,
+      messages: [user("m-1", "Ahoj")],
+    };
+    const { session, publish } = fakeSession(storeWith([conversation]), {
+      "conv-1": { conversation: summary("conv-1") },
+    });
+    (session.discardPending as jest.Mock).mockImplementation(async () => {
+      publish({ pending: null, commandStates: { chat: "idle" }, error: null });
+      return true;
+    });
+    const root = (await render(session, "conv-1")).root;
+    const pending = {
+      type: "message.send" as const,
+      commandId: "c-2",
+      idempotencyKey: "c-2",
+      conversationId: "conv-1",
+      text: "Najdi Jana",
+      language: "cs" as const,
+    };
+    await act(async () =>
+      publish({ pending, commandStates: { chat: "sending" } }),
+    );
+    expect(hasButton(root, "Zastavit")).toBe(true);
+    await act(async () =>
+      publish({ commandStates: { chat: "network_error" }, error }),
+    );
+    expect(hasButton(root, "Zastavit")).toBe(false);
+    expect(hasButton(root, "Odeslat")).toBe(true);
+    const progress = byTestId(root, "request-progress");
+    expect(hasButton(progress, "Zkusit znovu")).toBe(true);
+    await act(async () => button(progress, "Zahodit").props.onClick());
+    expect(session.discardPending).toHaveBeenCalledTimes(1);
+    expect(session.retry).not.toHaveBeenCalled();
+    expect(
+      root.findAll((node) => node.props["data-testid"] === "request-progress"),
+    ).toHaveLength(0);
+    expect(root.findByType("textarea").props.value).toBe("Najdi Jana");
+  },
+);
 
 test("the streamed steps say which service is read and what came back, one line each", async () => {
   const conversation: Conversation = {

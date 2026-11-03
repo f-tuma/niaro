@@ -21,6 +21,8 @@ export function ChatThread({
   state,
   conversationId,
   onRetry,
+  onDismiss,
+  actionsDisabled = false,
 }: {
   entries: readonly ThreadEntry[];
   pendingMessage: { kind: "message" | "answer"; text: string } | null;
@@ -30,6 +32,10 @@ export function ChatThread({
   conversationId: string;
   /** Resends the pending request when its delivery is uncertain. */
   onRetry?: () => void;
+  /** Lets go of the failed request; offered only once it no longer runs. */
+  onDismiss?: () => void;
+  /** A Dismiss is being settled with the server. */
+  actionsDisabled?: boolean;
 }) {
   const chat = useMobileChat();
   const language: Language = chat.language;
@@ -75,10 +81,13 @@ export function ChatThread({
             connection={state.activityConnection}
             failed={!!state.error?.startsWith("model_")}
             onRetry={onRetry}
-            retryDisabled={!chat.online}
+            onDismiss={onDismiss}
+            retryDisabled={!chat.online || actionsDisabled}
             interrupted={
               !chat.online ||
-              Object.values(state.commandStates).includes("network_error")
+              Object.values(state.commandStates).includes("network_error") ||
+              // Dismiss is offered only once the request no longer runs.
+              !!onDismiss
             }
           />
           {state.activity?.draft ? (

@@ -4375,6 +4375,84 @@ export class ClientSession {
       return this.retry().then(() => !this.state.pending);
     const flight = this.commandFlight ?? this.createFlight(command, true);
     this.commandFlight = flight;
+    return this.interruptFlight(flight, false);
+  }
+  /**
+   * Lets go of a retained command that no longer runs (its delivery failed or
+   * it was restored after a restart). The server settles it: a recorded
+   * outcome is shown as usual; only a server answer that the exact command is
+   * neither running nor recorded clears it without an outcome. Nothing is
+   * resent. Any other answer keeps the command for Retry or another Dismiss.
+   */
+  discardPending(): Promise<boolean> {
+    const command = this.state.pending;
+    if (
+      !command ||
+      this.stopped ||
+      this.invalid ||
+      this.answerStorageBlocked ||
+      this.outboxStorageBlocked ||
+      this.state.status !== "online" ||
+      // Process commands keep their own recovery; a running one is stopped.
+      isProcessRuntimeCommand(command) ||
+      this.submitting ||
+      this.state.commandStates[commandTarget(command)] === "sending"
+    )
+      return Promise.resolve(false);
+    const flight =
+      this.commandFlight?.command.commandId === command.commandId
+        ? this.commandFlight
+        : this.createFlight(command, true);
+    this.commandFlight = flight;
+    // The server already gave its outcome; only local storage failed after it.
+    if (flight.outcomeKnown)
+      return Promise.resolve(
+        this.finishCommand(flight, { error: null }, true),
+      ).then(
+        () => !this.state.pending,
+        () => false,
+      );
+    return this.interruptFlight(flight, true);
+  }
+  /** Clears a command the server proved is neither running nor recorded. */
+  private async releaseUnrecorded(flight: CommandFlight) {
+    const current = () => this.currentFlight(flight) && !flight.outcomeKnown;
+    if (!current()) return false;
+    try {
+      await this.write(() => this.storage.setItem(this.pendingKey, "null"));
+    } catch {
+      if (current()) this.storageError();
+      return false;
+    }
+    if (!current()) return false;
+    const command = flight.command;
+    flight.outcomeKnown = true;
+    this.commandRejection = null;
+    if (this.submitting === flight) this.submitting = null;
+    this.publish({
+      pending: null,
+      commandConversationId: undefined,
+      commandStates: {
+        ...this.state.commandStates,
+        [commandTarget(command)]: "idle",
+      },
+      error: null,
+      activity: null,
+      activitySteps: null,
+      activityApproval: null,
+    });
+    // Attachments of a message the server never recorded go back to the draft.
+    this.releaseUnsubmittedAttachments(command);
+    flight.stopActivity();
+    flight.controller.abort();
+    flight.markReady();
+    flight.retire();
+    return true;
+  }
+  private interruptFlight(
+    flight: CommandFlight,
+    discard: boolean,
+  ): Promise<boolean> {
     if (flight.deliveryStarted) flight.markReady();
     if (flight.interruption) return flight.interruption;
     const interruption = (async () => {
@@ -4426,8 +4504,18 @@ export class ClientSession {
             (process && result.profile !== executionProfile)
           )
             throw new Error("interruption_mismatch");
-          if (result.status !== "settled")
+          if (result.status !== "settled") {
+            // Proof that the command neither runs nor was recorded: dismissing
+            // it cannot lose or repeat anything the server did.
+            if (
+              discard &&
+              !process &&
+              result.status === "unknown" &&
+              result.reason === "not_running"
+            )
+              return this.releaseUnrecorded(flight);
             throw new Error("requestInterruptFailed");
+          }
           if (isProcessExecutionCommand(flight.command))
             await this.confirmProcessExecution(
               flight,
@@ -4452,7 +4540,8 @@ export class ClientSession {
           if (flight.outcomeKnown)
             return !this.stopped && !this.invalid && !this.state.pending;
           if (this.currentFlight(flight)) {
-            flight.interruptionFailed = true;
+            // A failed Dismiss leaves an already failed delivery as it was.
+            if (!discard) flight.interruptionFailed = true;
             this.commandRejection = "requestInterruptFailed";
             this.publish({ error: "requestInterruptFailed" });
           }

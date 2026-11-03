@@ -159,6 +159,7 @@ import {
   canRetryPending,
   chatErrorKey,
   isUserMessageRecorded,
+  runningChat,
   selectPendingChatMessage,
 } from "../../packages/client-core/chat-view";
 import {
@@ -408,6 +409,8 @@ export function Workspace({
   const focusWork = useRef<string | undefined>(undefined);
   const [draft, setDraftState] = useState("");
   const draftRef = useRef("");
+  // Dismiss of a failed request waits for the server's answer.
+  const [dismissing, setDismissing] = useState(false);
   const draftRevision = useRef(0);
   const draftVersion = useRef(0);
   const setDraft = useCallback((update: React.SetStateAction<string>) => {
@@ -1672,6 +1675,32 @@ export function Workspace({
     state.error,
     isProcessReply(context),
   );
+  // A failed message is kept in its chat with Retry and Dismiss; Stop is only
+  // for a request that still runs.
+  const failedMessage =
+    state.pending?.type === "message.send" &&
+    state.pending.conversationId === conversationId &&
+    canRetryPending(state, conversationId)
+      ? state.pending
+      : null;
+  const dismissFailed = () => {
+    const failed = failedMessage;
+    if (!session || !failed || dismissing) return;
+    setDismissing(true);
+    void session
+      .discardPending()
+      .then((released) => {
+        // A message the server never recorded goes back to an empty composer.
+        if (
+          released &&
+          !isUserMessageRecorded(session.getSnapshot().store, failed) &&
+          !draftRef.current &&
+          conversationRef.current === failed.conversationId
+        )
+          setDraft(failed.text);
+      })
+      .finally(() => setDismissing(false));
+  };
   const referencedWork = store
     ? selectPresentedWork(store, conversationId, messages)
     : new Set<string>();
@@ -2468,7 +2497,8 @@ export function Workspace({
               (attempt) =>
                 attempt.command.commandId === state.pending?.commandId,
             ) &&
-            !(section === "chat" && state.pending.type === "message.send") &&
+            // A message's request is retried or dismissed in its own chat.
+            state.pending.type !== "message.send" &&
             canRetryPending(state) ? (
               <Button
                 label={tr("retry")}
@@ -2763,6 +2793,8 @@ export function Workspace({
                           }
                         : undefined
                     }
+                    onDismiss={failedMessage ? dismissFailed : undefined}
+                    actionsDisabled={dismissing}
                   />
                 </MobileChatProvider>
               )}
@@ -2829,7 +2861,7 @@ export function Workspace({
             sending={Object.values(state.commandStates).includes("sending")}
             onStop={
               state.pending?.type === "message.send" &&
-              state.pending.conversationId === conversationId
+              runningChat(state) === conversationId
                 ? () => {
                     void session?.interruptPending();
                   }

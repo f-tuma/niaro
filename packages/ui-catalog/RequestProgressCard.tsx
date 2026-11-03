@@ -74,6 +74,7 @@ export function RequestProgressCard({
   failed = false,
   onRetry,
   retryDisabled = false,
+  onDismiss,
   onInterrupt,
   interruptAvailable = false,
   interruptLabel,
@@ -87,6 +88,8 @@ export function RequestProgressCard({
   failed?: boolean;
   onRetry?: () => void;
   retryDisabled?: boolean;
+  /** Lets go of a failed request; the server decides it is safe, nothing is resent. */
+  onDismiss?: () => void;
   /** Explicitly retire the current request; does not resubmit its payload. */
   onInterrupt?: () => void;
   /** A command is pending even if the server has not sent its first activity update. */
@@ -226,6 +229,16 @@ export function RequestProgressCard({
           style={styles.action}
           label={tr("progressRetry")}
           onPress={onRetry}
+          disabled={retryDisabled}
+        />
+      ) : null}
+      {onDismiss ? (
+        <Button
+          variant="quiet"
+          size="small"
+          style={styles.action}
+          label={tr("progressDismiss")}
+          onPress={onDismiss}
           disabled={retryDisabled}
         />
       ) : null}
