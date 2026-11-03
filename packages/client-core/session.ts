@@ -75,6 +75,7 @@ import {
   type OutputVoiceUpdate,
 } from "../protocol/output-voice";
 import { replyCorrelationPath } from "../protocol/reply-correlation";
+import { LIST_MARKS_PROFILE, type ListMarks } from "../protocol/list-marks";
 import {
   ServiceConnectionStart,
   ServiceConnectionStatus,
@@ -575,6 +576,24 @@ export class ClientSession {
   getDirectoryVersion = () => this.directoryVersion;
   private directoryChanged() {
     this.directoryVersion++;
+    for (const fn of this.listeners) fn();
+  }
+  private listMarks: ListMarks | undefined;
+  /**
+   * The server's Tasks and Meetings change marks from the last events poll
+   * (`ListMarks`); `undefined` until a poll brought them or when the server
+   * keeps none. Subscribers are told when one changes; the lists read again
+   * then instead of on a timer.
+   */
+  getListMarks = () => this.listMarks;
+  private updateListMarks(marks: ListMarks | undefined) {
+    if (
+      !marks ||
+      (marks.tasks === this.listMarks?.tasks &&
+        marks.meetings === this.listMarks?.meetings)
+    )
+      return;
+    this.listMarks = marks;
     for (const fn of this.listeners) fn();
   }
   private messageDelivery(path: string) {
@@ -3614,7 +3633,9 @@ export class ClientSession {
         return;
       }
       const { response, value } = await this.json(
-        replyCorrelationPath(`events?after=${this.state.store.cursor}`),
+        replyCorrelationPath(
+          `events?after=${this.state.store.cursor}&lists=${encodeURIComponent(LIST_MARKS_PROFILE)}`,
+        ),
       );
       httpStatus = response.status;
       received = value;
@@ -3628,6 +3649,7 @@ export class ClientSession {
       const batch = EventsResponseSchema.parse(value);
       if (!sameScope(batch.scope, this.state.store.scope))
         throw new Error("scope_mismatch");
+      this.updateListMarks(batch.lists);
       let store = this.state.store;
       for (const event of batch.events)
         store = applyEvent(store, this.address, event);

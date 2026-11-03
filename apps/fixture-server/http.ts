@@ -67,6 +67,7 @@ import {
   eventsForClient,
 } from "../../packages/protocol/reply-correlation";
 import { CARD_PROFILE } from "../../packages/protocol/card-document";
+import { LIST_MARKS_PROFILE } from "../../packages/protocol/list-marks";
 import {
   HUB_PROFILE,
   HUB_PROFILE_V2,
@@ -315,6 +316,7 @@ export type FixtureServerOptions = {
         | "mobileMentions"
         | "mobileMemberServices"
         | "mobileProcessProposal"
+        | "listMarks"
       >
     >;
   management?: (
@@ -697,6 +699,8 @@ export function createFixtureServer(
     const openWorkDelivery = url.searchParams.get("work") === OPEN_WORK_PROFILE;
     const questionOptions =
       url.searchParams.get("questions") === QUESTION_OPTIONS_PROFILE;
+    // Change marks of Tasks and Meetings reach only clients that ask.
+    const listMarks = url.searchParams.get("lists") === LIST_MARKS_PROFILE;
     // Message times and newer result types reach only clients that name them.
     const messages = messageDelivery(url.searchParams);
     const outputWork =
@@ -1812,6 +1816,9 @@ export function createFixtureServer(
             ? {
                 ...saved,
                 events: processEventsForCurrentWindow(saved.events, workItems),
+                ...(listMarks && bridge && options.identity?.listMarks
+                  ? { lists: options.identity.listMarks(session.scope) }
+                  : {}),
               }
             : null;
         });

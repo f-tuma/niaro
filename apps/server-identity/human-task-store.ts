@@ -13,6 +13,7 @@ import {
   type HumanTaskTab,
 } from "../../packages/protocol/human-tasks";
 import { IdentityError } from "./error";
+import { ListMarkCounter } from "./list-marks";
 const owner = (s: Scope) =>
   JSON.stringify([s.connectionId, s.serverId, s.workspaceId, s.userId]);
 const hash = (v: unknown) =>
@@ -32,7 +33,11 @@ export function humanTaskContentKey(raw: unknown) {
 }
 const legacyStatuses = `('proposed','active','completed','dismissed')`;
 export class HumanTaskStore {
-  constructor(private db: DatabaseSync) {
+  constructor(
+    private db: DatabaseSync,
+    /** Bumped on every change of an owner's items (`ListMarks.tasks`). */
+    readonly marks = new ListMarkCounter(),
+  ) {
     db.exec(`CREATE TABLE IF NOT EXISTS niaro_human_task(id TEXT PRIMARY KEY, owner TEXT NOT NULL, created_at TEXT NOT NULL, meeting_id TEXT, value TEXT NOT NULL) STRICT;
     CREATE INDEX IF NOT EXISTS niaro_human_task_owner ON niaro_human_task(owner,created_at,id);
     CREATE TABLE IF NOT EXISTS niaro_human_task_receipt(owner TEXT NOT NULL, command_id TEXT NOT NULL, idem TEXT NOT NULL, task_id TEXT NOT NULL REFERENCES niaro_human_task(id) ON DELETE CASCADE, digest TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(owner,command_id),UNIQUE(owner,idem)) STRICT;`);
@@ -131,6 +136,7 @@ export class HumanTaskStore {
         origin.kind === "meeting" ? origin.meetingId : null,
         JSON.stringify(task),
       );
+    this.marks.bump("tasks", scope);
     return task;
   }
   /** The newest open items, for the assistant's own context. */
@@ -222,6 +228,7 @@ export class HumanTaskStore {
     this.db
       .prepare("UPDATE niaro_human_task SET value=? WHERE owner=? AND id=?")
       .run(JSON.stringify(HumanTaskSchema.parse(next)), owner(scope), id);
+    this.marks.bump("tasks", scope);
   }
   /** The assistant closes an open item it saw resolved; it always says why. */
   close(scope: Scope, id: string, reason: string) {
@@ -294,8 +301,9 @@ export class HumanTaskStore {
         "DELETE FROM niaro_human_task_receipt WHERE owner=? AND task_id IN (SELECT id FROM niaro_human_task WHERE owner=? AND meeting_id=?)",
       )
       .run(owner(scope), owner(scope), id);
-    this.db
+    const { changes } = this.db
       .prepare("DELETE FROM niaro_human_task WHERE owner=? AND meeting_id=?")
       .run(owner(scope), id);
+    if (Number(changes) > 0) this.marks.bump("tasks", scope);
   }
 }

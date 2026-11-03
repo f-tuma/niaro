@@ -49,6 +49,7 @@ import {
 import { IdentityError } from "./error";
 import { MeetingAudioArchive } from "./meeting-audio-archive";
 import { VoiceProfiles } from "./meeting-voices";
+import { ListMarkCounter } from "./list-marks";
 
 const digest = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -115,6 +116,8 @@ export class MeetingStore {
   readonly humanTasks: HumanTaskStore;
   readonly archive: MeetingAudioArchive;
   readonly voiceProfiles: VoiceProfiles;
+  /** Change marks of the owner's meetings and items (`ListMarks`). */
+  readonly marks = new ListMarkCounter();
   constructor(
     private db: DatabaseSync,
     directory?: string,
@@ -137,7 +140,7 @@ export class MeetingStore {
       id TEXT NOT NULL REFERENCES niaro_meeting(id) ON DELETE CASCADE,
       segment INTEGER NOT NULL, value TEXT NOT NULL, PRIMARY KEY(id,segment)
     ) STRICT;`);
-    this.humanTasks = new HumanTaskStore(db);
+    this.humanTasks = new HumanTaskStore(db, this.marks);
     this.archive = new MeetingAudioArchive(db, (meeting) => this.path(meeting));
     this.voiceProfiles = new VoiceProfiles(db, owner);
     // Search ignores case and accents ("stastny" finds "Šťastný").
@@ -173,6 +176,7 @@ export class MeetingStore {
     this.db
       .prepare("UPDATE niaro_meeting SET value=? WHERE id=?")
       .run(JSON.stringify(next), next.id);
+    this.marks.bump("meetings", next.scope);
     return next;
   }
   get(scope: Scope, id: string) {
@@ -300,6 +304,7 @@ export class MeetingStore {
       unlinkSync(this.path(meeting));
       throw error;
     }
+    this.marks.bump("meetings", scope);
     return meeting;
   }
   path(meeting: Pick<Meeting, "id">) {
@@ -920,6 +925,7 @@ export class MeetingStore {
     this.db.prepare("DELETE FROM niaro_meeting_block WHERE id=?").run(id);
     this.db.prepare("DELETE FROM niaro_meeting WHERE id=?").run(id);
     this.archive.discard(id);
+    this.marks.bump("meetings", scope);
     return { profile: MEETING_PROFILE, scope, deleted: id };
   }
   profileOwners(after = "", limit = 100) {

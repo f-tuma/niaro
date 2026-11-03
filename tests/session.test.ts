@@ -636,3 +636,43 @@ test("a quiet poll neither wakes subscribers nor rewrites storage; a paused app 
     s.stop();
   }
 });
+test("the events poll asks for the Tasks and Meetings change marks and tells subscribers only when one moves", async () => {
+  const e = new FixtureEngine();
+  const asked: string[] = [];
+  let lists: { tasks: string; meetings: string } | undefined;
+  const request = authenticated(async (url) => {
+    if (!String(url).includes("events?")) return response(e.snapshot());
+    asked.push(String(url));
+    return response({ ...e.events(0), ...(lists ? { lists } : {}) });
+  });
+  const s = new ClientSession(
+    "https://fixture/v1/a",
+    memory(),
+    credential(),
+    request,
+  );
+  const told = jest.fn();
+  s.subscribe(told);
+  try {
+    await s.start(false);
+    // A server that keeps no marks: none, and the poll still works.
+    await s.sync();
+    expect(asked.at(-1)).toContain("lists=agent-list-marks%2F1");
+    expect(s.getListMarks()).toBeUndefined();
+    lists = { tasks: "boot.1", meetings: "boot.0" };
+    told.mockClear();
+    await s.sync();
+    expect(s.getListMarks()).toEqual(lists);
+    expect(told).toHaveBeenCalled();
+    // The same marks again: nothing to tell.
+    told.mockClear();
+    await s.sync();
+    expect(told).not.toHaveBeenCalled();
+    lists = { tasks: "boot.1", meetings: "boot.1" };
+    await s.sync();
+    expect(s.getListMarks()?.meetings).toBe("boot.1");
+    expect(told).toHaveBeenCalled();
+  } finally {
+    s.stop();
+  }
+});

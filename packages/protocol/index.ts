@@ -14,6 +14,7 @@ import { ProcessOfferResultSchema } from "./process-offer";
 import { SkillProposalResultSchema } from "./skills";
 import { ProcessProposalResultSchema } from "./process-proposal";
 import { GeneratedUiSchema } from "./generative-ui";
+import { ListMarksSchema } from "./list-marks";
 
 export const PROFILE = "agent-client/0.8-fixture" as const;
 const id = z
@@ -783,6 +784,9 @@ export const EventsResponseSchema = z.strictObject({
   scope: ScopeSchema,
   events: z.array(EventSchema).max(2000),
   cursor: sequence,
+  /** Change marks of Tasks and Meetings; only for clients that ask
+   * (`lists=agent-list-marks/1`) on servers that keep them. */
+  lists: ListMarksSchema.optional(),
 });
 
 // Authentication is negotiated separately; the workflow wire schema is unchanged.

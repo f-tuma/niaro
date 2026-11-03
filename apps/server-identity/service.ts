@@ -3208,6 +3208,13 @@ export class IdentityService {
       };
     });
   }
+  /**
+   * The person's Tasks and Meetings change marks for the events poll
+   * (`ListMarks`); `scope` is the authenticated session's.
+   */
+  listMarks(scope: Scope) {
+    return this.meetings.marks.read(scope);
+  }
   async mobileMeetingAccess(
     header: string | undefined,
     workspaceId: string,

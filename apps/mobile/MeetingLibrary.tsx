@@ -55,6 +55,7 @@ import { DetailSheet, IconButton, TopBar } from "./ScreenChrome";
 import { ProcessLaunch } from "./ProcessLaunch";
 import { MEETING_LIST } from "../../packages/client-core/list-cache";
 import { useListSeed } from "./list-cache";
+import { useListRefresh } from "./list-refresh";
 const empty = {
   phase: "idle" as const,
   entries: [],
@@ -192,6 +193,12 @@ export function MeetingRecordingControls({
     </Stack>
   );
 }
+/** A meeting whose state the server still moves on its own. */
+const PROCESSING = new Set<Meeting["status"]>([
+  "uploading",
+  "transcribing",
+  "analyzing",
+]);
 /** Remains mounted across sections so navigation cannot discard the active recorder. Keyed by immutable destination. */
 export function MeetingLibrary({
   session,
@@ -282,7 +289,10 @@ export function MeetingLibrary({
   const alive = useRef(true);
   const generation = useRef(0);
   const processTaskSelection = useRef(0);
-  const inFlight = useRef(false);
+  const inFlight = useRef<{
+    read: Promise<boolean>;
+    generation: number;
+  } | null>(null);
   const recordingStartPending = useRef(false);
   const [recordingEntryId, setRecordingEntryId] = useState<string | null>(null);
   // Settled capture must not hide recovery during later playback/import work.
@@ -339,14 +349,13 @@ export function MeetingLibrary({
     processTaskSelection.current++;
     recordUpdatedAt.current = undefined;
   }, [selectedId]);
-  const load = useCallback(
-    async (includeSelected = true) => {
-      if (inFlight.current) return;
-      inFlight.current = true;
+  /** Resolves whether the server's answer landed. */
+  const read = useCallback(
+    async (includeSelected: boolean) => {
       const ticket = generation.current;
       try {
         const list = await session.readMeetings();
-        if (!alive.current || ticket !== generation.current) return;
+        if (!alive.current || ticket !== generation.current) return false;
         setMeetings(list.meetings);
         setLoaded(true);
         rememberMeetings(list.meetings);
@@ -362,7 +371,7 @@ export function MeetingLibrary({
           setReader(false);
           recordUpdatedAt.current = undefined;
           select(null);
-          return;
+          return true;
         }
         const detail =
           includeSelected &&
@@ -370,35 +379,59 @@ export function MeetingLibrary({
           current?.updatedAt !== recordUpdatedAt.current
             ? await session.readMeetingRecord(selectedId)
             : undefined;
-        if (!alive.current || ticket !== generation.current) return;
+        if (!alive.current || ticket !== generation.current) return false;
         if (detail) {
           // The owner's names for the voices, as named on the web.
           setRecord(namedMeetingRecord(detail));
           recordUpdatedAt.current = detail.meeting.updatedAt;
         }
+        return true;
       } catch (failure) {
         if (alive.current && ticket === generation.current)
           setLoadError(errorKey(failure));
-      } finally {
-        inFlight.current = false;
+        return false;
       }
     },
     [session, selectedId, select, rememberMeetings],
   );
-  useEffect(() => {
-    if (!visible) return;
-    const initial = setTimeout(() => {
-      void load();
-    }, 0);
-    const timer = setInterval(() => {
-      void load();
-    }, 5000);
-    return () => {
-      clearTimeout(initial);
-      clearInterval(timer);
-      invalidate();
-    };
-  }, [visible, load, invalidate, refreshVersion]);
+  /** A read asked for during another one of the same screen waits for it
+   * and then reads again; a dropped one (`invalidate`) is not waited for. */
+  const load = useCallback(
+    async (includeSelected = true): Promise<boolean> => {
+      while (
+        inFlight.current &&
+        inFlight.current.generation === generation.current
+      )
+        await inFlight.current.read.catch(() => {});
+      const current = {
+        read: read(includeSelected),
+        generation: generation.current,
+      };
+      inFlight.current = current;
+      try {
+        return await current.read;
+      } finally {
+        if (inFlight.current === current) inFlight.current = null;
+      }
+    },
+    [read],
+  );
+  // Leaving the screen or opening another record drops a read still on its
+  // way; its answer belongs to what was shown before.
+  useEffect(() => () => invalidate(), [visible, read, invalidate]);
+  // Reads after a change mark (a meeting added, renamed, deleted or moving
+  // through upload and processing), not on a timer.
+  useListRefresh({
+    session,
+    list: "meetings",
+    target: selectedId ?? "",
+    visible,
+    follow: visible,
+    online: true,
+    refreshVersion,
+    processing: shownMeetings.some((meeting) => PROCESSING.has(meeting.status)),
+    load,
+  });
   async function action(fn: () => Promise<unknown>, includeSelected = true) {
     if (busy) return;
     setBusy(true);

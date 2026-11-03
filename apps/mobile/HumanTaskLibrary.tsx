@@ -12,6 +12,7 @@ import type { ClientSession } from "../../packages/client-core/session";
 import { HumanTaskCommandQueue } from "../../packages/client-core/human-task-command";
 import { TASK_LISTS } from "../../packages/client-core/list-cache";
 import { phoneLists, useListSeed } from "./list-cache";
+import { useListRefresh } from "./list-refresh";
 import { sameScope, type Language } from "../../packages/protocol";
 import {
   type HumanTask,
@@ -194,20 +195,18 @@ export function HumanTaskLibrary({
       if (alive.current && ticket === request.current) setLoading(false);
     }
   }, [session]);
-  useEffect(() => {
-    if (!online) return;
-    void load().catch(() => {});
-    const timer = setInterval(
-      () => {
-        void load().catch(() => {});
-      },
-      visible ? 5000 : 15000,
-    );
-    return () => {
-      clearInterval(timer);
-      invalidate();
-    };
-  }, [online, visible, tab, after, refreshVersion, load, invalidate]);
+  // Reads after a change mark, not on a timer: also while hidden, so the
+  // Tasks badge (`onCounts`) follows the server.
+  useListRefresh({
+    session,
+    list: "tasks",
+    target: `${tab}:${after ?? ""}`,
+    visible,
+    follow: true,
+    online,
+    refreshVersion,
+    load,
+  });
   async function decide(
     task: HumanTask,
     decision: HumanTaskCommand["decision"],
