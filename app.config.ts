@@ -33,7 +33,7 @@ const config: ExpoConfig = {
   android: {
     package: audioSpike ? "dev.agentclient.demo.audio" : "dev.ftuma.niaro",
     // Google Play needs a higher number for every upload.
-    versionCode: 4,
+    versionCode: 5,
     adaptiveIcon: {
       foregroundImage: "./assets/application/mark.png",
       monochromeImage: "./assets/application/mark.png",
