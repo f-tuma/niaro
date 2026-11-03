@@ -22,7 +22,7 @@ test.each(["en", "cs"] as const)(
     expect(screen.queryByRole("radio")).toBeNull();
     expect(
       screen.queryByRole("button", {
-        name: translate(language)("approveMeeting"),
+        name: translate(language)("serviceApprove"),
       }),
     ).toBeNull();
     fireEvent.press(screen.getByRole("button"));

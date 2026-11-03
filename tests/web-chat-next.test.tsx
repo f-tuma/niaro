@@ -22,6 +22,7 @@ import {
   type MentionDirectory,
 } from "../packages/protocol/mentions";
 import { translate } from "../packages/i18n";
+import { meetingProposal } from "../packages/test-fixtures";
 
 if (!globalThis.crypto?.randomUUID)
   Object.defineProperty(globalThis, "crypto", { value: webcrypto });
@@ -1272,5 +1273,48 @@ test("an approval card ends with Decline then Approve, and Decline declines", as
     type: "service.resolve",
     operationId: "op-1",
     approved: false,
+  });
+});
+
+test("a meeting proposal ends like an approval card: Decline then Approve, right-aligned, with the same words (NIAR-278)", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Naplánuj schůzku s Peterem")],
+  };
+  const proposal = { ...meetingProposal("cs"), conversationId: "conv-1" };
+  const work = {
+    id: proposal.workItemId,
+    conversationId: "conv-1",
+    revision: 2,
+    title: "Schůzka s Peterem",
+    context: "",
+    status: "waiting_approval",
+    inputRequestIds: [],
+    actionProposalIds: [proposal.id],
+    operationIds: [],
+  } as unknown as WorkItem;
+  const store = storeWith([conversation], [work]);
+  store.actionProposals[proposal.id] = proposal;
+  const { session, sent } = fakeSession(store, {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  const footer = byTestId(root, "meeting-decisions");
+  expect(footer.props.className).toContain("ml-auto");
+  const decisions = footer.findAll((node) => node.type === "button");
+  expect(decisions.map(text)).toEqual([
+    tr("serviceReject"),
+    tr("serviceApprove"),
+  ]);
+  expect(decisions.map(text)).toEqual(["Odmítnout", "Potvrdit"]);
+  expect(decisions[0]!.props.variant).toBe("outline");
+  expect(decisions[1]!.props.variant).toBeUndefined();
+  expect(text(root)).not.toMatch(/Zavřít|Odmítnout návrh/);
+  await act(async () => decisions[0]!.props.onClick());
+  expect(sent[0]).toMatchObject({
+    type: "proposal.decide",
+    proposalId: proposal.id,
+    decision: "reject",
   });
 });

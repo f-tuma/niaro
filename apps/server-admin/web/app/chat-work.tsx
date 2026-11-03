@@ -748,13 +748,6 @@ function ProposalReview({
             parameters.startsAt}
         </span>
       </div>
-      {waiting && (
-        <p className="text-xs text-muted-foreground">
-          {tr(
-            parameters.calendar ? "calendarEffectShort" : "approvalEffectShort",
-          )}
-        </p>
-      )}
       {changed && canRevise && (
         <Alert>
           <AlertDescription>{tr("proposalChanged")}</AlertDescription>
@@ -788,28 +781,37 @@ function ProposalReview({
       {proposal.status === "rejected" && (
         <p className="text-muted-foreground">{tr("proposalRejected")}</p>
       )}
+      {/* As on the approval card: the effect on the left, then right-aligned
+          Decline (outline) and Approve, the one primary. */}
       {canRevise && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2">
           {waiting && (
-            <Button
-              disabled={disabled}
-              onClick={() => onDecision("approve", reviewedRevision)}
-            >
-              {state === "sending" && <Spinner data-icon="inline-start" />}
+            <span className="text-xs text-muted-foreground">
               {tr(
                 parameters.calendar
-                  ? "approveCalendarShort"
-                  : "approveDemoShort",
+                  ? "calendarEffectShort"
+                  : "approvalEffectShort",
               )}
-            </Button>
+            </span>
           )}
-          <Button
-            variant="outline"
-            disabled={disabled}
-            onClick={() => onDecision("reject", proposal.revision)}
-          >
-            {tr("rejectProposalShort")}
-          </Button>
+          <div data-testid="meeting-decisions" className="ml-auto flex gap-2">
+            <Button
+              variant="outline"
+              disabled={disabled}
+              onClick={() => onDecision("reject", proposal.revision)}
+            >
+              {tr("serviceReject")}
+            </Button>
+            {waiting && (
+              <Button
+                disabled={disabled}
+                onClick={() => onDecision("approve", reviewedRevision)}
+              >
+                {state === "sending" && <Spinner data-icon="inline-start" />}
+                {tr("serviceApprove")}
+              </Button>
+            )}
+          </div>
         </div>
       )}
       {current && (

@@ -779,14 +779,10 @@ export const en = {
   testCalendar: "Test calendar",
   calendarTarget: "Calendar destination",
   calendarEffect:
-    "Confirming creates a real event in this test calendar. The contact is recorded in the description; no invitation or email is sent.",
-  approveCalendarMeeting: "Create event in test calendar",
-  approveCalendarShort: "Create event",
-  approveDemoShort: "Confirm · Demo",
+    "Approving creates a real event in this test calendar. The contact is recorded in the description; no invitation or email is sent.",
   calendarEffectShort: "Creates a test calendar event. No invitations sent.",
   approvalEffectShort: "Demo only. No calendar or email changes.",
   editProposalShort: "Edit",
-  rejectProposalShort: "Dismiss",
   showMoreContacts: "More contacts",
   showFewerContacts: "Fewer contacts",
   meetingStarter: "Prepare a meeting with ",
@@ -819,18 +815,16 @@ export const en = {
   meetingDate: "Date",
   meetingTime: "Time",
   approvalEffect:
-    "Demo: confirming simulates creating this meeting and sending an invitation to the participant shown. No real calendar or email is changed.",
+    "Demo: approving simulates creating this meeting and sending an invitation to the participant shown. No real calendar or email is changed.",
   proposalChanged:
-    "The proposal changed. Review the current details before confirming. Any previous approval does not cover this version.",
+    "The proposal changed. Review the current details before approving. Any previous approval does not cover this version.",
   reviewCurrentProposal: "Review current version",
   proposalConflict:
     "The proposal or operation changed. Review its current status before trying again.",
   approvedRevision: "Approved proposal revision",
-  proposalRejected: "Proposal rejected. No new operation will run.",
+  proposalRejected: "Proposal declined. No new operation will run.",
   saveProposal: "Save new proposal",
   editProposal: "Edit details",
-  rejectProposal: "Reject proposal",
-  approveMeeting: "Confirm this meeting · Demo",
   invalid_proposal:
     "Choose a listed contact and a valid future date and time (UTC).",
   operation_in_progress:
@@ -1790,13 +1784,9 @@ export const cs: Record<TranslationKey, string> = {
   calendarTarget: "Cílový kalendář",
   calendarEffect:
     "Potvrzením vznikne skutečná událost v tomto testovacím kalendáři. Kontakt se uloží do popisu; pozvánka ani e-mail se neodesílají.",
-  approveCalendarMeeting: "Vytvořit událost v testovacím kalendáři",
-  approveCalendarShort: "Vytvořit událost",
-  approveDemoShort: "Potvrdit · Ukázka",
   calendarEffectShort: "Vytvoří událost v testovacím kalendáři. Bez pozvánek.",
   approvalEffectShort: "Jen ukázka. Kalendář ani e-mail se nezmění.",
   editProposalShort: "Upravit",
-  rejectProposalShort: "Odmítnout",
   showMoreContacts: "Další kontakty",
   showFewerContacts: "Méně kontaktů",
   meetingStarter: "Připrav schůzku s ",
@@ -1840,8 +1830,6 @@ export const cs: Record<TranslationKey, string> = {
   proposalRejected: "Návrh byl odmítnut. Nová operace se nespustí.",
   saveProposal: "Uložit nový návrh",
   editProposal: "Upravit údaje",
-  rejectProposal: "Odmítnout návrh",
-  approveMeeting: "Potvrdit tuto schůzku · Ukázka",
   invalid_proposal:
     "Vyber nabízený kontakt a platné budoucí datum a čas (UTC).",
   operation_in_progress:

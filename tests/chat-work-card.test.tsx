@@ -1,5 +1,11 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react-native";
+import {
+  render,
+  screen,
+  fireEvent,
+  within,
+} from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 import { InputRequestForm } from "../packages/ui-catalog/InputRequestForm";
 import { ActionApprovalCard } from "../packages/ui-catalog/ActionApprovalCard";
 import { WorkItemCard } from "../packages/ui-catalog/WorkItemCard";
@@ -217,12 +223,70 @@ test.each(["en", "cs"] as const)(
     ).toBeTruthy();
     expect(p.onExpand).toHaveBeenCalled();
     expect(p.onDecision).not.toHaveBeenCalled();
-    fireEvent.press(
-      screen.getByRole("button", { name: tr("approveCalendarShort") }),
-    );
+    fireEvent.press(screen.getByRole("button", { name: tr("serviceApprove") }));
     expect(p.onDecision.mock.calls).toEqual([["approve", p.proposal.revision]]);
   },
 );
+test.each(["en", "cs"] as const)(
+  "%s meeting proposal footer: Edit, then right-aligned Decline and Approve with the approval card's words (NIAR-278)",
+  (language) => {
+    const p = props(language),
+      tr = translate(language);
+    render(<ActionApprovalCard {...p} />);
+    const footer = screen.getByTestId("meeting-decisions");
+    expect(StyleSheet.flatten(footer.props.style).justifyContent).toBe(
+      "flex-end",
+    );
+    const buttons = within(footer).getAllByRole("button");
+    expect(buttons.map((button) => button.props.accessibilityLabel)).toEqual([
+      tr("editProposalShort"),
+      tr("serviceReject"),
+      tr("serviceApprove"),
+    ]);
+    expect(tr("serviceReject")).toBe(
+      language === "cs" ? "Odmítnout" : "Decline",
+    );
+    expect(tr("serviceApprove")).toBe(
+      language === "cs" ? "Potvrdit" : "Approve",
+    );
+    fireEvent.press(buttons[1]!);
+    expect(p.onDecision.mock.calls).toEqual([["reject", p.proposal.revision]]);
+  },
+);
+test("an approved meeting still waiting to start offers Edit and Decline, no second Approve", () => {
+  const p = props();
+  const operation = {
+    id: "op",
+    revision: 1,
+    workItemId: p.proposal.workItemId,
+    conversationId: p.proposal.conversationId,
+    proposalId: p.proposal.id,
+    acceptedProposalRevision: 1,
+    idempotencyKey: "approve",
+    parameters: p.proposal.parameters,
+    status: "pending" as const,
+    demo: true as const,
+  };
+  render(
+    <ActionApprovalCard
+      {...p}
+      proposal={{
+        ...p.proposal,
+        revision: 2,
+        status: "approved",
+        approval: { operationId: "op", proposalRevision: 1, commandId: "c" },
+      }}
+      operations={[operation]}
+    />,
+  );
+  const buttons = within(screen.getByTestId("meeting-decisions")).getAllByRole(
+    "button",
+  );
+  expect(buttons.map((button) => button.props.accessibilityLabel)).toEqual([
+    "Edit",
+    "Decline",
+  ]);
+});
 test("inline edit remains a local draft until saved and preserves revision protection", () => {
   const p = props();
   const { rerender } = render(<ActionApprovalCard {...p} />);
@@ -252,8 +316,10 @@ test("compact rendering does not turn a demo into a real calendar action", () =>
   expect(
     screen.getByText("Demo only. No calendar or email changes."),
   ).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Create event" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Confirm · Demo" })).toBeTruthy();
+  expect(
+    screen.queryByText("Creates a test calendar event. No invitations sent."),
+  ).toBeNull();
+  expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
   expect(p.onDecision).not.toHaveBeenCalled();
 });
 

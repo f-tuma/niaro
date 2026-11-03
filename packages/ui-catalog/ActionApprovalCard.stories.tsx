@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { choosePeter, meetingProposal } from "../test-fixtures";
+import { View } from "react-native";
 import { Button, Stack } from "../ui";
 import type { Operation } from "../protocol";
 import { ActionApprovalCard } from "./ActionApprovalCard";
@@ -105,6 +106,15 @@ export const ChatProposal: Story = {
 };
 export const ChatProposalCzech: Story = {
   args: { ...ChatProposal.args, language: "cs" },
+};
+/** Edit on the left, then Decline and Approve on the right, as on the web. */
+export const ChatProposalNarrowCzech: Story = {
+  render: (args) => (
+    <View style={{ width: 320, maxWidth: "100%" }}>
+      <ActionApprovalCard {...args} />
+    </View>
+  ),
+  args: { ...ChatProposalCzech.args },
 };
 export const ChatDemo: Story = {
   args: { compact: true, timeZone: "Europe/Prague" },

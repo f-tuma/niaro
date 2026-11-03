@@ -23,9 +23,7 @@ test("approval is passive until explicit confirmation and exposes all effect det
   expect(screen.getByText(/fixture-local \/ a/)).toBeTruthy();
   expect(screen.getByText("peter-novak@example.test")).toBeTruthy();
   expect(screen.getByText(/No real calendar or email/)).toBeTruthy();
-  fireEvent.press(
-    screen.getByRole("button", { name: "Confirm this meeting · Demo" }),
-  );
+  fireEvent.press(screen.getByRole("button", { name: "Approve" }));
   expect(p.onDecision).toHaveBeenCalledWith("approve", 1);
 });
 test("a new proposal revision requires reviewing the new details before confirmation", () => {
@@ -44,17 +42,13 @@ test("a new proposal revision requires reviewing the new details before confirma
     },
   };
   rerender(<ActionApprovalCard {...p} proposal={proposal} />);
-  fireEvent.press(
-    screen.getByRole("button", { name: "Confirm this meeting · Demo" }),
-  );
+  fireEvent.press(screen.getByRole("button", { name: "Approve" }));
   expect(p.onDecision).not.toHaveBeenCalled();
   expect(screen.getByText("peter-svoboda@example.test")).toBeTruthy();
   fireEvent.press(
     screen.getByRole("button", { name: "Review current version" }),
   );
-  fireEvent.press(
-    screen.getByRole("button", { name: "Confirm this meeting · Demo" }),
-  );
+  fireEvent.press(screen.getByRole("button", { name: "Approve" }));
   expect(p.onDecision).toHaveBeenCalledWith("approve", 2);
 });
 test.each([
@@ -65,9 +59,7 @@ test.each([
 ])("blocked approval cannot submit or revise: %j", (extra) => {
   const p = props();
   render(<ActionApprovalCard {...p} {...extra} />);
-  fireEvent.press(
-    screen.getByRole("button", { name: "Confirm this meeting · Demo" }),
-  );
+  fireEvent.press(screen.getByRole("button", { name: "Approve" }));
   fireEvent.press(screen.getByRole("button", { name: "Edit details" }));
   expect(p.onDecision).not.toHaveBeenCalled();
   expect(p.onRevise).not.toHaveBeenCalled();
@@ -190,10 +182,7 @@ test.each(["en", "cs"] as const)(
     expect(p.onDecision).not.toHaveBeenCalled();
     fireEvent.press(
       screen.getByRole("button", {
-        name:
-          language === "en"
-            ? "Create event in test calendar"
-            : "Vytvořit událost v testovacím kalendáři",
+        name: language === "en" ? "Approve" : "Potvrdit",
       }),
     );
     expect(p.onDecision).toHaveBeenCalledWith("approve", 1);

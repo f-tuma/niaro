@@ -7,6 +7,7 @@ import {
   type Operation,
 } from "../protocol";
 import { translate } from "../i18n";
+import { tokens as t } from "../design-tokens";
 import { Button, Text, Stack, Row, Notice, DetailRow, Disclosure } from "../ui";
 import { DateTimeFields } from "../ui/DateTimeFields";
 import { localDateTime, localDateTimeToIso } from "../ui/local-date-time";
@@ -28,6 +29,11 @@ export type ActionApprovalProps = {
   onDecision(decision: "approve" | "reject", revision: number): void;
   onRevise(participantId: string, startsAt: string, revision: number): void;
 };
+const decisions = {
+  gap: t.spacing.sm,
+  justifyContent: "flex-end",
+  flexWrap: "wrap",
+} as const;
 export function ActionApprovalCard({
   proposal,
   operations,
@@ -219,52 +225,41 @@ export function ActionApprovalCard({
             onPress={() => setEditing(false)}
           />
         </Stack>
-      ) : (
-        <>
+      ) : canRevise ? (
+        // As on the approval card and the web: Edit on the left, then
+        // right-aligned Decline (tonal) and Approve, the one primary.
+        <Row testID="meeting-decisions" style={decisions}>
+          <Button
+            variant="quiet"
+            style={{ marginRight: "auto" }}
+            label={tr(compact ? "editProposalShort" : "editProposal")}
+            disabled={disabled}
+            onPress={() => {
+              onExpand?.();
+              setReviewedRevision(proposal.revision);
+              setParticipant(proposal.parameters.participant.id);
+              setDate(localDateTime(proposal.parameters.startsAt).date);
+              setTime(localDateTime(proposal.parameters.startsAt).time);
+              setEditing(true);
+              setInvalid(false);
+            }}
+          />
+          <Button
+            variant="secondary"
+            label={tr("serviceReject")}
+            disabled={disabled}
+            onPress={() => onDecision("reject", proposal.revision)}
+          />
           {waiting ? (
             <Button
-              label={tr(
-                compact
-                  ? proposal.parameters.calendar
-                    ? "approveCalendarShort"
-                    : "approveDemoShort"
-                  : proposal.parameters.calendar
-                    ? "approveCalendarMeeting"
-                    : "approveMeeting",
-              )}
+              label={tr("serviceApprove")}
               disabled={disabled}
               loading={state === "sending"}
               onPress={() => onDecision("approve", reviewedRevision)}
             />
           ) : null}
-          {canRevise ? (
-            <Row style={{ alignItems: "stretch" }}>
-              <Button
-                style={{ flex: 1 }}
-                variant="secondary"
-                label={tr(compact ? "editProposalShort" : "editProposal")}
-                disabled={disabled}
-                onPress={() => {
-                  onExpand?.();
-                  setReviewedRevision(proposal.revision);
-                  setParticipant(proposal.parameters.participant.id);
-                  setDate(localDateTime(proposal.parameters.startsAt).date);
-                  setTime(localDateTime(proposal.parameters.startsAt).time);
-                  setEditing(true);
-                  setInvalid(false);
-                }}
-              />
-              <Button
-                style={{ flex: 1 }}
-                variant="danger"
-                label={tr(compact ? "rejectProposalShort" : "rejectProposal")}
-                disabled={disabled}
-                onPress={() => onDecision("reject", proposal.revision)}
-              />
-            </Row>
-          ) : null}
-        </>
-      )}
+        </Row>
+      ) : null}
       <Disclosure
         label={tr(compact ? "meetingDetails" : "technicalDetails")}
         onToggle={() => onExpand?.()}
