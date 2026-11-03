@@ -241,14 +241,17 @@ test("NIAR-286: once a message with a file is taken, the tray empties, no disabl
       expect(session.getSnapshot().pending?.type).toBe("message.send"),
     );
     // On its way: the tray is empty and no disabled Send waits beside Stop,
-    // which stands where the microphone is while the request runs.
-    expect(session.attachments.getSnapshot().entries).toHaveLength(0);
-    expect(screen.queryByText("Uploaded")).toBeNull();
-    expect(screen.getByLabelText(tr("composer")).props.value).toBe("");
-    expect(screen.queryByRole("button", { name: tr("send") })).toBeNull();
-    expect(
-      screen.getByRole("button", { name: tr("progressInterrupt") }),
-    ).toBeTruthy();
+    // which stands where the microphone is while the request runs. The
+    // screen follows the session a render later on a loaded run.
+    await waitFor(() => {
+      expect(session.attachments.getSnapshot().entries).toHaveLength(0);
+      expect(screen.queryByText("Uploaded")).toBeNull();
+      expect(screen.getByLabelText(tr("composer")).props.value).toBe("");
+      expect(screen.queryByRole("button", { name: tr("send") })).toBeNull();
+      expect(
+        screen.getByRole("button", { name: tr("progressInterrupt") }),
+      ).toBeTruthy();
+    });
     // The file shows with the message in the chat.
     const pending = screen.getByTestId("pending-message");
     expect(pending).toHaveTextContent(/TEST with a file/);
