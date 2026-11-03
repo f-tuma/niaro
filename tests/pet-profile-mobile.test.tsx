@@ -447,6 +447,9 @@ test("a section opens as a nested screen and the back path restores focus to its
 });
 
 test("the row menu runs delete and classify through the confirmed commands", async () => {
+  const announce = jest
+    .spyOn(AccessibilityInfo, "announceForAccessibility")
+    .mockImplementation(() => {});
   const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
   const item = {
     id: "memory-1",
@@ -500,7 +503,11 @@ test("the row menu runs delete and classify through the confirmed commands", asy
   expect(session.savePetMemory).toHaveBeenCalledWith(
     expect.objectContaining({ type: "forget", id: "memory-1", revision: 3 }),
   );
-  await screen.findByText("Saved");
+  // A save is confirmed in place and announced, never shown as a toast.
+  await waitFor(() =>
+    expect(announce).toHaveBeenCalledWith("Saved"),
+  );
+  expect(screen.queryByText("Saved")).toBeNull();
   await waitFor(() => expect(session.petMemory).toHaveBeenCalledTimes(3));
   fireEvent.press(screen.getByRole("button", { name: "More" }));
   fireEvent.press(

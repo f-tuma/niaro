@@ -240,8 +240,7 @@ export function PetProfile({
   const [personal, setPersonal] = useState<"work" | "personal">("work");
   const [page, setPage] = useState<PetMemoryPage | null>(),
     [error, setError] = useState(false),
-    [busy, setBusy] = useState(false),
-    [status, setStatus] = useState("");
+    [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<PetSettings>(),
     [edit, setEdit] = useState<{ item: MemoryItem; content: string }>(),
     [pending, setPending] = useState<PetMemoryCommand | SavePetProfile>();
@@ -397,7 +396,7 @@ export function PetProfile({
       setDraft(undefined);
       onAppearance(false);
       setAbout(false);
-      setStatus(c.savedStatus);
+      // The closed sheet or form is the visible confirmation; no toast.
       AccessibilityInfo.announceForAccessibility(c.savedStatus);
       if ("type" in command && command.type === "revise")
         screen.setView({ kind: "saved" });
@@ -427,11 +426,6 @@ export function PetProfile({
         onPress: () => void mutate(command),
       },
     ]);
-  useEffect(() => {
-    if (!status) return;
-    const timer = setTimeout(() => setStatus(""), 2500);
-    return () => clearTimeout(timer);
-  }, [status]);
   const settings = draft ?? profile?.settings,
     editable = !!page?.enabled && !page.optOut,
     resting = !!page && (!page.enabled || page.optOut),
@@ -950,13 +944,6 @@ export function PetProfile({
       ) : (
         <View key={viewKey}>{content}</View>
       )}
-      {!!status && (
-        <View pointerEvents="none" style={styles.toast}>
-          <Text accessibilityLiveRegion="polite" role="meta">
-            {status}
-          </Text>
-        </View>
-      )}
       {menuItem ? (
         <DetailSheet
           title={c.more}
@@ -1295,16 +1282,6 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "flex-end",
     gap: t.spacing.sm,
-  },
-  toast: {
-    position: "absolute",
-    bottom: t.spacing.md,
-    alignSelf: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: t.radius.pill,
-    backgroundColor: t.color.surfaceRaised,
-    ...t.elevation.card,
   },
   memory: {
     flexDirection: "row",

@@ -11,6 +11,7 @@ Requirement references are to this change's `chat` delta.
 ## 2. Pet page
 
 - [x] 2.1 Remove the floating "Saved" box; keep "Saved" in an `sr-only` polite status; verify with `npx jest tests/web-pet-page.test.tsx`. (Copied and Undo confirmations)
+- [x] 2.2 Phone `PetProfile`: remove the floating "Saved" pill; the save is announced with `AccessibilityInfo.announceForAccessibility`; verify with `npx jest tests/pet-profile-mobile.test.tsx`. (Copied and Undo confirmations)
 
 ## 3. Web Send reason
 
