@@ -304,6 +304,20 @@ A proposal and its approved execution SHALL be separate steps; an unverified wri
 - **WHEN** a write was sent but its result could not be confirmed
 - **THEN** the step and run show `unknown` and the next step asks to verify in the service before repeating
 
+#### Scenario: Recovered run
+
+- **WHEN** an administrator opens a run whose first mail read failed and whose reply was delivered after a corrected read
+- **THEN** the run and its Reply step show Completed with a muted "Some steps failed" badge, and the first read's step shows Failed with its cause
+
+### Requirement: Run status follows the outcome
+
+A run's status SHALL be its outcome as `agent-runtime` defines it; a `succeeded` run with a failed tool step SHALL carry `failedSteps: true` and show a muted "Some steps failed" badge in the list and the detail, while its steps keep their own statuses.
+
+#### Scenario: Recovered read
+
+- **WHEN** a run delivers its reply after one failed read
+- **THEN** the run is succeeded with a muted "Some steps failed" badge and the read step stays failed
+
 ### Requirement: Revision-checked editing
 
 Console editors SHALL keep unsaved changes across transient refresh failures, SHALL block saving after the stored revision changed until the person explicitly discards and reloads, and SHALL close an editor when the person loses the right to manage it.

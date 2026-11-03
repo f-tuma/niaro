@@ -354,6 +354,44 @@ The system SHALL record with each failed call a bounded diagnostic: code, kind (
 - **WHEN** a provider error body echoes the request's Authorization header
 - **THEN** the stored diagnostic does not contain it
 
+#### Scenario: Sort without direction
+
+- **WHEN** Twenty answers `Scalar field "name" requires a direction value (AscNullsFirst, …)`
+- **THEN** the failed read's next step is `correct_input` and the model receives that message
+
+#### Scenario: Graph rejection relayed by MCP
+
+- **WHEN** an MCP tool fails with `Microsoft Graph API error: 400 Bad Request - …`
+- **THEN** the next step is `correct_input` with Graph's message
+
+#### Scenario: Provider outage relayed by MCP
+
+- **WHEN** an MCP tool fails with `… 503 Service Unavailable …`
+- **THEN** the next step is `later`
+
+#### Scenario: Provider output schema violation
+
+- **WHEN** an MCP tool answers `MCP error -32602: Output validation error: Invalid structured content …`
+- **THEN** the code is `integration_provider_output_invalid`, kind `response`, next step `none`
+
+### Requirement: Provider input errors are correctable
+
+A provider answer that rejects the request's shape SHALL be `validation` with next step `correct_input`, its sanitized message reaching the model: an HTTP 400, 409 or 422, a `400`/`422` status relayed in an MCP error's text, MCP `-32602` invalid params, and messages naming a wrong, missing or unknown field, value, operator or format.
+
+#### Scenario: Sort without direction
+
+- **WHEN** the CRM rejects a sort field without a direction
+- **THEN** the failure is validation with next step correct_input and the provider's message reaches the model
+
+### Requirement: Provider outages and broken outputs
+
+An HTTP 5xx (also when relayed in text) and timeouts SHALL stay `later`, and a relayed 429 SHALL be a rate limit. An MCP output validation error (the provider's tool broke its own output schema) SHALL be `integration_provider_output_invalid` with kind `response` and next step `none`.
+
+#### Scenario: Provider breaks its own schema
+
+- **WHEN** an MCP tool's answer fails the provider's own output validation
+- **THEN** the failure is integration_provider_output_invalid with next step none
+
 ### Requirement: Failure after dispatch
 
 A failed MCP handshake before a call is sent SHALL be recorded as a failure. Any error after a write was dispatched SHALL carry the next step `verify_first` and never trigger an automatic retry; its outcome is handled as unknown by `agent-runtime`.
