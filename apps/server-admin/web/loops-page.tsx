@@ -497,11 +497,14 @@ function LoopsFeed({ detail }: { detail: OrganizationDetail }) {
                           </span>
                         </span>
                       </ItemDescription>
-                      {(entry.statusEvidence || entry.unconfirmedFailure) && (
+                      {(entry.statusEvidence ||
+                        entry.unconfirmedFailure ||
+                        entry.failedSteps) && (
                         <span className="flex flex-wrap gap-1 pt-1">
                           <LoopEvidenceBadges
                             statusEvidence={entry.statusEvidence}
                             unconfirmedFailure={entry.unconfirmedFailure}
+                            failedSteps={entry.failedSteps}
                             copy={copy}
                           />
                         </span>
@@ -634,6 +637,7 @@ function LoopRun({
                   <LoopEvidenceBadges
                     statusEvidence={current.statusEvidence}
                     unconfirmedFailure={current.unconfirmedFailure}
+                    failedSteps={current.failedSteps}
                     copy={copy}
                   />
                 </div>

@@ -102,6 +102,7 @@ const projection = `t.rowid AS cursor,t.id,t.workspace_id,t.user_id,w.name AS wo
  CASE WHEN json_type(t.data,'$.trace')='object' THEN (SELECT COUNT(*) FROM json_each(t.data,'$.trace.steps') s WHERE json_extract(s.value,'$.kind')='tool') WHEN json_extract(t.data,'$.kind')='agent-1' THEN (SELECT COUNT(*) FROM json_each(t.data,'$.transcript') m JOIN json_each(m.value,'$.tool_calls') c WHERE json_extract(m.value,'$.role')='assistant') ELSE 0 END AS tool_calls,
  json_extract(t.data,'$.inference') AS inference_calls,
  CASE WHEN json_type(t.data,'$.trace')='object' THEN 'recorded' ELSE 'reconstructed' END AS trace_mode,
+ CASE WHEN json_type(t.data,'$.trace')='object' AND EXISTS(SELECT 1 FROM json_each(t.data,'$.trace.steps') s WHERE json_extract(s.value,'$.kind')='tool' AND json_extract(s.value,'$.status')='failed') THEN 1 ELSE 0 END AS failed_steps,
  CASE WHEN json_extract(t.data,'$.kind')='mastra-1' AND json_type(t.data,'$.answer') IS NULL AND json_extract(t.data,'$.terminalCandidate') IN ('budget','protocol','provider','execution','catalog_budget_exhausted','catalog_budget_overrun','catalog_budget_usage_unknown','catalog_budget_policy_changed','catalog_budget_price_required','catalog_budget_request_too_large','catalog_provider_limit') THEN 1 ELSE 0 END AS failure_candidate`;
 
 /** Read only org-scoped persisted turns; startup recovery changes diagnostic metadata only. */
@@ -148,6 +149,8 @@ export class LoopsStore {
       value = { ...value, statusEvidence: "last_saved_unverified" };
     if (row.failure_candidate === 1)
       value = { ...value, unconfirmedFailure: true };
+    if (row.failed_steps === 1 && value.status === "succeeded")
+      value = { ...value, failedSteps: true };
     if (row.kind !== "service-process-1")
       return {
         ...value,

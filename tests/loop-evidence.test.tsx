@@ -18,3 +18,16 @@ test.each(["en", "cs"] as const)(
     expect(markup.match(/data-slot="badge"/g)).toHaveLength(2);
   },
 );
+
+test.each(["en", "cs"] as const)(
+  "%s marks a completed run that recovered from failed steps with a muted badge",
+  (language) => {
+    const markup = renderToStaticMarkup(
+      <LoopEvidenceBadges failedSteps copy={loopsCopy[language]} />,
+    );
+    expect(markup).toContain(loopsCopy[language].failedSteps);
+    expect(markup.match(/data-slot="badge"/g)).toHaveLength(1);
+    expect(markup).not.toContain("bg-warning");
+    expect(markup).not.toContain("bg-destructive");
+  },
+);

@@ -954,3 +954,58 @@ test("loops HTTP uses current organization administration roles and scoped read-
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("a succeeded run that recovered from failed steps is marked, and its steps stay failed (NIAR-281)", () => {
+  const f = fixture();
+  try {
+    const step = (n: number, status: LoopStatus) => ({
+      id: `step-${n}`,
+      kind: "tool",
+      label: `TEST read ${n}`,
+      status,
+      startedAt: at,
+      finishedAt: at,
+      details: [],
+    });
+    const withSteps = (status: LoopStatus, steps: unknown[]) =>
+      turn({
+        trace: {
+          startedAt: at,
+          finishedAt: at,
+          status,
+          steps,
+          truncated: false,
+        },
+      });
+    const recovered = f.save(
+      "recovered",
+      withSteps("succeeded", [step(1, "failed"), step(2, "succeeded")]),
+    );
+    const clean = f.save(
+      "clean",
+      withSteps("succeeded", [step(1, "succeeded")]),
+    );
+    const failed = f.save("failed", withSteps("failed", [step(1, "failed")]));
+    const entries = new Map(
+      f.store
+        .page({ organizationId: "org-a" })
+        .entries.map((entry) => [entry.id, entry]),
+    );
+    assert.equal(entries.get(recovered)?.status, "succeeded");
+    assert.equal(entries.get(recovered)?.failedSteps, true);
+    assert.equal(entries.get(clean)?.failedSteps, undefined);
+    assert.equal(entries.get(failed)?.failedSteps, undefined);
+    const detail = f.store.detail("org-a", recovered)!;
+    assert.equal(detail.run.failedSteps, true);
+    assert.equal(
+      detail.nodes.find((node) => node.label === "TEST read 1")?.status,
+      "failed",
+    );
+    assert.equal(
+      detail.nodes.find((node) => node.id === "reply")?.status,
+      "succeeded",
+    );
+  } finally {
+    f.db.close();
+  }
+});

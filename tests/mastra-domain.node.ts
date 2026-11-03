@@ -125,6 +125,7 @@ function fixture(path = ":memory:") {
   };
   let loseResponse = false;
   let failRead = false;
+  let largeWrite = false;
   let readResultId = "TEST-person";
   let writeResultId = "TEST-person";
   let decisionMode:
@@ -187,6 +188,9 @@ function fixture(path = ":memory:") {
         id: request.method === "GET" ? readResultId : writeResultId,
         name: "TEST Person",
         secret: "TEST-secret-result",
+        ...(request.method === "POST" && largeWrite
+          ? { notes: "TEST long note ".repeat(6000) }
+          : {}),
       }),
     };
   };
@@ -400,6 +404,9 @@ function fixture(path = ":memory:") {
     },
     setReadFailure: (value: boolean) => {
       failRead = value;
+    },
+    setLargeWrite: (value: boolean) => {
+      largeWrite = value;
     },
     setResultIds: (read: string, write: string) => {
       readResultId = read;
@@ -5002,6 +5009,86 @@ test("an answer's UI program travels beside its reply; a refused one is asked ag
       answer,
     );
     assert.equal(f.dispatches(), 0);
+  } finally {
+    await f.memoryStore.close();
+    f.db.close();
+  }
+});
+
+test("a reply delivered after a failed read is a succeeded run (NIAR-281)", async () => {
+  for (const recovers of [true, false]) {
+    const f = fixture();
+    try {
+      f.configureModels();
+      const session = await f
+        .domain()
+        .begin(
+          `TEST.read-failure-reply-${recovers}`,
+          "How many TEST records are there?",
+          "en",
+          [],
+        );
+      await f.expose(session);
+      f.setReadFailure(true);
+      const failed = (await f.invoke(
+        session,
+        f.read,
+        { name: "TEST sorted" },
+        "TEST-failed-read",
+      )) as { status: string };
+      assert.equal(failed.status, "failed");
+      f.setReadFailure(false);
+      if (recovers) {
+        const read = (await f.invoke(
+          session,
+          f.read,
+          { name: "TEST corrected" },
+          "TEST-corrected-read",
+        )) as { status: string };
+        assert.equal(read.status, "succeeded");
+      }
+      const answer = await session.finalize(
+        recovers
+          ? "There are 3 TEST records."
+          : "I could not read the TEST records: the service failed.",
+      );
+      assert("reply" in answer);
+      assert.equal(session.state.trace?.status, "succeeded", String(recovers));
+    } finally {
+      await f.memoryStore.close();
+      f.db.close();
+    }
+  }
+});
+
+test("a failed write still fails the run, and a write's oversized receipt is never cut (NIAR-281)", async () => {
+  const f = fixture();
+  try {
+    f.configureModels();
+    const session = await f
+      .domain()
+      .begin("TEST.large-write", "Create TEST record", "en", []);
+    await f.expose(session);
+    f.setLargeWrite(true);
+    const proposal = (await f.invoke(
+      session,
+      f.write,
+      { name: "TEST record" },
+      "TEST-large-write",
+    )) as { operationId: string };
+    const executed = await session.resolve(proposal.operationId, true);
+    // Sent, but its result cannot be kept whole: the outcome is unconfirmed.
+    assert.equal(executed.status, "unknown");
+    const receipt = f.store.invocation(
+      proposal.operationId,
+      target.workspaceId,
+      userId,
+    )!;
+    assert.equal(receipt.result, undefined);
+    assert.equal(receipt.failure?.code, "integration_response_too_large");
+    assert.equal(receipt.failure?.retry, "verify_first");
+    await session.finalize("The TEST record was created.");
+    assert.equal(session.state.trace?.status, "unknown");
   } finally {
     await f.memoryStore.close();
     f.db.close();

@@ -65,7 +65,7 @@ test("a run that keeps calling tools answers from what it has in its last steps"
   }
 });
 
-test("a read too large to keep tells the model to ask for less, and it can", async () => {
+test("a read too large to keep is cut within the budget, says so, and the run succeeds", async () => {
   const h = createTrustHarness();
   try {
     h.onService(({ path, search }) =>
@@ -78,6 +78,54 @@ test("a read too large to keep tells the model to ask for less, and it can", asy
               notes: "x".repeat(40),
             })),
           }
+        : undefined,
+    );
+    let seen: Record<string, unknown> | undefined;
+    h.onChat((body) => {
+      if (
+        !body.tools?.some(
+          (tool) => tool.function.name === h.tool("Find contact"),
+        )
+      )
+        return h.call("find_actions", {
+          service: "TEST Calendar and contacts",
+          need: "find contact",
+        });
+      const results = toolResults(body).filter((r) => r.currentTurn === true);
+      if (!results.length)
+        return h.call(h.tool("Find contact"), { name: "Jane" });
+      seen ??= results[0];
+      return { content: "Jane 0's email is jane.0@example.test." };
+    });
+    const result = await h.send("Find Jane's email.", {
+      id: "TEST-too-large-cut",
+    });
+    assert.equal(reply(result), "Jane 0's email is jane.0@example.test.");
+    assert(seen, "The model saw the read");
+    assert.equal(seen.status, "succeeded");
+    const evidence = JSON.stringify(seen);
+    assert.match(evidence, /jane\.0@example\.test/, "the start is kept");
+    assert.match(evidence, /"truncated":true/, "the cut is marked");
+    const state = h.commandState();
+    assert.equal(state.trace?.status, "succeeded");
+    assert.equal(h.network.length, 1, "nothing was asked again");
+  } finally {
+    await h.close();
+  }
+});
+
+test("a read too large to cut tells the model to ask for less, and it can", async () => {
+  const h = createTrustHarness();
+  try {
+    // Keys are never dropped, so a result of many small fields cannot be cut.
+    h.onService(({ path, search }) =>
+      path.endsWith("/contacts") && search.get("name") === "Jane"
+        ? Object.fromEntries(
+            Array.from({ length: 7000 }, (_, index) => [
+              `TEST-field-${index}`,
+              index,
+            ]),
+          )
         : undefined,
     );
     let failure: Record<string, unknown> | undefined;

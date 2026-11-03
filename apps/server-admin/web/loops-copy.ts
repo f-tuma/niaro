@@ -31,6 +31,7 @@ const en = {
   unconfirmedOutcome: "Outcome unconfirmed",
   unconfirmedOutcomeHint:
     "It may have failed. Check in the service before retrying.",
+  failedSteps: "Some steps failed",
   succeeded: "Completed",
   waiting: "Waiting for input",
   failed: "Failed",
@@ -210,6 +211,7 @@ const cs: typeof en = {
   runningUnverified: "Běží? Nepotvrzeno",
   unconfirmedOutcome: "Výsledek není potvrzený",
   unconfirmedOutcomeHint: "Možná selhalo. Než to zopakuješ, ověř to ve službě.",
+  failedSteps: "Některé kroky selhaly",
   succeeded: "Dokončeno",
   waiting: "Čeká na odpověď",
   failed: "Selhalo",

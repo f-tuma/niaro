@@ -60,6 +60,7 @@ import type {
 } from "../../packages/protocol/human-tasks";
 import type { ProcessExecutionEntry } from "../../packages/protocol/process-execution";
 import type { Hub } from "./hub";
+import { fitReadResult } from "./result-budget";
 
 type HubAgentAccess = ReturnType<Hub["agent"]>;
 type Target = z.infer<typeof CatalogTarget>;
@@ -1668,7 +1669,7 @@ export class CatalogController {
         return value;
       });
       stage = "connection";
-      const result = await invokeAction(
+      let result = await invokeAction(
         this.transport,
         authorized.service,
         authorized.action,
@@ -1688,8 +1689,15 @@ export class CatalogController {
       );
       stage = "provider_response";
       const size = JSON.stringify(result).length;
-      if (size > MAX_RESULT_CHARACTERS)
-        // A read that returns too much can be asked again for less; saying so
+      // A read that returns too much keeps its start within the budget and
+      // says it was cut (NIAR-281); a write's receipt is never cut.
+      const fitted =
+        size > MAX_RESULT_CHARACTERS && operation.effect === "read"
+          ? fitReadResult(result, MAX_RESULT_CHARACTERS)
+          : undefined;
+      if (fitted !== undefined) result = fitted;
+      else if (size > MAX_RESULT_CHARACTERS)
+        // A read that cannot be cut can be asked again for less; saying so
         // lets the model narrow it instead of giving up.
         throw new IntegrationError(
           "integration_response_too_large",

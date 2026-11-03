@@ -695,6 +695,14 @@ test("native model corrects one invalid action then performs exactly one read", 
     await h.send("Find Jane Test");
     assert.equal(h.network.length, 1);
     assert.equal(h.commandState().operations.length, 1);
+    // The rejected call stays a failed step; the run it recovered in did not fail.
+    const trace = h.commandState().trace;
+    assert.equal(
+      trace?.steps.filter((step) => step.tool?.outcome === "invalid_arguments")
+        .length,
+      1,
+    );
+    assert.equal(trace?.status, "succeeded");
     await assertPrivateRejection(h, tool);
   } finally {
     await h.close();

@@ -66,6 +66,8 @@ export const LoopSummarySchema = z.strictObject({
   statusEvidence: z.enum(["last_saved_unverified"]).optional(),
   /** A terminal candidate exists, but the runtime has not confirmed a final result. */
   unconfirmedFailure: z.literal(true).optional(),
+  /** A succeeded run with at least one failed tool step it recovered from (NIAR-281). */
+  failedSteps: z.literal(true).optional(),
   modelCalls: z.number().int().nonnegative(),
   toolCalls: z.number().int().nonnegative(),
   inferenceCalls: z.number().int().nonnegative(),

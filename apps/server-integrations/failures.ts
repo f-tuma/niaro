@@ -57,7 +57,24 @@ export function diagnosticText(
  * as a generic error, so only the message tells the model it can fix them.
  */
 const INPUT_PROBLEM =
-  /\b(?:invalid (?:value|input|argument|date|format|filter|field|type)|expected (?:format|type|a |an |one of)|is not (?:a )?valid|must be (?:a |an |one of|in |at )|is required|required (?:field|argument|parameter)|unknown (?:field|argument|property|column)|field ['"]?[\w.-]+['"]? (?:not found|does not exist)|not found on|cannot query field|does not exist on|unrecognized (?:key|field|argument))/i;
+  /\b(?:invalid (?:value|input|argument|date|format|filter|field|type)|expected (?:format|type|a |an |one of)|is not (?:a )?valid|must be (?:a |an |one of|in |at )|must have (?:exactly |at least |at most |only )?(?:one|a|an|\d+)\b|requires (?:an? |exactly |at least )?(?:(?!(?:api|access|token|key|credential|permission|scope|auth)\w*\s)[\w-]+ ){0,2}(?:value|argument|parameter|operator)s?\b|is required|required (?:field|argument|parameter)|unknown (?:field|argument|property|column)|field ['"]?[\w.-]+['"]? (?:not found|does not exist)|not found on|cannot query field|does not exist on|unrecognized (?:key|field|argument)|input validation error|MCP error -32602\b)/i;
+
+/**
+ * A provider that relays an upstream HTTP answer in its own error text, as
+ * the Microsoft 365 MCP server does ("Microsoft Graph API error: 400 Bad
+ * Request - …"). Only the request-shaped statuses and outages are read.
+ */
+const RELAYED_STATUS =
+  /\b(400|422|429|500|502|503|504)\s+(?:Bad Request|Unprocessable (?:Entity|Content)|Too Many Requests|Internal Server Error|Bad Gateway|Service Unavailable|Gateway Timeout)\b/i;
+
+/**
+ * The provider's own tool broke its declared output schema (an MCP server
+ * built on the official SDK reports this as -32602 "Output validation
+ * error"). Its result never reached Niaro, and changing the input does not
+ * fix the provider: this is neither the caller's mistake nor a passing outage.
+ */
+const OUTPUT_PROBLEM =
+  /\b(?:output validation error|invalid structured content|has an output schema but no structured content)\b/i;
 
 const ACCESS_PROBLEM =
   /\b(?:(?:authentication|authori[sz]ation|login|sign.?in|api.?key|token|credential|permission|approval|consent)s?\s+(?:is|are)\s+(?:required|missing|invalid|expired)|must be (?:an? )?(?:admin|administrator|owner|member|signed in|logged in|authenticated)|unauthori[sz]ed|unauthenticated|not authenticated|forbidden|access denied|not allowed)\b/i;
@@ -101,6 +118,8 @@ function classify(
     )
   )
     return { kind: "permission", retry: "none" };
+  if (code === "integration_provider_output_invalid")
+    return { kind: "response", retry: "none" };
   if (
     [400, 409, 422].includes(httpStatus ?? 0) ||
     /input_invalid|input_too_large|validation|invalid.?argument|invalid.?data|invalid_args_data|missing.?required/i.test(
@@ -119,12 +138,18 @@ function classify(
     return { kind: "response", retry: "none" };
   if (/unavailable|timeout|connection|network/i.test(code))
     return { kind: "connection", retry: "later" };
+  // A server error is the provider's, whatever its text says about input.
+  if ((httpStatus ?? 0) >= 500) return { kind: "provider", retry: "later" };
   // "Authentication is required" or "You must be an admin" read like input
   // problems to the regex below; they are a connection or a permission.
   if (message && ACCESS_PROBLEM.test(message))
     return /permission|admin|forbidden|not allowed|approval/i.test(message)
       ? { kind: "permission", retry: "none" }
       : { kind: "connection", retry: "reconnect" };
+  const relayed = message ? RELAYED_STATUS.exec(message)?.[1] : undefined;
+  if (relayed === "429") return { kind: "rate_limit", retry: "later" };
+  if (relayed?.startsWith("5")) return { kind: "provider", retry: "later" };
+  if (relayed) return { kind: "validation", retry: "correct_input" };
   if (message && INPUT_PROBLEM.test(message))
     return { kind: "validation", retry: "correct_input" };
   return { kind: "provider", retry: "later" };
@@ -430,6 +455,14 @@ export function providerFailure(
   };
   // If credential scanning was incomplete, discard all text rather than returning a partial redaction.
   if (secretScanComplete && !options.omitText) visit(root, 0);
+  // Reported under the generic code or as JSON-RPC invalid params, which
+  // would otherwise tell the model to change an input that was never wrong.
+  if (
+    message &&
+    OUTPUT_PROBLEM.test(message) &&
+    (code === "integration_provider_failed" || code === "-32602")
+  )
+    code = "integration_provider_output_invalid";
   const httpStatus =
     options.httpStatus && options.httpStatus >= 100 && options.httpStatus <= 599
       ? options.httpStatus

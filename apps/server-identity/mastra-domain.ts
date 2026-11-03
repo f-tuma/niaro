@@ -4121,13 +4121,17 @@ export function createMastraDomain(
           : {}),
         ...(shownUi ? { ui: shownUi } : {}),
       };
+      // The run's status is its outcome. A reply delivered after a failed
+      // read succeeded: the read stays failed in its own step, and the model
+      // was told the failure, so it recovered or explained it (NIAR-281).
+      // A failed or unconfirmed write is the outcome and still decides.
       finishLoopTrace(
         state,
         partialWrite
           ? "failed"
           : failedWrite?.status === "unknown"
             ? "unknown"
-            : failures.length
+            : failedWrite
               ? "failed"
               : "succeeded",
       );

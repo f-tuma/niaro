@@ -912,3 +912,213 @@ test("a failed read is never told that a write needs approval", () => {
     /zápis/,
   );
 });
+
+// NIAR-281: the production messages that were reported as "try later".
+const mcpError = (error: string, shape: "error" | "twenty" = "error") => ({
+  isError: true,
+  content: [
+    {
+      type: "text",
+      text: JSON.stringify(
+        shape === "twenty"
+          ? { success: false, message: "Failed to find records", error }
+          : { error },
+      ),
+    },
+  ],
+});
+
+test("a provider's rejection of the request's shape reaches the model as input to correct", () => {
+  for (const [result, expected] of [
+    [
+      mcpError(
+        'Scalar field "name" requires a direction value (AscNullsFirst, AscNullsLast, DescNullsFirst, DescNullsLast)',
+        "twenty",
+      ),
+      /requires a direction value/,
+    ],
+    [
+      mcpError(
+        'Filter for field "datumKonceZapujcky" must have exactly one operator',
+        "twenty",
+      ),
+      /must have exactly one operator/,
+    ],
+    [
+      mcpError(
+        `Error in tool list-mail-messages: Microsoft Graph API error: 400 Bad Request - ${JSON.stringify(
+          {
+            error: {
+              code: "SearchWithOrderBy",
+              message:
+                "The query parameter '$orderBy' is not supported with '$search'.",
+            },
+          },
+        )}`,
+      ),
+      /'\$orderBy' is not supported with '\$search'/,
+    ],
+    [
+      {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: "MCP error -32602: Input validation error: Invalid arguments for tool get_goals",
+          },
+        ],
+      },
+      /Input validation error/,
+    ],
+  ] as const) {
+    const failure = mcpActionFailure(result);
+    assert(failure);
+    assert.equal(failure.kind, "validation");
+    assert.equal(failure.retry, "correct_input");
+    assert.equal(failure.stage, "provider_response");
+    assert.match(failure.message ?? "", expected);
+    assert((failure.message ?? "").length <= 600);
+  }
+  // The same rejection of a dispatched write still asks to verify first.
+  const write = actionFailure(
+    new IntegrationError(
+      "integration_provider_failed",
+      502,
+      mcpActionFailure(
+        mcpError(
+          'Filter for field "datumKonceZapujcky" must have exactly one operator',
+          "twenty",
+        ),
+      ),
+    ),
+    { stage: "provider_response", effect: "write", dispatched: true },
+  );
+  assert.equal(write.retry, "verify_first");
+});
+
+test("outages relayed in a provider's text, and HTTP server errors, stay something to try later", () => {
+  const relayed = mcpActionFailure(
+    mcpError(
+      "Error in tool list-mail-messages: Microsoft Graph API error: 503 Service Unavailable - The value is required",
+    ),
+  );
+  assert.equal(relayed?.kind, "provider");
+  assert.equal(relayed?.retry, "later");
+  const limited = mcpActionFailure(
+    mcpError("Microsoft Graph API error: 429 Too Many Requests - slow down"),
+  );
+  assert.equal(limited?.kind, "rate_limit");
+  assert.equal(limited?.retry, "later");
+  const server = providerFailure(
+    { message: "Field name is required by the backend" },
+    { httpStatus: 500 },
+  );
+  assert.equal(server.kind, "provider");
+  assert.equal(server.retry, "later");
+  // An expired sign-in relayed as 401 is still a reconnect, not an input.
+  const signIn = mcpActionFailure(
+    mcpError("Microsoft Graph API error: 401 Unauthorized - token expired"),
+  );
+  assert.equal(signIn?.retry, "reconnect");
+});
+
+test("a provider message never carries the request's credentials to the model", () => {
+  const failure = mcpActionFailure(
+    mcpError(
+      "Microsoft Graph API error: 400 Bad Request - Authorization: Bearer TEST-graph-token rejected; access_token=TEST-graph-token",
+    ),
+    { secretValues: ["Bearer TEST-graph-token"] },
+  );
+  assert.equal(failure?.retry, "correct_input");
+  assert(!JSON.stringify(failure).includes("TEST-graph-token"));
+});
+
+test("a provider tool that breaks its own output schema is a response defect, not an input or a later retry", () => {
+  const message =
+    'MCP error -32602: Output validation error: Invalid structured content for tool get_goals: [{"expected":"number","code":"invalid_type","path":["meta","total"],"message":"Invalid input: expected number, received string"}]';
+  for (const failure of [
+    mcpActionFailure({
+      isError: true,
+      content: [{ type: "text", text: message }],
+    }),
+    providerFailure({ code: -32602, message: message.slice(18) }),
+  ]) {
+    assert(failure);
+    assert.equal(failure.code, "integration_provider_output_invalid");
+    assert.equal(failure.kind, "response");
+    assert.equal(failure.retry, "none");
+    assert.match(failure.message ?? "", /Output validation error/);
+  }
+  // Saved receipts keep the classification when they are re-projected.
+  assert.equal(
+    sanitizeActionFailure(
+      providerFailure({ code: -32602, message: message.slice(18) }),
+    )?.retry,
+    "none",
+  );
+});
+
+test("a Microsoft 365 mail search is sent without an order Graph refuses with it", async () => {
+  const sent: unknown[] = [];
+  const transport: IntegrationTransport = async (request) => {
+    const body = request.body as {
+      id?: number;
+      method: string;
+      params?: { arguments: unknown };
+    };
+    await request.beforeDispatch?.(() => {});
+    if (body.method === "initialize")
+      return json({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: { protocolVersion: "2025-06-18", capabilities: { tools: {} } },
+      });
+    if (body.method === "notifications/initialized")
+      return { status: 204, headers: {}, text: "" };
+    sent.push(body.params?.arguments);
+    return json({
+      jsonrpc: "2.0",
+      id: body.id,
+      result: { content: [{ type: "text", text: '{"value":[]}' }] },
+    });
+  };
+  const call = (name: string, input: Record<string, unknown>) =>
+    invokeAction(
+      transport,
+      service("mcp"),
+      {
+        ...action(true),
+        effect: "read",
+        approval: "never",
+        inputSchema: { type: "object", additionalProperties: true },
+        binding: { type: "mcp", name },
+      },
+      "TEST-api-key",
+      input,
+      new AbortController().signal,
+      async (start) => start(),
+    );
+  await call("list-mail-messages", {
+    $search: '"from:jane@example.test"',
+    $orderby: "receivedDateTime desc",
+    $top: 10,
+  });
+  await call("list-mail-folder-messages", {
+    "mailFolder-id": "inbox",
+    search: "budget",
+    $orderBy: "receivedDateTime desc",
+  });
+  await call("list-mail-messages", { $orderby: "receivedDateTime desc" });
+  await call("list-mail-messages", { $search: " ", $orderby: "subject" });
+  await call("list-calendar-events", {
+    $search: "standup",
+    $orderby: "start/dateTime",
+  });
+  assert.deepEqual(sent, [
+    { $search: '"from:jane@example.test"', $top: 10 },
+    { "mailFolder-id": "inbox", search: "budget" },
+    { $orderby: "receivedDateTime desc" },
+    { $search: " ", $orderby: "subject" },
+    { $search: "standup", $orderby: "start/dateTime" },
+  ]);
+});

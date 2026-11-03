@@ -5,10 +5,12 @@ import type { LoopsCopy } from "./loops-copy";
 export function LoopEvidenceBadges({
   statusEvidence,
   unconfirmedFailure,
+  failedSteps,
   copy,
 }: {
   statusEvidence?: "last_saved_unverified";
   unconfirmedFailure?: true;
+  failedSteps?: true;
   copy: LoopsCopy;
 }) {
   return (
@@ -18,6 +20,10 @@ export function LoopEvidenceBadges({
       )}
       {unconfirmedFailure && (
         <StatusBadge tone="warning">{copy.unconfirmedOutcome}</StatusBadge>
+      )}
+      {/* Muted: the run delivered its reply; the failed steps are in its detail. */}
+      {failedSteps && (
+        <StatusBadge tone="neutral">{copy.failedSteps}</StatusBadge>
       )}
     </>
   );

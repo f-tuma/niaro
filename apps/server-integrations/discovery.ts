@@ -20,6 +20,7 @@ import {
   validateArguments,
 } from "./schema";
 import { mcpActionFailure, providerFailure } from "./failures";
+import { graphMailArguments } from "./microsoft-graph";
 export type DiscoveredAction = z.infer<typeof ActionSettings> & {
   sourceKey: string;
 };
@@ -650,7 +651,7 @@ export async function invokeAction(
       action.binding.name,
       action.binding.catalogTool
         ? { toolName: action.binding.catalogTool, arguments: input }
-        : input,
+        : graphMailArguments(action.binding.name, input),
     );
   }
   let path = action.binding.path;
