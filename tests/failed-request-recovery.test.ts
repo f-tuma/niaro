@@ -111,16 +111,11 @@ const failures: [string, () => Reply, string][] = [
     () => response({ error: code }, 503),
     code,
   ]),
-  [
-    "a 500 without a receipt",
-    () => response({ error: "internal" }, 500),
-    "network_error",
-  ],
-  [
-    "a dropped connection",
-    () => new Error("connection reset"),
-    "network_error",
-  ],
+];
+// NIAR-280: an unknown outcome is checked by the session itself, not shown.
+const lost: [string, () => Reply][] = [
+  ["a 500 without a receipt", () => response({ error: "internal" }, 500)],
+  ["a dropped connection", () => new Error("connection reset")],
 ];
 
 test.each(failures)(
@@ -138,6 +133,7 @@ test.each(failures)(
       // Nothing runs, so nothing is there to stop; Retry is offered.
       expect(runningChat(state)).toBeNull();
       expect(canRetryPending(state, f.command.conversationId)).toBe(true);
+      expect(state.deliveryCheck).toBe("failed");
       expect(f.outbox()).toBe(JSON.stringify(f.command));
     } finally {
       f.session.stop();
@@ -145,7 +141,37 @@ test.each(failures)(
   },
 );
 
-test.each(failures)(
+test.each(lost)(
+  "after %s the request is kept and checked by the session itself, with no error and no Retry",
+  async (_name, failure) => {
+    const f = fixture();
+    try {
+      await f.session.start(false);
+      f.sends.push(failure());
+      await f.session.send(f.command);
+      const state = f.session.getSnapshot();
+      expect(state.pending).toEqual(f.command);
+      expect(state.commandStates.chat).toBe("network_error");
+      expect(state.deliveryCheck).toBe("checking");
+      expect(state.error).toBeNull();
+      expect(runningChat(state)).toBeNull();
+      expect(canRetryPending(state, f.command.conversationId)).toBe(false);
+      expect(canRetryPending(state)).toBe(false);
+      expect(f.outbox()).toBe(JSON.stringify(f.command));
+    } finally {
+      f.session.stop();
+    }
+  },
+);
+
+test.each([
+  ...failures,
+  ...lost.map(([n, r]): [string, () => Reply, string] => [
+    n,
+    r,
+    "network_error",
+  ]),
+])(
   "after %s, Dismiss lets go of a request the server neither runs nor recorded",
   async (_name, failure) => {
     const f = fixture();

@@ -67,7 +67,6 @@ test.each(["en", "cs"] as const)(
     render(
       <RequestProgressCard
         activity={requestActivity()}
-        connection="unavailable"
         language={language}
         interruptAvailable
         onInterrupt={jest.fn()}
@@ -78,31 +77,31 @@ test.each(["en", "cs"] as const)(
     ).toBeTruthy();
   },
 );
-test("stale progress stops animation without claiming success or failure", () => {
-  const { rerender } = render(
-    <RequestProgressCard
-      activity={requestActivity()}
-      language="cs"
-      connection="unavailable"
-    />,
-  );
-  expand();
-  expect(
-    screen.queryByTestId("progress-thinking", {
-      includeHiddenElements: true,
-    }),
-  ).toBeNull();
-  expect(screen.getByTestId("progress-step-crm-unknown")).toBeTruthy();
-  expect(screen.getByText(/· Hotovo$/)).toBeTruthy();
-  expect(screen.getByText("Výsledek není potvrzený")).toBeTruthy();
-  rerender(<RequestProgressCard activity={null} language="en" interrupted />);
-  expect(
-    screen.queryByTestId("progress-thinking", {
-      includeHiddenElements: true,
-    }),
-  ).toBeNull();
-  expect(screen.getByText("Result not confirmed")).toBeTruthy();
-});
+test.each(["en", "cs"] as const)(
+  "%s NIAR-280: a request whose outcome is being checked keeps Thinking, with no unconfirmed card and no Check result",
+  (language) => {
+    const tr = translate(language);
+    render(
+      <RequestProgressCard activity={requestActivity()} language={language} />,
+    );
+    expect(screen.getByTestId("progress-thinking")).toBeTruthy();
+    expect(screen.getByText(tr("progressThinking"))).toBeTruthy();
+    expand();
+    expect(screen.getByTestId("progress-step-crm-running")).toBeTruthy();
+    for (const words of [
+      "Result not confirmed",
+      "Výsledek není potvrzený",
+      "Status unavailable",
+      "Stav není dostupný",
+      "Check result",
+      "Ověřit výsledek",
+      "Unconfirmed",
+      "Neověřeno",
+    ])
+      expect(screen.queryByText(new RegExp(words))).toBeNull();
+    expect(screen.queryAllByRole("button")).toHaveLength(1);
+  },
+);
 test.each(["en", "cs"] as const)(
   "%s plugin progress distinguishes calculation, clarification and lost status",
   (language) => {
@@ -139,10 +138,10 @@ test.each(["en", "cs"] as const)(
       <RequestProgressCard
         activity={pluginActivity()}
         language={language}
-        connection="unavailable"
+        failed
       />,
     );
-    expect(screen.getByTestId("progress-step-datetime-unknown")).toBeTruthy();
+    expect(screen.getByTestId("progress-step-datetime-failed")).toBeTruthy();
     expect(screen.queryByTestId("progress-step-datetime-running")).toBeNull();
     expect(screen.getAllByRole("button")).toHaveLength(1);
   },
@@ -171,7 +170,7 @@ test("only the request failing changes the line", () => {
 });
 
 test.each(["en", "cs"] as const)(
-  "%s active request exposes an explicit interrupt action and hides it when its outcome is unknown",
+  "%s active request exposes an explicit interrupt action and hides it once it failed",
   (language) => {
     const interrupt = jest.fn();
     const tr = translate(language);
@@ -193,7 +192,7 @@ test.each(["en", "cs"] as const)(
         activity={requestActivity()}
         language={language}
         onInterrupt={interrupt}
-        interrupted
+        failed
       />,
     );
     expect(
@@ -202,33 +201,33 @@ test.each(["en", "cs"] as const)(
   },
 );
 
-test("a known command error shows an explicit recovery action without automatic retry", () => {
+test("a failed request shows Try again without retrying by itself", () => {
   const retry = jest.fn();
   const { rerender } = render(
     <RequestProgressCard
       activity={requestActivity()}
       language="cs"
-      interrupted
       failed
       onRetry={retry}
     />,
   );
   expect(screen.getByText("Požadavek byl přerušen")).toBeTruthy();
-  expect(screen.queryByText("Výsledek není potvrzený")).toBeNull();
+  expect(
+    screen.getByText("Nepodařilo se dokončit. Zkus to znovu."),
+  ).toBeTruthy();
   expect(retry).not.toHaveBeenCalled();
-  fireEvent.press(screen.getByRole("button", { name: "Ověřit výsledek" }));
+  fireEvent.press(screen.getByRole("button", { name: "Zkusit znovu" }));
   expect(retry).toHaveBeenCalledTimes(1);
   rerender(
     <RequestProgressCard
       activity={requestActivity()}
       language="cs"
-      interrupted
       failed
       onRetry={retry}
       retryDisabled
     />,
   );
-  fireEvent.press(screen.getByRole("button", { name: "Ověřit výsledek" }));
+  fireEvent.press(screen.getByRole("button", { name: "Zkusit znovu" }));
   expect(retry).toHaveBeenCalledTimes(1);
 });
 test.each(["en", "cs"] as const)(
@@ -275,12 +274,12 @@ test.each(["en", "cs"] as const)(
     expect(screen.getAllByTestId(/^progress-step-/)).toHaveLength(3);
   },
 );
-test.each(["succeeded", "unavailable"] as const)(
+test.each(["succeeded", "failed"] as const)(
   "workflow %s does not retain a running indicator",
   (state) => {
     const workflow: ActivityWorkflow = { step: 2, stage: "execute" };
     const activity = workflowActivity(workflow);
-    if (state !== "unavailable") {
+    if (state !== "failed") {
       activity.status = state;
       activity.steps = activity.steps.map((step) => ({
         ...step,
@@ -296,14 +295,12 @@ test.each(["succeeded", "unavailable"] as const)(
       <RequestProgressCard
         activity={activity}
         language="en"
-        connection={state === "unavailable" ? "unavailable" : "live"}
+        failed={state === "failed"}
       />,
     );
     expand();
     expect(
-      screen.getByTestId(
-        `progress-step-understanding-${state === "unavailable" ? "unknown" : state}`,
-      ),
+      screen.getByTestId(`progress-step-understanding-${state}`),
     ).toBeTruthy();
     expect(
       screen.queryByTestId("progress-thinking", {

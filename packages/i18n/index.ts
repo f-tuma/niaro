@@ -589,11 +589,10 @@ export const en = {
   progressComplete: "Result ready",
   progressFailed: "Request interrupted",
   progressFailedHint: "Couldn't finish. Try again.",
-  progressRetry: "Check result",
+  progressRetry: "Try again",
   progressDismiss: "Dismiss",
   progressInterrupt: "Stop this request",
   progressInterruptRetry: "Retry stopping this request",
-  progressUnknown: "Result not confirmed",
   catalog_budget_exhausted:
     "The agent reached the configured limit. This attempt has ended; check the task and its limits before trying again.",
   catalog_budget_price_required:
@@ -649,8 +648,6 @@ export const en = {
   progressPending: "Next",
   progressVoice: "Preparing the voice reply",
   progressStopped: "Stopped",
-  progressUnconfirmed: "Unconfirmed",
-  progressUnavailable: "Status unavailable. It won't be resent.",
   /** Web chat: what a failed send or request tells the person. */
   chatSendFailed: "Couldn't send. Try again.",
   chatRequestFailed: "Couldn't finish this. Try again.",
@@ -1593,11 +1590,10 @@ export const cs: Record<TranslationKey, string> = {
   progressComplete: "Výsledek je připravený",
   progressFailed: "Požadavek byl přerušen",
   progressFailedHint: "Nepodařilo se dokončit. Zkus to znovu.",
-  progressRetry: "Ověřit výsledek",
+  progressRetry: "Zkusit znovu",
   progressDismiss: "Zahodit",
   progressInterrupt: "Přerušit tento požadavek",
   progressInterruptRetry: "Zkusit požadavek znovu přerušit",
-  progressUnknown: "Výsledek není potvrzený",
   catalog_budget_exhausted:
     "Agent dosáhl nastaveného limitu. Tento pokus skončil; před dalším pokusem zkontroluj úlohu a její limity.",
   catalog_budget_price_required:
@@ -1653,8 +1649,6 @@ export const cs: Record<TranslationKey, string> = {
   progressPending: "Následuje",
   progressVoice: "Připravuji hlasovou odpověď",
   progressStopped: "Přerušeno",
-  progressUnconfirmed: "Neověřeno",
-  progressUnavailable: "Stav není dostupný. Znovu se neodešle.",
   chatSendFailed: "Nepodařilo se odeslat. Zkus to znovu.",
   chatRequestFailed: "Tohle se nepovedlo dokončit. Zkus to znovu.",
   chatServerUnreachable: "Server je nedostupný. Zkus to znovu.",

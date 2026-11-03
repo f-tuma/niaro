@@ -594,7 +594,8 @@ test("a message whose answer was lost stays out of the composer until a confirme
       publish({
         pending: command as never,
         commandStates: { chat: "network_error" },
-        error: "network_error",
+        error: null,
+        deliveryCheck: "checking",
       });
     },
   );
@@ -607,12 +608,94 @@ test("a message whose answer was lost stays out of the composer until a confirme
   await act(async () => {});
   // The server may have it: the words are not offered to send again.
   expect(root.findByType("textarea").props.value).toBe("");
+  // NIAR-280: the session's own check found it failed.
+  await act(async () =>
+    publish({ deliveryCheck: "failed", error: "model_unavailable" }),
+  );
+  expect(root.findByType("textarea").props.value).toBe("");
   await act(async () =>
     button(byTestId(root, "request-progress"), "Zahodit").props.onClick(),
   );
   expect(root.findByType("textarea").props.value).toBe("Najdi Jana");
   expect(session.send).toHaveBeenCalledTimes(1);
 });
+
+test.each([true, false])(
+  "NIAR-280: an answer whose outcome is being checked keeps Thinking with no card, Retry or Dismiss (online: %s), and then simply appears",
+  async (online) => {
+    const conversation: Conversation = {
+      id: "conv-1",
+      revision: 1,
+      messages: [],
+    };
+    const { session, publish } = fakeSession(storeWith([conversation]), {
+      "conv-1": { conversation: summary("conv-1") },
+    });
+    (session.send as jest.Mock).mockImplementationOnce(
+      async (command: unknown) => {
+        publish({
+          pending: command as never,
+          commandStates: { chat: "network_error" },
+          error: null,
+          deliveryCheck: "checking",
+          activityConnection: "unavailable",
+        });
+      },
+    );
+    const root = (await render(session, "conv-1")).root;
+    await type(root, "Najdi Jana");
+    await act(async () => {});
+    if (!online)
+      await act(async () =>
+        publish({ status: "offline", error: "connection_failed" }),
+      );
+    const progress = byTestId(root, "request-progress");
+    expect(text(progress)).toContain(tr("progressThinking"));
+    expect(text(root)).not.toMatch(
+      /nepotvrzen|Ověřit výsledek|Stav není dostupný|not confirmed|Check result|Status unavailable/,
+    );
+    expect(text(root)).not.toContain(tr("progressFailed"));
+    expect(text(root)).not.toContain(tr("chatConnectionLost"));
+    expect(hasButton(progress, "Zkusit znovu")).toBe(false);
+    expect(hasButton(progress, "Zahodit")).toBe(false);
+    expect(root.findByType("textarea").props.value).toBe("");
+    // The check came back with the answer.
+    const command = (session.send as jest.Mock).mock.calls[0]![0] as {
+      commandId: string;
+    };
+    await act(async () =>
+      publish({
+        status: "online",
+        error: null,
+        pending: null,
+        deliveryCheck: null,
+        commandStates: { chat: "accepted" },
+        store: storeWith([
+          {
+            id: "conv-1",
+            revision: 2,
+            messages: [
+              {
+                ...user("m-1", "Najdi Jana"),
+                logicalMessageId: command.commandId,
+              },
+              {
+                ...user("m-2", "Jan Novák je v CRM."),
+                role: "assistant",
+                replyToCommandId: command.commandId,
+              },
+            ],
+          },
+        ]),
+      }),
+    );
+    expect(text(root)).toContain("Jan Novák je v CRM.");
+    expect(
+      root.findAll((node) => node.props["data-testid"] === "request-progress"),
+    ).toHaveLength(0);
+    expect(session.retry).not.toHaveBeenCalled();
+  },
+);
 
 test("offline, a request still on its way offers no Stop (NIAR-279)", async () => {
   const conversation: Conversation = {

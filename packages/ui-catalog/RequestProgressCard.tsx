@@ -12,7 +12,6 @@ type StepStatus =
   | "pending"
   | "succeeded"
   | "failed"
-  | "unknown"
   | "needs_input";
 
 /** "Thinking" that breathes while the assistant works; still otherwise. */
@@ -64,13 +63,12 @@ function ThinkingLabel({
 /**
  * What the assistant is doing, as one "Thinking" line like an AI chat. The
  * server selects known stages only; they open beneath it on request, and this
- * view owns every label.
+ * view owns every label. A request whose outcome is still being checked keeps
+ * this line; only a request that failed says so, with Retry and Dismiss.
  */
 export function RequestProgressCard({
   activity,
   language,
-  connection = "live",
-  interrupted = false,
   failed = false,
   onRetry,
   retryDisabled = false,
@@ -83,8 +81,7 @@ export function RequestProgressCard({
 }: {
   activity: RequestActivity | null;
   language: Language;
-  connection?: "waiting" | "live" | "unavailable";
-  interrupted?: boolean;
+  /** The request ended without an answer; Retry and Dismiss follow. */
   failed?: boolean;
   onRetry?: () => void;
   retryDisabled?: boolean;
@@ -101,18 +98,15 @@ export function RequestProgressCard({
 }) {
   const tr = translate(language);
   const [open, setOpen] = useState(false);
-  const unknown = interrupted || connection === "unavailable";
   // A failed step the assistant recovers from stays in the details; only the
   // request itself failing changes the line.
-  const stopped = unknown || failed;
+  const stopped = failed;
   const live = !stopped && (voice || activity?.status !== "succeeded");
   const title = failed
     ? "progressFailed"
-    : unknown
-      ? "progressUnknown"
-      : voice
-        ? "progressVoice"
-        : "progressThinking";
+    : voice
+      ? "progressVoice"
+      : "progressThinking";
   const labels = {
     understanding: "progressUnderstanding",
     crm: "progressCrm",
@@ -124,7 +118,6 @@ export function RequestProgressCard({
     pending: "progressPending",
     succeeded: "progressDone",
     failed: "progressStopped",
-    unknown: "progressUnconfirmed",
     needs_input: "progressNeedsInput",
   } as const;
   const workflowLabels = {
@@ -163,7 +156,7 @@ export function RequestProgressCard({
         <View style={styles.steps}>
           {rows.map((step) => {
             const status: StepStatus =
-              unknown && step.status === "running" ? "unknown" : step.status;
+              stopped && step.status === "running" ? "failed" : step.status;
             const workflow =
               step.id === "understanding" ? activity?.workflow : undefined;
             const label = workflow
@@ -204,9 +197,9 @@ export function RequestProgressCard({
           })}
         </View>
       ) : null}
-      {unknown ? (
+      {failed ? (
         <Text role="caption" tone="secondary">
-          {tr(failed ? "progressFailedHint" : "progressUnavailable")}
+          {tr("progressFailedHint")}
         </Text>
       ) : null}
       {(live || interruptAvailable) &&

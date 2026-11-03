@@ -65,29 +65,57 @@ export function selectPendingChatMessage(
 
 /**
  * Delivery of the pending command is uncertain; resending it is safe. Given a
- * chat, only that chat's own pending command counts.
+ * chat, only that chat's own pending command counts. A chat request whose
+ * lost outcome the session is checking by itself offers no Retry: it is shown
+ * as still working until the answer comes or the check says it failed.
  */
 export function canRetryPending(
-  state: Pick<SessionState, "commandStates" | "error" | "pending">,
+  state: Pick<SessionState, "commandStates" | "error" | "pending"> &
+    Partial<Pick<SessionState, "deliveryCheck">>,
   conversationId?: string,
 ) {
   const pending = state.pending;
+  const checking =
+    pending && state.deliveryCheck === "checking"
+      ? commandTarget(pending)
+      : null;
   if (conversationId !== undefined)
     return (
+      !checking &&
       pending?.conversationId === conversationId &&
       (state.commandStates[commandTarget(pending)] === "network_error" ||
         state.error === "storage_error")
     );
   return (
-    Object.values(state.commandStates).includes("network_error") ||
-    (state.error === "storage_error" && !!state.pending)
+    Object.entries(state.commandStates).some(
+      ([target, value]) => value === "network_error" && target !== checking,
+    ) ||
+    (state.error === "storage_error" && !!state.pending && !checking)
+  );
+}
+
+/**
+ * The chat's kept request failed: its chat shows it with Retry and Dismiss.
+ * A request still running, or one whose lost outcome is being checked, is not.
+ */
+export function chatRequestFailed(
+  state: Pick<SessionState, "commandStates" | "error" | "pending"> &
+    Partial<Pick<SessionState, "deliveryCheck">>,
+  conversationId: string,
+) {
+  const pending = state.pending;
+  return (
+    !!pending &&
+    state.commandStates[commandTarget(pending)] !== "sending" &&
+    canRetryPending(state, conversationId)
   );
 }
 
 /**
  * The session still keeps this exact command after its send ended: the server
- * may have recorded it, so its words are not unsent. Retry or Dismiss settles
- * it; only a Dismiss the server confirms gives the words back.
+ * may have recorded it, so its words are not unsent. The session's own check,
+ * a Retry or a Dismiss settles it; only a Dismiss the server confirms gives
+ * the words back.
  */
 export function heldForRecovery(
   state: Pick<SessionState, "pending">,

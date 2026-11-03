@@ -157,6 +157,7 @@ import { ProcessAnswerRecoveryCard } from "../../packages/ui-catalog/ProcessAnsw
 import { recordedProcessAnswer } from "../../packages/client-core/reply-context";
 import {
   canRetryPending,
+  chatRequestFailed,
   chatErrorKey,
   heldForRecovery,
   isUserMessageRecorded,
@@ -1681,11 +1682,12 @@ export function Workspace({
     isProcessReply(context),
   );
   // A failed message is kept in its chat with Retry and Dismiss; Stop is only
-  // for a request that still runs.
+  // for a request that still runs. One whose outcome the session is still
+  // checking by itself is neither: it shows as still working.
   const failedMessage =
     state.pending?.type === "message.send" &&
     state.pending.conversationId === conversationId &&
-    canRetryPending(state, conversationId)
+    chatRequestFailed(state, conversationId)
       ? state.pending
       : null;
   // Another chat holds the one request at a time: this chat says so and

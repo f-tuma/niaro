@@ -969,7 +969,7 @@ test("a refused request is reported in the chat that sent it, in chat words", as
   expect(text(byTestId(here, "chat-error"))).toBe(tr("chatRequestFailed"));
 });
 
-test("a lost connection dims the draft and says once what to do", async () => {
+test("a lost connection keeps Thinking while the outcome is checked; a failed request dims the draft and says once what to do", async () => {
   const conversation: Conversation = {
     id: "conv-1",
     revision: 4,
@@ -998,16 +998,28 @@ test("a lost connection dims the draft and says once what to do", async () => {
     }),
   );
   expect(text(root)).not.toContain("Přerušeno");
+  // NIAR-280: the session checks the lost outcome by itself; the chat keeps
+  // the answer as it was being written, with no error and no Retry.
   await act(async () =>
     publish({
       commandStates: { chat: "network_error" },
-      error: "network_error",
+      error: null,
+      deliveryCheck: "checking",
       activityConnection: "unavailable",
     }),
   );
+  expect(text(root)).toContain("340");
+  expect(text(root)).not.toMatch(
+    /nepotvrzen|Ověřit výsledek|Stav není dostupný|Zkusit znovu/,
+  );
+  expect(text(root)).not.toContain("Přerušeno");
+  expect(text(root)).not.toContain(tr("progressFailed"));
+  expect(has(root, "chat-error")).toBe(false);
+  // The check found it failed: Retry and Dismiss, said once.
+  await act(async () => publish({ deliveryCheck: "failed" }));
   const progress = byTestId(root, "request-progress");
-  expect(text(progress)).toContain(tr("chatConnectionLost"));
-  expect(text(progress)).not.toContain(tr("progressUnavailable"));
+  expect(text(progress)).toContain(tr("progressFailed"));
+  expect(text(progress)).toContain(tr("progressFailedHint"));
   expect(button(progress, "Zkusit znovu")).toBeTruthy();
   // The progress block explains it; no second alert below.
   expect(has(root, "chat-error")).toBe(false);

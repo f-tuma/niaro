@@ -30,9 +30,9 @@ export function ChatThread({
   heldReply?: string;
   state: SessionState;
   conversationId: string;
-  /** Resends the pending request when its delivery is uncertain. */
+  /** Resends the failed request: the identical command. */
   onRetry?: () => void;
-  /** Lets go of the failed request; offered only once it no longer runs. */
+  /** Lets go of the failed request; offered only once it failed. */
   onDismiss?: () => void;
   /** A Dismiss is being settled with the server. */
   actionsDisabled?: boolean;
@@ -78,17 +78,12 @@ export function ChatThread({
           <RequestProgressCard
             language={language}
             activity={state.activity}
-            connection={state.activityConnection}
-            failed={!!state.error?.startsWith("model_")}
-            onRetry={onRetry}
+            // A lost outcome the session is still checking stays "Thinking";
+            // only a failed request (Dismiss is offered then) says so.
+            failed={!!onDismiss}
+            onRetry={onDismiss ? onRetry : undefined}
             onDismiss={onDismiss}
             retryDisabled={!chat.online || actionsDisabled}
-            interrupted={
-              !chat.online ||
-              Object.values(state.commandStates).includes("network_error") ||
-              // Dismiss is offered only once the request no longer runs.
-              !!onDismiss
-            }
           />
           {state.activity?.draft ? (
             <AnswerDraft draft={state.activity.draft} language={language} />

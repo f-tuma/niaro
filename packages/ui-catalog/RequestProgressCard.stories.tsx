@@ -69,10 +69,10 @@ export const WorkflowWithDateCalculation: Story = {
     language: "cs",
   },
 };
-export const WorkflowConnectionLost: Story = {
+export const WorkflowFailed: Story = {
   args: {
     activity: workflowActivity({ step: 2, stage: "execute" }),
-    connection: "unavailable",
+    failed: true,
   },
 };
 export const CalculatingDate: Story = {
@@ -84,14 +84,18 @@ export const DateCalculated: Story = {
 export const DateNeedsInput: Story = {
   args: { activity: pluginActivity("needs_input"), language: "cs" },
 };
-export const DateConnectionLost: Story = {
-  args: { activity: pluginActivity(), connection: "unavailable" },
+export const DateFailed: Story = {
+  args: { activity: pluginActivity(), failed: true },
 };
 export const Czech: Story = { args: { language: "cs" } };
 export const Sending: Story = {
-  args: { activity: null, connection: "waiting" },
+  args: { activity: null },
 };
-export const ConnectionLost: Story = { args: { connection: "unavailable" } };
+/** A lost outcome being checked looks like any request still working. */
+export const CheckingLostOutcome: Story = { args: { activity: null } };
+export const FailedWithRetry: Story = {
+  args: { failed: true, onRetry: () => {}, onDismiss: () => {} },
+};
 export const Failed: Story = {
   args: {
     activity: {

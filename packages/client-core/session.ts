@@ -297,6 +297,25 @@ const isProcessExecutionCommand = (
   (command.type === "service.resolve" && "profile" in command);
 const isProcessRuntimeCommand = (command: SessionCommand) =>
   command.type === "process.answer" || isProcessExecutionCommand(command);
+/**
+ * Chat requests whose lost outcome the session checks by itself: it posts the
+ * identical command again, and the server answers from its receipt, joins the
+ * answer still running, or takes a request it never recorded. Nothing runs twice.
+ */
+const checkedByItself = (command: SessionCommand) =>
+  !isProcessRuntimeCommand(command) &&
+  (command.type === "message.send" || command.type === "service.resolve");
+/** Checks the server answers without an outcome while it is reachable, before the request shows as failed. */
+const DELIVERY_CHECK_LIMIT = 5;
+const deliveryCheckDelay = (failures: number) =>
+  Math.min(30_000, 1000 * 2 ** failures);
+/**
+ * A kept chat request's lost outcome: "checking" while the session checks it
+ * by itself (shown as still working), "failed" once the server said it did not
+ * finish, the checks gave up, or the person stopped or dismissed it (shown
+ * with Retry and Dismiss).
+ */
+export type DeliveryCheck = "checking" | "failed";
 function immutableJson<T>(value: T): T {
   if (value && typeof value === "object") {
     for (const child of Object.values(value)) immutableJson(child);
@@ -392,6 +411,8 @@ export type SessionState = {
    * before the stored card arrives; the stored message then shows the card.
    */
   activityApproval?: AnswerStreamApproval | null;
+  /** How the kept chat request's lost outcome is settled; null for any other pending command. */
+  deliveryCheck?: DeliveryCheck | null;
 };
 export const commandTarget = (c: SessionCommand) =>
   c.type === "conversation.create"
@@ -453,8 +474,18 @@ export class ClientSession {
     activitySteps: null,
     activityApproval: null,
     activityConnection: "waiting",
+    deliveryCheck: null,
   };
   private listeners = new Set<() => void>();
+  /** The kept chat request whose lost outcome is checked; it follows `pending`. */
+  private check: {
+    commandId: string;
+    mode: DeliveryCheck;
+    failures: number;
+    dueAt: number;
+  } | null = null;
+  /** The command an automatic check is posting right now. */
+  private checkInFlight: string | null = null;
   private stopped = false;
   private authorized = false;
   private invalid = false;
@@ -1871,6 +1902,10 @@ export class ClientSession {
             ...(pending.notice ? { notice: pending.notice } : {}),
           })
       : null;
+    // The check belongs to one kept command and ends with it.
+    if (this.check && next.pending?.commandId !== this.check.commandId)
+      this.check = null;
+    next.deliveryCheck = this.check?.mode ?? null;
     // An update that changes nothing must not wake every subscriber.
     const keys = new Set([...Object.keys(this.state), ...Object.keys(next)]);
     let changed = false;
@@ -1895,8 +1930,58 @@ export class ClientSession {
     this.paused = !active;
     if (active) {
       this.offlineRetryAt = 0;
-      void this.sync();
+      // A lost outcome is checked again at once on return.
+      if (this.check?.mode === "checking") this.check.dueAt = 0;
+      void this.sync().then(() => this.checkDelivery());
     }
+  }
+  /**
+   * Posts the kept chat request again when its check is due: the identical
+   * command, once per check, only while online. The server answers from its
+   * receipt or joins the running answer, so nothing runs twice.
+   */
+  private checkDelivery() {
+    const check = this.check;
+    const pending = this.state.pending;
+    if (
+      !check ||
+      check.mode !== "checking" ||
+      pending?.commandId !== check.commandId ||
+      this.stopped ||
+      this.invalid ||
+      this.paused ||
+      this.submitting ||
+      this.checkInFlight ||
+      this.commandFlight?.interruption ||
+      this.answerStorageBlocked ||
+      this.outboxStorageBlocked ||
+      this.state.status !== "online" ||
+      this.state.commandStates[commandTarget(pending)] === "sending" ||
+      Date.now() < check.dueAt
+    )
+      return;
+    this.checkInFlight = pending.commandId;
+    void this.send(pending, true).finally(() => {
+      if (this.checkInFlight === pending.commandId) this.checkInFlight = null;
+    });
+  }
+  /** The next state of a kept chat request whose delivery just ended without an outcome. */
+  private nextCheck(command: SessionCommand, definitive: boolean) {
+    const previous =
+      this.check?.commandId === command.commandId ? this.check : null;
+    // Only an automatic check counts; a new send or a Retry starts afresh.
+    const failures =
+      previous && this.checkInFlight === command.commandId
+        ? previous.failures + 1
+        : 0;
+    return {
+      commandId: command.commandId,
+      mode: (definitive || failures >= DELIVERY_CHECK_LIMIT
+        ? "failed"
+        : "checking") as DeliveryCheck,
+      failures,
+      dueAt: failures ? Date.now() + deliveryCheckDelay(failures) : 0,
+    };
   }
   private storageError() {
     if (
@@ -3362,6 +3447,14 @@ export class ClientSession {
               this.pendingProcess = process;
               if (process && process.outcome !== "unknown")
                 this.commandRejection = process.error;
+              // A chat request kept from before a restart is checked by itself.
+              if (!process && checkedByItself(c))
+                this.check = {
+                  commandId: c.commandId,
+                  mode: "checking",
+                  failures: 0,
+                  dueAt: 0,
+                };
               this.publish({
                 pending: c,
                 processNotice: process?.notice
@@ -3446,6 +3539,9 @@ export class ClientSession {
         throw new AuthenticationError("auth_scope_mismatch");
       const store = this.mergeProjection(snapshot);
       const cacheOwner = this.commandFlight;
+      // Back from offline: a lost outcome is checked again at once.
+      if (this.state.status !== "online" && this.check?.mode === "checking")
+        this.check = { ...this.check, failures: 0, dueAt: 0 };
       this.publish({
         store: { ...store, stale: false },
         status: "online",
@@ -3497,7 +3593,7 @@ export class ClientSession {
       return;
     if (this.state.status !== "online" && Date.now() < this.offlineRetryAt)
       return;
-    void this.sync();
+    void this.sync().then(() => this.checkDelivery());
   }
   async sync() {
     if (this.polling || this.stopped || this.invalid) return;
@@ -4095,7 +4191,7 @@ export class ClientSession {
     let answerPersisted = false;
     let executionExplanationWriteFailed = false;
     try {
-      // Persist the exact command before sending; reopening never automatically retries it.
+      // Persist the exact command before sending; a lost outcome is checked by posting it again, never as a new command.
       if (command.type === "process.answer" && answerTarget) {
         const attempt = immutableProcessAnswerAttempt({
           target: answerTarget,
@@ -4290,32 +4386,43 @@ export class ClientSession {
           (isProcessExecutionCommand(command) && !!flight.processPending);
         if (!pendingRetained && isProcessExecutionCommand(command))
           this.pendingProcess = null;
+        const failure = !persisted
+          ? "storage_error"
+          : flight.deliveryStarted
+            ? flight.interruptionFailed
+              ? "requestInterruptFailed"
+              : executionExplanationWriteFailed
+                ? "storage_error"
+                : (processError ??
+                  (error instanceof Error &&
+                  [
+                    "model_unavailable",
+                    "model_timeout",
+                    "model_invalid_response",
+                    "model_busy",
+                    "model_limit",
+                    "model_expired",
+                  ].includes(error.message)
+                    ? error.message
+                    : "network_error"))
+            : "storage_error";
+        // A chat request whose outcome is unknown is checked by the session
+        // itself and shows no error; the server's own failure (a model error)
+        // or a stop that was not confirmed shows as failed.
+        const checked =
+          pendingRetained &&
+          persisted &&
+          flight.deliveryStarted &&
+          checkedByItself(command);
+        if (checked)
+          this.check = this.nextCheck(command, failure !== "network_error");
         this.publish({
           pending: pendingRetained ? command : null,
           commandStates: {
             ...this.state.commandStates,
             [target]: pendingRetained ? "network_error" : "idle",
           },
-          error: !persisted
-            ? "storage_error"
-            : flight.deliveryStarted
-              ? flight.interruptionFailed
-                ? "requestInterruptFailed"
-                : executionExplanationWriteFailed
-                  ? "storage_error"
-                  : (processError ??
-                    (error instanceof Error &&
-                    [
-                      "model_unavailable",
-                      "model_timeout",
-                      "model_invalid_response",
-                      "model_busy",
-                      "model_limit",
-                      "model_expired",
-                    ].includes(error.message)
-                      ? error.message
-                      : "network_error"))
-              : "storage_error",
+          error: checked && failure === "network_error" ? null : failure,
           activityConnection: "unavailable",
         });
         if (command.type === "process.answer") {
@@ -4399,6 +4506,12 @@ export class ClientSession {
       this.state.commandStates[commandTarget(command)] === "sending"
     )
       return Promise.resolve(false);
+    // Letting go ends the automatic checks; an unconfirmed Dismiss shows the
+    // request as failed with Retry and Dismiss.
+    if (this.check?.commandId === command.commandId) {
+      this.check = { ...this.check, mode: "failed" };
+      this.publish({});
+    }
     const flight =
       this.commandFlight?.command.commandId === command.commandId
         ? this.commandFlight

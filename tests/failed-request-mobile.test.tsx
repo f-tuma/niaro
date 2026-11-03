@@ -200,14 +200,131 @@ const typeAndSend = async (text: string) => {
   });
 };
 
+/** Nothing in the chat calls the result unconfirmed or offers to check it. */
+const noUnconfirmedCard = () => {
+  for (const words of [
+    /Result not confirmed/,
+    /Výsledek není potvrzený/,
+    /Status unavailable/,
+    /Stav není dostupný/,
+    /Check result/,
+    /Ověřit výsledek/,
+    /Delivery unclear/,
+    /Doručení je nejisté/,
+  ])
+    expect(screen.queryByText(words)).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: tr("progressRetry") }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: tr("progressDismiss") }),
+  ).toBeNull();
+};
+
+test.each([true, false])(
+  "NIAR-280: an answer lost mid-way shows no card while the session checks it (online: %s); the answer then simply appears",
+  async (online) => {
+    const f = chatFixture();
+    f.session.send.mockImplementation(async (command: SessionCommand) => {
+      f.publish({
+        pending: command,
+        commandStates: { chat: "network_error" },
+        error: null,
+        deliveryCheck: "checking",
+      });
+    });
+    render(<f.Harness />);
+    await act(flush);
+    await openChat();
+    await typeAndSend("TEST lost autumn poem");
+    if (!online)
+      await act(async () =>
+        f.publish({ status: "offline", error: "connection_failed" }),
+      );
+    // The quiet Thinking line, the words kept, nothing to press.
+    expect(screen.getByTestId("request-progress")).toBeTruthy();
+    expect(screen.getByText(tr("progressThinking"))).toBeTruthy();
+    expect(screen.queryByText(tr("progressFailed"))).toBeNull();
+    expect(screen.getByText("TEST lost autumn poem")).toBeTruthy();
+    noUnconfirmedCard();
+    expect(composerValue()).toBe("");
+    // The check came back with the answer.
+    const store = f.session.getSnapshot().store!;
+    const chat = store.conversations["TEST-A"]!;
+    await act(async () =>
+      f.publish({
+        status: "online",
+        error: null,
+        pending: null,
+        deliveryCheck: null,
+        commandStates: { chat: "accepted" },
+        store: {
+          ...store,
+          conversations: {
+            ...store.conversations,
+            "TEST-A": {
+              ...chat,
+              revision: chat.revision + 1,
+              messages: [
+                ...chat.messages,
+                {
+                  id: "message-TEST-failed-command-user",
+                  logicalMessageId: "TEST-failed-command",
+                  role: "user",
+                  text: "TEST lost autumn poem",
+                  createdAt: new Date().toISOString(),
+                },
+                {
+                  id: "message-TEST-failed-command-assistant",
+                  role: "assistant",
+                  text: "TEST the poem",
+                  replyToCommandId: "TEST-failed-command",
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    await act(flush);
+    expect(screen.getByText("TEST the poem")).toBeTruthy();
+    expect(screen.queryByTestId("request-progress")).toBeNull();
+    noUnconfirmedCard();
+    expect(f.session.retry).not.toHaveBeenCalled();
+    expect(composerValue()).toBe("");
+  },
+);
+
+test("NIAR-280: with no activity feed, a lost answer being checked offers no Stop, Retry, Dismiss or unconfirmed words (EN or CS)", async () => {
+  const f = chatFixture();
+  render(<f.Harness />);
+  await act(flush);
+  await openChat();
+  await act(async () =>
+    f.publish({
+      pending: failedSend,
+      commandStates: { chat: "network_error" },
+      error: null,
+      deliveryCheck: "checking",
+      activityConnection: "unavailable",
+    }),
+  );
+  noUnconfirmedCard();
+  expect(screen.getByTestId("request-progress")).toBeTruthy();
+  expect(stop()).toBeNull();
+});
+
 test("a message whose answer was lost stays out of the composer; only a confirmed Dismiss gives it back", async () => {
   const f = chatFixture();
-  // The connection dropped mid-answer: the session keeps the exact command.
+  // The connection dropped mid-answer: the session keeps the exact command
+  // and checks it by itself.
   f.session.send.mockImplementation(async (command: SessionCommand) => {
     f.publish({
       pending: command,
       commandStates: { chat: "network_error" },
-      error: "network_error",
+      error: null,
+      deliveryCheck: "checking",
     });
   });
   f.session.discardPending.mockImplementation(async () => {
@@ -222,6 +339,13 @@ test("a message whose answer was lost stays out of the composer; only a confirme
   // Not unsent: sending it again could repeat it.
   expect(composerValue()).toBe("");
   expect(stop()).toBeNull();
+  noUnconfirmedCard();
+  // The check found that it did not finish: an ordinary failed message.
+  await act(async () =>
+    f.publish({ deliveryCheck: "failed", error: "model_unavailable" }),
+  );
+  expect(screen.getByText(tr("progressFailed"))).toBeTruthy();
+  expect(composerValue()).toBe("");
   expect(
     screen.getByRole("button", { name: tr("progressRetry") }),
   ).toBeTruthy();

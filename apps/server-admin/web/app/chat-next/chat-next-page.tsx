@@ -74,6 +74,7 @@ import { messageCommand } from "../../../../../packages/client-core/commands";
 import { attachmentSendReason } from "../../../../../packages/client-core/attachment-send-reason";
 import {
   canRetryPending,
+  chatRequestFailed,
   chatErrorKey,
   chatOwnsError,
   heldForRecovery,
@@ -946,19 +947,14 @@ export function ChatNextConversation({
       : null;
   const retryable = canRetryPending(state, id);
   const modelFailed = !!progressCommand && !!state.error?.startsWith("model_");
-  const requestInterrupted =
-    !!progressCommand &&
-    (!online ||
-      state.commandStates[commandTarget(progressCommand)] === "network_error" ||
-      // A known outcome whose local save failed is kept too, not running.
-      (retryable &&
-        state.commandStates[commandTarget(progressCommand)] !== "sending"));
+  // A request whose lost outcome the session is checking by itself stays
+  // "Thinking", offline too; only one that failed says so, with Retry and
+  // Dismiss.
+  const requestFailed = !!progressCommand && chatRequestFailed(state, id);
   const progressHint =
     modelFailed && state.error! in en
       ? tr(state.error as TranslationKey)
-      : requestInterrupted && retryable
-        ? tr("chatConnectionLost")
-        : undefined;
+      : undefined;
   const approval =
     state.activityApproval &&
     state.activity?.conversationId === id &&
@@ -1019,10 +1015,9 @@ export function ChatNextConversation({
           steps: state.activitySteps ?? [],
           approval,
           stopped:
-            requestInterrupted ||
-            modelFailed ||
-            state.activity?.status === "failed",
-          failed: modelFailed || state.activity?.status === "failed",
+            requestFailed || modelFailed || state.activity?.status === "failed",
+          failed:
+            requestFailed || modelFailed || state.activity?.status === "failed",
           hint: progressHint,
         }),
       );
@@ -1054,7 +1049,7 @@ export function ChatNextConversation({
     state.activity,
     state.activitySteps,
     approval,
-    requestInterrupted,
+    requestFailed,
     modelFailed,
     progressHint,
     id,
@@ -1119,8 +1114,7 @@ export function ChatNextConversation({
   const sharedErrorKey = chatErrorKey(
     replyError,
     processAnnouncement,
-    chatOwnsError(state, id) &&
-      !(progressHint && (modelFailed || state.error === "network_error"))
+    chatOwnsError(state, id) && !(progressHint && modelFailed)
       ? state.error
       : null,
     false,
@@ -1827,7 +1821,6 @@ function AssistantMessage() {
   const live = meta.kind === "live" || !!message.metadata.isOptimistic;
   const text = threadText(message);
   const stopped = live && message.status?.type === "incomplete";
-  const failed = stopped && message.status?.reason === "error";
   const thinking = live && !stopped && !text;
   // "Thinking" becomes "Reading Twenty CRM" while a service answers.
   const reading = thinking
@@ -1865,17 +1858,15 @@ function AssistantMessage() {
                   <CircleAlert aria-hidden="true" className="size-4" />
                 )}
                 <span data-thinking={stopped ? undefined : ""}>
-                  {failed
+                  {stopped
                     ? tr("progressFailed")
-                    : stopped
-                      ? tr("progressUnknown")
-                      : readingStep
-                        ? tr("progressReading").replace(
-                            "{service}",
-                            liveStepService(readingStep) ??
-                              humanizeLabel(readingStep.label, loops),
-                          )
-                        : tr("progressThinking")}
+                    : readingStep
+                      ? tr("progressReading").replace(
+                          "{service}",
+                          liveStepService(readingStep) ??
+                            humanizeLabel(readingStep.label, loops),
+                        )
+                      : tr("progressThinking")}
                 </span>
                 {elapsed !== null && (
                   <span className="text-xs tabular-nums">· {elapsed} s</span>
@@ -1883,8 +1874,7 @@ function AssistantMessage() {
               </div>
               {stopped && (
                 <p className="text-xs">
-                  {meta.hint ??
-                    tr(failed ? "progressFailedHint" : "progressUnavailable")}
+                  {meta.hint ?? tr("progressFailedHint")}
                 </p>
               )}
               {stopped && (chat.retry || chat.dismiss) && (
