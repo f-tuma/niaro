@@ -1906,6 +1906,10 @@ export function Workspace({
             return;
           }
           microphoneReady.current = true;
+          // Allowed now: an earlier "blocked" no longer holds.
+          setReplyError((current) =>
+            current === "voice_permission" ? null : current,
+          );
           // The app is in front again after the dialog; continue the tap.
           const resume = () => {
             if (
