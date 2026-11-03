@@ -3,6 +3,7 @@ import { View } from "react-native";
 import {
   WorkItemSchema,
   InputRequestSchema,
+  presentedNativeAction,
   type WorkItem,
   type InputRequest,
   type Language,
@@ -106,6 +107,7 @@ export function WorkItemCard({
   WorkItemSchema.parse(work);
   if (input) InputRequestSchema.parse(input);
   const process = work.native?.process;
+  const nativeAction = presentedNativeAction(work);
   const choices = !!work.native?.question?.options && !!onAnswerQuestion;
   const processQuestion = process?.question;
   const processApproval = process?.approval;
@@ -219,9 +221,9 @@ export function WorkItemCard({
           onExpand={onExpand}
         />
       ) : null}
-      {work.native?.action && onNativeDecision ? (
+      {nativeAction && onNativeDecision ? (
         <ServiceActionCard
-          result={work.native.action}
+          result={nativeAction}
           language={language}
           embedded
           disabled={
@@ -319,7 +321,7 @@ export function WorkItemCard({
       {work.native &&
       (["succeeded", "failed", "cancelled"].includes(work.status) ||
         work.native.process) &&
-      !work.native.action &&
+      !nativeAction &&
       work.result ? (
         !work.native.process || !work.card ? (
           <MarkdownText text={work.result} />

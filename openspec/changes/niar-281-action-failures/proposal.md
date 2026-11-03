@@ -21,11 +21,11 @@ The last ten failed runs in production's admin **Runs** (read on 2026-11-03) sho
 - **Input errors are correctable.** A provider message that rejects the request's shape becomes `kind: validation`, `retry: correct_input`. The provider's bounded, redacted message goes to the model. This covers a relayed `400`/`422` status in an MCP error text, Twenty's "requires a … value" and "must have exactly one …", MCP `-32602` input validation, and the earlier patterns. A relayed or real 5xx and timeouts stay `later`, and a relayed 429 is a rate limit. A dispatched write keeps `verify_first`.
 - **Provider output defects.** An MCP "Output validation error" (`-32602` or text) becomes `integration_provider_output_invalid`, `kind: response`, `retry: none`. Niaro has no result to fall back to: the provider's server replaced it with the error before sending (see design).
 - **Microsoft 365 mail search.** For the built-in's `list-mail-messages` and `list-mail-folder-messages`, a call with a non-empty `$search` is sent without `$orderby`. Graph then returns the matches by relevance.
+- **No failure card under a correct answer.** A delivered answer no longer carries the card of a read that failed during the run, so neither the web nor the phone shows "Action failed" under it. The owner does not want internal step states in front of the member: failed steps stay visible only in admin Runs. Failure cards stay where they matter: no reply, a write that failed, was refused or is unconfirmed, and anything the member must act on (sign-in, approval). Both clients also hide a failed action card on a task that succeeded.
 - **Too-large reads are cut, not failed.** A read result over 64 KB keeps its start within the budget. Long strings keep their beginning and end with `… [truncated]`, long lists keep their first items, and the result says `truncated: true`. A result that cannot be cut, or a write's result, still fails as before.
 
 ## Non-goals
 
-- Changing a failed read's result card in the chat answer. `finalize` still attaches the first unresolved failure's card. See Risk.
 - Re-labelling historical runs: their stored status stays as recorded.
 - Validating providers' structured content on Niaro's side: the client never did.
 - Process runs (`service-process-runtime`) keep their own outcome rules.

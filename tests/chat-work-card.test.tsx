@@ -29,6 +29,37 @@ test("opening a failed native task exposes its formatted reason", () => {
   expect(screen.getByText(/The action is unavailable/)).toBeTruthy();
 });
 
+test("a succeeded native task shows its answer, not the failed read it got past (NIAR-281)", () => {
+  const failedAction = (effect: "read" | "write") => ({
+    ...nativeTaskApproval().native!.action!,
+    title: "List mail messages",
+    status: "failed" as const,
+    effect,
+    inputJson: "",
+    fields: [],
+  });
+  const work = nativeTaskApproval();
+  work.status = "succeeded";
+  work.native!.action = failedAction("read");
+  work.result = "You have 4 unread mails.";
+  const props = {
+    language: "en" as const,
+    compact: true,
+    onAnswer: () => {},
+    onNativeDecision: () => {},
+  };
+  const { rerender } = render(<WorkItemCard work={work} {...props} />);
+  expect(screen.queryByText("List mail messages")).toBeNull();
+  expect(screen.queryByText(translate("en")("serviceFailed"))).toBeNull();
+  expect(screen.getByText("You have 4 unread mails.")).toBeTruthy();
+  // A failed write is the outcome and keeps its card.
+  const failedWrite = nativeTaskApproval();
+  failedWrite.status = "failed";
+  failedWrite.native!.action = failedAction("write");
+  rerender(<WorkItemCard work={failedWrite} {...props} />);
+  expect(screen.getByText("List mail messages")).toBeTruthy();
+});
+
 test("explicit native retry is offered only on a failed or cancelled task with a source command", () => {
   const work = nativeTaskQuestion();
   work.status = "failed";

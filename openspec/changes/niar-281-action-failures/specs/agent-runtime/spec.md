@@ -46,3 +46,17 @@ A chat run that delivers the model's reply SHALL end `succeeded` even when servi
 
 - **WHEN** a write fails and the model answers
 - **THEN** the run is `failed`
+
+### Requirement: Failed steps stay out of the person's answer
+
+A delivered answer SHALL NOT carry the result card of a read that failed during the run, and the web and phone apps SHALL NOT show a failed action card on a task that succeeded; failed steps SHALL stay visible to administrators in Runs. An answer SHALL keep a failure card when the run ended without the model's reply or a write failed, was refused or is unconfirmed, and it SHALL keep the cards the person must act on (approval, sign-in).
+
+#### Scenario: Recovered mail read
+
+- **WHEN** a mail read fails, the corrected read succeeds and the model answers
+- **THEN** the person sees the answer without an "Action failed" card on the web or the phone
+
+#### Scenario: Failed write
+
+- **WHEN** a write fails and the model answers
+- **THEN** the answer still carries the write's failure card

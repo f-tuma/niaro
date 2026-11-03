@@ -19,6 +19,17 @@ The earlier branches of `finalize` (contact lookup without a matching read, a re
 
 The steps keep their own statuses, so the admin detail is unchanged. `LoopsStore` adds `failedSteps: true` to a `succeeded` summary whose trace has a failed tool step. The SQL projection checks `trace.steps[*].kind = 'tool' AND status = 'failed'`. The console shows it as a neutral (muted) badge next to the existing evidence badges.
 
+## The answer's card (`finalize`, clients)
+
+`finalize` attached `resultCard(failures[0])` to the answer, so a failed read's card ("Action failed") rode along with a correct reply. It also became the native task's `native.action`, which the web (`chat-work.tsx`) and the phone (`WorkItemCard`) render as a card. The diagnosis card is now taken only from an unresolved write (`failedWrite`: failed or unknown). Without one, the answer carries the latest succeeded receipt's card as before, or no card at all.
+
+These paths are unchanged:
+
+- `finishFailure` (no reply) still shows its diagnosis card.
+- Approval, sign-in, question and refused-write answers return earlier.
+
+The clients share `presentedNativeAction(work)` (in `packages/protocol`, which both `ui-catalog` and the web may import). It hides a `failed` action card on a `succeeded` task, so the card does not come back through stored tasks either. With the card hidden, the task shows its answer text.
+
 ## Classification (`server-integrations/failures.ts` `classify`, `providerFailure`)
 
 The order matters:

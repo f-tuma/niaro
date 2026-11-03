@@ -52,11 +52,12 @@ import {
   workCancelError,
 } from "../../../../packages/client-core/conversation-directory";
 import { en, type TranslationKey } from "../../../../packages/i18n";
-import type {
-  ActionProposal,
-  InputRequest,
-  Operation,
-  WorkItem,
+import {
+  presentedNativeAction,
+  type ActionProposal,
+  type InputRequest,
+  type Operation,
+  type WorkItem,
 } from "../../../../packages/protocol";
 import type { AnswerStreamStep } from "../../../../packages/protocol/answer-stream";
 import { formatRange } from "../../../../packages/ui-catalog/field-format";
@@ -118,6 +119,7 @@ export function WorkCard({
     store?.operations[id] ? [store.operations[id]] : [],
   );
   const process = work.native?.process;
+  const nativeAction = presentedNativeAction(work);
   const processQuestion = process?.question;
   const processApproval = process?.approval;
   const approvalState = proposal
@@ -405,7 +407,7 @@ export function WorkCard({
     !!work.native &&
     (["succeeded", "failed", "cancelled"].includes(work.status) ||
       !!work.native.process) &&
-    !work.native.action &&
+    !nativeAction &&
     !!work.result &&
     (!work.native.process || !work.card);
   const showRetry =
@@ -458,9 +460,9 @@ export function WorkCard({
               }
             />
           )}
-          {work.native?.action && (
+          {nativeAction && (
             <ServiceActionView
-              result={work.native.action}
+              result={nativeAction}
               embedded
               disabled={
                 isStale ||

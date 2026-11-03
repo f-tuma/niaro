@@ -351,7 +351,7 @@ test("local schema failure reaches the model with field evidence before any writ
   }
 });
 
-test("failed read receipt gives the agent structured cause and a visible compatible mobile card", async () => {
+test("failed read receipt gives the agent structured cause, the answer explains it without a failure card, and the receipt still presents one", async () => {
   const h = createTrustHarness({ writeApproval: "never" });
   try {
     const dispatched = rejectProvider(h);
@@ -370,12 +370,14 @@ test("failed read receipt gives the agent structured cause and a visible compati
     const first = await h.send("Show Jane Test's contact details", {
       id: "TEST-provider-rejection",
     });
-    const visibleResult = first.snapshot.conversations
+    const visible = first.snapshot.conversations
       .flatMap((conversation) => conversation.messages)
-      .find((message) => message.replyToCommandId === first.commandId)?.result;
-    assert(visibleResult?.type === "service.action");
-    assert.equal(visibleResult.status, "failed");
-    assert(JSON.stringify(visibleResult.card).includes(validation.message!));
+      .find((message) => message.replyToCommandId === first.commandId)!;
+    // NIAR-281: the delivered answer says what failed; the failed read is a
+    // step for administrators, not a card under the answer.
+    assert.match(visible.text, /rejected the lookup/);
+    assert.equal(visible.result, undefined);
+    assert.equal(saved(h).trace?.status, "succeeded");
     assert(evidence);
     assert.equal(evidence.status, "failed");
     assert.equal(evidence.effect, "read");
@@ -771,7 +773,7 @@ test("a write that failed before dispatch can recover with identical input regar
   }
 });
 
-test("success for a different contact in the same action does not hide the first failed subtask", async () => {
+test("success for a different contact in the same action does not hide the first failed subtask from the model or the run", async () => {
   const h = createTrustHarness();
   try {
     let attempts = 0;
@@ -824,10 +826,15 @@ test("success for a different contact in the same action does not hide the first
     const visible = answer.snapshot.conversations
       .flatMap((conversation) => conversation.messages)
       .find((message) => message.replyToCommandId === answer.commandId)!;
-    assert(visible.result?.type === "service.action");
-    assert.equal(visible.result.status, "failed");
-    assert.equal(visible.result.operationId, receipts[0]!.id);
-    assert(JSON.stringify(visible.result.card).includes(validation.message!));
+    // NIAR-281: the answer tells the person; no "Action failed" card, and
+    // the failed read stays a failed step in the run for administrators.
+    assert.match(visible.text, /Jane's lookup failed/);
+    assert(
+      visible.result?.type !== "service.action" ||
+        visible.result.status !== "failed",
+    );
+    assert.equal(turn.trace?.status, "succeeded");
+    assert(turn.trace?.steps.some((step) => step.status === "failed"));
     assert.equal(attempts, 2);
   } finally {
     await h.close();

@@ -4094,7 +4094,10 @@ export function createMastraDomain(
           };
         }
       }
-      const diagnosis = failures[0];
+      // Only a write's failure is the person's to see. A failed read the run
+      // got past stays in its step for administrators; the reply says what
+      // the person needs to know (NIAR-281).
+      const diagnosis = failedWrite;
       const own = diagnosis
         ? await resultCard(diagnosis.id, state.language)
         : (await receipts())

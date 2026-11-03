@@ -277,6 +277,15 @@ export const WorkItemSchema = z
       ctx.addIssue({ code: "custom", message: "Invalid native work binding" });
   });
 export type WorkItem = z.infer<typeof WorkItemSchema>;
+/**
+ * The action card a client shows on a native task. A task that succeeded got
+ * past any failed step; that step is for administrators (Runs), not a card
+ * telling the person "The action failed" under a correct answer (NIAR-281).
+ */
+export const presentedNativeAction = (work: WorkItem) =>
+  work.status === "succeeded" && work.native?.action?.status === "failed"
+    ? undefined
+    : work.native?.action;
 export const InputRequestSchema = z
   .strictObject({
     ...base,

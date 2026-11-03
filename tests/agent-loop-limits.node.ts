@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createTrustHarness, toolResults } from "./agent-trust/harness";
+import {
+  createTrustHarness,
+  ServiceStatus,
+  toolResults,
+} from "./agent-trust/harness";
 import { messageLanguage } from "../apps/server-identity/mastra-domain";
 
 const reply = (
@@ -109,6 +113,66 @@ test("a read too large to keep is cut within the budget, says so, and the run su
     const state = h.commandState();
     assert.equal(state.trace?.status, "succeeded");
     assert.equal(h.network.length, 1, "nothing was asked again");
+  } finally {
+    await h.close();
+  }
+});
+
+test("a failed read the run got past shows the person no failure card, only the answer (NIAR-281)", async () => {
+  const h = createTrustHarness();
+  try {
+    h.onService(({ path, search }) =>
+      path.endsWith("/contacts")
+        ? search.get("name") === "Jane"
+          ? new ServiceStatus(400, {
+              message: 'Scalar field "name" requires a direction value',
+            })
+          : { contacts: [{ id: "TEST-1", name: "Jane Test" }] }
+        : undefined,
+    );
+    h.onChat((body) => {
+      if (
+        !body.tools?.some(
+          (tool) => tool.function.name === h.tool("Find contact"),
+        )
+      )
+        return h.call("find_actions", {
+          service: "TEST Calendar and contacts",
+          need: "find contact",
+        });
+      const results = toolResults(body).filter((r) => r.currentTurn === true);
+      if (!results.length)
+        return h.call(h.tool("Find contact"), { name: "Jane" });
+      if (!results.some((r) => r.status === "succeeded")) {
+        assert.equal(results[0]!.failure?.retry, "correct_input");
+        return h.call(h.tool("Find contact"), { name: "Jane Test" });
+      }
+      return { content: "Jane Test is in the contacts." };
+    });
+    const result = await h.send("Is Jane Test in the contacts?", {
+      id: "TEST-recovered-read",
+    });
+    const message = result.snapshot.conversations
+      .flatMap((conversation) => conversation.messages)
+      .find((entry) => entry.replyToCommandId === result.commandId)!;
+    assert.equal(message.text, "Jane Test is in the contacts.");
+    assert(
+      message.result?.type !== "service.action" ||
+        message.result.status !== "failed",
+      "no failure card on the answer",
+    );
+    const work = result.snapshot.workItems.find(
+      (item) => item.id === h.commandState().runId,
+    );
+    assert.equal(work?.status, "succeeded");
+    assert.notEqual(work?.native?.action?.status, "failed");
+    assert.equal(h.commandState().trace?.status, "succeeded");
+    assert.equal(
+      h.commandState().trace?.steps.filter((step) => step.status === "failed")
+        .length,
+      1,
+      "the failed read stays visible to administrators",
+    );
   } finally {
     await h.close();
   }
