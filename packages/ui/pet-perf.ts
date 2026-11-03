@@ -16,6 +16,12 @@ export type PetPerf = {
   done(note: string): void;
 };
 
+/** One stage line (development only): where the app's one pet went. */
+export function petPerfNote(note: string) {
+  if (enabled)
+    console.log(`[pet-perf] ${note}; GL contexts this session ${contexts}`);
+}
+
 export function petPerf(label: string): PetPerf | null {
   if (!enabled) return null;
   const start = performance.now();

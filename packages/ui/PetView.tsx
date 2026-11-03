@@ -46,9 +46,10 @@ import { petPerf } from "./pet-perf";
 import {
   keepPetSnapshot,
   keptPetSnapshot,
-  petSnapshot,
   petSnapshotFile,
   petSnapshotKey,
+  petStill,
+  type PetSnapshot,
 } from "./pet-snapshot";
 import {
   canSavePetSnapshot,
@@ -99,8 +100,23 @@ export type PetViewProps = {
    * to the first `size`.
    */
   drawingSize?: number;
+  /**
+   * For a pet drawn somewhere other than where it is touched (the app's one pet, `PetStage`):
+   * this view only draws, and its touch, keyboard and accessibility handlers are handed here
+   * for the place on screen it stands in, which the person touches and reads instead.
+   */
+  controls?: { current: PetControls | null };
+  /** Called once its best stand-in is on screen: a still decoded, or none to wait for. */
+  onStandIn?: () => void;
 };
 export type { PetState } from "./pet-motion";
+/** A pet's touch, keyboard and accessibility handlers, for a placeholder to carry (`controls`). */
+export type PetControls = {
+  /** The pet's own size in points: touches arrive in it. */
+  size: number;
+  handlers: Partial<React.ComponentProps<typeof View>> &
+    Record<string, unknown>;
+};
 
 /** A single companion, with no recording, backend, or profile side effects. */
 export const PetView = memo(function PetView({
@@ -120,6 +136,8 @@ export const PetView = memo(function PetView({
   typed = 0,
   motionKey,
   drawingSize,
+  controls,
+  onStandIn,
 }: PetViewProps) {
   const systemReduced = useReducedMotion();
   const reduced = systemReduced || !animate;
@@ -127,11 +145,6 @@ export const PetView = memo(function PetView({
   const [perf] = useState(() => petPerf(`${motionKey ?? testID} ${size}pt`));
   const [failed, setFailed] = useState(false);
   const [ready, setReady] = useState(false);
-  // Until the shader draws, nothing shows; the still drawing is only a
-  // fallback for a renderer that does not start.
-  const [slow, setSlow] = useState(false);
-  const appear = useRef(new Animated.Value(0)).current;
-  const appeared = useRef(false);
   const host = useRef<View>(null);
   const gesture = useRef<{
     x: number;
@@ -167,11 +180,20 @@ export const PetView = memo(function PetView({
   const [pixels, setPixels] = useState(needed);
   if (needed > pixels * 1.34) setPixels(needed);
   const surface = pixels / density;
+  // Until the live pet draws, something always stands in for it from the very first frame: a
+  // still of its first frame (or of the nearest look), else the vector drawing of its look, which
+  // needs no file, decoding or GL. The live pet fades in under it. A replaced drawing buffer gets
+  // the stand-in again until its own first frame.
+  const [standInGone, setStandInGone] = useState(false);
+  const standInFade = useRef(new Animated.Value(1)).current;
+  const firstPixels = useRef(pixels);
   useEffect(() => {
-    // A replaced drawing buffer stays hidden until its first frame.
+    if (firstPixels.current === pixels) return;
+    firstPixels.current = pixels;
     setReady(false);
-  }, [pixels]);
-  // Until the live pet draws, the still of its first frame stands in for it, when there is one.
+    setStandInGone(false);
+    standInFade.setValue(1);
+  }, [pixels, standInFade]);
   const snapshotKey = petSnapshotKey({
     appearance,
     background,
@@ -179,50 +201,74 @@ export const PetView = memo(function PetView({
     pixels,
     reduced,
   });
-  const snapshot = useMemo(
-    () => (Surface && !failed ? petSnapshot(snapshotKey) : null),
-    [snapshotKey, Surface, failed],
+  const still = useMemo(
+    () =>
+      Surface && !failed
+        ? petStill({ appearance, background, state, pixels, reduced })
+        : null,
+    [appearance, background, state, pixels, reduced, Surface, failed],
   );
-  const [snapshotGone, setSnapshotGone] = useState(false);
-  const snapshotShown = !!snapshot && !snapshotGone;
-  const snapshotFade = useRef(new Animated.Value(1)).current;
+  const snapshot = still?.source ?? null;
+  // An image appears once decoded; the drawing covers that wait, so no frame is empty.
+  const [decoded, setDecoded] = useState<PetSnapshot | null>(null);
+  const standIn = !standInGone && !!Surface && !failed;
+  const exact = !!still?.exact && decoded === still.source;
+  // A still decoded at once simply shows; one still decoding after a few frames is hidden until
+  // then and cross-fades over the drawing, never cutting from one picture to the other.
+  const stillFade = useRef(new Animated.Value(1)).current;
+  const late = useRef<{ timer?: ReturnType<typeof setTimeout>; late: boolean }>(
+    { late: false },
+  );
   useEffect(() => {
-    if (ready || !Surface || failed || snapshotShown) return;
-    const timer = setTimeout(() => setSlow(true), 1200);
-    return () => clearTimeout(timer);
-  }, [ready, Surface, failed, snapshotShown]);
-  useEffect(() => {
-    if (!ready || !snapshotShown) return;
-    // Same frame underneath, so this is invisible; a pet that kept moving shifts softly.
-    const run = Animated.timing(snapshotFade, {
-      toValue: 0,
+    if (snapshot === null) return;
+    const wait = late.current;
+    wait.late = false;
+    stillFade.setValue(1);
+    wait.timer = setTimeout(() => {
+      wait.late = true;
+      stillFade.setValue(0);
+    }, LATE_STILL_MS);
+    return () => clearTimeout(wait.timer);
+  }, [snapshot, stillFade]);
+  const stillDecoded = (source: PetSnapshot) => {
+    clearTimeout(late.current.timer);
+    if (!late.current.late) {
+      setDecoded(source);
+      return;
+    }
+    Animated.timing(stillFade, {
+      toValue: 1,
       duration: t.motion.stateTransition,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: Platform.OS !== "web",
+    }).start(({ finished }) => {
+      if (finished && alive.current) setDecoded(source);
+    });
+  };
+  // Once the best stand-in is on screen (its image decoded, or none to decode, or the live pet).
+  const onStandInRef = useRef(onStandIn);
+  onStandInRef.current = onStandIn;
+  const standInReady =
+    ready || !Surface || failed || snapshot === null || decoded === snapshot;
+  useEffect(() => {
+    if (standInReady) onStandInRef.current?.();
+  }, [standInReady]);
+  useEffect(() => {
+    if (!ready || standInGone) return;
+    // The same frame underneath fades unseen; a near still or the drawing cross-fades softly.
+    const run = Animated.timing(standInFade, {
+      toValue: 0,
+      duration: exact ? t.motion.stateTransition : t.motion.sheetEnter,
       easing: Easing.out(Easing.quad),
       useNativeDriver: Platform.OS !== "web",
     });
     run.start(({ finished }) => {
-      if (finished) setSnapshotGone(true);
+      if (finished) setStandInGone(true);
     });
     return () => run.stop();
-  }, [ready, snapshotShown, snapshotFade]);
-  useEffect(() => {
-    if (!ready) return;
-    // The first appearance eases in; a resized buffer, or a pet its still already shows, is there.
-    if (appeared.current || reduced || snapshotShown) {
-      appear.setValue(1);
-      appeared.current = true;
-      return;
-    }
-    appeared.current = true;
-    const run = Animated.timing(appear, {
-      toValue: 1,
-      duration: t.motion.sheetEnter,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: Platform.OS !== "web",
-    });
-    run.start();
-    return () => run.stop();
-  }, [ready, reduced, appear, snapshotShown]);
+    // Started once per first frame; a still decoded meanwhile does not restart it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, standInGone, standInFade]);
   const latest = useRef({
     state,
     reduced,
@@ -236,7 +282,7 @@ export const PetView = memo(function PetView({
     enabled,
     occupied,
     snapshotKey,
-    snapshot,
+    still: still ? (still.exact ? "exact" : "near") : "drawing",
   });
   const [initialMotion] = useState(() => createPetMotion(state));
   const motion = useRef<PetMotion>(initialMotion);
@@ -266,7 +312,7 @@ export const PetView = memo(function PetView({
     latest.current.reduced = reduced;
     latest.current.background = background;
     latest.current.snapshotKey = snapshotKey;
-    latest.current.snapshot = snapshot;
+    latest.current.still = still ? (still.exact ? "exact" : "near") : "drawing";
     control.current?.wake();
   }, [
     state,
@@ -280,7 +326,7 @@ export const PetView = memo(function PetView({
     Surface,
     failed,
     snapshotKey,
-    snapshot,
+    still,
   ]);
   useEffect(() => {
     latest.current.level = 0;
@@ -375,6 +421,8 @@ export const PetView = memo(function PetView({
         last = 0,
         stopped = false,
         rendered = false,
+        // Nothing draws before the shader is finished: a prop change may wake the loop earlier.
+        compiled = false,
         // While the first frame is saved as a still, nothing else may draw over it.
         saving = false;
       let cadence = createPetCadence(),
@@ -396,14 +444,18 @@ export const PetView = memo(function PetView({
           /* Context may already be gone. */
         }
       };
+      // A hidden pet still draws its first frame: the driver finishes the shader then, the still
+      // is saved, and the pet is ready the moment it is shown (the app's one pet starts hidden).
+      const hidden = () =>
+        rendered && (!latest.current.visible || !latest.current.ownerVisible);
       const draw = (now: number) => {
         frame = 0;
         if (
           stopped ||
           saving ||
           !latest.current.active ||
-          !latest.current.visible ||
-          !latest.current.ownerVisible
+          hidden() ||
+          (renderer && !compiled)
         ) {
           last = 0;
           return;
@@ -467,10 +519,16 @@ export const PetView = memo(function PetView({
           }
           if (!rendered && renderer) {
             rendered = true;
-            setReady(true);
             perf?.mark("first frame");
+            // The stand-in leaves only once the GL thread has really drawn this frame (under load
+            // that can be long after JS asked for it), so the surface is never shown empty.
+            const reveal = () => {
+              if (stopped || !alive.current) return;
+              perf?.mark("drawn");
+              setReady(true);
+            };
             const key = latest.current.snapshotKey;
-            const note = `motion ${restored.current ? "kept" : "new"}, still ${latest.current.snapshot ? "shown" : "none"}`;
+            const note = `motion ${restored.current ? "kept" : "new"}, stood in by ${latest.current.still}${latest.current.ownerVisible && latest.current.visible ? "" : ", drawn while hidden"}`;
             const play = motion.current.interaction!.play;
             // Only a pet that has not moved yet is the frame its key promises.
             if (
@@ -492,10 +550,19 @@ export const PetView = memo(function PetView({
                 .catch(() => perf?.mark("still not saved"))
                 .finally(() => {
                   saving = false;
+                  reveal();
                   perf?.done(note);
                   wake();
                 });
-            } else perf?.done(note);
+            } else if (gl)
+              void glSettled(gl, renderer).then(() => {
+                reveal();
+                perf?.done(note);
+              });
+            else {
+              reveal();
+              perf?.done(note);
+            }
           }
           if (
             !saving &&
@@ -514,12 +581,7 @@ export const PetView = memo(function PetView({
       const wake = (immediate = false) => {
         forceDraw ||= immediate;
         if (saving) return;
-        if (
-          stopped ||
-          !latest.current.active ||
-          !latest.current.visible ||
-          !latest.current.ownerVisible
-        ) {
+        if (stopped || !latest.current.active || hidden()) {
           cancelAnimationFrame(frame);
           frame = 0;
           last = 0;
@@ -549,6 +611,7 @@ export const PetView = memo(function PetView({
             try {
               const asked = performance.now();
               pending.finish();
+              compiled = true;
               perf?.mark(
                 "compiled",
                 `JS waited ${Math.round(performance.now() - asked)}ms`,
@@ -559,7 +622,10 @@ export const PetView = memo(function PetView({
               failRenderer();
             }
           });
-        } else if (gl) wake();
+        } else if (gl) {
+          compiled = true;
+          wake();
+        }
       } catch {
         stop();
         failRenderer();
@@ -765,135 +831,140 @@ export const PetView = memo(function PetView({
       />
     </Animated.View>
   );
-  return (
-    <View
-      ref={host}
-      testID={testID}
-      accessible
-      accessibilityRole={actionable ? "button" : "image"}
-      accessibilityLabel={label}
-      accessibilityState={actionable ? { disabled: !enabled } : undefined}
-      accessibilityActions={actionable ? [{ name: "activate" }] : undefined}
-      onAccessibilityAction={(event) => {
-        if (event.nativeEvent.actionName === "activate") acknowledge();
-      }}
-      onAccessibilityTap={acknowledge}
-      focusable={enabled}
-      tabIndex={enabled ? 0 : undefined}
-      {...(Platform.OS === "web"
-        ? {
-            onKeyDown: (event: React.KeyboardEvent) => {
-              if (event.repeat) return;
-              if (event.key === "Enter") {
-                event.preventDefault();
-                if (!latest.current.enabled || gesture.current) return;
-                clearPlayTimers();
-                keyPetPlay(
-                  motion.current.interaction!.play,
-                  "Enter",
-                  clockNow(),
-                  latest.current.reduced,
-                );
-                syncFallback();
-                control.current?.wake();
-                if (latest.current.reduced) scheduleStill(1420);
-              } else if (event.key === " ") {
-                event.preventDefault();
-                if (!gesture.current)
-                  start({
-                    nativeEvent: {
-                      locationX: dimensions.logical / 2,
-                      locationY: dimensions.logical / 2,
-                    },
-                  } as GestureResponderEvent);
-              } else if (
-                event.key.startsWith("Arrow") &&
-                latest.current.enabled
-              ) {
-                event.preventDefault();
-                keyPetPlay(
-                  motion.current.interaction!.play,
-                  event.key,
-                  clockNow(),
-                  latest.current.reduced,
-                );
-                control.current?.wake();
-              }
-            },
-            onFocus: (event: NativeSyntheticEvent<TargetedEvent>) => {
-              if (
-                !latest.current.enabled ||
-                !(event.currentTarget as unknown as HTMLElement).matches(
-                  ":focus-visible",
-                )
-              )
-                return;
-              focusPetPlay(
+  const handlers: PetControls["handlers"] = {
+    accessible: true,
+    accessibilityRole: actionable ? "button" : "image",
+    accessibilityLabel: label,
+    accessibilityState: actionable ? { disabled: !enabled } : undefined,
+    accessibilityActions: actionable ? [{ name: "activate" }] : undefined,
+    onAccessibilityAction: (event) => {
+      if (event.nativeEvent.actionName === "activate") acknowledge();
+    },
+    onAccessibilityTap: acknowledge,
+    focusable: enabled,
+    tabIndex: enabled ? 0 : undefined,
+    ...(Platform.OS === "web"
+      ? {
+          onKeyDown: (event: React.KeyboardEvent) => {
+            if (event.repeat) return;
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (!latest.current.enabled || gesture.current) return;
+              clearPlayTimers();
+              keyPetPlay(
                 motion.current.interaction!.play,
+                "Enter",
+                clockNow(),
+                latest.current.reduced,
+              );
+              syncFallback();
+              control.current?.wake();
+              if (latest.current.reduced) scheduleStill(1420);
+            } else if (event.key === " ") {
+              event.preventDefault();
+              if (!gesture.current)
+                start({
+                  nativeEvent: {
+                    locationX: dimensions.logical / 2,
+                    locationY: dimensions.logical / 2,
+                  },
+                } as GestureResponderEvent);
+            } else if (
+              event.key.startsWith("Arrow") &&
+              latest.current.enabled
+            ) {
+              event.preventDefault();
+              keyPetPlay(
+                motion.current.interaction!.play,
+                event.key,
                 clockNow(),
                 latest.current.reduced,
               );
               control.current?.wake();
-            },
-            onMouseMove: (event: React.MouseEvent<HTMLElement>) => {
-              if (
-                !latest.current.enabled ||
-                gesture.current ||
-                latest.current.reduced
+            }
+          },
+          onFocus: (event: NativeSyntheticEvent<TargetedEvent>) => {
+            if (
+              !latest.current.enabled ||
+              !(event.currentTarget as unknown as HTMLElement).matches(
+                ":focus-visible",
               )
-                return;
-              const box = event.currentTarget.getBoundingClientRect(),
-                span = Math.max(box.width, 320) * 1.2;
-              hoverPetPlay(
-                motion.current.interaction!.play,
-                (event.clientX - box.left - box.width / 2) / span,
-                -(event.clientY - box.top - box.height / 2) / span,
-                clockNow(),
-              );
-              control.current?.wake();
-            },
-            onMouseLeave: () => {
-              hoverPetPlay(
-                motion.current.interaction!.play,
-                0,
-                0,
-                clockNow(),
-                false,
-              );
-              control.current?.wake();
-            },
-            onKeyUp: (event: React.KeyboardEvent) => {
-              if (event.key === " ") {
-                event.preventDefault();
-                end();
-              }
-            },
-            onBlur: cancel,
-          }
-        : {})}
-      onStartShouldSetResponder={(event) =>
-        latest.current.enabled &&
-        latest.current.active &&
-        (!event.nativeEvent.touches ||
-          event.nativeEvent.touches.length === 1) &&
-        !!petContactPoint(
-          event.nativeEvent.locationX,
-          event.nativeEvent.locationY,
-          dimensions.logical,
-          motion.current,
-          latest.current.state,
-        )
-      }
-      onResponderGrant={start}
-      onResponderStart={(event) => {
-        // A stationary second finger produces start, not necessarily move.
-        // Once cancelled, this contact sequence cannot become a tap again.
-        if (event.nativeEvent.touches?.length !== 1) cancel();
-      }}
-      onResponderMove={move}
-      onResponderRelease={end}
-      onResponderTerminate={cancel}
-      onResponderTerminationRequest={() => true}
+            )
+              return;
+            focusPetPlay(
+              motion.current.interaction!.play,
+              clockNow(),
+              latest.current.reduced,
+            );
+            control.current?.wake();
+          },
+          onMouseMove: (event: React.MouseEvent<HTMLElement>) => {
+            if (
+              !latest.current.enabled ||
+              gesture.current ||
+              latest.current.reduced
+            )
+              return;
+            const box = event.currentTarget.getBoundingClientRect(),
+              span = Math.max(box.width, 320) * 1.2;
+            hoverPetPlay(
+              motion.current.interaction!.play,
+              (event.clientX - box.left - box.width / 2) / span,
+              -(event.clientY - box.top - box.height / 2) / span,
+              clockNow(),
+            );
+            control.current?.wake();
+          },
+          onMouseLeave: () => {
+            hoverPetPlay(
+              motion.current.interaction!.play,
+              0,
+              0,
+              clockNow(),
+              false,
+            );
+            control.current?.wake();
+          },
+          onKeyUp: (event: React.KeyboardEvent) => {
+            if (event.key === " ") {
+              event.preventDefault();
+              end();
+            }
+          },
+          onBlur: cancel,
+        }
+      : {}),
+    onStartShouldSetResponder: (event) =>
+      latest.current.enabled &&
+      latest.current.active &&
+      (!event.nativeEvent.touches || event.nativeEvent.touches.length === 1) &&
+      !!petContactPoint(
+        event.nativeEvent.locationX,
+        event.nativeEvent.locationY,
+        dimensions.logical,
+        motion.current,
+        latest.current.state,
+      ),
+    onResponderGrant: start,
+    onResponderStart: (event) => {
+      // A stationary second finger produces start, not necessarily move.
+      // Once cancelled, this contact sequence cannot become a tap again.
+      if (event.nativeEvent.touches?.length !== 1) cancel();
+    },
+    onResponderMove: move,
+    onResponderRelease: end,
+    onResponderTerminate: cancel,
+    onResponderTerminationRequest: () => true,
+  };
+  // Every render: the placeholder calls the newest handlers when the person touches it.
+  useLayoutEffect(() => {
+    if (controls) controls.current = { size: dimensions.logical, handlers };
+  });
+  return (
+    <View
+      ref={host}
+      testID={testID}
+      {...(controls ? HANDED_OFF : handlers)}
       style={{
         ...(Platform.OS === "web"
           ? {
@@ -912,29 +983,14 @@ export const PetView = memo(function PetView({
         fallback
       ) : (
         <GLBoundary fallback={fallback} onError={failRenderer}>
-          {!ready && slow && !snapshotShown ? (
-            <View pointerEvents="none" style={{ position: "absolute" }}>
-              {fallback}
-            </View>
-          ) : null}
-          <Animated.View
+          <View
             pointerEvents="none"
             aria-hidden
             style={{
               width: surface,
               height: surface,
-              opacity: ready ? appear : 0,
-              transform: [
-                {
-                  scale: appear.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [
-                      (0.9 * dimensions.logical) / surface,
-                      dimensions.logical / surface,
-                    ],
-                  }),
-                },
-              ],
+              opacity: ready ? 1 : 0,
+              transform: [{ scale: dimensions.logical / surface }],
             }}
           >
             {/* expo-gl keeps the first drawing buffer; a new size needs a new surface. */}
@@ -943,8 +999,8 @@ export const PetView = memo(function PetView({
               style={{ width: surface, height: surface }}
               onContextCreate={create}
             />
-          </Animated.View>
-          {snapshotShown ? (
+          </View>
+          {standIn ? (
             <Animated.View
               pointerEvents="none"
               aria-hidden
@@ -953,19 +1009,45 @@ export const PetView = memo(function PetView({
                 position: "absolute",
                 left: 0,
                 top: 0,
-                opacity: ready ? snapshotFade : 1,
+                width: dimensions.logical,
+                height: dimensions.logical,
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: ready ? standInFade : 1,
               }}
             >
-              <Image
-                source={
-                  typeof snapshot === "number" ? snapshot : { uri: snapshot! }
-                }
-                fadeDuration={0}
-                style={{
-                  width: dimensions.logical,
-                  height: dimensions.logical,
-                }}
-              />
+              {snapshot === null || decoded !== snapshot ? (
+                <View
+                  testID={`${testID}-drawing`}
+                  style={{ position: "absolute" }}
+                >
+                  {fallback}
+                </View>
+              ) : null}
+              {snapshot !== null ? (
+                <Animated.View
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    opacity: stillFade,
+                  }}
+                >
+                  <Image
+                    source={
+                      typeof snapshot === "number"
+                        ? snapshot
+                        : { uri: snapshot }
+                    }
+                    fadeDuration={0}
+                    onLoad={() => stillDecoded(snapshot)}
+                    style={{
+                      width: dimensions.logical,
+                      height: dimensions.logical,
+                    }}
+                  />
+                </Animated.View>
+              ) : null}
             </Animated.View>
           ) : null}
         </GLBoundary>
@@ -973,5 +1055,17 @@ export const PetView = memo(function PetView({
     </View>
   );
 });
+
+/** A still not decoded by then is hidden until it is, and fades in over the drawing. */
+const LATE_STILL_MS = 120;
+
+// A pet that only draws: its placeholder is what the person touches and reads.
+const HANDED_OFF = {
+  pointerEvents: "none",
+  accessible: false,
+  importantForAccessibility: "no-hide-descendants",
+  accessibilityElementsHidden: true,
+  "aria-hidden": true,
+} as const;
 
 export default PetView;

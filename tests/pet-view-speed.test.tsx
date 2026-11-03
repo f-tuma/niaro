@@ -1,6 +1,6 @@
 import React from "react";
 import { Image, PixelRatio } from "react-native";
-import { act, render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { tokens as t } from "../packages/design-tokens";
 import { PetView } from "../packages/ui/PetView";
 import { PetFallback } from "../packages/ui/PetFallback";
@@ -33,7 +33,7 @@ jest.mock("../packages/ui/pet-shader", () => ({
 jest.mock("../packages/ui/pet-snapshot-io", () => ({
   canSavePetSnapshot: () => true,
   glSettled: jest.fn(),
-  savedPetSnapshot: () => null,
+  savedPetSnapshots: () => [],
   savePetSnapshot: jest.fn(),
 }));
 jest.mock("../packages/ui/motion", () => ({
@@ -167,7 +167,7 @@ test("the first frame of a new pet is saved once, with nothing drawn over it mea
   expect(savePetSnapshot).toHaveBeenCalledTimes(1);
 });
 
-test("a kept still stands in until the live pet draws, with no fallback drawing", async () => {
+test("a kept still stands in until the live pet draws; the drawing only covers its decoding", async () => {
   jest.useFakeTimers({
     doNotFake: ["requestAnimationFrame", "cancelAnimationFrame"],
   });
@@ -186,11 +186,102 @@ test("a kept still stands in until the live pet draws, with no fallback drawing"
     expect(
       screen.getByTestId("niaro-pet-still", { includeHiddenElements: true }),
     ).toBeTruthy();
+    fireEvent(screen.UNSAFE_getByType(Image), "load");
     act(() => jest.advanceTimersByTime(5000));
     expect(screen.UNSAFE_queryAllByType(PetFallback)).toHaveLength(0);
+    expect(
+      screen.getByTestId("niaro-pet-still", { includeHiddenElements: true }),
+    ).toBeTruthy();
   } finally {
     jest.useRealTimers();
   }
+});
+
+// The opacity of the live surface's own layer: 0 while something stands in for it.
+const surfaceShown = () => {
+  let node = screen.getByTestId("pet-gl", {
+    includeHiddenElements: true,
+  }).parent;
+  while (node && node.props.style?.opacity === undefined) node = node.parent;
+  return node?.props.style.opacity === 1;
+};
+
+test("nothing draws before the shader is finished, even when a prop change wakes the pet (NIAR-277)", async () => {
+  let done!: () => void;
+  jest.mocked(glSettled).mockReturnValueOnce(new Promise((r) => (done = r)));
+  const { rerender } = render(<PetView appearance={look} />);
+  const { renderer } = start();
+  // A screen opening re-renders the pet while the GL thread still compiles.
+  rerender(<PetView appearance={look} occupied />);
+  advance(3);
+  expect(renderer.draw).not.toHaveBeenCalled();
+  expect(surfaceShown()).toBe(false);
+  expect(
+    screen.getByTestId("niaro-pet-still", { includeHiddenElements: true }),
+  ).toBeTruthy();
+  await act(async () => done());
+  advance();
+  expect(renderer.draw).toHaveBeenCalledTimes(1);
+});
+
+test("the stand-in leaves only once the GL thread has drawn the first frame", async () => {
+  keepPetSnapshot(
+    petSnapshotKey({
+      appearance: look,
+      background: t.color.background,
+      state: "idle",
+      pixels: pixels(156),
+      reduced: false,
+    })!,
+    "file:///TEST/circle.png",
+  );
+  render(<PetView appearance={look} />);
+  const { renderer } = start();
+  await settle(); // compiled
+  let drawn!: () => void;
+  jest.mocked(glSettled).mockReturnValueOnce(new Promise((r) => (drawn = r)));
+  advance();
+  expect(renderer.draw).toHaveBeenCalledTimes(1);
+  // JS asked for the frame; the GL thread may not have drawn it yet.
+  expect(surfaceShown()).toBe(false);
+  await act(async () => drawn());
+  expect(surfaceShown()).toBe(true);
+});
+
+test("a hidden pet draws its first frame (and keeps its still), then waits to be shown", async () => {
+  const { rerender } = render(
+    <PetView appearance={{ shape: "burst" }} visible={false} />,
+  );
+  const { renderer } = start();
+  await settle();
+  advance();
+  expect(renderer.draw).toHaveBeenCalledTimes(1);
+  expect(savePetSnapshot).toHaveBeenCalledTimes(1);
+  await settle();
+  advance(5);
+  expect(renderer.draw).toHaveBeenCalledTimes(1);
+  rerender(<PetView appearance={{ shape: "burst" }} visible />);
+  advance(2);
+  expect(renderer.draw).toHaveBeenCalledTimes(3);
+});
+
+test("a look without its own still borrows the nearest one of the same body", () => {
+  keepPetSnapshot(
+    petSnapshotKey({
+      appearance: { shape: "sunny", counts: [4, 0, 0, 0, 0, 0] },
+      background: t.color.background,
+      state: "idle",
+      pixels: 999,
+      reduced: false,
+    })!,
+    "file:///TEST/sunny-old-ink.png",
+  );
+  render(
+    <PetView appearance={{ shape: "sunny", counts: [1, 2, 3, 0, 0, 0] }} />,
+  );
+  expect(screen.UNSAFE_getByType(Image).props.source).toEqual({
+    uri: "file:///TEST/sunny-old-ink.png",
+  });
 });
 
 test("a rebuilt pet under the same key continues; a second pet on screen has its own motion", async () => {

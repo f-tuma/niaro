@@ -28,8 +28,8 @@ export function glSettled(
   });
 }
 
-export function savedPetSnapshot(_name: string): string | null {
-  return null;
+export function savedPetSnapshots(): { name: string; uri: string }[] {
+  return [];
 }
 
 export function canSavePetSnapshot() {

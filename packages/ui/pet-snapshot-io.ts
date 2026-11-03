@@ -52,15 +52,25 @@ export async function glSettled(
   }
 }
 
-/** The kept snapshot file of this name, when the cache still has it. */
-export function savedPetSnapshot(name: string): string | null {
+function savedFiles(fs: Files) {
+  const folder = new fs.Directory(fs.Paths.cache, FOLDER);
+  if (!folder.exists) return [];
+  return folder
+    .list()
+    .filter(
+      (entry): entry is InstanceType<Files["File"]> => entry instanceof fs.File,
+    )
+    .sort((a, b) => (b.modificationTime ?? 0) - (a.modificationTime ?? 0));
+}
+
+/** Every kept snapshot in the cache, newest first (read once, synchronously, at the first pet). */
+export function savedPetSnapshots(): { name: string; uri: string }[] {
   const fs = fileSystem();
-  if (!fs) return null;
+  if (!fs) return [];
   try {
-    const file = new fs.File(fs.Paths.cache, FOLDER, name);
-    return file.exists ? file.uri : null;
+    return savedFiles(fs).map((file) => ({ name: file.name, uri: file.uri }));
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -88,14 +98,7 @@ export async function savePetSnapshot(
     const target = new fs.File(folder, name);
     await new fs.File(source).move(target, { overwrite: true });
     // A few looks, backgrounds and sizes at most: the oldest go first.
-    const kept = folder
-      .list()
-      .filter(
-        (entry): entry is InstanceType<Files["File"]> =>
-          entry instanceof fs.File,
-      )
-      .sort((a, b) => (b.modificationTime ?? 0) - (a.modificationTime ?? 0));
-    for (const old of kept.slice(KEEP)) remove(old.uri);
+    for (const old of savedFiles(fs).slice(KEEP)) remove(old.uri);
     return target.uri;
   } catch {
     remove(source);
