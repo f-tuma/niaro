@@ -32,6 +32,18 @@ module.exports = {
       transformIgnorePatterns,
       moduleNameMapper,
       testMatch: ["<rootDir>/tests/**/*.test.tsx"],
+      testPathIgnorePatterns: ["/node_modules/", "\\.dom\\.test\\.tsx$"],
+    },
+    {
+      // The web app in a browser-like DOM with its real components, so
+      // roles, accessible names and live regions are computed as a browser
+      // and a screen reader would (`*.dom.test.tsx`).
+      displayName: "dom",
+      preset: "jest-expo",
+      testEnvironment: "<rootDir>/tests/helpers/jsdom-environment.js",
+      transformIgnorePatterns,
+      moduleNameMapper,
+      testMatch: ["<rootDir>/tests/**/*.dom.test.tsx"],
     },
   ],
 };
