@@ -11,6 +11,11 @@ import {
   type ConnectionPlatform,
   type ConnectionState,
 } from "../../packages/client-core/service-connection-flow";
+import {
+  SERVICE_LIST,
+  type ListCache,
+} from "../../packages/client-core/list-cache";
+import { phoneLists, useListSeed } from "./list-cache";
 
 /** The provider page opens in the browser and returns through the app link. */
 export const connectionPlatform: ConnectionPlatform = {
@@ -123,34 +128,44 @@ export function ServiceConnection({
 export function MemberServices({
   session,
   language,
+  lists = phoneLists,
 }: {
   session: ClientSession;
   language: Language;
+  /** Where the last known list waits (tests pass their own). */
+  lists?: ListCache;
 }) {
   const [result, setResult] = useState<{
     session: ClientSession;
     value: readonly MemberService[] | null | "failed";
   }>();
+  // The last known list shows until the server answers, and instead of a
+  // failure; opened again moments later, it is not asked again.
+  const { seed, remember } = useListSeed(session, SERVICE_LIST, lists);
   useEffect(() => {
+    if (lists.peek(session, SERVICE_LIST) && lists.fresh(session, SERVICE_LIST))
+      return;
     const controller = new AbortController();
     void session.readMemberServices(controller.signal).then(
       (list) => {
-        if (!controller.signal.aborted)
-          setResult({ session, value: list?.services ?? null });
+        if (controller.signal.aborted) return;
+        setResult({ session, value: list?.services ?? null });
+        if (list) remember(list.services);
       },
       () => {
         if (!controller.signal.aborted) setResult({ session, value: "failed" });
       },
     );
     return () => controller.abort();
-  }, [session]);
+  }, [session, lists, remember]);
   const value = result?.session === session ? result.value : undefined;
   if (value === null) return null;
+  const services = Array.isArray(value) ? value : seed;
   return (
     <MemberServicesView
       language={language}
-      services={value === "failed" ? undefined : value}
-      failed={value === "failed"}
+      services={services}
+      failed={value === "failed" && !services}
     />
   );
 }

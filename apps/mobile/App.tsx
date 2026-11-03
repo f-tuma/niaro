@@ -212,6 +212,8 @@ import {
 } from "./ScreenChrome";
 
 import type { MessageResultToken } from "../../packages/protocol/message-delivery";
+import { followConnections } from "../../packages/client-core/list-cache";
+import { phoneLists } from "./list-cache";
 
 /** The chat results this app renders (renderMessage); others arrive as text. */
 const MOBILE_MESSAGE_RESULTS: readonly MessageResultToken[] = [
@@ -3239,6 +3241,8 @@ export default function App() {
         },
       ),
   );
+  // Remembered lists belong to the signed-in identity only.
+  useEffect(() => followConnections(connections, phoneLists), [connections]);
   const connection = useSyncExternalStore(
     connections.subscribe,
     connections.getSnapshot,

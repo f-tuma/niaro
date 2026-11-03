@@ -1,8 +1,15 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   Animated,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -40,6 +47,11 @@ import {
 import * as cues from "./feedback";
 import { MenuItem } from "./ScreenChrome";
 import { OpenWorkNotice, type OpenWorkRefusal } from "./OpenWorkNotice";
+import {
+  CHAT_LIST,
+  type ListCache,
+} from "../../packages/client-core/list-cache";
+import { phoneLists } from "./list-cache";
 
 /** The history panel only leads on to chat search; the tabs carry the rest. */
 export type MenuTarget = "search";
@@ -58,7 +70,19 @@ type DrawerProps = {
   /** Shows destinations; the drawer slides away before navigating. */
   onNavigate?: (target: MenuTarget) => void;
   recordingControls?: React.ReactNode;
+  /** Where the last known chats wait between openings (tests pass their own). */
+  lists?: ListCache;
 };
+const noSubscription = () => () => {};
+/** Changes since a read: the event cursor (any chat changed) and the
+ * directory version (renamed, archived or deleted anywhere). */
+const chatListMark = (session: ClientSession, directoryVersion: number) =>
+  `${session.getSnapshot?.().store?.cursor ?? "-"}:${directoryVersion}`;
+const newestFirst = (rows: readonly ConversationSummary[]) =>
+  [...rows].sort(
+    (a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
+  );
 /**
  * The app menu: a left drawer with a new chat, destinations, history and the
  * account. Opening, sorting, pinning and selecting history never dispatch
@@ -89,17 +113,35 @@ function OpenChatHistory({
   onDeleted,
   onNavigate,
   recordingControls,
+  lists = phoneLists,
 }: DrawerProps) {
   const tr = translate(language);
-  const [rows, setRows] = useState<ConversationSummary[]>([]);
+  // Last known chats first (this session, else the device); the server's
+  // answer replaces them quietly.
+  const [rows, setRows] = useState<ConversationSummary[]>(
+    () => (session && lists.peek(session, CHAT_LIST)) || [],
+  );
+  const shown = useRef(rows.length > 0);
   const [pins, setPins] = useState<string[]>([]);
   const [pinsReady, setPinsReady] = useState(false);
-  const [loading, setLoading] = useState(!!session);
+  /** A server read is running. */
+  const [reading, setReading] = useState(!!session && !rows.length);
+  /** The device copy was looked at, so "Loading" does not flash over it. */
+  const [cacheChecked, setCacheChecked] = useState(rows.length > 0);
+  const loading = reading && !rows.length;
+  const [pulling, setPulling] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const lifecycle = useRef<{ active: boolean }>({ active: true });
   const pinRevision = useRef(0);
+  // Renames, archives and deletions here or elsewhere bump the directory
+  // version; the open list re-reads then (older sessions have none).
+  const directoryVersion = useSyncExternalStore(
+    session?.subscribe ?? noSubscription,
+    () => session?.getDirectoryVersion?.() ?? 0,
+    () => 0,
+  );
   useEffect(() => {
     const owner = { active: true };
     lifecycle.current = owner;
@@ -107,7 +149,6 @@ function OpenChatHistory({
       return () => {
         owner.active = false;
       };
-    const controller = new AbortController();
     void loadConversationPins(AsyncStorage, session.identityKey)
       .then((ids) => {
         if (!owner.active) return;
@@ -117,10 +158,43 @@ function OpenChatHistory({
       .catch(() => {
         if (owner.active) setError("storage_error");
       });
+    return () => {
+      owner.active = false;
+    };
+  }, [session]);
+  useEffect(() => {
+    if (!session) return;
+    const owner = { active: true };
+    // What the events said when this read began: any later change makes
+    // the next opening read again.
+    const mark = chatListMark(session, directoryVersion);
+    if (!attempt && shown.current && lists.fresh(session, CHAT_LIST, mark)) {
+      // Seen moments ago and nothing changed since: no server call.
+      setReading(false);
+      return () => {
+        owner.active = false;
+      };
+    }
+    if (!shown.current)
+      void lists.read(session, CHAT_LIST).then(
+        (items) => {
+          if (!owner.active) return;
+          setCacheChecked(true);
+          if (!items?.length || shown.current) return;
+          shown.current = true;
+          setRows(items.filter((c) => !c.readOnly));
+        },
+        () => {
+          if (owner.active) setCacheChecked(true);
+        },
+      );
+    const controller = new AbortController();
+    setReading(true);
     void (async () => {
       let after: string | null = null;
       const cursors = new Set<string>();
       const seen = new Set<string>();
+      const all: ConversationSummary[] = [];
       do {
         // Archived chats live in Settings, not here.
         const page = await session.readConversations(
@@ -132,28 +206,53 @@ function OpenChatHistory({
         if (page.conversations.some((c) => seen.has(c.id)))
           throw new Error("conversation_changed");
         for (const c of page.conversations) seen.add(c.id);
-        setRows((current) => [
-          ...current,
-          ...page.conversations.filter((c) => !c.readOnly),
-        ]);
+        all.push(...page.conversations.filter((c) => !c.readOnly));
+        // Without chats on screen each page shows as it arrives; chats
+        // already shown are replaced once, by the whole answer.
+        if (!shown.current) setRows([...all]);
         after = page.nextAfter;
         if (after && cursors.has(after))
           throw new Error("conversation_changed");
         if (after) cursors.add(after);
       } while (after);
+      shown.current = true;
+      setRows(all);
+      // A quiet re-read that succeeds ends an earlier read failure; a pin
+      // storage failure stays.
+      setError((current) =>
+        current === "storage_error" ? current : undefined,
+      );
+      void lists.write(session, CHAT_LIST, newestFirst(all), { mark });
     })()
       .catch((e: unknown) => {
         if (owner.active)
           setError(e instanceof Error ? e.message : "connection_failed");
       })
       .finally(() => {
-        if (owner.active) setLoading(false);
+        if (!owner.active) return;
+        setReading(false);
+        setPulling(false);
+        setCacheChecked(true);
       });
     return () => {
       owner.active = false;
       controller.abort();
     };
-  }, [session, attempt]);
+  }, [session, attempt, directoryVersion, lists]);
+  /** Asks the server again, keeping what is on screen meanwhile. */
+  const reread = () => {
+    setError(undefined);
+    setAttempt((value) => value + 1);
+  };
+  /** A change made here shows at once and stays on the device; the list is
+   * still read again before it counts as current. */
+  const keep = (next: ConversationSummary[]) => {
+    if (session)
+      void lists.write(session, CHAT_LIST, newestFirst(next), {
+        fresh: false,
+      });
+    return next;
+  };
   const togglePin = (id: string) => {
     if (!pinsReady || !session) return;
     const previous = pins;
@@ -184,27 +283,23 @@ function OpenChatHistory({
     onRenamed: (conversation, title) => {
       if (title)
         setRows((current) =>
-          current.map((row) =>
-            row.id === conversation.id ? { ...row, title } : row,
+          keep(
+            current.map((row) =>
+              row.id === conversation.id ? { ...row, title } : row,
+            ),
           ),
         );
-      // The server's own title comes back with the list.
-      else {
-        setRows([]);
-        setLoading(true);
-        setAttempt((value) => value + 1);
-      }
+      // The server's own title comes back with the list, which the
+      // directory version re-reads; an older session is asked directly.
+      else if (typeof session?.getDirectoryVersion !== "function") reread();
     },
     onGone: (id, action) => {
-      setRows((current) => current.filter((row) => row.id !== id));
+      setRows((current) => keep(current.filter((row) => row.id !== id)));
       if (action === "delete" && pins.includes(id)) togglePin(id);
       onDeleted?.(id);
     },
   });
-  const ordered = [...rows].sort(
-    (a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
-  );
+  const ordered = newestFirst(rows);
   const pinned = ordered.filter((c) => pins.includes(c.id));
   const recent = ordered.filter((c) => !pins.includes(c.id));
   const [menu, setMenu] = useState<{
@@ -394,6 +489,17 @@ function OpenChatHistory({
                 paddingBottom: 16,
                 gap: 2,
               }}
+              refreshControl={
+                session && online ? (
+                  <RefreshControl
+                    refreshing={pulling}
+                    onRefresh={() => {
+                      setPulling(true);
+                      reread();
+                    }}
+                  />
+                ) : undefined
+              }
             >
               {pinned.length ? (
                 <>
@@ -447,18 +553,13 @@ function OpenChatHistory({
                       variant="quiet"
                       size="small"
                       label={tr("refresh")}
-                      disabled={!online || loading}
-                      onPress={() => {
-                        setRows([]);
-                        setError(undefined);
-                        setLoading(true);
-                        setAttempt((value) => value + 1);
-                      }}
+                      disabled={!online || reading}
+                      onPress={reread}
                     />
                   ) : null}
                 </View>
               ) : null}
-              {loading && !rows.length ? (
+              {loading && cacheChecked ? (
                 <Text
                   role="caption"
                   tone="secondary"

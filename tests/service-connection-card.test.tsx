@@ -6,6 +6,12 @@ import { ServiceConnection } from "../apps/mobile/ServiceConnection";
 import type { ServiceConnectionCard as ConnectionResult } from "../packages/protocol/service-oauth";
 import type { ClientSession } from "../packages/client-core/session";
 import { translate } from "../packages/i18n";
+// The remembered lists (NIAR-282) keep their copy in AsyncStorage.
+jest.mock("@react-native-async-storage/async-storage", () =>
+  jest.requireActual(
+    "@react-native-async-storage/async-storage/jest/async-storage-mock",
+  ),
+);
 
 const result: ConnectionResult = {
   type: "service.connection",

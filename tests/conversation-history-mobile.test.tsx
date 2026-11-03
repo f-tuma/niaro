@@ -593,9 +593,11 @@ test.each([false, true])(
 test("a pending pin write keeps ownership across drawer remount; hydration waits before another pin", async () => {
   const f = fixture(),
     firstWrite = gate();
+  // Pin writes only: the remembered chat list is written beside them.
+  const pinKey = conversationPinsKey(f.session.identityKey);
   let count = 0;
   jest.mocked(AsyncStorage.setItem).mockImplementation(async (key, value) => {
-    if (count++ === 0) await firstWrite.promise;
+    if (key === pinKey && count++ === 0) await firstWrite.promise;
     local.set(key, value);
   });
   const props = {
@@ -619,7 +621,11 @@ test("a pending pin write keeps ownership across drawer remount; hydration waits
   expect(early.props.accessibilityState.disabled).toBe(true);
   await choose(early);
   await choose(screen.getByRole("button", { name: "Close" }));
-  expect(AsyncStorage.setItem).toHaveBeenCalledTimes(1);
+  expect(
+    jest
+      .mocked(AsyncStorage.setItem)
+      .mock.calls.filter(([key]) => key === pinKey),
+  ).toHaveLength(1);
   await act(async () => {
     firstWrite.resolve();
     await flush();

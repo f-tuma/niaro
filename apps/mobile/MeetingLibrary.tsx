@@ -53,6 +53,8 @@ import { useMeetingDevice } from "./meeting-device";
 import { useMeetingNotification } from "./meeting-notification";
 import { DetailSheet, IconButton, TopBar } from "./ScreenChrome";
 import { ProcessLaunch } from "./ProcessLaunch";
+import { MEETING_LIST } from "../../packages/client-core/list-cache";
+import { useListSeed } from "./list-cache";
 const empty = {
   phase: "idle" as const,
   entries: [],
@@ -252,6 +254,12 @@ export function MeetingLibrary({
   );
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // The last known list stands in until the server's first answer.
+  const { seed: knownMeetings, remember: rememberMeetings } = useListSeed(
+    session,
+    MEETING_LIST,
+  );
+  const shownMeetings = loaded ? meetings : (knownMeetings ?? meetings);
   const [record, setRecord] = useState<MeetingRecord>();
   const recordUpdatedAt = useRef<string | undefined>(undefined);
   const [error, setError] = useState<TranslationKey>();
@@ -341,6 +349,7 @@ export function MeetingLibrary({
         if (!alive.current || ticket !== generation.current) return;
         setMeetings(list.meetings);
         setLoaded(true);
+        rememberMeetings(list.meetings);
         setLoadError(undefined);
         const current = selectedId
           ? list.meetings.find((m) => m.id === selectedId)
@@ -374,7 +383,7 @@ export function MeetingLibrary({
         inFlight.current = false;
       }
     },
-    [session, selectedId, select],
+    [session, selectedId, select, rememberMeetings],
   );
   useEffect(() => {
     if (!visible) return;
@@ -597,7 +606,7 @@ export function MeetingLibrary({
   if (!visible) return recordingBanner ?? stopPlayback;
   const selected = selectedId
     ? ((record?.meeting.id === selectedId ? record.meeting : undefined) ??
-      meetings.find((m) => m.id === selectedId))
+      shownMeetings.find((m) => m.id === selectedId))
     : undefined;
   const problem =
     error ??
@@ -921,9 +930,10 @@ export function MeetingLibrary({
         entry.id === recordingEntryId &&
         local.phase !== "idle" &&
         entry.state === "pending"
-      ) && !meetings.some((m) => m.id === entry.id && m.status !== "uploading"),
+      ) &&
+      !shownMeetings.some((m) => m.id === entry.id && m.status !== "uploading"),
   );
-  const listed = meetings.filter(
+  const listed = shownMeetings.filter(
     (meeting) =>
       meeting.status !== "uploading" ||
       !local.entries.some((entry) => entry.id === meeting.id),
@@ -1189,7 +1199,7 @@ export function MeetingLibrary({
             ))}
           </Group>
         </View>
-      ) : !loaded && !loadError ? (
+      ) : !loaded && !loadError && !knownMeetings ? (
         <Row style={styles.libraryState} accessibilityLiveRegion="polite">
           <ActivityIndicator size="small" color={t.color.text.secondary} />
           <Text role="caption" tone="secondary">

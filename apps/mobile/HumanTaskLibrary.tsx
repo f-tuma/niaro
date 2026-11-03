@@ -10,6 +10,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
 import type { ClientSession } from "../../packages/client-core/session";
 import { HumanTaskCommandQueue } from "../../packages/client-core/human-task-command";
+import { TASK_LISTS } from "../../packages/client-core/list-cache";
+import { phoneLists, useListSeed } from "./list-cache";
 import { sameScope, type Language } from "../../packages/protocol";
 import {
   type HumanTask,
@@ -134,10 +136,12 @@ export function HumanTaskLibrary({
     current.current = { tab, after };
     invalidate();
   }, [tab, after, onCounts, invalidate]);
-  const tasks =
-    projection?.tab === tab && projection.after === after
-      ? projection.tasks
-      : [];
+  // The first page of a tab shows its last known items until the server's
+  // answer; they can be read, not decided on.
+  const { seed: knownTasks } = useListSeed(session, TASK_LISTS[tab]);
+  const answered = projection?.tab === tab && projection.after === after;
+  const fromDevice = !answered && after === undefined && !!knownTasks?.length;
+  const tasks = answered ? projection.tasks : fromDevice ? knownTasks : [];
   const next =
     projection?.tab === tab && projection.after === after
       ? projection.next
@@ -173,6 +177,12 @@ export function HumanTaskLibrary({
           tasks: result.tasks,
           next: result.next,
         });
+        if (destination.after === undefined)
+          void phoneLists.write(
+            session,
+            TASK_LISTS[destination.tab],
+            result.tasks,
+          );
         setLoadError(undefined);
         countsCallback.current?.(session.identityKey, result.counts);
       }
@@ -211,7 +221,8 @@ export function HumanTaskLibrary({
     }
   }
   if (!visible) return null;
-  const blocked = !online || !!loadError || commandState.phase !== "idle";
+  const blocked =
+    !online || !!loadError || fromDevice || commandState.phase !== "idle";
   const pending = commandState.pending;
   return (
     <Stack testID="human-task-library">

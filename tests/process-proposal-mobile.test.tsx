@@ -8,6 +8,12 @@ import type {
 } from "../packages/protocol/process-proposal";
 
 let mockPress = 0;
+// The remembered lists (NIAR-282) keep their copy in AsyncStorage.
+jest.mock("@react-native-async-storage/async-storage", () =>
+  jest.requireActual(
+    "@react-native-async-storage/async-storage/jest/async-storage-mock",
+  ),
+);
 jest.mock("expo-crypto", () => ({
   randomUUID: () => `TEST-press-${++mockPress}`,
 }));

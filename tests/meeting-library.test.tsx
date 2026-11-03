@@ -11,6 +11,14 @@ import type { ClientSession } from "../packages/client-core/session";
 import { meetingRecordFixture } from "../packages/test-fixtures/meeting";
 import { en, cs } from "../packages/i18n";
 import { Text } from "react-native";
+import { MEETING_LIST } from "../packages/client-core/list-cache";
+import { phoneLists } from "../apps/mobile/list-cache";
+// The remembered lists (NIAR-282) keep their copy in AsyncStorage.
+jest.mock("@react-native-async-storage/async-storage", () =>
+  jest.requireActual(
+    "@react-native-async-storage/async-storage/jest/async-storage-mock",
+  ),
+);
 jest.mock("../apps/mobile/ProcessLaunch", () => {
   const ReactModule = jest.requireActual<typeof import("react")>("react");
   const Native =
@@ -437,3 +445,38 @@ test.each(["en", "cs"] as const)(
     expect(view.queryByText(copy.meeting_connection_failed)).toBeNull();
   },
 );
+
+test("after a start the meetings from the last run are listed at once and replaced by the server's list", async () => {
+  const f = fixture();
+  const remembered = {
+    ...meetingRecordFixture.meeting,
+    title: "TEST remembered meeting",
+  };
+  // The previous run of the app kept its list on the device.
+  await phoneLists.write({ identityKey: f.session.identityKey }, MEETING_LIST, [
+    remembered,
+  ]);
+  let answer!: () => void;
+  const held = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  const read = (f.session.readMeetings as jest.Mock).getMockImplementation()!;
+  (f.session.readMeetings as jest.Mock).mockImplementation(async () => {
+    await held;
+    return read();
+  });
+  const view = render(
+    <MeetingLibrary session={f.session} language="en" visible />,
+  );
+  await waitFor(() =>
+    expect(view.getByText("TEST remembered meeting")).toBeTruthy(),
+  );
+  expect(view.queryByText(en.loading)).toBeNull();
+  await act(async () => {
+    answer();
+  });
+  await waitFor(() =>
+    expect(view.getByText(meetingRecordFixture.meeting.title)).toBeTruthy(),
+  );
+  expect(view.queryByText("TEST remembered meeting")).toBeNull();
+});

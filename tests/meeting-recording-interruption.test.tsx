@@ -16,6 +16,12 @@ const mockCapture = {
   start: jest.fn(),
 };
 
+// The remembered lists (NIAR-282) keep their copy in AsyncStorage.
+jest.mock("@react-native-async-storage/async-storage", () =>
+  jest.requireActual(
+    "@react-native-async-storage/async-storage/jest/async-storage-mock",
+  ),
+);
 jest.mock("../apps/mobile/meeting-device", () => ({
   useMeetingDevice: () => ({ capture: mockCapture, durationMillis: 0 }),
 }));

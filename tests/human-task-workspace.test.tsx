@@ -32,6 +32,8 @@ import {
 } from "../packages/protocol/human-tasks";
 import type { Section } from "../apps/mobile/ScreenChrome";
 import { CONVERSATION_HISTORY_PROFILE } from "../packages/protocol";
+import { ListCache, TASK_LISTS } from "../packages/client-core/list-cache";
+import { phoneLists } from "../apps/mobile/list-cache";
 
 const mockStorage = new Map<string, string>();
 jest.mock("@react-native-async-storage/async-storage", () => ({
@@ -636,6 +638,72 @@ test("a deleted source does not leave its rejected decision locking the list", a
   });
   expect(
     screen.getByRole("button", { name: "Open task: Another item" }).props
+      .accessibilityState.disabled,
+  ).toBe(false);
+});
+
+test("after a start Tasks lists the last known open items at once; their decisions wait for the server's list", async () => {
+  const h = fixture();
+  const device = {
+    getItem: async (key: string) => mockStorage.get(key) ?? null,
+    setItem: async (key: string, value: string) => {
+      mockStorage.set(key, value);
+    },
+    removeItem: async (key: string) => {
+      mockStorage.delete(key);
+    },
+  };
+  await phoneLists.adopt(h.session.identityKey);
+  // The previous run kept the first page of the open tab.
+  const remembered = { ...h.initial, title: "TEST remembered item" };
+  await new ListCache(device).write(
+    { identityKey: h.session.identityKey },
+    TASK_LISTS.open,
+    [remembered],
+  );
+  let release!: (
+    value: Awaited<ReturnType<ClientSession["readHumanTasks"]>>,
+  ) => void;
+  const answer = await h.session.readHumanTasks("open");
+  (h.session.readHumanTasks as jest.Mock).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  render(
+    <HumanTaskLibrary
+      key={h.session.identityKey}
+      session={h.session}
+      language="en"
+      tab="open"
+      visible
+    />,
+  );
+  await act(flush);
+  expect(screen.queryByText("Loading…")).toBeNull();
+  fireEvent.press(
+    screen.getByRole("button", { name: "Open task: TEST remembered item" }),
+  );
+  await act(flush);
+  expect(
+    screen.getByRole("button", { name: "Mark as done" }).props
+      .accessibilityState.disabled,
+  ).toBe(true);
+  await act(async () => {
+    release(answer);
+    await flush();
+  });
+  // The server's list replaces it and decisions are offered again.
+  expect(
+    screen.queryByRole("button", { name: "Open task: TEST remembered item" }),
+  ).toBeNull();
+  fireEvent.press(
+    screen.getByRole("button", { name: `Open task: ${h.initial.title}` }),
+  );
+  await act(flush);
+  expect(
+    screen.getAllByRole("button", { name: "Mark as done" }).at(-1)!.props
       .accessibilityState.disabled,
   ).toBe(false);
 });

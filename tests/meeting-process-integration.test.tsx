@@ -19,6 +19,12 @@ import { processObject } from "./helpers/service-process";
 // Each test starts a child HTTP server; slower CI runners need more than 5 s.
 jest.setTimeout(30_000);
 
+// The remembered lists (NIAR-282) keep their copy in AsyncStorage.
+jest.mock("@react-native-async-storage/async-storage", () =>
+  jest.requireActual(
+    "@react-native-async-storage/async-storage/jest/async-storage-mock",
+  ),
+);
 jest.mock("../apps/mobile/meeting-device", () => ({
   useMeetingDevice: () => ({ capture: null, durationMillis: 0 }),
 }));

@@ -10,6 +10,13 @@ import { memberServicesCopy } from "../packages/ui-catalog/member-services-copy"
 import { MemberServices } from "../apps/mobile/ServiceConnection";
 import { FixtureEngine } from "../apps/fixture-server/engine";
 import { credential, authInfo } from "./auth-fixtures";
+import { ListCache } from "../packages/client-core/list-cache";
+
+jest.mock("@react-native-async-storage/async-storage", () =>
+  jest.requireActual(
+    "@react-native-async-storage/async-storage/jest/async-storage-mock",
+  ),
+);
 
 const at = Date.UTC(2026, 10, 2, 9, 30);
 const company: MemberService = {
@@ -169,6 +176,67 @@ test("the phone list follows the current connection and hides on a server withou
     />,
   );
   expect(await screen.findByText("Couldn't load the services.")).toBeTruthy();
+});
+
+test("Settings shows the last known services, reads them once within two minutes and keeps them when a read fails", async () => {
+  const values = new Map<string, string>();
+  let now = Date.UTC(2026, 10, 3, 9);
+  const lists = new ListCache(
+    {
+      getItem: async (key) => values.get(key) ?? null,
+      setItem: async (key, value) => {
+        values.set(key, value);
+      },
+      removeItem: async (key) => {
+        values.delete(key);
+      },
+    },
+    () => now,
+  );
+  const signedIn = {
+    identityKey: "TEST-server|alice",
+    readMemberServices: jest.fn(async () => ({
+      organizationId: "org",
+      workspaceId: "ws",
+      services: [company],
+    })),
+  };
+  const settings = () => (
+    <MemberServices
+      session={signedIn as unknown as ClientSession}
+      language="en"
+      lists={lists}
+    />
+  );
+  const first = render(settings());
+  expect(await screen.findByText("Company CRM")).toBeTruthy();
+  first.unmount();
+  now += 60_000;
+  render(settings());
+  // Shown at once from this session, without asking again.
+  expect(screen.getByText("Company CRM")).toBeTruthy();
+  await act(async () => {});
+  expect(signedIn.readMemberServices).toHaveBeenCalledTimes(1);
+  screen.unmount();
+
+  // The next app run: the device copy stands in, also for a failed read.
+  const nextRun = {
+    identityKey: "TEST-server|alice",
+    readMemberServices: jest.fn(async () => {
+      throw new Error("connection_failed");
+    }),
+  };
+  render(
+    <MemberServices
+      session={nextRun as unknown as ClientSession}
+      language="en"
+      lists={lists}
+    />,
+  );
+  expect(await screen.findByText("Company CRM")).toBeTruthy();
+  await act(async () => {});
+  expect(nextRun.readMemberServices).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("Couldn't load the services.")).toBeNull();
 });
 
 describe("ClientSession.readMemberServices", () => {
