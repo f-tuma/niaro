@@ -1,5 +1,7 @@
 // jsdom with the platform globals a browser has and jsdom leaves out
-// (fetch types, streams, text coding), taken from Node.
+// (fetch types, streams, text coding), taken from Node. setImmediate is
+// passed on too: React's scheduler prefers it to MessageChannel, whose open
+// port would keep Jest from exiting after the run.
 const { TestEnvironment } = require("jest-environment-jsdom");
 
 const fromNode = [
@@ -22,6 +24,8 @@ const fromNode = [
   "structuredClone",
   "MessageChannel",
   "BroadcastChannel",
+  "setImmediate",
+  "clearImmediate",
 ];
 
 module.exports = class NodeGlobalsJsdomEnvironment extends TestEnvironment {
