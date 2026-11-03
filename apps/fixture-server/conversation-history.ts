@@ -218,11 +218,12 @@ export class ConversationHistory {
       .get(scopeKey(scope), id);
   }
   /** The content-free reference a retained task may still need when its chat
-   * was deleted or archived. A session archive was never referenced. */
+   * was deleted or archived. A session archive counts too: a task of the
+   * earlier session follows its attachment generation into the archive. */
   shell(scope: Scope, id: string): Conversation | undefined {
     const row = this.db
       .prepare(
-        "SELECT revision FROM public_conversation WHERE scope_key=? AND id=? AND (deleted=? OR read_only=1) AND legacy_session IS NULL",
+        "SELECT revision FROM public_conversation WHERE scope_key=? AND id=? AND (deleted=? OR read_only=1)",
       )
       .get(scopeKey(scope), id, DELETED);
     return row

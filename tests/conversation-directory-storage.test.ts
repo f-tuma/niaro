@@ -151,6 +151,66 @@ test("a deleted chat that a finished task still points at stays only as an empty
   }
 });
 
+test("a task of the earlier session that follows it into the session archive does not break the snapshot", () => {
+  const directory = mkdtempSync(join(tmpdir(), "TEST-directory-session-task-"));
+  let storage = new FixtureStorage(directory, scope.serverId);
+  try {
+    storage.execute(
+      scope,
+      command({
+        type: "message.send",
+        conversationId: "conversation-1",
+        commandId: "TEST-first",
+        idempotencyKey: "TEST-first",
+        text: "TEST first session",
+        language: "en",
+      }),
+      {
+        decision: reply("TEST reply"),
+        expectedCursor: storage.snapshot(scope).cursor,
+        timeZone: "UTC",
+      },
+    );
+    // The phone's first message of a new session archives the earlier one.
+    storage.startSession(scope);
+    const archive = storage
+      .conversations(scope)
+      .conversations.find((c) => c.readOnly)!;
+    expect(archive.id).toMatch(/^archived-\d+$/);
+    // The native task of the earlier session now names the archive (its
+    // attachment generation moved there), as the server's task window does.
+    const task = WorkItemSchema.parse({
+      ...work("failed"),
+      conversationId: archive.id,
+    });
+    storage.syncNativeWork(scope, [task], true);
+    const check = () => {
+      const snapshot = SnapshotSchema.parse(storage.snapshot(scope));
+      expect(snapshot.workItems.map((w) => w.conversationId)).toEqual([
+        archive.id,
+      ]);
+      // Only an empty reference: the archive's messages stay in history.
+      expect(
+        snapshot.conversations.find((c) => c.id === archive.id)?.messages,
+      ).toEqual([]);
+      expect(
+        storage
+          .conversations(scope)
+          .conversations.find((c) => c.id === archive.id)?.readOnly,
+      ).toBe(true);
+    };
+    check();
+    storage.syncNativeWork(scope, [task], true);
+    storage.close();
+    storage = new FixtureStorage(directory, scope.serverId);
+    storage.syncNativeWork(scope, [task], true);
+    check();
+  } finally {
+    storage.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("a renamed chat keeps its name through archiving; an archive can be renamed and deleted", () => {
   const directory = mkdtempSync(join(tmpdir(), "TEST-directory-archive-"));
   const storage = new FixtureStorage(directory, scope.serverId);
