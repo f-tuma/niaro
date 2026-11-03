@@ -6,6 +6,13 @@ import {
   ensureMicrophone,
 } from "../apps/mobile/voice-capture";
 import { resetChatSession } from "../apps/mobile/chat-session";
+import {
+  microphoneAllowed,
+  microphoneGranted,
+  recheckMicrophone,
+  resetMicrophoneMemory,
+  setMicrophoneCheck,
+} from "../apps/mobile/microphone-permission";
 import { voiceCapabilities } from "../packages/protocol/voice";
 import { chatFixture, flush } from "./helpers/mobile-chat-fixture";
 
@@ -39,6 +46,7 @@ const BLOCKED = "Microphone blocked. Allow access or type.";
 beforeEach(() => {
   jest.clearAllMocks();
   resetChatSession();
+  resetMicrophoneMemory();
   AppState.currentState = "active";
 });
 
@@ -90,4 +98,110 @@ test("a microphone allowed after a refusal clears Microphone blocked as voice st
     fireEvent.press(screen.getByRole("button", { name: "Cancel" }));
     await flush();
   });
+});
+
+// NIAR-283: a granted microphone is remembered; a tap listens at once.
+const setup = () => {
+  const f = chatFixture();
+  let begin!: () => void;
+  const capture = {
+    supported: () => true,
+    // The recorder takes a moment to open; the sheet already listens.
+    start: jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          begin = resolve;
+        }),
+    ),
+    stop: jest.fn(async () => ({
+      mimeType: "audio/wav" as const,
+      base64: "YWJjZA==",
+    })),
+    discard: jest.fn(async () => {}),
+  };
+  jest.mocked(createVoiceCapture).mockReturnValue(capture);
+  Object.assign(f.session, {
+    voiceCapabilities: jest.fn(async () => voiceCapabilities(true)),
+    transcribe: jest.fn(async () => ({ text: "", reviewReasons: [] })),
+  });
+  const talk = async () =>
+    act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Voice input" }));
+      await flush();
+    });
+  const cancel = async () =>
+    act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Cancel" }));
+      await flush();
+    });
+  return { f, capture, talk, cancel, begin: () => begin() };
+};
+
+test("NIAR-283: with the microphone known as granted, a tap listens at once with no permission call and no Requesting microphone step", async () => {
+  microphoneAllowed();
+  const { f, capture, talk, cancel, begin } = setup();
+  render(<f.Harness />);
+  await act(flush);
+  for (let tap = 1; tap <= 3; tap++) {
+    await talk();
+    expect(capture.start).toHaveBeenCalledTimes(tap);
+    // Still opening the recorder: the sheet says Listening, never Requesting.
+    expect(screen.getAllByText("Listening").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Requesting microphone…")).toBeNull();
+    await act(async () => {
+      begin();
+      await flush();
+    });
+    expect(screen.getAllByText("Listening").length).toBeGreaterThan(0);
+    await cancel();
+  }
+  expect(ensureMicrophone).not.toHaveBeenCalled();
+});
+
+test("NIAR-283: the first tap asks once; later taps in the same run do not", async () => {
+  const { f, capture, talk, cancel, begin } = setup();
+  render(<f.Harness />);
+  await act(flush);
+  await talk();
+  expect(ensureMicrophone).toHaveBeenCalledTimes(1);
+  expect(capture.start).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    begin();
+    await flush();
+  });
+  await cancel();
+  await talk();
+  expect(capture.start).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    begin();
+    await flush();
+  });
+  await cancel();
+  await talk();
+  expect(capture.start).toHaveBeenCalledTimes(3);
+  expect(ensureMicrophone).toHaveBeenCalledTimes(1);
+});
+
+test("NIAR-283: access revoked in the settings: the recorder fails, Microphone blocked shows, and the next tap asks again", async () => {
+  microphoneAllowed();
+  const { f, capture, talk } = setup();
+  // What the native capture does when the recorder cannot open the microphone.
+  setMicrophoneCheck(async () => false);
+  capture.start.mockImplementationOnce(async () => {
+    if (!(await recheckMicrophone())) throw new Error("voice_permission");
+  });
+  render(<f.Harness />);
+  await act(flush);
+  await talk();
+  expect(ensureMicrophone).not.toHaveBeenCalled();
+  expect(screen.getAllByText(BLOCKED).length).toBeGreaterThan(0);
+  expect(microphoneGranted()).toBe(false);
+  // The next tap goes through the request flow again.
+  jest.mocked(ensureMicrophone).mockResolvedValueOnce(false);
+  await act(async () => {
+    fireEvent.press(screen.getAllByRole("button", { name: "Cancel" })[0]!);
+    await flush();
+  });
+  await talk();
+  expect(ensureMicrophone).toHaveBeenCalledTimes(1);
 });

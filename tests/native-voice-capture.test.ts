@@ -3,7 +3,16 @@ import {
   requestRecordingPermissionsAsync,
 } from "expo-audio";
 import { AudioRecorder } from "react-native-audio-api";
-import { createVoiceCapture } from "../apps/mobile/voice-capture";
+import {
+  createVoiceCapture,
+  ensureMicrophone,
+} from "../apps/mobile/voice-capture";
+import {
+  loadMicrophoneHint,
+  microphoneGranted,
+  recheckMicrophone,
+  resetMicrophoneMemory,
+} from "../apps/mobile/microphone-permission";
 
 jest.mock("expo-audio", () => ({
   getRecordingPermissionsAsync: jest.fn(),
@@ -58,6 +67,8 @@ const instance = (index: number) =>
   };
 beforeEach(() => {
   jest.clearAllMocks();
+  // Every case starts as the first use of this app run.
+  resetMicrophoneMemory();
   getPermission.mockResolvedValue(
     permission(true) as Awaited<ReturnType<typeof getPermission>>,
   );
@@ -179,4 +190,153 @@ test("raw samples give a spectrum and voicing while recording and a 16 kHz WAV a
   } finally {
     await capture.discard();
   }
+});
+
+// NIAR-283: once granted, a tap starts capture with no permission round trip.
+test("granted access is remembered: later starts make no permission call at all", async () => {
+  const first = createVoiceCapture();
+  try {
+    await first.start(new AbortController().signal);
+  } finally {
+    await first.discard();
+  }
+  expect(getPermission).toHaveBeenCalledTimes(1);
+  expect(microphoneGranted()).toBe(true);
+  jest.clearAllMocks();
+  for (let tap = 0; tap < 3; tap++) {
+    expect(await ensureMicrophone()).toBe(true);
+    const capture = createVoiceCapture();
+    try {
+      await capture.start(new AbortController().signal);
+      expect(instance(tap).start).toHaveBeenCalledTimes(1);
+    } finally {
+      await capture.discard();
+    }
+  }
+  expect(getPermission).not.toHaveBeenCalled();
+  expect(requestPermission).not.toHaveBeenCalled();
+});
+
+test("the first use still asks before recording, and granting does not cancel the start", async () => {
+  getPermission.mockResolvedValue(
+    permission(false) as Awaited<ReturnType<typeof getPermission>>,
+  );
+  expect(await ensureMicrophone()).toBe(true);
+  expect(getPermission).toHaveBeenCalledTimes(1);
+  expect(requestPermission).toHaveBeenCalledTimes(1);
+  expect(Recorder).not.toHaveBeenCalled();
+  const capture = createVoiceCapture();
+  try {
+    await capture.start(new AbortController().signal);
+    expect(instance(0).start).toHaveBeenCalledTimes(1);
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+  } finally {
+    await capture.discard();
+  }
+});
+
+test("a denied first use is not remembered", async () => {
+  getPermission.mockResolvedValue(
+    permission(false) as Awaited<ReturnType<typeof getPermission>>,
+  );
+  requestPermission.mockResolvedValue(
+    permission(false) as Awaited<ReturnType<typeof requestPermission>>,
+  );
+  expect(await ensureMicrophone()).toBe(false);
+  expect(microphoneGranted()).toBe(false);
+  expect(await ensureMicrophone()).toBe(false);
+  expect(requestPermission).toHaveBeenCalledTimes(2);
+});
+
+test("access revoked in the settings: the recorder fails, the start says voice_permission and the next tap asks again", async () => {
+  expect(await ensureMicrophone()).toBe(true);
+  jest.clearAllMocks();
+  // Revoked meanwhile: the recorder cannot open the microphone.
+  getPermission.mockResolvedValue(
+    permission(false) as Awaited<ReturnType<typeof getPermission>>,
+  );
+  Recorder.mockImplementationOnce(
+    () =>
+      ({
+        onAudioReady: jest.fn(),
+        clearOnAudioReady: jest.fn(),
+        onError: jest.fn(),
+        clearOnError: jest.fn(),
+        start: jest.fn(async () => ({ status: "error", message: "denied" })),
+        stop: jest.fn(async () => ({ status: "success" })),
+        isRecording: () => false,
+      }) as unknown as AudioRecorder,
+  );
+  const capture = createVoiceCapture();
+  try {
+    await expect(capture.start(new AbortController().signal)).rejects.toThrow(
+      "voice_permission",
+    );
+  } finally {
+    await capture.discard();
+  }
+  // Checked without asking; the request flow belongs to the next tap.
+  expect(getPermission).toHaveBeenCalledTimes(1);
+  expect(requestPermission).not.toHaveBeenCalled();
+  expect(microphoneGranted()).toBe(false);
+  requestPermission.mockResolvedValue(
+    permission(true) as Awaited<ReturnType<typeof requestPermission>>,
+  );
+  expect(await ensureMicrophone()).toBe(true);
+  expect(requestPermission).toHaveBeenCalledTimes(1);
+});
+
+test("a recorder failure with access still granted stays a capture failure and keeps the memory", async () => {
+  expect(await ensureMicrophone()).toBe(true);
+  Recorder.mockImplementationOnce(
+    () =>
+      ({
+        onAudioReady: jest.fn(),
+        clearOnAudioReady: jest.fn(),
+        onError: jest.fn(),
+        clearOnError: jest.fn(),
+        start: jest.fn(async () => ({ status: "error", message: "busy" })),
+        stop: jest.fn(async () => ({ status: "success" })),
+        isRecording: () => false,
+      }) as unknown as AudioRecorder,
+  );
+  const capture = createVoiceCapture();
+  try {
+    await expect(capture.start(new AbortController().signal)).rejects.toThrow(
+      "voice_capture_failed",
+    );
+  } finally {
+    await capture.discard();
+  }
+  expect(microphoneGranted()).toBe(true);
+});
+
+test("a cold start uses the hint an earlier launch left; a revoked access found on return clears it", async () => {
+  const saved = new Map<string, string>();
+  const store = {
+    getItem: async (key: string) => saved.get(key) ?? null,
+    setItem: async (key: string, value: string) => {
+      saved.set(key, value);
+    },
+  };
+  await loadMicrophoneHint(store);
+  expect(microphoneGranted()).toBe(false);
+  expect(await ensureMicrophone()).toBe(true);
+  await Promise.resolve();
+  // The next launch.
+  resetMicrophoneMemory();
+  jest.clearAllMocks();
+  await loadMicrophoneHint(store);
+  expect(microphoneGranted()).toBe(true);
+  expect(await ensureMicrophone()).toBe(true);
+  expect(getPermission).not.toHaveBeenCalled();
+  // Back from the system settings with the microphone turned off.
+  getPermission.mockResolvedValue(
+    permission(false) as Awaited<ReturnType<typeof getPermission>>,
+  );
+  expect(await recheckMicrophone()).toBe(false);
+  await Promise.resolve();
+  resetMicrophoneMemory();
+  await loadMicrophoneHint(store);
+  expect(microphoneGranted()).toBe(false);
 });

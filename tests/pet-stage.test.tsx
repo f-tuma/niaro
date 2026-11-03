@@ -169,7 +169,7 @@ test("without a stage (browser, stories) a slot is a pet of its own", () => {
   expect(screen.queryByTestId("pet-stage-pet")).toBeNull();
 });
 
-test("recording says it is listening as soon as the microphone starts, while the pet has not drawn (NIAR-277)", async () => {
+test("voice says it is listening at once, before the microphone has opened and while the pet has not drawn (NIAR-277, NIAR-283)", async () => {
   let microphone!: () => void;
   const capture = {
     supported: () => true,
@@ -214,7 +214,8 @@ test("recording says it is listening as soon as the microphone starts, while the
     fireEvent.press(screen.getByRole("button", { name: "Record" }));
   });
   expect(capture.start).toHaveBeenCalledTimes(1);
-  expect(screen.getByText("Requesting microphone…")).toBeTruthy();
+  expect(screen.queryByText("Requesting microphone…")).toBeNull();
+  expect(screen.getAllByText("Listening").length).toBeGreaterThan(0);
   await act(async () => microphone());
   expect(screen.getAllByText("Listening").length).toBeGreaterThan(0);
   expect(stagePet().props.state).toBe("listening");

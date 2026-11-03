@@ -14,6 +14,15 @@ import {
   type VoiceFrame,
 } from "../../packages/audio/analysis";
 import { audioSession as coordinator } from "./audio-session";
+import {
+  microphoneAllowed,
+  microphoneGranted,
+  recheckMicrophone,
+  setMicrophoneCheck,
+} from "./microphone-permission";
+
+// Rechecks after a failed start or a return from the system settings.
+setMicrophoneCheck(async () => (await getRecordingPermissionsAsync()).granted);
 
 /** What the server transcribes; also keeps two minutes well under the upload limit. */
 const SPEECH_RATE = 16000;
@@ -30,12 +39,16 @@ function base64(bytes: Uint8Array) {
 /**
  * Asks for the microphone before a recording starts, so the system dialog
  * (which backgrounds the app on Android) never interrupts capture itself.
- * Resolves to whether the microphone may be used.
+ * Known access answers at once without a system call. Resolves to whether the
+ * microphone may be used.
  */
 export async function ensureMicrophone() {
+  if (microphoneGranted()) return true;
   const current = await getRecordingPermissionsAsync();
-  if (current.granted) return true;
-  return (await requestRecordingPermissionsAsync()).granted;
+  const granted =
+    current.granted || (await requestRecordingPermissionsAsync()).granted;
+  if (granted) microphoneAllowed();
+  return granted;
 }
 /** Raw microphone samples feed the spectrum, voicing and a WAV upload. Nothing is
  * written to disk and nothing is analysed outside an active recording. */
@@ -70,58 +83,81 @@ export function createVoiceCapture(): VoiceCapture {
       }
     }
   };
+  /** The native recorder, once access is granted. */
+  /** Starts the native recorder once access is granted. */
+  const startRecorder = async (signal: AbortSignal) => {
+    if (Platform.OS === "ios") {
+      AudioManager.setAudioSessionOptions({
+        iosCategory: "playAndRecord",
+        iosMode: "spokenAudio",
+        iosOptions: ["defaultToSpeaker", "allowBluetoothHFP"],
+      });
+      await AudioManager.setAudioSessionActivity(true);
+    }
+    if (signal.aborted) throw new Error("voice_cancelled");
+    const next = new AudioRecorder();
+    recorder = next;
+    const limit = VOICE_SECONDS * 48000;
+    next.onAudioReady(
+      { sampleRate: SPEECH_RATE, bufferLength: FRAME, channelCount: 1 },
+      ({ buffer }) => {
+        if (recorder !== next) return;
+        rate = buffer.sampleRate;
+        // The native buffer is reused for the next callback; keep a copy.
+        const samples = Float32Array.from(buffer.getChannelData(0));
+        if (collected < limit) {
+          chunks.push(samples);
+          collected += samples.length;
+        }
+        window.push(samples);
+        dirty = true;
+      },
+    );
+    next.onError(() => {
+      if (recorder === next) latest = null;
+    });
+    const started = await next.start();
+    if (started.status !== "success") throw new Error("voice_capture_failed");
+    if (signal.aborted) throw new Error("voice_cancelled");
+  };
   return {
     supported: () => true,
     async start(signal) {
       coordinator.acquire("voice");
       owned = true;
       if (signal.aborted) throw new Error("voice_cancelled");
-      let permission = await getRecordingPermissionsAsync();
-      if (signal.aborted) throw new Error("voice_cancelled");
-      // Even an already-granted Android request can open a permission activity
-      // and interrupt capture. Only request access when it is actually missing.
-      const requested = !permission.granted;
-      if (requested) permission = await requestRecordingPermissionsAsync();
-      if (!permission.granted) throw new Error("voice_permission");
-      // Android's system permission activity can background this app. A granted
-      // late permission never starts capture; the user must press Record again.
-      if (signal.aborted)
-        throw new Error(
-          requested ? "voice_permission_ready" : "voice_cancelled",
-        );
-      if (Platform.OS === "ios") {
-        AudioManager.setAudioSessionOptions({
-          iosCategory: "playAndRecord",
-          iosMode: "spokenAudio",
-          iosOptions: ["defaultToSpeaker", "allowBluetoothHFP"],
-        });
-        await AudioManager.setAudioSessionActivity(true);
+      // Access known from earlier starts at once, with no system call; the
+      // recorder failing below is what tells that it was revoked meanwhile.
+      const known = microphoneGranted();
+      if (!known) {
+        let permission = await getRecordingPermissionsAsync();
+        if (signal.aborted) throw new Error("voice_cancelled");
+        // Even an already-granted Android request can open a permission
+        // activity and interrupt capture. Only request access when missing.
+        const requested = !permission.granted;
+        if (requested) permission = await requestRecordingPermissionsAsync();
+        if (!permission.granted) throw new Error("voice_permission");
+        microphoneAllowed();
+        // Android's system permission activity can background this app. A
+        // granted late permission never starts capture; the user must press
+        // Record again.
+        if (signal.aborted)
+          throw new Error(
+            requested ? "voice_permission_ready" : "voice_cancelled",
+          );
       }
-      if (signal.aborted) throw new Error("voice_cancelled");
-      const next = new AudioRecorder();
-      recorder = next;
-      const limit = VOICE_SECONDS * 48000;
-      next.onAudioReady(
-        { sampleRate: SPEECH_RATE, bufferLength: FRAME, channelCount: 1 },
-        ({ buffer }) => {
-          if (recorder !== next) return;
-          rate = buffer.sampleRate;
-          // The native buffer is reused for the next callback; keep a copy.
-          const samples = Float32Array.from(buffer.getChannelData(0));
-          if (collected < limit) {
-            chunks.push(samples);
-            collected += samples.length;
-          }
-          window.push(samples);
-          dirty = true;
-        },
-      );
-      next.onError(() => {
-        if (recorder === next) latest = null;
-      });
-      const started = await next.start();
-      if (started.status !== "success") throw new Error("voice_capture_failed");
-      if (signal.aborted) throw new Error("voice_cancelled");
+      try {
+        await startRecorder(signal);
+      } catch (error) {
+        // Revoked in the system settings: say so, and the next tap asks again.
+        if (
+          known &&
+          !(error instanceof Error && error.message === "voice_cancelled") &&
+          !(await recheckMicrophone())
+        )
+          throw new Error("voice_permission");
+        throw error;
+      }
     },
     frame() {
       if (!recorder) return null;

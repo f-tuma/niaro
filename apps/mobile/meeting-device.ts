@@ -6,6 +6,7 @@ import { getDocumentAsync } from "expo-document-picker";
 import { randomUUID } from "expo-crypto";
 import {
   RecordingPresets,
+  getRecordingPermissionsAsync,
   requestRecordingPermissionsAsync,
   requestNotificationPermissionsAsync,
   setAudioModeAsync,
@@ -19,6 +20,15 @@ import {
 } from "../../packages/client-core/meeting-capture";
 import { stopRecording } from "../../packages/audio/stop-recording";
 import { audioSession } from "./audio-session";
+import {
+  microphoneAllowed,
+  microphoneGranted,
+  recheckMicrophone,
+  setMicrophoneCheck,
+} from "./microphone-permission";
+setMicrophoneCheck(async () => (await getRecordingPermissionsAsync()).granted);
+/** Android's recording notification, granted once for this app run. */
+let notificationsGranted = false;
 const valid = (uri: string) => {
   const prefix = Paths.document.uri.replace(/\/$/, "") + "/";
   return (
@@ -56,13 +66,19 @@ export function useMeetingDevice(identity: string) {
       new MeetingCapture(identity, {
         storage: AsyncStorage,
         coordinator: audioSession,
+        // Known access starts a recording at once; only a missing one asks
+        // (its system dialog hides the app, so it is asked before the start).
         permission: async () => {
-          if (!(await requestRecordingPermissionsAsync()).granted) return false;
-          if (
-            Platform.OS === "android" &&
-            !(await requestNotificationPermissionsAsync()).granted
-          )
-            throw new Error("meeting_notification_denied");
+          if (!microphoneGranted()) {
+            if (!(await requestRecordingPermissionsAsync()).granted)
+              return false;
+            microphoneAllowed();
+          }
+          if (Platform.OS === "android" && !notificationsGranted) {
+            if (!(await requestNotificationPermissionsAsync()).granted)
+              throw new Error("meeting_notification_denied");
+            notificationsGranted = true;
+          }
           return true;
         },
         mode: (recording) =>
@@ -75,7 +91,14 @@ export function useMeetingDevice(identity: string) {
         prepare: async () => {
           if (Paths.availableDiskSpace < 72 * 1024 * 1024)
             throw new Error("meeting_storage_failed");
-          await recorder.prepareToRecordAsync();
+          try {
+            await recorder.prepareToRecordAsync();
+          } catch (error) {
+            // Revoked in the system settings: the next start asks again.
+            if (!(await recheckMicrophone()))
+              throw new Error("meeting_permission_denied");
+            throw error;
+          }
         },
         uri: () => recorder.uri,
         record: () => recorder.record({ forDuration: MEETING_RECORD_SECONDS }),

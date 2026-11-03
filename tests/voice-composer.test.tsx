@@ -73,15 +73,16 @@ test.each(["starting", "stopping", "transcribing"] as const)(
   (stage) => {
     render(<VoiceComposer {...props} stage={stage} />);
     expect(screen.queryByTestId("voice-waveform")).toBeNull();
+    // NIAR-283: the microphone is allowed before the sheet opens, so starting
+    // already listens; it has no "Requesting microphone…" step.
     const status = {
-      starting: "Requesting microphone…",
+      starting: "Listening",
       stopping: "Stopping microphone…",
       transcribing: "Transcribing…",
     };
     expect(screen.getByText(status[stage])).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: "Record" }),
-    ).toBeNull();
+    expect(screen.queryByText("Requesting microphone…")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Record" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
     expect(props.onStart).not.toHaveBeenCalled();
     fireEvent.press(

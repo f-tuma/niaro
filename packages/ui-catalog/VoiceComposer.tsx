@@ -181,6 +181,9 @@ export function VoiceComposer({
   const inputFont = useCompanionTypography(t.typography.body);
   const words = copy[language];
   const recording = stage === "recording";
+  // The microphone is already allowed when the sheet opens (the app asks
+  // first), so starting reads as listening: no "Requesting microphone…" step.
+  const listening = recording || stage === "starting";
   const review = stage === "review";
   const pending = [
     "starting",
@@ -290,10 +293,10 @@ export function VoiceComposer({
                 animate={petAnimate}
                 background={t.color.surfaceRaised}
                 state={
-                  recording ? "listening" : pending ? "working" : "resting"
+                  listening ? "listening" : pending ? "working" : "resting"
                 }
                 level={petLevel ?? localLevel}
-                label={recording ? words.listening : tr(status[stage])}
+                label={listening ? words.listening : tr(status[stage])}
               />
             </View>
             <Text
@@ -301,7 +304,7 @@ export function VoiceComposer({
               accessibilityLiveRegion="polite"
               style={styles.center}
             >
-              {recording ? words.listening : tr(status[stage])}
+              {listening ? words.listening : tr(status[stage])}
             </Text>
             {recording ? (
               <>

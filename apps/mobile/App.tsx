@@ -1,5 +1,11 @@
 import { fetch as expoFetch } from "expo/fetch";
 import { ensureMicrophone } from "./voice-capture";
+import {
+  loadMicrophoneHint,
+  microphoneAllowed,
+  microphoneGranted,
+  recheckMicrophone,
+} from "./microphone-permission";
 import { pairingLink } from "./pairing-link";
 import {
   PetProfile,
@@ -334,8 +340,6 @@ export function Workspace({
   spokenReplies: boolean;
 }) {
   const sessionOwner = useRef(session);
-  /** Granted microphone, so a tap opens the composer without asking again. */
-  const microphoneReady = useRef(false);
   useLayoutEffect(() => {
     sessionOwner.current = session;
   }, [session]);
@@ -1156,6 +1160,8 @@ export function Workspace({
       if (next === "active") {
         chatResumed();
         void session.refresh();
+        // Back from the system settings, maybe: check access without asking.
+        if (microphoneGranted()) void recheckMicrophone();
       } else {
         closeVoice();
         chatBackgrounded();
@@ -1949,7 +1955,8 @@ export function Workspace({
     }
     // The microphone is asked for before the composer opens: its system
     // dialog backgrounds the app and would otherwise cancel the recording.
-    if (!microphoneReady.current) {
+    // Once granted it is remembered, so later taps open the composer at once.
+    if (!microphoneGranted()) {
       const requestedSession = session;
       void ensureMicrophone()
         .then((granted) => {
@@ -1958,7 +1965,7 @@ export function Workspace({
             setReplyError("voice_permission");
             return;
           }
-          microphoneReady.current = true;
+          microphoneAllowed();
           // Allowed now: an earlier "blocked" no longer holds.
           setReplyError((current) =>
             current === "voice_permission" ? null : current,
@@ -3197,6 +3204,8 @@ export default function App() {
   const [petLook, setPetLook] = useState<PetAppearance | null>();
   useEffect(() => {
     void loadPetLook(AsyncStorage).then(setPetLook);
+    // A microphone granted on an earlier launch opens at once on the first tap.
+    void loadMicrophoneHint(AsyncStorage);
   }, []);
   // The first screen waits for the pet's still to be decoded, so its first frame has the pet; a
   // slow decode never holds it for long (the vector drawing stands in meanwhile).
