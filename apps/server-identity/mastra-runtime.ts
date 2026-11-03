@@ -39,6 +39,7 @@ import { loopText } from "./loop-redaction";
 import { IntegrationError } from "../server-integrations/transport";
 import { ServiceConnectionRequired } from "./service-oauth";
 import { presentServiceAnswer } from "./service-answer";
+import { logSkippedTask, requestLevelFailure } from "./task-projection-guard";
 import type { InferenceRunCaps } from "./inference-budget";
 
 /** Model steps for a chat answer: it may read several services and page
@@ -783,7 +784,18 @@ export function createNativeCatalogRuntime(
       await currentActor();
       context.validateRequest?.();
       return (roots ?? store.nativeTurns(scope.workspaceId, scope.userId))
-        .map((value) => DomainCommandSchema.parse(value))
+        .flatMap((value) => {
+          const parsed = DomainCommandSchema.safeParse(value);
+          if (parsed.success) return [parsed.data];
+          // One unreadable saved run leaves the rest of the task list readable.
+          if (includePlain) throw parsed.error;
+          logSkippedTask(
+            "mastra-1",
+            (value as { runId?: unknown } | null)?.runId,
+            parsed.error,
+          );
+          return [];
+        })
         .filter(
           (state) =>
             domain.attachmentThreadAllowed(state) &&
@@ -804,7 +816,7 @@ export function createNativeCatalogRuntime(
             state.runId === key(state.aliases[0]!.commandId),
         );
     });
-    return Promise.all(
+    const projected = await Promise.allSettled(
       states.map(async (state) => {
         const visibleConversation = state.attachmentGeneration
           ? (context.attachmentGenerationConversation?.(
@@ -919,6 +931,15 @@ export function createNativeCatalogRuntime(
         } satisfies import("../../packages/protocol").WorkItem;
       }),
     );
+    // A single task (readTask) still fails as before. In the task list one
+    // task that cannot be projected is skipped and logged, never the read.
+    return projected.flatMap((outcome, index) => {
+      if (outcome.status === "fulfilled") return [outcome.value];
+      if (includePlain || requestLevelFailure(outcome.reason))
+        throw outcome.reason;
+      logSkippedTask("mastra-1", states[index]!.runId, outcome.reason);
+      return [];
+    });
   }
   async function cancelTask(binding: {
     workItemId: string;

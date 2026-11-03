@@ -291,6 +291,25 @@ test("MeetingLibrary task selection reaches a reviewed native process over paire
     });
     expect(evidence.processJournals).toHaveLength(1);
     expect(evidence.processJournals[0]?.status).toBe("succeeded");
+
+    // The finished meeting run (with its output) is projected into the task
+    // window: snapshot and events reads keep answering and the app stays online.
+    await waitFor(
+      () =>
+        expect(
+          Object.values(h.session.getSnapshot().store?.workItems ?? {}).find(
+            (work) => work.native?.process?.status === "succeeded",
+          ),
+        ).toBeTruthy(),
+      { timeout: 10_000 },
+    );
+    const reads = (await h.fixture.inspect()).requests.filter(
+      (request) =>
+        request.path.includes("/snapshot") || request.path.includes("/events"),
+    );
+    expect(reads.length).toBeGreaterThan(1);
+    expect(reads.filter((request) => (request.status ?? 0) >= 400)).toEqual([]);
+    expect(h.session.getSnapshot().status).toBe("online");
   } finally {
     h.meetingView.unmount();
     await act(async () => h.session.stop());

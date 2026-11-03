@@ -792,6 +792,49 @@ test("private/auth revocation, foreign reference and orphan native run never gra
     );
   }));
 
+test("a run started from a meeting names its meeting in the output reference; an origin it cannot name holds back only the output", () =>
+  isolated(async (h) => {
+    const admission = await completed(h),
+      window = await windows(h).read(admission.parentRunId);
+    assert(window);
+    const captured = structuredClone(window.value);
+    assert(captured.saved.receipt.status === "admitted");
+    captured.saved.receipt.origin = {
+      type: "meeting",
+      conversationId: "conversation-1",
+      requestId: "TEST-meeting-request",
+      meetingId: "TEST-meeting",
+      recordDigest: "c".repeat(64),
+      selectedTask: { id: "TEST-task", revision: 2 },
+      sourceBindings: { proposal: "selectedTask" },
+    };
+    const prepared = prepareProcessOutput(captured, scope);
+    assert(prepared?.available);
+    // The selected task and bindings stay in the admission.
+    assert.deepEqual(prepared.reference.origin, {
+      type: "meeting",
+      conversationId: "conversation-1",
+      requestId: "TEST-meeting-request",
+      meetingId: "TEST-meeting",
+      recordDigest: "c".repeat(64),
+    });
+    assert.deepEqual(
+      ProcessOutputReferenceSchema.parse(prepared.reference),
+      prepared.reference,
+    );
+    // A future origin the reference has no shape for: the task keeps its
+    // status and receipts, the output is held back as invalid.
+    (captured.saved.receipt as { origin: unknown }).origin = {
+      type: "TEST-unknown",
+      conversationId: "conversation-1",
+      requestId: "TEST-request",
+    };
+    assert.deepEqual(prepareProcessOutput(captured, scope), {
+      available: false,
+      reason: "invalid",
+    });
+  }));
+
 test("valid run stays succeeded while invalid/oversized saved output has explicit unavailable reason", () =>
   isolated(async (h) => {
     const admission = await completed(h),

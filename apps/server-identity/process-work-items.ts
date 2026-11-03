@@ -20,6 +20,12 @@ import { loopText } from "./loop-redaction";
 import { processFailure } from "../../packages/protocol/process-failure";
 import type { ProcessQuestionStore } from "./process-question-store";
 import { projectProcessApproval } from "./process-approval";
+import { operatorLog } from "../fixture-server/operator-log";
+import {
+  failureName,
+  projectOrSkip,
+  requestLevelFailure,
+} from "./task-projection-guard";
 
 const say = (language: Language, en: string, cs: string) =>
   language === "cs" ? cs : en;
@@ -203,7 +209,19 @@ export function createProcessTaskProjection(
         " An earlier write succeeded; this failure does not undo it.",
         " Dřívější zápis se podařil; toto selhání ho nevrací zpět.",
       );
-    const output = prepareProcessOutput(fresh, scope);
+    // Output that cannot be prepared is held back; the task itself still shows.
+    let output: ReturnType<typeof prepareProcessOutput>;
+    try {
+      output = prepareProcessOutput(fresh, scope);
+    } catch (error) {
+      if (requestLevelFailure(error)) throw error;
+      operatorLog(
+        "process_output_skipped",
+        { runId: journal.runId, error: failureName(error) },
+        "warn",
+      );
+      output = { available: false, reason: "invalid" };
+    }
     const nativeProcess: ProcessWork = {
       kind: "service-process-1",
       startedAt: admission.createdAt,
@@ -379,8 +397,14 @@ export function createProcessTaskProjection(
     observation: memoryObservation,
     roots: reads.roots,
     project: async (roots: NativeTaskRoot[]) =>
-      (await Promise.all(roots.map((root) => projectOne(root.id)))).filter(
-        (work): work is WorkItem => !!work,
-      ),
+      (
+        await Promise.all(
+          roots.map((root) =>
+            projectOrSkip("service-process-1", root.id, () =>
+              projectOne(root.id),
+            ),
+          ),
+        )
+      ).filter((work): work is WorkItem => !!work),
   };
 }

@@ -212,3 +212,148 @@ test("the three task filters cover every lifecycle status and preserve unsuccess
   assert.equal(visible.length, statuses.length);
   assert.equal(new Set(visible.map((w) => w.id)).size, statuses.length);
 });
+
+/** Operator log lines written while `run` runs, with NIARO_LOG=1. */
+function operatorLines(run: () => void) {
+  const lines: Record<string, unknown>[] = [];
+  const write = process.stdout.write;
+  const previous = process.env.NIARO_LOG;
+  process.env.NIARO_LOG = "1";
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    for (const line of String(chunk).split("\n"))
+      if (line.startsWith("{")) lines.push(JSON.parse(line));
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    run();
+  } finally {
+    process.stdout.write = write;
+    if (previous === undefined) delete process.env.NIARO_LOG;
+    else process.env.NIARO_LOG = previous;
+  }
+  return lines;
+}
+test("one invalid, non-native or unknown-chat task is skipped and logged; the rest of the window still publishes", () => {
+  const e = engine();
+  e.syncNativeWork([work("TEST-A"), work("TEST-gone")], true, true);
+  const invalid = { ...work("TEST-invalid"), status: "TEST-unknown-status" };
+  // A valid item that is not native work: a demo card.
+  const plain = {
+    ...choosePeter().work,
+    id: "TEST-plain",
+    inputRequestIds: [],
+  };
+  const lost = { ...work("TEST-gone", 2), conversationId: "TEST-missing-chat" };
+  const logged = operatorLines(() =>
+    e.syncNativeWork(
+      [
+        work("TEST-A", 2),
+        invalid as unknown as WorkItem,
+        plain,
+        lost,
+        work("TEST-B"),
+      ],
+      true,
+      true,
+    ),
+  );
+  // The authoritative window no longer contains a task it could not show.
+  assert.deepEqual(
+    e.snapshot().workItems.map((w) => [w.id, w.native!.revision]),
+    [
+      ["TEST-A", 2],
+      ["TEST-B", 1],
+    ],
+  );
+  assert(!e.snapshot().conversations.some((c) => c.id === "TEST-missing-chat"));
+  assert.deepEqual(
+    logged.map(({ event, runId, reason, level }) => ({
+      event,
+      runId,
+      reason,
+      level,
+    })),
+    [
+      ["TEST-invalid", "invalid_work_item"],
+      ["TEST-plain", "not_native_work"],
+      ["TEST-gone", "unknown_conversation"],
+    ].map(([runId, reason]) => ({
+      event: "native_work_skipped",
+      runId,
+      reason,
+      level: "warn",
+    })),
+  );
+  // A delta keeps the earlier copy of a task it cannot update.
+  e.syncNativeWork([{ ...work("TEST-B", 2), conversationId: "TEST-missing" }]);
+  assert.deepEqual(
+    e.snapshot().workItems.map((w) => [w.id, w.native!.revision]),
+    [
+      ["TEST-A", 2],
+      ["TEST-B", 1],
+    ],
+  );
+});
+test("an answer whose message id is taken by a different message keeps that message and still publishes the task", () => {
+  const e = engine();
+  const conversationId = work("TEST-P").conversationId;
+  const answered = (revision: number, answer: string): WorkItem => ({
+    ...work("TEST-P", revision),
+    native: {
+      runId: "TEST-P",
+      revision,
+      process: {
+        kind: "service-process-1",
+        status: "running",
+        journalStatus: "running",
+        detailsAvailable: true,
+        provenance: {
+          runId: "TEST-run",
+          processId: "TEST-process",
+          version: 1,
+          artifactDigest: "a".repeat(64),
+          actorId: scope.userId,
+          conversationId,
+          commandId: "TEST-start",
+          admissionId: "TEST-admission",
+        },
+        receipts: [],
+        answerHistory: [
+          { commandId: "TEST-answer", questionId: "TEST-Q", answer },
+        ],
+      },
+    },
+  });
+  e.syncNativeWork([answered(1, "TEST first")], true, true);
+  const messages = () =>
+    e.data.snapshot.conversations
+      .find((c) => c.id === conversationId)!
+      .messages.filter((m) => m.id === "message-process-answer-TEST-Q")
+      .map((m) => m.text);
+  assert.deepEqual(messages(), ["TEST first"]);
+  const logged = operatorLines(() =>
+    e.syncNativeWork(
+      [answered(2, "TEST different"), work("TEST-other")],
+      true,
+      true,
+    ),
+  );
+  assert.deepEqual(messages(), ["TEST first"]);
+  assert.deepEqual(
+    e.snapshot().workItems.map((w) => [w.id, w.native!.revision]),
+    [
+      ["TEST-P", 2],
+      ["TEST-other", 1],
+    ],
+  );
+  assert.deepEqual(
+    logged.map(({ event, runId, reason }) => ({ event, runId, reason })),
+    [
+      {
+        event: "native_work_skipped",
+        runId: "TEST-P",
+        reason: "process_answer_history_conflict",
+      },
+    ],
+  );
+});

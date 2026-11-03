@@ -851,7 +851,10 @@ test("a succeeded write survives failed output validation and is never reclassif
     assert.match(work.context, /Dřívější zápis se podařil/);
     // The fixed sentence for its safe code, which the apps read as well.
     assert.equal(work.native!.process!.failureCode, "process_output_invalid");
-    assert.match(work.context, /Jeho výsledek neodpovídal deklarovanému výstupu/);
+    assert.match(
+      work.context,
+      /Jeho výsledek neodpovídal deklarovanému výstupu/,
+    );
     assert(
       !work.card!.nodes.some(
         (n) => n.type === "disclosure" && n.label === "Výstup procesu",
@@ -982,6 +985,111 @@ test("current private read denial removes a process from public projection; auth
     h.switchActor();
     await assert.rejects(projector(h).roots(), code("identity_forbidden"));
     assert.deepEqual(h.counts(), [["GET", 1]]);
+  }));
+/** Operator log lines written while `run` runs, with NIARO_LOG=1. */
+async function operatorLines(run: () => Promise<void>) {
+  const lines: Record<string, unknown>[] = [];
+  const write = process.stdout.write;
+  const previous = process.env.NIARO_LOG;
+  process.env.NIARO_LOG = "1";
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    for (const line of String(chunk).split("\n"))
+      if (line.startsWith("{")) lines.push(JSON.parse(line));
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    await run();
+  } finally {
+    process.stdout.write = write;
+    if (previous === undefined) delete process.env.NIARO_LOG;
+    else process.env.NIARO_LOG = previous;
+  }
+  return lines;
+}
+test("one task that cannot be projected is skipped and logged; the rest of the task window publishes and request-level failures still fail", () =>
+  isolated(async (h) => {
+    const broken = admit(h);
+    const second = h.issue(broken.processId, "TEST-second-root");
+    const healthy = h.starts.admit(
+      admin,
+      scope,
+      second.intentId,
+      {
+        ...h.starts.forParent(admin, scope, broken.parentRunId).command,
+        intentId: second.intentId,
+        commandId: "TEST-second-root",
+        idempotencyKey: "TEST-second-root-key",
+      },
+      () => {},
+    );
+    if (healthy.status !== "admitted") throw Error("TEST admission");
+    const pinned = h.registry.pinnedVersion.bind(h.registry);
+    let failure: Error = Error("TEST unreadable saved process");
+    h.registry.pinnedVersion = (actor, runId) => {
+      if (runId === broken.parentRunId) throw failure;
+      return pinned(actor, runId);
+    };
+    // A saved chat run its schema no longer accepts.
+    h.catalog.saveTurn("TEST-broken-chat", scope.workspaceId, scope.userId, {
+      kind: "mastra-1",
+      runId: "TEST-broken-chat",
+      conversationId: "conversation-1",
+      taskTracked: true,
+    });
+    let window: Awaited<
+      ReturnType<NonNullable<ReturnType<typeof catalog>["taskWindow"]>>
+    >;
+    const logged = await operatorLines(async () => {
+      assert.deepEqual(
+        (await items(h)).map((work) => work.id),
+        [healthy.parentRunId],
+      );
+      window = await catalog(h).taskWindow!();
+    });
+    assert.deepEqual(
+      window!.items.map((work) => work.id),
+      [healthy.parentRunId],
+    );
+    assert(window!.validate());
+    assert.deepEqual(
+      logged
+        .filter((line) => line.event === "task_projection_skipped")
+        .map(({ kind, runId, error, level }) => ({
+          kind,
+          runId,
+          error,
+          level,
+        })),
+      [
+        {
+          kind: "service-process-1",
+          runId: broken.parentRunId,
+          error: "Error",
+          level: "warn",
+        },
+        {
+          kind: "mastra-1",
+          runId: "TEST-broken-chat",
+          error: "ZodError",
+          level: "warn",
+        },
+        {
+          kind: "service-process-1",
+          runId: broken.parentRunId,
+          error: "Error",
+          level: "warn",
+        },
+      ],
+    );
+    assert.doesNotMatch(JSON.stringify(logged), /TEST unreadable/);
+    // The server cannot answer now: the read fails as before.
+    failure = new IdentityError(503, "identity_unavailable");
+    await assert.rejects(items(h), code("identity_unavailable"));
+    // Another person is now signed in: the read fails, never a skipped task.
+    const projection = projector(h),
+      roots = await projection.roots();
+    h.switchActor();
+    await assert.rejects(projection.project(roots), code("identity_forbidden"));
   }));
 test("startup interruption and canonical unknown receipts override a still-running journal in the passive projection", () =>
   isolated(async (h, reopen) => {

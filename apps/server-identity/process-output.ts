@@ -21,6 +21,8 @@ import {
 import { processDigest } from "./process-validation";
 import { IdentityError } from "./error";
 import { loopText } from "./loop-redaction";
+import { operatorLog } from "../fixture-server/operator-log";
+import type { ProcessStartOrigin } from "../../packages/protocol/process-start";
 import type {
   ProcessReadCapture,
   ProcessReadWindow,
@@ -195,6 +197,19 @@ export function processOutputPreview(
   return JSON.stringify(tree.value);
 }
 
+/** Where a run came from, as the output reference names it. */
+function outputOrigin(origin: ProcessStartOrigin) {
+  return origin.type === "meeting"
+    ? {
+        type: origin.type,
+        conversationId: origin.conversationId,
+        requestId: origin.requestId,
+        meetingId: origin.meetingId,
+        recordDigest: origin.recordDigest,
+      }
+    : origin;
+}
+
 export function prepareProcessOutput(
   captured: ProcessReadCapture,
   scope: Scope,
@@ -229,7 +244,7 @@ export function prepareProcessOutput(
   const admission = saved.receipt;
   if (admission.status !== "admitted" || sanitized.tree.kind !== "object")
     throw new IdentityError(409, "process_start_conflict");
-  const reference = ProcessOutputReferenceSchema.parse({
+  const reference = ProcessOutputReferenceSchema.safeParse({
     profile: PROCESS_OUTPUT_PROFILE,
     scope,
     parentRunId: admission.parentRunId,
@@ -244,14 +259,23 @@ export function prepareProcessOutput(
       commandId: admission.commandId,
       admissionId: admission.receiptId,
     },
-    origin: admission.origin,
+    origin: outputOrigin(admission.origin),
     outputDigest: processDigest(sanitized.tree),
     redactionVersion: PROCESS_OUTPUT_REDACTION_VERSION,
   });
+  // A run the reference cannot name keeps its task; only the output is held back.
+  if (!reference.success) {
+    operatorLog(
+      "process_output_unreferenced",
+      { runId: journal.runId, origin: admission.origin.type },
+      "warn",
+    );
+    return { available: false as const, reason: "invalid" as const };
+  }
   const shown = sanitized.tree.children.slice(0, 8);
   return {
     available: true as const,
-    reference,
+    reference: reference.data,
     tree: sanitized.tree,
     summary: {
       fieldCount: sanitized.tree.children.length,

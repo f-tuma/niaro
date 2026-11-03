@@ -52,6 +52,7 @@ import {
   type ConversationMemory,
 } from "./conversation-memory";
 import { migrateDatabase } from "./migrate";
+import { operatorLog } from "./operator-log";
 import {
   ContactLookupSchema,
   VerifiedContactSchema,
@@ -345,12 +346,46 @@ export class FixtureEngine {
     publishAnswer?: (workId: string, questionId: string) => boolean,
   ) {
     let changed = false;
-    items = items.map((work) => WorkItemSchema.parse(work));
     if (
       items.length > 400 ||
       new Set(items.map((w) => w.id)).size !== items.length
     )
       throw new Error("Invalid native work window");
+    // One task that is not a valid native item, or names a chat this person
+    // does not have, is skipped and logged. The rest of the window is still
+    // published, so a single bad reference never fails a whole read.
+    const conversations = new Map<string, Conversation>();
+    const known = (id: string) => {
+      if (
+        conversations.has(id) ||
+        this.data.snapshot.conversations.some((c) => c.id === id)
+      )
+        return true;
+      const conversation =
+        this.loadConversation?.(id) ?? this.deletedConversations?.shell(id);
+      if (conversation) conversations.set(id, conversation);
+      return !!conversation;
+    };
+    items = items.flatMap((raw) => {
+      const parsed = WorkItemSchema.safeParse(raw);
+      const reason = !parsed.success
+        ? "invalid_work_item"
+        : !parsed.data.native || parsed.data.demo
+          ? "not_native_work"
+          : !known(parsed.data.conversationId)
+            ? "unknown_conversation"
+            : undefined;
+      if (!reason) return [parsed.data!];
+      operatorLog(
+        "native_work_skipped",
+        {
+          runId: typeof raw?.id === "string" ? raw.id.slice(0, 160) : undefined,
+          reason,
+        },
+        "warn",
+      );
+      return [];
+    });
     const budget = Math.max(
       0,
       Math.min(
@@ -378,20 +413,17 @@ export class FixtureEngine {
       changed = true;
     }
     for (let work of items) {
+      // Filtered above; kept so the type narrows.
       if (!work.native || work.demo) throw new Error("Expected native work");
       if (!keep.has(work.id)) continue;
       if (
         !this.data.snapshot.conversations.some(
           (c) => c.id === work.conversationId,
         )
-      ) {
-        const conversation =
-          this.loadConversation?.(work.conversationId) ??
-          this.deletedConversations?.shell(work.conversationId);
-        if (!conversation)
-          throw new Error("Unknown native public conversation");
-        this.data.snapshot.conversations.push(conversation);
-      }
+      )
+        this.data.snapshot.conversations.push(
+          conversations.get(work.conversationId)!,
+        );
       const current = this.data.snapshot.workItems.find(
         (item) => item.id === work.id,
       );
@@ -438,12 +470,17 @@ export class FixtureEngine {
             (message) => message.id === id,
           );
           if (existing) {
+            // A different message under the answer's id stays as it is.
             if (
               existing.role !== "user" ||
               existing.text !== entry.answer ||
               existing.workItemId !== work.id
             )
-              throw Error("process_answer_history_conflict");
+              operatorLog(
+                "native_work_skipped",
+                { runId: work.id, reason: "process_answer_history_conflict" },
+                "warn",
+              );
             continue;
           }
           // The retained WorkItem also remembers answers already archived from chat.

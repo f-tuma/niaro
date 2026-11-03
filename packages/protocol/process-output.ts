@@ -54,6 +54,15 @@ export const ProcessOutputOriginSchema = z.discriminatedUnion("type", [
     conversationId: id,
     requestId: id,
   }),
+  // A run started from a meeting record. Its selected task and source bindings
+  // stay in the admission: the reference only names where the run came from.
+  z.strictObject({
+    type: z.literal("meeting"),
+    conversationId: id,
+    requestId: id,
+    meetingId: id,
+    recordDigest: digest,
+  }),
 ]);
 export const ProcessOutputReferenceSchema = z
   .strictObject({
