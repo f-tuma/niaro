@@ -139,7 +139,9 @@ test("precise loss of the original admitted parent journal blocks both public co
     assert.equal(outbox.value.error, null);
     assert.equal(outbox.value.notice, undefined);
     assertUnknown(f, outbox.bytes);
-    assert.equal(f.state().error, "network_error");
+    // NIAR-284: a lost outcome is checked by the session itself, with no error.
+    assert.equal(f.state().error, null);
+    assert.equal(f.state().deliveryCheck, "checking");
     f.stopSession();
 
     let originalProof: StoppedCopyProof | undefined;
@@ -349,7 +351,7 @@ test("precise loss of the original admitted parent journal blocks both public co
             assert.equal(f.h.record(post.data).error, "process_start_conflict");
             explanation = PROCESS_EXECUTION_UNVERIFIED;
             assertUnknown(f, outbox.bytes, explanation);
-            assert.equal(f.state().error, "network_error");
+            assert.equal(f.state().error, null);
             assert.equal(
               processPendingRecoveryError(
                 f.state().processPending,

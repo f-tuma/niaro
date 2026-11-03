@@ -277,7 +277,16 @@ test("delayed inventory A is discarded after same-identity Session replacement",
   replacement.stop();
 });
 
-test("unknown reopened start renders original review, explicit retry uses exact bytes", async () => {
+/** The app returns to the foreground: the session checks a lost outcome at once. */
+const foreground = async (session: { setActive(active: boolean): void }) => {
+  await act(async () => {
+    session.setActive(false);
+    session.setActive(true);
+    await flush();
+  });
+};
+
+test("NIAR-284: a lost start shows only as starting; after a reopen the session posts the exact bytes by itself and the run shows as started", async () => {
   const h = processLaunchFixture(),
     session = h.open(),
     tr = translate("en");
@@ -294,11 +303,20 @@ test("unknown reopened start renders original review, explicit retry uses exact 
   await review();
   await press(tr("processesStart"));
   expect(h.commands).toHaveLength(1);
-  expect(screen.getByText(tr("processesUnknown"))).toBeTruthy();
+  // No "not confirmed" wording and nothing to press: it is starting.
+  expect(screen.getAllByText(tr("processesSending")).length).toBeGreaterThan(0);
+  expect(screen.queryByText(tr("processUnknown"))).toBeNull();
+  expect(screen.queryByText(/Not confirmed|may have started/)).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: tr("progressRetry") }),
+  ).toBeNull();
+  expect(session.getSnapshot().error).toBeNull();
+  expect(session.getSnapshot().deliveryCheck).toBe("checking");
   session.stop();
   view.unmount();
   const reopened = h.open();
   await reopened.start(false);
+  const cs = translate("cs");
   render(
     <ProcessLaunch
       session={reopened}
@@ -312,12 +330,22 @@ test("unknown reopened start renders original review, explicit retry uses exact 
   expect(
     processLaunchDetails("process-launch-recovery-input").props.children,
   ).toBe(JSON.stringify({ name: "  TEST exact input\n" }, null, 2));
+  expect(screen.getByText(cs("processesSending"))).toBeTruthy();
+  expect(screen.queryByText(/Nepotvrzeno|možná spustil/)).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: cs("progressRetry") }),
+  ).toBeNull();
+  expect(reopened.getSnapshot().deliveryCheck).toBe("checking");
   h.outcome("accepted");
-  await press(translate("cs")("processesRetrySame"));
+  // Back in the foreground: one check, the identical saved bytes.
+  await foreground(reopened);
   expect(h.commands).toHaveLength(2);
   expect(h.commands[1]).toBe(h.commands[0]);
-  expect(screen.getByText(translate("cs")("processesAccepted"))).toBeTruthy();
+  expect(screen.getByText(cs("processesAccepted"))).toBeTruthy();
   expect(reopened.getSnapshot().pending).toBeNull();
+  // Settled for good: further foregrounds post nothing.
+  await foreground(reopened);
+  expect(h.commands).toHaveLength(2);
   reopened.stop();
 });
 
@@ -340,7 +368,7 @@ test("known accepted saving failure reopens and retries only storage, even offli
   expect(session.getSnapshot().processPending?.outcome).toBe("accepted");
   expect(screen.getByText(tr("processesSavingFailed"))).toBeTruthy();
   expect(
-    screen.queryByRole("button", { name: tr("processesRetrySame") }),
+    screen.queryByRole("button", { name: tr("progressRetry") }),
   ).toBeNull();
   session.stop();
   view.unmount();
@@ -451,11 +479,10 @@ test.each(["rejected", "unknown"] as const)(
     );
     h.outcome("rejected");
     h.failClear(false);
-    await press(
-      tr(
-        outcome === "rejected" ? "processesRetrySaving" : "processesRetrySame",
-      ),
-    );
+    // A known outcome retries its local save; an unknown one is checked by
+    // the session itself when the app returns to the foreground.
+    if (outcome === "rejected") await press(tr("processesRetrySaving"));
+    else await foreground(reopened);
     expect(screen.getByText(tr("processesRejected"))).toBeTruthy();
     await press(tr("processesEdit"));
     expect(screen.getByLabelText("name").props.value).toBe(
@@ -568,7 +595,7 @@ test("StrictMode effect replay retains the active launcher owner", async () => {
 });
 
 test.each(["en", "cs"] as const)(
-  "%s start conflict retains its explanation and original input after Session reopen",
+  "%s start conflict stays quietly starting with its original input after Session reopen, and checks post only the same bytes",
   async (language) => {
     const h = processLaunchFixture(),
       session = h.open(),
@@ -588,9 +615,14 @@ test.each(["en", "cs"] as const)(
       h.handlers.command = async () =>
         launchResponse({ error: "process_start_conflict" }, 409);
       await press(tr("processesStart"));
+      // The server could not verify the saved start: the run may exist, so
+      // it stays starting and the technical detail stays out of view.
       expect(
-        screen.getByText(tr("savedProcessExecutionUnverified")),
-      ).toBeTruthy();
+        screen.queryByText(tr("savedProcessExecutionUnverified")),
+      ).toBeNull();
+      expect(
+        screen.getAllByText(tr("processesSending")).length,
+      ).toBeGreaterThan(0);
       const bytes = h.commands[0]!;
       view.unmount();
       session.stop();
@@ -605,13 +637,18 @@ test.each(["en", "cs"] as const)(
         />,
       );
       expect(
-        screen.getByText(tr("savedProcessExecutionUnverified")),
-      ).toBeTruthy();
+        screen.queryByText(tr("savedProcessExecutionUnverified")),
+      ).toBeNull();
+      expect(screen.getByText(tr("processesSending"))).toBeTruthy();
       expect(
         processLaunchDetails("process-launch-recovery-input").props.children,
       ).toBe(JSON.stringify(JSON.parse(bytes).input, null, 2));
       expect(h.commands).toEqual([bytes]);
+      await foreground(reopened);
+      expect(h.commands).toEqual([bytes, bytes]);
       expect(reopened.getSnapshot().processPending?.outcome).toBe("unknown");
+      expect(reopened.getSnapshot().error).toBeNull();
+      expect(screen.getByText(tr("processesSending"))).toBeTruthy();
     } finally {
       session.stop();
       reopened?.stop();

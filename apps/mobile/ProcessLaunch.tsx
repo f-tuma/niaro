@@ -34,6 +34,7 @@ import {
   processPendingRecoveryError,
   isReservedProcessRecoveryCopy,
 } from "../../packages/client-core/process-command-notice";
+import { processCommandWorking } from "../../packages/client-core/chat-view";
 import {
   ProcessLaunchView,
   type ProcessLaunchViewProps,
@@ -86,6 +87,9 @@ type Control = {
   offerPending: boolean;
   /** Run again opens once, too. */
   rerunPending: boolean;
+  /** The unknown start last shown as starting, so its outcome shows once the
+   * session settles it in the background (NIAR-284). */
+  watchedStart?: { command: ProcessStartCommand; target: ProcessStartTarget };
 };
 const initialModel = (notice: TranslationKey | null = null): Model => ({
   inventory: null,
@@ -445,8 +449,7 @@ function OwnedProcessLaunch({
   useEffect(() => {
     // An offered process or Run again opens straight away; otherwise
     // loading stays explicit.
-    if (control.current.owner.offer || control.current.owner.rerun)
-      void load();
+    if (control.current.owner.offer || control.current.owner.rerun) void load();
     // load reads the current owner through control, not render closures.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -579,12 +582,60 @@ function OwnedProcessLaunch({
     !!pending &&
     state.commandStates[commandTarget(pending.command)] === "sending";
   const recoveryError = processPendingRecoveryError(pending, state.error);
+  // An unknown start the session is sending or checking by itself shows as
+  // starting; only one whose delivery failed offers Try again.
+  const failed =
+    !!pending &&
+    pending.outcome === "unknown" &&
+    !processCommandWorking(state, pending.command.commandId);
   const canRetry =
     !!pending &&
     !model.retrying &&
     !sending &&
     !state.answerRecoveryBlocked &&
-    (pending.outcome !== "unknown" || state.status === "online");
+    (pending.outcome !== "unknown" || (failed && state.status === "online"));
+  // A start the session settled by itself in the background settles here
+  // too: this launcher's own start, or the saved start it showed as starting
+  // (after a restart, say). The run then shows as started or refused.
+  useEffect(() => {
+    const owner = control.current;
+    if (
+      pending?.outcome === "unknown" &&
+      pending.command.type === "process.start" &&
+      pending.target.type === "process.start"
+    )
+      owner.watchedStart = { command: pending.command, target: pending.target };
+    if (!owner.alive || owner.model.retrying) return;
+    const watched =
+      owner.model.phase === "selection" && !owner.model.submission
+        ? owner.watchedStart
+        : undefined;
+    const submission =
+      owner.model.phase === "sending"
+        ? owner.model.submission
+        : watched?.command;
+    if (!submission) return;
+    const saved =
+      pending?.command.commandId === submission.commandId ? pending : null;
+    const local = state.commandStates[commandTarget(submission)];
+    if (
+      saved
+        ? saved.outcome === "unknown"
+        : local !== "accepted" && local !== "rejected"
+    )
+      return;
+    owner.watchedStart = undefined;
+    // The saved start becomes this launcher's, as an explicit Retry made it.
+    if (watched)
+      commit(owner, {
+        target: watched.target,
+        selected: watched.target.entry,
+        reviewedInput: watched.command.input as ProcessFormInput,
+        submission: watched.command,
+        phase: "sending",
+      });
+    settle(owner, submission);
+  });
   const retry = async (commandId: string) => {
     const owner = control.current;
     const saved = owner.owner.session.getSnapshot().processPending;
@@ -602,7 +653,11 @@ function OwnedProcessLaunch({
         commandTarget(saved.command)
       ] === "sending" ||
       (saved.outcome === "unknown" &&
-        owner.owner.session.getSnapshot().status !== "online")
+        (owner.owner.session.getSnapshot().status !== "online" ||
+          processCommandWorking(
+            owner.owner.session.getSnapshot(),
+            saved.command.commandId,
+          )))
     )
       return;
     commit(owner, {
@@ -695,6 +750,7 @@ function OwnedProcessLaunch({
               language: pending.command.language,
               input: pending.command.input,
               outcome: pending.outcome,
+              failed,
               sending: sending || model.retrying,
               error:
                 state.processNotice?.errorSource.kind === "local"

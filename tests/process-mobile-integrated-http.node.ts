@@ -603,7 +603,9 @@ test("lost question A acknowledgement retains exact file-backed A across server 
     transport.loseNext();
     await session.send(commandA);
     assert.deepEqual(session.getSnapshot().pending, commandA);
-    assert.equal(session.getSnapshot().error, "network_error");
+    // NIAR-284: a lost outcome is checked by the session itself, with no error.
+    assert.equal(session.getSnapshot().error, null);
+    assert.equal(session.getSnapshot().deliveryCheck, "checking");
     const replyA = ProcessRuntimeResponseSchema.parse(
       transport.posts[1]!.value,
     );

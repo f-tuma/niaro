@@ -31,6 +31,7 @@ import {
   captureProcessNoticeOwner,
   selectProcessCommandNotice,
 } from "../../packages/client-core/process-command-notice";
+import { processDecisionWorking } from "../../packages/client-core/chat-view";
 
 type Props = WorkItemCardProps & {
   session: ClientSession | null;
@@ -323,7 +324,14 @@ function OwnedWorkItemCard({
           sameDecision?.phase === "sending" ||
           sameDecision?.phase === "accepted"
             ? sameDecision.phase
-            : props.approvalState
+            : // A decision the session is still checking stays "sending".
+              props.work.native?.process?.approval &&
+                processDecisionWorking(
+                  state,
+                  props.work.native.process.approval.result.operationId,
+                )
+              ? "sending"
+              : props.approvalState
         }
         footer={
           cancellable ? (

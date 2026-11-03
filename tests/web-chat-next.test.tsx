@@ -1525,3 +1525,66 @@ test("a meeting proposal ends like an approval card: Decline then Approve, right
     decision: "reject",
   });
 });
+
+test.each(["checking", "failed"] as const)(
+  "NIAR-284: a process answer %s shows the right way on the web: on its way as the person's message, failed as the saved card with Try again, never 'not confirmed'",
+  async (check) => {
+    const conversation: Conversation = {
+      id: "conv-1",
+      revision: 1,
+      messages: [],
+    };
+    const { session, publish } = fakeSession(storeWith([conversation]), {
+      "conv-1": { conversation: summary("conv-1") },
+    });
+    const root = (await render(session, "conv-1")).root;
+    const command = {
+      type: "process.answer",
+      commandId: "TEST-web-answer",
+      idempotencyKey: "TEST-web-answer",
+      conversationId: "conv-1",
+      workItemId: "TEST-run",
+      questionId: "TEST-question",
+      questionRevision: 1,
+      answer: "TEST my web answer",
+      language: "cs",
+    };
+    await act(async () =>
+      publish({
+        pending: command as never,
+        commandStates: {
+          [`${command.workItemId}:${command.questionId}:${command.questionRevision}`]:
+            "network_error",
+        },
+        answerAttempts: [
+          {
+            target: { question: { question: "TEST question?" } },
+            command,
+            outcome: "unknown",
+            error: null,
+          } as never,
+        ],
+        error: check === "failed" ? "process_model_unavailable" : null,
+        deliveryCheck: check,
+      }),
+    );
+    const all = text(root);
+    expect(all).not.toMatch(/Nepotvrzeno|Not confirmed|stejnou odpověď/);
+    const cards = root.findAll(
+      (node) => node.props["data-testid"] === "saved-process-answer",
+    );
+    if (check === "checking") {
+      // The person's answer on its way, as any message; nothing to press.
+      expect(cards).toHaveLength(0);
+      expect(all).toContain("TEST my web answer");
+      expect(() => button(root, "Zkusit znovu")).toThrow();
+    } else {
+      expect(cards.length).toBeGreaterThan(0);
+      expect(text(cards[0]!)).toContain(
+        "Nepodařilo se dokončit. Zkus to znovu.",
+      );
+      await act(async () => button(cards[0]!, "Zkusit znovu").props.onClick());
+      expect(session.retry).toHaveBeenCalledTimes(1);
+    }
+  },
+);

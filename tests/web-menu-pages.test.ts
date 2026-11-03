@@ -346,3 +346,51 @@ test("picker handoff is identity-owned, consumed once and never replays to a for
   expect(takeHumanTask("TEST-B")).toBeNull();
   expect(takeHumanTask("TEST-A")).toBeNull();
 });
+
+test("NIAR-284: a web start whose response was lost is starting, with nothing to press, and shows as started once the session's own check settles it", async () => {
+  const h = processLaunchFixture(),
+    session = h.open();
+  await session.start(false);
+  const launcher = new ProcessLauncher(
+    session,
+    "en",
+    "conversation-1",
+    null,
+    ids(),
+  );
+  // The page watches the launcher; the launcher then follows the session.
+  const unsubscribe = launcher.subscribe(() => {});
+  await launcher.load();
+  await flush();
+  await launcher.open(launcher.getSnapshot().inventory!.processes[0]!);
+  await flush();
+  launcher.review({ name: "TEST reviewed" });
+  h.outcome("unknown");
+  await launcher.start();
+  await flush();
+  expect(launcher.getSnapshot().phase).toBe("sending");
+  const recovery = pendingStart(session.getSnapshot())!;
+  expect(recovery.outcome).toBe("unknown");
+  expect(recovery.starting).toBe(true);
+  expect(recovery.failed).toBe(false);
+  expect(recovery.canRetry).toBe(false);
+  expect(session.getSnapshot().error).toBeNull();
+  // No "Start not confirmed" copy is left on the web.
+  expect(JSON.stringify(menuCopy)).not.toMatch(/not confirmed|nepotvrzeno/i);
+  // A launcher Retry is refused while the session checks it itself.
+  await launcher.retry(recovery.commandId);
+  expect(h.commands).toHaveLength(1);
+  h.outcome("accepted");
+  // Back in the foreground the session posts the identical bytes once.
+  session.setActive(false);
+  session.setActive(true);
+  await flush();
+  await flush();
+  expect(h.commands).toHaveLength(2);
+  expect(h.commands[1]).toBe(h.commands[0]);
+  expect(pendingStart(session.getSnapshot())).toBeNull();
+  expect(launcher.getSnapshot().phase).toBe("accepted");
+  unsubscribe();
+  launcher.dispose();
+  session.stop();
+});

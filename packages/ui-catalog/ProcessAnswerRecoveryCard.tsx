@@ -4,7 +4,12 @@ import type { Language } from "../protocol";
 import { translate } from "../i18n";
 import { Surface, Text, Row, Button, Notice } from "../ui";
 
-/** Local delivery evidence; this card does not claim a canonical process result. */
+/**
+ * Local delivery evidence; this card does not claim a canonical process
+ * result. An answer still on its way, or one the session is checking by
+ * itself, shows as the person's message instead (NIAR-284): "unknown" here
+ * is an answer whose delivery failed, with Try again.
+ */
 export function ProcessAnswerRecoveryCard({
   question,
   answer,
@@ -56,10 +61,12 @@ export function ProcessAnswerRecoveryCard({
         )}
         onPress={() => setExpanded((value) => !value)}
       />
-      <Notice error={outcome === "rejected" || !!explanation}>
+      <Notice
+        error={outcome === "rejected" || outcome === "unknown" || !!explanation}
+      >
         {tr(
           outcome === "unknown"
-            ? "savedProcessAnswerUnknown"
+            ? "progressFailedHint"
             : outcome === "rejected"
               ? "savedProcessAnswerRejected"
               : "savedProcessAnswerAccepted",
@@ -70,7 +77,7 @@ export function ProcessAnswerRecoveryCard({
         {outcome === "unknown" ? (
           <Button
             size="small"
-            label={tr("retry")}
+            label={tr("progressRetry")}
             disabled={!canRetry}
             onPress={onRetry}
           />

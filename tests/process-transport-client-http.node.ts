@@ -237,7 +237,9 @@ test("lost real start response restores the original proof and retries exact byt
     transport.loseNext();
     await first.send(start.command, false, start.target);
     assert.deepEqual(first.getSnapshot().pending, start.command);
-    assert.equal(first.getSnapshot().error, "network_error");
+    // NIAR-284: a lost outcome is checked by the session itself, with no error.
+    assert.equal(first.getSnapshot().error, null);
+    assert.equal(first.getSnapshot().deliveryCheck, "checking");
     first.stop();
     await h.restart();
     const reopened = sessionFor(h, credential, saved, transport.request);

@@ -56,6 +56,9 @@ test.each(["en", "cs"] as const)(
       ),
     ).toBeTruthy();
     expect(card.queryByText(tr("serviceAwaiting"))).toBeNull();
+    // NIAR-284: an unknown decision shown here failed; it never says "not confirmed".
+    expect(card.getByText(tr("progressFailedHint"))).toBeTruthy();
+    expect(card.queryByText(/Not confirmed|Nepotvrzeno/)).toBeNull();
     expect(
       card.queryByRole("button", { name: tr("serviceApprove") }),
     ).toBeNull();
@@ -82,9 +85,7 @@ test.each(["en", "cs"] as const)(
     expect(
       card.getByLabelText(`${tr("language")}: ${tr("english")}`),
     ).toBeTruthy();
-    fireEvent.press(
-      card.getByRole("button", { name: tr("savedProcessApprovalRetrySame") }),
-    );
+    fireEvent.press(card.getByRole("button", { name: tr("progressRetry") }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   },
 );
@@ -108,7 +109,7 @@ test.each(["accepted", "rejected"] as const)(
     ).toBeEnabled();
     expect(
       screen.queryByRole("button", {
-        name: tr("savedProcessApprovalRetrySame"),
+        name: tr("progressRetry"),
       }),
     ).toBeNull();
     expect(
@@ -164,9 +165,7 @@ test.each(["proof", "blocked", "retrying"])(
     render(<ProcessApprovalRecoveryCard {...props} />);
     const button = screen.getByRole("button", {
       name: translate("en")(
-        mode === "retrying"
-          ? "savedProcessApprovalRetrying"
-          : "savedProcessApprovalRetrySame",
+        mode === "retrying" ? "savedProcessApprovalRetrying" : "progressRetry",
       ),
     });
     expect(button).toBeDisabled();

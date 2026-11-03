@@ -81,6 +81,7 @@ import {
   isUserMessageRecorded,
   runningChat,
   selectPendingChatMessage,
+  processAnswerCardShown,
 } from "../../../../../packages/client-core/chat-view";
 import {
   isProcessReply,
@@ -1005,7 +1006,8 @@ export function ChatNextConversation({
       });
       if (converted) thread.push(converted);
     });
-    if (pending?.kind === "message" && state.pending)
+    // A process answer on its way or being checked shows the same way.
+    if (pending && state.pending)
       thread.push(pendingMessage(state.pending.commandId, pending.text));
     if (progressCommand)
       thread.push(
@@ -2364,6 +2366,9 @@ function AnswerRecovery({
 }) {
   const navigate = useNavigate();
   const { tr } = useChatCopy();
+  // An answer on its way or being checked shows as the person's message,
+  // with no card (NIAR-284).
+  if (!processAnswerCardShown(state, attempt)) return null;
   const store = state.store;
   const online = state.status === "online";
   const busy = !!state.pending || !!state.answerRecoveryBlocked;

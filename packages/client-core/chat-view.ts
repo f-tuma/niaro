@@ -5,6 +5,7 @@ import {
   type SessionCommand,
   type SessionState,
 } from "./session";
+import type { ProcessAnswerAttempt } from "./process-answer-attempts";
 import type { Store } from "./store";
 
 /**
@@ -30,12 +31,64 @@ export function isUserMessageRecorded(
   );
 }
 
+type ProcessDeliveryState = Pick<SessionState, "pending"> &
+  Partial<Pick<SessionState, "commandStates" | "deliveryCheck">>;
+
 /**
- * The text being sent in this chat, shown until the server records it.
- * A retained process answer has its own recovery card instead.
+ * A kept process start, answer or decision is on its way, or the session is
+ * checking its lost outcome by itself (NIAR-284): it shows as working, with no
+ * Retry and no "not confirmed" wording. A kept process command with an
+ * unknown outcome that is not working has failed and offers Try again.
+ */
+export function processCommandWorking(
+  state: ProcessDeliveryState,
+  commandId: string,
+) {
+  const pending = state.pending;
+  return (
+    pending?.commandId === commandId &&
+    (state.commandStates?.[commandTarget(pending)] === "sending" ||
+      state.deliveryCheck === "checking")
+  );
+}
+
+/**
+ * A saved process answer shows its own card once the server answered for it
+ * (accepted or refused) or when its delivery failed; while it is on its way
+ * or being checked it shows as the person's message being sent instead.
+ */
+export function processAnswerCardShown(
+  state: ProcessDeliveryState,
+  attempt: Pick<ProcessAnswerAttempt, "command" | "outcome">,
+) {
+  return (
+    attempt.outcome !== "unknown" ||
+    !processCommandWorking(state, attempt.command.commandId)
+  );
+}
+
+/** The person's decision on this process approval is on its way or being checked. */
+export function processDecisionWorking(
+  state: ProcessDeliveryState,
+  operationId: string,
+) {
+  const pending = state.pending;
+  return (
+    pending?.type === "service.resolve" &&
+    "profile" in pending &&
+    pending.operationId === operationId &&
+    processCommandWorking(state, pending.commandId)
+  );
+}
+
+/**
+ * The text being sent in this chat, shown until the server records it. A
+ * process answer shows here too while it is on its way or being checked; one
+ * the server answered for, or whose delivery failed, has its own card instead.
  */
 export function selectPendingChatMessage(
-  state: Pick<SessionState, "pending" | "answerAttempts" | "store">,
+  state: Pick<SessionState, "pending" | "answerAttempts" | "store"> &
+    Partial<Pick<SessionState, "commandStates" | "deliveryCheck">>,
   conversationId: string,
 ): { kind: "message" | "answer"; text: string } | null {
   const pending = state.pending;
@@ -43,7 +96,9 @@ export function selectPendingChatMessage(
     (pending?.type !== "message.send" && pending?.type !== "process.answer") ||
     pending.conversationId !== conversationId ||
     (state.answerAttempts ?? []).some(
-      (attempt) => attempt.command.commandId === pending.commandId,
+      (attempt) =>
+        attempt.command.commandId === pending.commandId &&
+        processAnswerCardShown(state, attempt),
     )
   )
     return null;

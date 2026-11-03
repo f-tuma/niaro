@@ -216,7 +216,9 @@ test.each(invalidReplies)(
     const state = f.session.getSnapshot();
     expect(state.processPending?.error).toBeNull();
     expect(state.processPending?.outcome).toBe("unknown");
-    expect(state.error).toBe("network_error");
+    // NIAR-284: a lost outcome is checked by the session, with no error.
+    expect(state.error).toBeNull();
+    expect(state.deliveryCheck).toBe("checking");
     expect(
       processPendingRecoveryError(state.processPending, state.error),
     ).not.toBe(copy);

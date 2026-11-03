@@ -246,13 +246,26 @@ function Launcher({ session }: { session: ClientSession }) {
           <AlertDescription>{tr(notice)}</AlertDescription>
         </Alert>
       )}
-      {recovery && (
+      {recovery?.starting ? (
+        // On its way, or checked by the session in the background: the run
+        // simply shows once it settles; nothing asks the person to act.
+        <Alert>
+          <Spinner data-icon="inline-start" />
+          <AlertTitle>
+            {copy.processStarting} {recovery.name}
+          </AlertTitle>
+        </Alert>
+      ) : recovery ? (
         <Alert
-          variant={recovery.outcome === "rejected" ? "destructive" : "default"}
+          variant={
+            recovery.outcome === "rejected" || recovery.failed
+              ? "destructive"
+              : "default"
+          }
         >
           <AlertTitle>
-            {recovery.outcome === "unknown"
-              ? copy.processUnconfirmed
+            {recovery.failed
+              ? tr("progressFailed")
               : recovery.outcome === "accepted"
                 ? copy.processStarted
                 : copy.processNotStarted}
@@ -260,8 +273,8 @@ function Launcher({ session }: { session: ClientSession }) {
           </AlertTitle>
           <AlertDescription>
             {tr(
-              recovery.outcome === "unknown"
-                ? "processesUnknown"
+              recovery.failed
+                ? "progressFailedHint"
                 : recovery.outcome === "accepted"
                   ? "processesSavingPending"
                   : "processesRejected",
@@ -282,11 +295,13 @@ function Launcher({ session }: { session: ClientSession }) {
               ) : (
                 <RefreshCw data-icon="inline-start" aria-hidden="true" />
               )}
-              {copy.processRetry}
+              {recovery.failed
+                ? tr("progressRetry")
+                : tr("processesRetrySaving")}
             </Button>
           </AlertAction>
         </Alert>
-      )}
+      ) : null}
       {model.error && !sheetOpen && !run && (
         <Alert variant="destructive">
           <AlertDescription>{tr(model.error)}</AlertDescription>

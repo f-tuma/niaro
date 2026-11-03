@@ -18,6 +18,7 @@ import {
   selectProcessCommandNotice,
 } from "../../../../packages/client-core/process-command-notice";
 import { selectRecentProcessRuns } from "../../../../packages/client-core/process-run-history";
+import { processCommandWorking } from "../../../../packages/client-core/chat-view";
 import type {
   ProcessExecutionEntry,
   ProcessInputRequest,
@@ -155,17 +156,25 @@ export function pendingStart(state: SessionState) {
             ? (recoveryError as TranslationKey)
             : "processesReadFailed"
           : null;
+  // An unknown start the session is sending or checking by itself is still
+  // starting; only one whose delivery failed offers Try again (NIAR-284).
+  const failed =
+    pending.outcome === "unknown" &&
+    !processCommandWorking(state, pending.command.commandId);
   return {
     commandId: pending.command.commandId,
     name: pending.target.entry.name,
     conversationId: pending.command.conversationId,
     outcome: pending.outcome,
+    /** Still starting: nothing to show but that, and nothing to press. */
+    starting: pending.outcome === "unknown" && !failed,
+    failed,
     sending,
     error,
     canRetry:
       !sending &&
       !state.answerRecoveryBlocked &&
-      (pending.outcome !== "unknown" || state.status === "online"),
+      (pending.outcome !== "unknown" || (failed && state.status === "online")),
   };
 }
 
@@ -193,15 +202,76 @@ export class ProcessLauncher {
     this.offerPending = !!offer;
   }
   getSnapshot = () => this.model;
+  /** Follows the session while someone watches this launcher. */
+  private unfollow?: () => void;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
+    this.unfollow ??= this.session.subscribe(() => this.follow());
     return () => {
       this.listeners.delete(listener);
+      if (!this.listeners.size) {
+        this.unfollow?.();
+        this.unfollow = undefined;
+      }
     };
   };
   dispose() {
     this.alive = false;
     this.invalidate();
+    this.unfollow?.();
+    this.unfollow = undefined;
+  }
+  /** The unknown start last seen as starting, until its outcome shows. */
+  private watchedStart?: {
+    command: ProcessStartCommand;
+    target: ProcessStartTarget;
+  };
+  /**
+   * A start the session settled by itself (its background check of a lost
+   * outcome, NIAR-284) settles here too: this launcher's own start, or the
+   * saved start the page showed as starting. The run shows as started or
+   * refused.
+   */
+  private follow() {
+    const state = this.session.getSnapshot();
+    const pending =
+      state.processPending?.command.type === "process.start"
+        ? state.processPending
+        : null;
+    if (
+      pending?.outcome === "unknown" &&
+      pending.command.type === "process.start" &&
+      pending.target.type === "process.start"
+    )
+      this.watchedStart = { command: pending.command, target: pending.target };
+    if (!this.alive || this.model.retrying) return;
+    const watched =
+      this.model.phase === "selection" && !this.model.submission
+        ? this.watchedStart
+        : undefined;
+    const submission =
+      this.model.phase === "sending" ? this.model.submission : watched?.command;
+    if (!submission) return;
+    const saved =
+      pending?.command.commandId === submission.commandId ? pending : null;
+    const local = state.commandStates[commandTarget(submission)];
+    if (
+      saved
+        ? saved.outcome === "unknown"
+        : local !== "accepted" && local !== "rejected"
+    )
+      return;
+    this.watchedStart = undefined;
+    // The saved start becomes this launcher's, as an explicit Retry made it.
+    if (watched)
+      this.commit({
+        target: watched.target,
+        selected: watched.target.entry,
+        reviewedInput: watched.command.input as ProcessFormInput,
+        submission: watched.command,
+        phase: "sending",
+      });
+    this.settle(submission);
   }
   private commit(update: Partial<LaunchModel>) {
     if (!this.alive) return;
@@ -576,7 +646,9 @@ export class ProcessLauncher {
       this.model.retrying ||
       state.answerRecoveryBlocked ||
       state.commandStates[commandTarget(saved.command)] === "sending" ||
-      (saved.outcome === "unknown" && state.status !== "online")
+      (saved.outcome === "unknown" &&
+        (state.status !== "online" ||
+          processCommandWorking(state, saved.command.commandId)))
     )
       return;
     this.commit({

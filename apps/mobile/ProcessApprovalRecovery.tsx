@@ -20,6 +20,7 @@ import {
   isReservedProcessRecoveryCopy,
 } from "../../packages/client-core/process-command-notice";
 import { ProcessApprovalRecoveryCard } from "../../packages/ui-catalog/ProcessApprovalRecoveryCard";
+import { processCommandWorking } from "../../packages/client-core/chat-view";
 
 type Props = {
   session: ClientSession;
@@ -74,7 +75,8 @@ function retryAllowed(state: SessionState, saved: ResolvePending): boolean {
     !state.answerRecoveryBlocked &&
     state.commandStates[commandTarget(saved.command)] !== "sending" &&
     (saved.outcome === "unknown"
-      ? state.status === "online" &&
+      ? !processCommandWorking(state, saved.command.commandId) &&
+        state.status === "online" &&
         !!state.store &&
         !state.store.stale &&
         !state.store.needsSnapshot
@@ -122,6 +124,13 @@ function OwnedApprovalRecovery({
   if (pending?.type !== "service.resolve" || !("profile" in pending))
     return null;
   const saved = reviewedPending(session, state);
+  // A decision on its way, or one the session is checking by itself, shows on
+  // its approval as being sent; no card asks the person to act (NIAR-284).
+  if (
+    (saved?.outcome ?? "unknown") === "unknown" &&
+    processCommandWorking(state, pending.commandId)
+  )
+    return null;
   // Only the captured saved command/target may authorize a retry, never current work B.
   const commandBytes = saved ? JSON.stringify(saved.command) : null;
   const targetBytes = saved ? JSON.stringify(saved.target) : null;

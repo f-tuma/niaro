@@ -1903,7 +1903,7 @@ test.each([false, true])(
       throw Error("TEST lost delivery response");
     };
     await f.session.send(command);
-    expect(f.session.getSnapshot().error).toBe("network_error");
+    expect(f.session.getSnapshot().error).toBeNull();
     if (interruptionFailed) {
       f.handlers.interrupt = async () => {
         throw Error("TEST lost interruption response");
@@ -2015,7 +2015,7 @@ test("failed canonical redaction retains unknown error ownership until a later d
     throw Error("TEST lost response");
   };
   await f.session.send(command);
-  expect(f.session.getSnapshot().error).toBe("network_error");
+  expect(f.session.getSnapshot().error).toBeNull();
   const setItem = f.storage.setItem;
   let fail = true;
   f.storage.setItem = async (key, value) => {
@@ -2096,7 +2096,7 @@ test("durable discard settles the consumed original delivery error after a faile
     throw Error("TEST lost response");
   };
   await f.session.send(command);
-  expect(f.session.getSnapshot().error).toBe("network_error");
+  expect(f.session.getSnapshot().error).toBeNull();
   const setItem = f.storage.setItem;
   let fail = true;
   f.storage.setItem = async (key, value) => {

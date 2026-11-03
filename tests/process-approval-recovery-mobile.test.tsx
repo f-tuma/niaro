@@ -85,13 +85,31 @@ async function unresolved(h: Fixture, approved = true) {
     approved,
     language: "en",
   });
-  h.handlers.command = async () => {
-    throw Error("TEST lost reply");
-  };
-  await session.send(command, false, target);
+  // NIAR-284: a lost decision is checked by the session itself and shows no
+  // card. It shows the saved card with Try again only once it failed: here a
+  // Stop the server did not confirm, then the lost reply.
+  let lose!: (error: Error) => void;
+  h.handlers.command = () =>
+    new Promise<Response>((_, reject) => {
+      lose = reject;
+    });
+  const sent = session.send(command, false, target);
+  await flush();
+  expect(await session.interruptPending()).toBe(false);
+  lose(Error("TEST lost reply"));
+  await sent;
   expect(session.getSnapshot().processPending?.outcome).toBe("unknown");
+  expect(session.getSnapshot().deliveryCheck).toBe("failed");
   return { session, target, command, bytes: h.commands[0]! };
 }
+/** The app returns to the foreground: the session checks a lost outcome at once. */
+const foreground = async (session: ClientSession) => {
+  await act(async () => {
+    session.setActive(false);
+    session.setActive(true);
+    await flush();
+  });
+};
 
 function Harness({
   session,
@@ -153,7 +171,7 @@ const reviewSaved = async (language: Language = "en") => {
 };
 
 test.each(["en", "cs"] as const)(
-  "%s Workspace owns lost A retry after reopen while B stays current and disabled",
+  "%s Workspace checks lost A by itself after reopen, with no card, while B stays current and disabled",
   async (language) => {
     const h = processApprovalFixture(),
       first = open(h),
@@ -165,9 +183,12 @@ test.each(["en", "cs"] as const)(
       throw Error("TEST lost A response");
     };
     await press(tr("serviceReject"));
-    const bytes = h.commands[0]!,
-      original = first.getSnapshot().processPending!;
+    const bytes = h.commands[0]!;
     expect(JSON.parse(bytes).approved).toBe(false);
+    // The lost decision shows as being sent; no card asks anything.
+    expect(screen.queryByTestId("saved-process-approval")).toBeNull();
+    expect(first.getSnapshot().error).toBeNull();
+    expect(first.getSnapshot().deliveryCheck).toBe("checking");
     view.unmount();
     h.snapshot.workItems[0] = processApprovalWork("B", 8);
     const reopened = open(h);
@@ -176,37 +197,12 @@ test.each(["en", "cs"] as const)(
     await act(async () => {
       await flush();
     });
-    const saved = await reviewSaved(language);
-    expect(saved.getByText("TEST approval A")).toBeTruthy();
-    expect(saved.getByText(tr("savedProcessApprovalEffectWrite"))).toBeTruthy();
-    expect(saved.queryByText("TEST approval B")).toBeNull();
-    expect(
-      saved.getByLabelText(
-        `${tr("savedProcessApprovalDecision")}: ${tr("savedProcessApprovalReject")}`,
-      ),
-    ).toBeTruthy();
-    expect(
-      saved.getByLabelText(`${tr("processApprovalServer")}: ${h.address}`),
-    ).toBeTruthy();
-    expect(saved.getByLabelText(`${tr("scope")}: a`)).toBeTruthy();
-    expect(
-      saved.getByLabelText(`${tr("processesConversation")}: conversation-1`),
-    ).toBeTruthy();
-    expect(
-      saved.getByLabelText(`${tr("processApprovalNativeRevision")}: 7`),
-    ).toBeTruthy();
-    expect(
-      saved.getByLabelText(`${tr("processApprovalServiceRevision")}: 2`),
-    ).toBeTruthy();
-    expect(
-      saved.getByLabelText(`${tr("processApprovalActionRevision")}: 3`),
-    ).toBeTruthy();
-    if (original.target.type !== "service.resolve")
-      throw Error("TEST resolve target missing");
-    expect(saved.getByTestId("service-action-parameters").props.children).toBe(
-      original.target.approval!.result.inputJson,
-    );
+    expect(screen.queryByTestId("saved-process-approval")).toBeNull();
+    expect(screen.queryByText(/Not confirmed|Nepotvrzeno/)).toBeNull();
     expect(screen.queryByRole("button", { name: tr("retry") })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: tr("progressRetry") }),
+    ).toBeNull();
     expect(h.commands).toEqual([bytes]);
     await openRunDetail(language);
     expect(screen.getAllByTestId("work-TEST-parent")).toHaveLength(1);
@@ -227,7 +223,8 @@ test.each(["en", "cs"] as const)(
     await closeProcessPanel(language);
     h.handlers.command = async (command) =>
       approvalResponse(h.runtime(command), 202);
-    await press(tr("savedProcessApprovalRetrySame"));
+    // Back in the foreground the session posts A's identical bytes once.
+    await foreground(reopened);
     expect(h.commands).toEqual([bytes, bytes]);
     expect(reopened.getSnapshot().pending).toBeNull();
     expect(screen.queryByTestId("saved-process-approval")).toBeNull();
@@ -236,6 +233,8 @@ test.each(["en", "cs"] as const)(
         .approval!.result.operationId,
     ).toBe("TEST-operation-B");
     expect(screen.queryByText(tr("serviceSucceeded"))).toBeNull();
+    await foreground(reopened);
+    expect(h.commands).toEqual([bytes, bytes]);
   },
 );
 
@@ -341,7 +340,7 @@ test.each(["accepted", "rejected"] as const)(
   },
 );
 
-test("valid historical A without approval details retries original bytes without borrowing B parameters", async () => {
+test("valid historical A without approval details is checked with its original bytes, without borrowing B parameters", async () => {
   const h = processApprovalFixture(),
     first = await unresolved(h);
   const envelope = JSON.parse(h.cache.get(pendingKey(first.session))!);
@@ -355,22 +354,14 @@ test("valid historical A without approval details retries original bytes without
   await act(async () => {
     await flush();
   });
-  const saved = await reviewSaved();
-  expect(saved.getByText("TEST approval A")).toBeTruthy();
-  expect(
-    saved.getByText(translate("en")("savedProcessApprovalEffectWrite")),
-  ).toBeTruthy();
-  expect(
-    saved.getByText(
-      translate("en")("savedProcessApprovalParametersUnavailable"),
-    ),
-  ).toBeTruthy();
-  expect(saved.queryByTestId("service-action-parameters")).toBeNull();
-  expect(saved.queryByText("TEST approval B")).toBeNull();
+  // Restored after a restart, it is checked again by the session: no card.
+  expect(reopened.getSnapshot().deliveryCheck).toBe("checking");
+  expect(screen.queryByTestId("saved-process-approval")).toBeNull();
   h.handlers.command = async (command) =>
     approvalResponse(h.runtime(command), 202);
-  await press(translate("en")("savedProcessApprovalRetrySame"));
+  await foreground(reopened);
   expect(h.commands).toEqual([first.bytes, first.bytes]);
+  expect(reopened.getSnapshot().pending).toBeNull();
 });
 
 test.each(["raw", "scope", "bytes"])(
@@ -404,22 +395,15 @@ test.each(["raw", "scope", "bytes"])(
       screen.queryByRole("button", { name: translate("en")("retry") }),
     ).toBeNull();
     if (damage === "raw") {
-      const saved = within(screen.getByTestId("saved-process-approval"));
+      // It cannot be checked safely, so it stays quietly working: no card,
+      // nothing to press, and the session never posts it.
+      expect(screen.queryByTestId("saved-process-approval")).toBeNull();
       expect(
-        saved.getByText(
-          translate("en")("savedProcessApprovalProofUnavailable"),
-        ),
-      ).toBeTruthy();
-      expect(
-        saved.getByRole("button", {
-          name: translate("en")("savedProcessApprovalRetrySame"),
+        screen.queryByRole("button", {
+          name: translate("en")("progressRetry"),
         }),
-      ).toBeDisabled();
-      fireEvent.press(
-        saved.getByRole("button", {
-          name: translate("en")("savedProcessApprovalRetrySame"),
-        }),
-      );
+      ).toBeNull();
+      await foreground(reopened);
     } else expect(reopened.getSnapshot().answerRecoveryBlocked).toBe(true);
     await act(async () => {
       await flush();
@@ -451,7 +435,7 @@ test("rapid saved retry taps share one original flight and do not treat promise 
     retained();
     fireEvent.press(
       screen.getByRole("button", {
-        name: translate("en")("savedProcessApprovalRetrySame"),
+        name: translate("en")("progressRetry"),
       }),
     );
     await flush();
@@ -549,7 +533,10 @@ test("retained A retry cannot retry a new B outbox command", async () => {
     await first.session.send(commandB, false, targetB);
     await flush();
   });
-  expect(view.getByText("TEST approval B")).toBeTruthy();
+  // B's lost reply is checked by the session: no card for B, and A's
+  // retained Try again cannot reach it.
+  expect(first.session.getSnapshot().deliveryCheck).toBe("checking");
+  expect(view.queryByTestId("saved-process-approval")).toBeNull();
   const before = [...h.commands];
   await act(async () => {
     retained();
@@ -580,7 +567,7 @@ test("a stale or offline projection fences a retained unknown retry", async () =
   });
   expect(
     screen.getByRole("button", {
-      name: translate("en")("savedProcessApprovalRetrySame"),
+      name: translate("en")("progressRetry"),
     }),
   ).toBeDisabled();
   expect(h.commands).toEqual([first.bytes]);
@@ -602,12 +589,12 @@ test("StrictMode effect replay remains passive and its current retry still works
     </React.StrictMode>,
   );
   expect(h.commands).toEqual([first.bytes]);
-  await press(translate("en")("savedProcessApprovalRetrySame"));
+  await press(translate("en")("progressRetry"));
   expect(h.commands).toEqual([first.bytes, first.bytes]);
 });
 
 test.each(["en", "cs"] as const)(
-  "%s conflict explanation survives a real Session reopen and failed rewrite shows storage error",
+  "%s conflict stays quietly working across a real Session reopen and a failed rewrite shows Try again with the storage error",
   async (language) => {
     const h = processApprovalFixture(),
       session = open(h),
@@ -636,16 +623,14 @@ test.each(["en", "cs"] as const)(
     const reopened = open(h);
     await reopened.start(false);
     render(<Harness session={reopened} language={language} />);
+    // The server could not verify it: it stays working, the technical
+    // explanation stays out of view.
     expect(
-      screen.getByText(tr("savedProcessExecutionUnverified")),
-    ).toBeTruthy();
-    expect(screen.getByText(tr("savedProcessApprovalUnknown"))).toBeTruthy();
+      screen.queryByText(tr("savedProcessExecutionUnverified")),
+    ).toBeNull();
+    expect(screen.queryByTestId("saved-process-approval")).toBeNull();
     expect(reopened.getSnapshot().processPending?.error).toBe(
       PROCESS_EXECUTION_UNVERIFIED,
-    );
-    const saved = await reviewSaved(language);
-    expect(saved.getByTestId("service-action-parameters").props.children).toBe(
-      target.approval!.result.inputJson,
     );
     expect(h.commands).toEqual([bytes]);
     const write = h.storage.setItem;
@@ -653,11 +638,22 @@ test.each(["en", "cs"] as const)(
       if (key === pendingKey(reopened)) throw Error("TEST retry write failed");
       await write(key, value);
     };
-    await press(tr("savedProcessApprovalRetrySame"));
+    // The session's own check cannot save the command before sending it.
+    await foreground(reopened);
+    expect(reopened.getSnapshot().deliveryCheck).toBe("failed");
+    const saved = within(screen.getByTestId("saved-process-approval"));
+    expect(saved.getByText(tr("progressFailedHint"))).toBeTruthy();
+    expect(
+      saved.getByRole("button", { name: tr("progressRetry") }),
+    ).toBeTruthy();
     expect(
       screen.queryByText(tr("savedProcessExecutionUnverified")),
     ).toBeNull();
     expect(screen.getAllByText(tr("storage_error")).length).toBeGreaterThan(0);
+    const details = await reviewSaved(language);
+    expect(
+      details.getByTestId("service-action-parameters").props.children,
+    ).toBe(target.approval!.result.inputJson);
     expect(h.commands).toEqual([bytes]);
     expect(reopened.getSnapshot().processPending?.outcome).toBe("unknown");
     expect(reopened.getSnapshot().processPending?.target).toEqual(target);

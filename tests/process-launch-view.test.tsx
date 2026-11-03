@@ -553,7 +553,7 @@ test.each(["review", "accepted", "rejected"] as const)(
 );
 
 test.each(["unknown", "accepted", "rejected"] as const)(
-  "%s recovery keeps original context and JSON and exposes the corresponding retry callback",
+  "%s recovery (unknown: its delivery failed) keeps original context and JSON and exposes the corresponding retry callback",
   (outcome) => {
     const tr = translate("cs");
     const retry = jest.fn();
@@ -565,6 +565,7 @@ test.each(["unknown", "accepted", "rejected"] as const)(
       language: "en",
       input: exactInput,
       outcome,
+      ...(outcome === "unknown" ? { failed: true } : {}),
       sending: false,
       error: null,
       canRetry: true,
@@ -603,8 +604,12 @@ test.each(["unknown", "accepted", "rejected"] as const)(
       outcome !== "unknown",
     );
     expect(retry).not.toHaveBeenCalled();
+    if (outcome === "unknown") {
+      expect(screen.getByText(tr("progressFailed"))).toBeTruthy();
+      expect(screen.getByText(tr("progressFailedHint"))).toBeTruthy();
+    }
     const label = tr(
-      outcome === "unknown" ? "processesRetrySame" : "processesRetrySaving",
+      outcome === "unknown" ? "progressRetry" : "processesRetrySaving",
     );
     fireEvent.press(screen.getByRole("button", { name: label }));
     expect(retry).toHaveBeenCalledTimes(1);
@@ -639,6 +644,57 @@ test.each(["unknown", "accepted", "rejected"] as const)(
     expect(sending.props.accessibilityState.busy).toBe(true);
     fireEvent.press(sending);
     expect(retry).toHaveBeenCalledTimes(1);
+  },
+);
+
+test.each(["en", "cs"] as const)(
+  "NIAR-284: an unknown start that is on its way or being checked shows only as starting (%s)",
+  (language) => {
+    const tr = translate(language);
+    const retry = jest.fn();
+    render(
+      <ProcessLaunchView
+        {...props({
+          language,
+          phase: "sending",
+          card: fixture(language),
+          reviewedInput: exactInput,
+          disabled: true,
+          recovery: {
+            name: "TEST checked process",
+            version: 3,
+            conversationId: "test-saved-conversation",
+            language,
+            input: exactInput,
+            outcome: "unknown",
+            sending: false,
+            // A local copy of the lost delivery is never shown while starting.
+            error: "savedProcessExecutionUnverified",
+            canRetry: false,
+            onRetry: retry,
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("TEST checked process")).toBeTruthy();
+    expect(screen.getByText(tr("processesSending"))).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: tr("progressRetry") }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: tr("processesRetrySaving") }),
+    ).toBeNull();
+    expect(
+      screen.queryByText(tr("savedProcessExecutionUnverified")),
+    ).toBeNull();
+    expect(screen.queryByText(tr("processUnknown"))).toBeNull();
+    expect(screen.queryByText(tr("progressFailed"))).toBeNull();
+    expect(
+      screen.queryByText(
+        /Not confirmed|Nepotvrzeno|may have started|možná spustil/,
+      ),
+    ).toBeNull();
+    expect(retry).not.toHaveBeenCalled();
   },
 );
 

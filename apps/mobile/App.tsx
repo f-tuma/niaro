@@ -167,6 +167,7 @@ import {
   chatErrorKey,
   heldForRecovery,
   isUserMessageRecorded,
+  processAnswerCardShown,
   runningChat,
   selectPendingChatMessage,
 } from "../../packages/client-core/chat-view";
@@ -2543,6 +2544,9 @@ export function Workspace({
             ) : null}
             {section === "chat" || section === "tasks"
               ? (state.answerAttempts ?? []).map((attempt) => {
+                  // An answer on its way or being checked shows as the
+                  // person's message in its chat, with no card (NIAR-284).
+                  if (!processAnswerCardShown(state, attempt)) return null;
                   let canReview = false;
                   if (
                     online &&

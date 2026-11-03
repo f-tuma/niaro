@@ -77,13 +77,18 @@ export type ProcessLaunchViewProps = {
     language: Language;
     input: unknown;
     outcome: "unknown" | "accepted" | "rejected";
+    /**
+     * An unknown start whose delivery failed: it offers Try again, which posts
+     * the identical start. Otherwise an unknown start is on its way or the
+     * session is checking it by itself, and it shows as starting.
+     */
+    failed?: boolean;
     sending: boolean;
     error: TranslationKey | null;
     canRetry: boolean;
     onRetry: () => void;
   };
 };
-
 
 /** Top-level inputs as label-value rows; the exact JSON stays in Details. */
 function inputFields(input: unknown, language: Language) {
@@ -578,39 +583,50 @@ function RecoveryView({
   recovery: NonNullable<ProcessLaunchViewProps["recovery"]>;
 }) {
   const tr = translate(language);
+  // An unknown start is either still starting (on its way, or checked by the
+  // session in the background) or failed; it is never "not confirmed".
+  const starting = recovery.outcome === "unknown" && !recovery.failed;
+  const failed = recovery.outcome === "unknown" && !!recovery.failed;
   const tone =
-    recovery.outcome === "rejected"
+    recovery.outcome === "rejected" || failed
       ? "error"
       : recovery.outcome === "accepted"
         ? "success"
-        : "warning";
+        : "running";
   return (
     <Surface style={styles.stack} testID="process-launch-recovery">
       <View style={styles.heading}>
         <StatusPill
           tone={tone}
+          busy={starting}
           label={tr(
-            recovery.outcome === "unknown"
-              ? "processUnknown"
-              : recovery.outcome === "accepted"
-                ? "processesAcceptedShort"
-                : "processesRejectedShort",
+            starting
+              ? "processesSending"
+              : failed
+                ? "progressFailed"
+                : recovery.outcome === "accepted"
+                  ? "processesAcceptedShort"
+                  : "processesRejectedShort",
           )}
         />
         <Text role="cardTitle" selectable>
           {recovery.name}
         </Text>
       </View>
-      <Text tone="secondary">
-        {tr(
-          recovery.outcome === "unknown"
-            ? "processesUnknown"
-            : recovery.outcome === "accepted"
-              ? "processesAccepted"
-              : "processesRejected",
-        )}
-      </Text>
-      {recovery.error ? <Notice error>{tr(recovery.error)}</Notice> : null}
+      {!starting ? (
+        <Text tone="secondary">
+          {tr(
+            failed
+              ? "progressFailedHint"
+              : recovery.outcome === "accepted"
+                ? "processesAccepted"
+                : "processesRejected",
+          )}
+        </Text>
+      ) : null}
+      {recovery.error && !starting ? (
+        <Notice error>{tr(recovery.error)}</Notice>
+      ) : null}
       {recovery.outcome !== "unknown" &&
       !recovery.sending &&
       recovery.error !== "processesSavingFailed" ? (
@@ -634,20 +650,23 @@ function RecoveryView({
           {JSON.stringify(recovery.input, null, 2)}
         </Text>
       </Disclosure>
-      <Button
-        label={tr(
-          recovery.sending
-            ? "processesSending"
-            : recovery.outcome === "unknown"
-              ? "processesRetrySame"
-              : "processesRetrySaving",
-        )}
-        loading={recovery.sending}
-        disabled={!recovery.canRetry || recovery.sending}
-        onPress={() => {
-          if (recovery.canRetry && !recovery.sending) recovery.onRetry();
-        }}
-      />
+      {/* Starting needs nothing from the person; the session checks it. */}
+      {!starting ? (
+        <Button
+          label={tr(
+            recovery.sending
+              ? "processesSending"
+              : failed
+                ? "progressRetry"
+                : "processesRetrySaving",
+          )}
+          loading={recovery.sending}
+          disabled={!recovery.canRetry || recovery.sending}
+          onPress={() => {
+            if (recovery.canRetry && !recovery.sending) recovery.onRetry();
+          }}
+        />
+      ) : null}
     </Surface>
   );
 }

@@ -38,6 +38,7 @@ import {
   captureProcessNoticeOwner,
   selectProcessCommandNotice,
 } from "../../../../packages/client-core/process-command-notice";
+import { processDecisionWorking } from "../../../../packages/client-core/chat-view";
 import {
   captureProcessResolveTarget,
   processResolveCommand,
@@ -184,7 +185,11 @@ export function WorkCard({
   const effectiveApprovalState =
     sameDecision?.phase === "sending" || sameDecision?.phase === "accepted"
       ? sameDecision.phase
-      : approvalState;
+      : // A decision the session is still checking by itself stays "sending".
+        processApproval &&
+          processDecisionWorking(state, processApproval.result.operationId)
+        ? "sending"
+        : approvalState;
 
   const decideProcess = (approved: boolean) => {
     const owned = guard.current;
@@ -987,7 +992,11 @@ export function useElapsedSeconds(active: boolean) {
   }, [active]);
   return active && seconds >= 5 ? seconds : null;
 }
-/** A process answer whose delivery is uncertain or was refused. */
+/**
+ * A process answer the server accepted or refused, or whose delivery failed
+ * ("unknown", with Try again). One on its way or being checked by the session
+ * shows as the person's message instead (NIAR-284).
+ */
 export function AnswerRecoveryView({
   question,
   answer,
@@ -1022,12 +1031,12 @@ export function AnswerRecoveryView({
           </span>
           <p className="break-words whitespace-pre-wrap">{answer}</p>
           <p
-            data-error={outcome === "rejected" || !!explanation}
+            data-error={outcome !== "accepted" || !!explanation}
             className="text-xs text-muted-foreground data-[error=true]:text-destructive"
           >
             {tr(
               outcome === "unknown"
-                ? "savedProcessAnswerUnknown"
+                ? "progressFailedHint"
                 : outcome === "rejected"
                   ? "savedProcessAnswerRejected"
                   : "savedProcessAnswerAccepted",
@@ -1040,7 +1049,7 @@ export function AnswerRecoveryView({
         <div className="flex flex-wrap gap-2">
           {outcome === "unknown" ? (
             <Button size="sm" disabled={!canRetry} onClick={onRetry}>
-              {copy.retry}
+              {tr("progressRetry")}
             </Button>
           ) : (
             <>

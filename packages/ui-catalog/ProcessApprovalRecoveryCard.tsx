@@ -19,7 +19,12 @@ export type SavedProcessApprovalReview = {
   result?: ServiceResult;
 };
 
-/** A local saved decision, without claiming a current approval or business result. */
+/**
+ * A local saved decision, without claiming a current approval or business
+ * result. A decision on its way, or one the session is checking by itself,
+ * shows on its approval as being sent instead (NIAR-284): "unknown" here is a
+ * decision whose delivery failed, with Try again.
+ */
 export function ProcessApprovalRecoveryCard({
   review,
   outcome,
@@ -80,12 +85,12 @@ export function ProcessApprovalRecoveryCard({
           </Text>
         </View>
       ) : null}
-      <Notice error={!review || outcome === "rejected"}>
+      <Notice error={!review || outcome !== "accepted"}>
         {tr(
           !review
             ? "savedProcessApprovalProofUnavailable"
             : outcome === "unknown"
-              ? "savedProcessApprovalUnknown"
+              ? "progressFailedHint"
               : outcome === "accepted"
                 ? "savedProcessApprovalAccepted"
                 : "savedProcessApprovalRejected",
@@ -106,7 +111,7 @@ export function ProcessApprovalRecoveryCard({
           retrying
             ? "savedProcessApprovalRetrying"
             : outcome === "unknown"
-              ? "savedProcessApprovalRetrySame"
+              ? "progressRetry"
               : "processesRetrySaving",
         )}
         loading={retrying}

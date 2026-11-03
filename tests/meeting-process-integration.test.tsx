@@ -475,7 +475,7 @@ test("incompatible meeting sources are explained and leave a manual input path",
   }
 });
 
-test("retrying a process command after losing its ACK reuses the same run", async () => {
+test("NIAR-284: a start whose ACK was lost shows as starting, and the session's own check reuses the same run", async () => {
   const h = await prepareReviewedMeetingLaunch({
     writes: 1,
     dropFirstProcessAck: true,
@@ -486,9 +486,15 @@ test("retrying a process command after losing its ACK reuses the same run", asyn
       fireEvent.press(screen.getByRole("button", { name: en.processesStart }));
       await flush();
     });
+    // No "not confirmed" card: it is starting, and nothing asks to retry.
     await waitFor(() =>
-      expect(screen.getByText(en.processesUnknown)).toBeTruthy(),
+      expect(screen.getAllByText(en.processesSending).length).toBeGreaterThan(
+        0,
+      ),
     );
+    expect(screen.queryByText(/Not confirmed|may have started/)).toBeNull();
+    expect(screen.queryByRole("button", { name: en.progressRetry })).toBeNull();
+    expect(h.session.getSnapshot().error).toBeNull();
 
     await waitFor(
       async () => {
@@ -505,10 +511,13 @@ test("retrying a process command after losing its ACK reuses the same run", asyn
     expect(afterLostAck.processJournals).toHaveLength(1);
     expect(afterLostAck.serviceDispatches).toHaveLength(1);
 
+    // The session's check posts the kept command again, byte for byte (the
+    // same send as Try again; its online and foreground triggers are covered
+    // by tests/process-quiet-check.test.ts). This fixture's reads answer 400
+    // after the run, so the check is driven directly here; the launcher was
+    // not asked and still shows the result once the session settles it.
     await act(async () => {
-      fireEvent.press(
-        screen.getByRole("button", { name: en.processesRetrySame }),
-      );
+      await h.session.retry();
       await flush();
     });
     await waitFor(() =>

@@ -394,8 +394,6 @@ export const en = {
   processesAcceptedShort: "Started",
   processesRejected: "The server didn't start it. Check the reason, then edit.",
   processesRejectedShort: "Not started",
-  processesUnknown: "Not confirmed — it may have started. Retry to check.",
-  processesRetrySame: "Retry",
   processesRetrySaving: "Save again",
   processesSavingPending:
     "Result known, not yet saved here. This won't rerun it.",
@@ -451,13 +449,11 @@ export const en = {
   savedProcessApprovalReject: "Decline",
   savedProcessApprovalEffectWrite: "Changes data",
   savedProcessApprovalEffectRead: "Reads data",
-  savedProcessApprovalUnknown: "Not confirmed. Retry sends this same decision.",
   savedProcessApprovalAccepted:
     "Server received it. Save again to finish here; see the task for the result.",
   savedProcessApprovalRejected:
     "Server rejected it. Save again to finish here.",
   savedProcessApprovalReview: "Details",
-  savedProcessApprovalRetrySame: "Retry",
   savedProcessApprovalRetrying: "Retrying…",
   savedProcessApprovalParametersUnavailable:
     "Original parameters weren't saved by this app version.",
@@ -687,7 +683,6 @@ export const en = {
   savedProcessAnswerAccepted:
     "Server received it; the process hasn't used it yet.",
   savedProcessAnswerRejected: "Answer rejected. Your text is kept here.",
-  savedProcessAnswerUnknown: "Not confirmed. Retry sends the same answer.",
   savedProcessAnswerStorageBlocked:
     "Saved requests didn't load. Refresh first.",
   process_answer_attempts_full: "Review or discard a saved answer first.",
@@ -1389,8 +1384,6 @@ export const cs: Record<TranslationKey, string> = {
   processesAcceptedShort: "Spuštěno",
   processesRejected: "Server proces nespustil. Zjisti důvod a uprav vstupy.",
   processesRejectedShort: "Nespuštěno",
-  processesUnknown: "Nepotvrzeno, proces se možná spustil. Opakuj pro ověření.",
-  processesRetrySame: "Zkusit znovu",
   processesRetrySaving: "Uložit znovu",
   processesSavingPending:
     "Výsledek je známý, ale tu ještě neuložený. Proces se znovu nespustí.",
@@ -1450,13 +1443,10 @@ export const cs: Record<TranslationKey, string> = {
   savedProcessApprovalReject: "Odmítnout",
   savedProcessApprovalEffectWrite: "Mění data",
   savedProcessApprovalEffectRead: "Čte data",
-  savedProcessApprovalUnknown:
-    "Nepotvrzeno. Opakování odešle totéž rozhodnutí.",
   savedProcessApprovalAccepted:
     "Server ho přijal. Ulož znovu pro dokončení; výsledek najdeš v úloze.",
   savedProcessApprovalRejected: "Server ho odmítl. Ulož znovu pro dokončení.",
   savedProcessApprovalReview: "Podrobnosti",
-  savedProcessApprovalRetrySame: "Zkusit znovu",
   savedProcessApprovalRetrying: "Opakuji…",
   savedProcessApprovalParametersUnavailable:
     "Tato verze aplikace neuložila původní parametry.",
@@ -1687,7 +1677,6 @@ export const cs: Record<TranslationKey, string> = {
   savedProcessAnswer: "Uložená odpověď",
   savedProcessAnswerAccepted: "Server ji přijal; proces ji zatím nepoužil.",
   savedProcessAnswerRejected: "Odpověď odmítnuta. Tvůj text zůstal tady.",
-  savedProcessAnswerUnknown: "Nepotvrzeno. Opakování odešle stejnou odpověď.",
   savedProcessAnswerStorageBlocked:
     "Uložené požadavky se nenačetly. Nejdřív obnov.",
   process_answer_attempts_full:

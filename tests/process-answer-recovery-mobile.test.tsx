@@ -327,7 +327,7 @@ test.each(["en", "cs"] as const)(
 );
 
 test.each(["en", "cs"] as const)(
-  "%s unknown A survives B and only explicit retry dispatches byte-identical A",
+  "%s unknown A survives B with no card and the session's own check dispatches byte-identical A once",
   async (language) => {
     const f = fixture(language);
     f.setOutcome("unknown");
@@ -340,25 +340,37 @@ test.each(["en", "cs"] as const)(
     f.work.native!.process!.journalRevision = 8;
     const session = f.open();
     const mounted = await mount(session, language);
+    const tr = translate(language);
     expect(f.commands).toHaveLength(1);
-    expect(
-      screen.queryByRole("button", {
-        name: translate(language)("savedProcessAnswerReview"),
-      }),
-    ).toBeNull();
-    const discard = screen.getByRole("button", {
-      name: translate(language)("savedProcessAnswerDiscard"),
-    });
-    fireEvent.press(discard);
+    // NIAR-284: kept from before the restart, A is checked by the session;
+    // no card, no "not confirmed" wording, nothing to review or retry.
     expect(session.getSnapshot().pending).toEqual(command);
+    expect(session.getSnapshot().deliveryCheck).toBe("checking");
+    expect(session.getSnapshot().error).toBeNull();
+    expect(screen.queryByTestId("saved-process-answer")).toBeNull();
+    expect(screen.queryByText(/Not confirmed|Nepotvrzeno/)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: tr("savedProcessAnswerReview") }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: tr("progressRetry") }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: tr("retry") })).toBeNull();
+    f.setOutcome("accepted");
     await act(async () => {
-      fireEvent.press(
-        screen.getByRole("button", { name: translate(language)("retry") }),
-      );
+      session.setActive(false);
+      session.setActive(true);
       await flush();
     });
     expect(f.commands).toHaveLength(2);
     expect(f.commands[1]).toEqual(command);
+    expect(session.getSnapshot().answerAttempts[0]?.outcome).toBe("accepted");
+    await act(async () => {
+      session.setActive(false);
+      session.setActive(true);
+      await flush();
+    });
+    expect(f.commands).toHaveLength(2);
     mounted.unmount();
   },
 );
@@ -455,7 +467,11 @@ test("unreadable attempt ledger blocks the composer; explicit refresh restores t
   });
   expect(session.getSnapshot().answerRecoveryBlocked).toBe(false);
   expect(session.getSnapshot().pending).toEqual(command);
-  expect(screen.getByTestId("saved-process-answer")).toBeTruthy();
+  // Restored, it is checked by the session and shows as the person's answer
+  // on its way rather than a card (NIAR-284).
+  expect(session.getSnapshot().deliveryCheck).toBe("checking");
+  expect(screen.queryByTestId("saved-process-answer")).toBeNull();
+  expect(screen.getByTestId("pending-message")).toBeTruthy();
   expect(f.commands).toHaveLength(1);
   mounted.unmount();
 });
