@@ -68,7 +68,7 @@ While a process start, answer or decision is on its way or being checked, the ap
 
 ### Requirement: A process command that failed
 
-The client SHALL show a process start, answer or decision as failed, with "Couldn't finish. Try again." and **Try again**, only when it knows the delivery failed: the server named a process, model, catalog or inference cause without a receipt, a Stop was not confirmed, or the command could not be saved before it was posted. A refused start or answer SHALL keep its refused display.
+The client SHALL show a process start, answer or decision as failed, with "Couldn't finish. Try again." and **Try again**, only when it knows the delivery failed: the server named a process, model, catalog or inference cause without a receipt, a Stop was not confirmed, or the command could not be saved before it was posted. A refused start SHALL keep its refused display; a refused answer SHALL stay in its chat as not sent with Try again (see `chat-delivery`).
 
 #### Scenario: Answer the server could not take
 
