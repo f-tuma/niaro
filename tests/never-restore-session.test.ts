@@ -3,6 +3,7 @@ import { messageCommand } from "../packages/client-core/commands";
 import {
   chatRequestFailed,
   commandRunning,
+  errorShownByFailedMessage,
   runningChat,
   selectFailedMessages,
   selectPendingChatMessage,
@@ -213,8 +214,15 @@ test("a message the server refuses at once stays in its chat with its words and 
     expect(selectFailedMessages(state, command.conversationId)).toEqual([
       { command, error: "unknown_context" },
     ]);
+    // Its reason shows once, on the message; no notice repeats it.
+    expect(state.error).toBe("unknown_context");
+    expect(errorShownByFailedMessage(state)).toBe(true);
     s.session.dismissFailedMessage(command.commandId);
     expect(s.session.getSnapshot().failedMessages).toEqual([]);
+    // Dismissed, its reason goes with it, also after a reconnect.
+    expect(s.session.getSnapshot().error).toBeNull();
+    await s.session.refresh();
+    expect(s.session.getSnapshot().error).toBeNull();
     expect(s.posted).toHaveLength(1);
   } finally {
     s.session.stop();

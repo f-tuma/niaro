@@ -42,6 +42,7 @@ The phone composer gets no `sending` prop: while anything is pending, `busy` alr
 
 - Phone `ChatThread` renders `failedMessages` of the chat under the stored messages: selectable text, a caption ("Attached files: n." when it has files, "Not sent." and the reason) and Try again / Dismiss. Try again is available online and when nothing is pending. A chat whose only content is a failed message counts as a conversation (no Home).
 - Web: `failedMessage()` thread entries with `kind: "failed"`; `UserMessage` shows the bubble at full opacity, the caption and Try again / Dismiss through `NextChat.retryFailed` / `dismissFailed`.
+- The reason is shown once. `errorShownByFailedMessage(state)` is true while the session's error is the reason of its latest failed message, or of a refused message it is still settling (pending, command state `rejected`); the phone's and web's error notices then leave `state.error` out, and a send's `.catch` sets no notice for a message kept as failed (`isFailedMessage`). `dismissFailedMessage` of the latest failed message also clears that error (and the rejection a reconnect would republish).
 - `failedMessageReason`: the code's copy, except `network_error` ("Delivery unclear", NIAR-280 forbids it) and `storage_error` (reads as a setting); those and unknown codes read as `requestRejected`.
 
 ### D6. Copy

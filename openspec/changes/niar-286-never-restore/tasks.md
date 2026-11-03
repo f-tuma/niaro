@@ -32,3 +32,4 @@
 ## 5. Leftovers
 
 - [x] 5.1 Phone meeting recording interrupts only a request that really runs (`commandRunning`), not a background check's resend.
+- [x] 5.2 A failed message's reason shows once, on the message; no footer notice repeats it on the phone or the web, and Dismiss lets it go.

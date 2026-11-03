@@ -591,6 +591,14 @@ test("NIAR-286: a sent message leaves the composer at once and never returns; re
   const root = (await render(session, "conv-1")).root;
   await type(root, "Najdi Jana");
   expect(root.findByType("textarea").props.value).toBe("");
+  const reason = translate("cs")("catalog_conflict");
+  const chatErrors = () =>
+    root.findAll((node) => node.props["data-testid"] === "chat-error");
+  // The refusal arrived; the session is still settling the message.
+  await act(async () =>
+    publish({ commandStates: { chat: "rejected" }, error: "catalog_conflict" }),
+  );
+  expect(chatErrors()).toHaveLength(0);
   await act(async () => {
     publish({
       pending: null,
@@ -604,6 +612,10 @@ test("NIAR-286: a sent message leaves the composer at once and never returns; re
   const failed = byTestId(root, "failed-message");
   expect(text(failed)).toContain("Najdi Jana");
   expect(text(failed)).toContain("Neodesláno.");
+  // The reason is shown once, on the failed message (NIAR-286).
+  expect(text(failed)).toContain(reason);
+  expect(chatErrors()).toHaveLength(0);
+  expect(text(root).split(reason)).toHaveLength(2);
   await act(async () => button(failed, "Zkusit znovu").props.onClick());
   expect(session.retryFailedMessage).toHaveBeenCalledWith(
     sentCommand.commandId,

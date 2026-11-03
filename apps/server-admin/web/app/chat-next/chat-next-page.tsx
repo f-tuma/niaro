@@ -77,6 +77,8 @@ import {
   chatRequestFailed,
   chatErrorKey,
   chatOwnsError,
+  errorShownByFailedMessage,
+  isFailedMessage,
   commandRunning,
   failedMessageCaption,
   isUserMessageRecorded,
@@ -713,6 +715,8 @@ export function ChatNextConversation({
           setContext(undefined);
       })
       .catch((error: unknown) => {
+        // A failed message shows its reason in the chat.
+        if (isFailedMessage(session.getSnapshot(), command.commandId)) return;
         setReplyError(
           sendErrorKey(
             error,
@@ -1113,7 +1117,10 @@ export function ChatNextConversation({
   const sharedErrorKey = chatErrorKey(
     replyError,
     processAnnouncement,
-    chatOwnsError(state, id) && !(progressHint && modelFailed)
+    // A failed message shows its own reason; no notice repeats it.
+    chatOwnsError(state, id) &&
+      !(progressHint && modelFailed) &&
+      !errorShownByFailedMessage(state)
       ? state.error
       : null,
     false,

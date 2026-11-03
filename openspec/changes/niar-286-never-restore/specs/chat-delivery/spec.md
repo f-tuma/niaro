@@ -85,6 +85,20 @@ A chat message that the client took and that ends neither answered nor still che
 - **WHEN** a message's answer was lost and the server refuses the client's check
 - **THEN** the message stays in its chat as failed with Try again, and its words are not lost
 
+### Requirement: A failed message's reason is shown once
+
+The reason a message failed SHALL be shown once, under the failed message, on the phone and on the web. No error notice in the chat's footer or on another screen SHALL repeat it, also while the client is still settling the refused message, and Dismiss SHALL let the reason go with the message.
+
+#### Scenario: Reason of a refused message
+
+- **WHEN** the server refuses a message
+- **THEN** the reason appears under the message and not again as an error notice
+
+#### Scenario: Reason after Dismiss
+
+- **WHEN** the person dismisses a refused message
+- **THEN** no error notice shows its reason afterwards, also after a reconnect
+
 ### Requirement: Try again and Dismiss of a refused message
 
 Try again SHALL send a refused message's text, files and context as a new message. Dismiss SHALL remove the refused message from its chat and SHALL NOT put its text or files into the composer.

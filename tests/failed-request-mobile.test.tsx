@@ -403,6 +403,18 @@ test("NIAR-286: a message the server refused stays in the chat as failed with Tr
   await typeAndSend("TEST refused question");
   expect(composerValue()).toBe("");
   const command = sentCommand(f);
+  const reason = () =>
+    screen.queryAllByText(
+      new RegExp(tr("catalog_conflict").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+  // The refusal arrived; the session is still settling the message.
+  await act(async () =>
+    f.publish({
+      commandStates: { chat: "rejected" },
+      error: "catalog_conflict",
+    }),
+  );
+  expect(reason()).toHaveLength(0);
   await send.settle({
     pending: null,
     commandStates: { chat: "rejected" },
@@ -413,6 +425,18 @@ test("NIAR-286: a message the server refused stays in the chat as failed with Tr
   expect(screen.getByTestId("failed-message")).toBeTruthy();
   expect(screen.getByText("TEST refused question")).toBeTruthy();
   expect(screen.getByText(/Not sent\./)).toBeTruthy();
+  // The reason is shown once, on the failed message, not again below it.
+  expect(reason()).toHaveLength(1);
+  // Other screens do not repeat it either.
+  await act(async () => {
+    fireEvent.press(screen.getByRole("tab", { name: tr("meetings") }));
+    await flush();
+  });
+  expect(reason()).toHaveLength(0);
+  await act(async () => {
+    fireEvent.press(screen.getByRole("tab", { name: tr("chat") }));
+    await flush();
+  });
   await act(async () => {
     fireEvent.press(screen.getByRole("button", { name: tr("progressRetry") }));
     await flush();

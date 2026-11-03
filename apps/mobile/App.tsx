@@ -166,6 +166,8 @@ import {
   chatRequestFailed,
   chatErrorKey,
   commandRunning,
+  errorShownByFailedMessage,
+  isFailedMessage,
   isUserMessageRecorded,
   processAnswerCardShown,
   runningChat,
@@ -1390,7 +1392,9 @@ export function Workspace({
       .catch((error: unknown) => {
         if (
           contextGeneration.current !== generation ||
-          contextRef.current !== (replyContext ?? undefined)
+          contextRef.current !== (replyContext ?? undefined) ||
+          // A failed message shows its reason in the chat.
+          isFailedMessage(session.getSnapshot(), command.commandId)
         )
           return;
         setReplyError(
@@ -1684,7 +1688,8 @@ export function Workspace({
   const errorKey = chatErrorKey(
     replyError,
     processAnnouncement,
-    state.error,
+    // A failed message shows its own reason; no notice repeats it.
+    errorShownByFailedMessage(state) ? null : state.error,
     isProcessReply(context),
   );
   // A failed message is kept in its chat with Retry and Dismiss; Stop is only
@@ -2121,7 +2126,11 @@ export function Workspace({
           })
           .catch((error: unknown) => {
             release();
-            if (contextGeneration.current !== deliveryGeneration) return;
+            if (
+              contextGeneration.current !== deliveryGeneration ||
+              isFailedMessage(session.getSnapshot(), commandId)
+            )
+              return;
             setReplyError(
               error instanceof Error &&
                 !isReservedProcessRecoveryCopy(error.message) &&

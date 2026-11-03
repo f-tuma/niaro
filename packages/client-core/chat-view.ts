@@ -192,6 +192,35 @@ export function failedMessageCaption(
     .join(" ");
 }
 
+/**
+ * The session's error is the reason a failed message shows under its words,
+ * or is about to (a refused message the session is still settling). The
+ * reason is shown once, there; no footer notice repeats it.
+ */
+export function errorShownByFailedMessage(
+  state: Pick<SessionState, "error" | "pending"> &
+    Partial<Pick<SessionState, "failedMessages" | "commandStates">>,
+) {
+  const { error, pending } = state;
+  if (!error) return false;
+  if (pending)
+    return (
+      pending.type === "message.send" &&
+      state.commandStates?.[commandTarget(pending)] === "rejected"
+    );
+  return state.failedMessages?.at(-1)?.error === error;
+}
+
+/** The message was taken and then failed: it stays in its chat as failed. */
+export function isFailedMessage(
+  state: Partial<Pick<SessionState, "failedMessages">>,
+  commandId: string,
+) {
+  return (state.failedMessages ?? []).some(
+    (entry) => entry.command.commandId === commandId,
+  );
+}
+
 /** Why a failed message did not go through, as display copy. */
 export function failedMessageReason(error: string): TranslationKey {
   // Delivery and storage codes read as settings or "unclear" copy here.

@@ -4253,14 +4253,24 @@ export class ClientSession {
       });
     return delivery;
   }
-  /** Dismiss of a failed message: it leaves the chat; nothing goes to the composer. */
+  /**
+   * Dismiss of a failed message: it leaves the chat; nothing goes to the
+   * composer. Its reason goes with it, so no notice shows it afterwards.
+   */
   dismissFailedMessage(commandId: string) {
     const failed = this.state.failedMessages ?? [];
-    if (!failed.some((value) => value.command.commandId === commandId)) return;
+    const entry = failed.find((value) => value.command.commandId === commandId);
+    if (!entry) return;
+    const reason =
+      entry === failed.at(-1) &&
+      !this.state.pending &&
+      this.state.error === entry.error;
+    // A reconnect republishes the last command's rejection; it went too.
+    if (reason && this.commandRejection === entry.error)
+      this.commandRejection = null;
     this.publish({
-      failedMessages: Object.freeze(
-        failed.filter((value) => value.command.commandId !== commandId),
-      ),
+      failedMessages: Object.freeze(failed.filter((value) => value !== entry)),
+      ...(reason ? { error: null } : {}),
     });
   }
   private async deliver(
