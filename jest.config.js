@@ -14,6 +14,8 @@ const moduleNameMapper = {
     "<rootDir>/node_modules/lucide-react-native/dist/cjs/icons/$1.js",
   // No gravity sensor or worklet runtime under Jest: the level liquid of web.
   "^\\./liquid-tilt$": "<rootDir>/packages/ui/liquid-tilt.web.tsx",
+  // Likewise the stage's UI-thread follower: its pet stays in one hidden layer under Jest.
+  "^\\./pet-stage-follow$": "<rootDir>/packages/ui/pet-stage-follow.web.tsx",
 };
 module.exports = {
   projects: [

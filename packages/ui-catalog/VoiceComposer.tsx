@@ -4,7 +4,7 @@ import { translate, en, type TranslationKey } from "../i18n";
 import type { Language } from "../protocol";
 import type { VoiceTranscript } from "../protocol/voice";
 import { useCompanionTypography } from "../ui/typography";
-import { PetView } from "../ui/PetView";
+import { PetSlot } from "../ui/PetStage";
 import type { PetAppearance } from "../ui/pet-motion";
 import { tokens as t } from "../design-tokens";
 import { Icon, Text, ui, type IconName } from "../ui";
@@ -283,7 +283,7 @@ export function VoiceComposer({
               importantForAccessibility="no-hide-descendants"
             />
             <View style={styles.pet}>
-              <PetView
+              <PetSlot
                 testID="voice-pet"
                 size={140}
                 appearance={petAppearance}

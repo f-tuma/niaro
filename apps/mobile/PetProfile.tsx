@@ -46,6 +46,7 @@ import { Entrance, useReducedMotion } from "../../packages/ui/motion";
 import { Tabs } from "../../packages/ui/Tabs";
 import type { HomePetBounds } from "./home-pet-visibility";
 import { PetView } from "../../packages/ui/PetView";
+import { PetSlot } from "../../packages/ui/PetStage";
 import { tokens as t } from "../../packages/design-tokens";
 import { petCopy, petFormat } from "./pet-profile-copy";
 import { nativePetAppearance } from "./pet-profile-model";
@@ -528,7 +529,8 @@ export function PetProfile({
     drawingSize = size,
   ) =>
     profile && size ? (
-      <PetView
+      <PetSlot
+        clipped
         visible={visible}
         size={size}
         drawingSize={drawingSize}

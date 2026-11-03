@@ -36,7 +36,8 @@ import {
   type IconName,
 } from "../../packages/ui";
 import { useCompanionTypography } from "../../packages/ui/typography";
-import { PetView, type PetState } from "../../packages/ui/PetView";
+import type { PetState } from "../../packages/ui/PetView";
+import { PetSlot } from "../../packages/ui/PetStage";
 import { companionCopy } from "./companion-copy";
 import { Tabs } from "../../packages/ui/Tabs";
 
@@ -683,7 +684,8 @@ export function Home({
           style={chrome.stage}
         >
           <View testID="home-pet-bounds" onLayout={onPetLayout}>
-            <PetView
+            <PetSlot
+              clipped
               visible={petVisible}
               occupied={petOccupied}
               state="idle"
@@ -787,7 +789,8 @@ export function Home({
               testID="home-pet-bounds"
               onLayout={compact ? undefined : onPetLayout}
             >
-              <PetView
+              <PetSlot
+                clipped
                 visible={petVisible}
                 occupied={petOccupied}
                 typed={petTyped}

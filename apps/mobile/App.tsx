@@ -33,7 +33,14 @@ import { CompanionFontContext } from "../../packages/ui/typography";
 import { CompanionLibrary } from "./CompanionLibrary";
 import { companionCopy } from "./companion-copy";
 import { LanguageMenu } from "./LanguageMenu";
-import { PetView } from "../../packages/ui/PetView";
+import {
+  usePetClip,
+  PetSlot,
+  PetStage,
+  usePetStageLook,
+} from "../../packages/ui/PetStage";
+import type { PetAppearance } from "../../packages/ui/pet-motion";
+import { loadPetLook, savePetLook } from "./pet-look-memory";
 import {
   MeetingLibrary,
   MeetingRecordingControls,
@@ -207,6 +214,8 @@ const MOBILE_MESSAGE_RESULTS: readonly MessageResultToken[] = [
   "process.proposal/1",
 ];
 const ADDRESS_KEY = "agent-client.address.v1";
+/** The longest the first screen waits for the pet's still to be decoded. */
+const PET_WAIT_MS = 400;
 const allowHttp =
   __DEV__ && process.env.EXPO_PUBLIC_ALLOW_INSECURE_FIXTURES === "1";
 function Settings({
@@ -333,6 +342,15 @@ export function Workspace({
   );
   const tr = translate(language);
   const scroll = useRef<ScrollView>(null);
+  // The pets of Home and the pet profile are drawn only inside the scrolling area.
+  const petClip = usePetClip();
+  const scrollRef = useCallback(
+    (node: ScrollView | null) => {
+      scroll.current = node;
+      petClip(node);
+    },
+    [petClip],
+  );
   const homePetVisibility = useHomePetVisibility();
   const profilePetVisibility = useHomePetVisibility();
   const { onBounds: publishProfileBounds } = profilePetVisibility;
@@ -367,11 +385,19 @@ export function Workspace({
     },
     [session, petScreen],
   );
-  const petLook = useMemo(
+  // Until the profile is back, the look remembered from the last run: the pet appears in its own
+  // look at once instead of the default one first (NIAR-277).
+  const rememberedLook = usePetStageLook();
+  const profileLook = useMemo(
     () =>
       petProfile.profile ? nativePetAppearance(petProfile.profile) : undefined,
     [petProfile.profile],
   );
+  const petLook =
+    profileLook ?? (session ? (rememberedLook ?? undefined) : undefined);
+  useEffect(() => {
+    if (profileLook) savePetLook(AsyncStorage, profileLook);
+  }, [profileLook]);
   const { read: readPetProfile } = petProfile;
   useEffect(() => {
     // Opening the pet shows what the web may have changed meanwhile.
@@ -1807,6 +1833,9 @@ export function Workspace({
     },
   };
   const hasConversation = messages.length > 0 || work.length > 0;
+  // A screen the app's one pet stands on fades in without sliding: the pet is drawn over it by
+  // the stage, which sees where a native-driven slide ends only once it has ended (NIAR-276).
+  const petStage = petOpen || (section === "chat" && !hasConversation && !busy);
   const chatTitle = conversationTitle(
     renamed[conversationId] ?? historySelection?.title ?? "",
   );
@@ -2160,7 +2189,7 @@ export function Workspace({
                 hasConversation &&
                 !voice &&
                 petProfile.profile?.settings.showInChat !== false ? (
-                  <PetView
+                  <PetSlot
                     appearance={petLook}
                     // Still, the small pet looked broken; it moves like the
                     // big one unless motion is off in its settings.
@@ -2288,10 +2317,14 @@ export function Workspace({
             />
           ) : null}
         </View>
-        <Entrance style={styles.flex} testID="screen-transition">
+        <Entrance
+          style={styles.flex}
+          testID="screen-transition"
+          distance={petStage ? 0 : undefined}
+        >
           <ScrollView
             testID="screen-scroll"
-            ref={scroll}
+            ref={scrollRef}
             onLayout={(event) => {
               homePetVisibility.onViewport(event.nativeEvent.layout.height);
               profilePetVisibility.onViewport(event.nativeEvent.layout.height);
@@ -2594,6 +2627,7 @@ export function Workspace({
             ) : null}
             <Entrance
               key={section}
+              distance={petStage ? 0 : undefined}
               onLayout={(event) => {
                 profileContentTop.current = event.nativeEvent.layout.y;
                 onProfilePetBounds(profilePetBounds.current);
@@ -3074,6 +3108,19 @@ export default function App() {
   const [spokenReplies, setSpokenReplies] = useState(true);
   const [feedbackOn, setFeedbackOn] = useState(true);
   const [ready, setReady] = useState(false);
+  // Read first and alone: the app's one pet starts (GL context, shader) while the rest loads.
+  const [petLook, setPetLook] = useState<PetAppearance | null>();
+  useEffect(() => {
+    void loadPetLook(AsyncStorage).then(setPetLook);
+  }, []);
+  // The first screen waits for the pet's still to be decoded, so its first frame has the pet; a
+  // slow decode never holds it for long (the vector drawing stands in meanwhile).
+  const [petReady, setPetReady] = useState(false);
+  const onPetReady = useCallback(() => setPetReady(true), []);
+  useEffect(() => {
+    const timer = setTimeout(onPetReady, PET_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [onPetReady]);
   const [section, setSection] = useState<Section>("chat");
   const [address, setAddress] = useState(
     allowHttp ? "http://localhost:8787/v1/a" : "",
@@ -3257,53 +3304,55 @@ export default function App() {
       <MotionProvider>
         <SafeAreaProvider>
           <View style={[styles.flex, { backgroundColor: t.color.background }]}>
-            <StatusBar style="light" />
-            <SafeAreaView style={styles.screen}>
-              <KeyboardAvoidingView
-                style={styles.flex}
-                behavior={
-                  Platform.OS === "ios"
-                    ? "padding"
-                    : Platform.OS === "android"
-                      ? "height"
-                      : undefined
-                }
-              >
-                {ready && fonts.ready ? (
-                  <Workspace
-                    key={connection.generation}
-                    session={session}
-                    language={language}
-                    spokenReplies={spokenReplies}
-                    section={section}
-                    setSection={setSection}
-                    authError={connectionError}
-                    settings={
-                      <Settings
-                        language={language}
-                        changeLanguage={changeLanguage}
-                        spokenReplies={spokenReplies}
-                        changeSpokenReplies={changeSpokenReplies}
-                        feedbackOn={feedbackOn}
-                        changeFeedback={changeFeedback}
-                        address={address}
-                        setAddress={setAddress}
-                        connect={connect}
-                        browserSignIn={browserSignIn}
-                        openBrowser={openBrowser}
-                        disconnect={disconnect}
-                        connection={connection}
-                        error={
-                          settingsError ? "storage_error" : connectionError
-                        }
-                      />
-                    }
-                  />
-                ) : (
-                  <Text>{translate(language)("loading")}</Text>
-                )}
-              </KeyboardAvoidingView>
-            </SafeAreaView>
+            <PetStage look={petLook} onReady={onPetReady}>
+              <StatusBar style="light" />
+              <SafeAreaView style={styles.screen}>
+                <KeyboardAvoidingView
+                  style={styles.flex}
+                  behavior={
+                    Platform.OS === "ios"
+                      ? "padding"
+                      : Platform.OS === "android"
+                        ? "height"
+                        : undefined
+                  }
+                >
+                  {ready && fonts.ready && petReady ? (
+                    <Workspace
+                      key={connection.generation}
+                      session={session}
+                      language={language}
+                      spokenReplies={spokenReplies}
+                      section={section}
+                      setSection={setSection}
+                      authError={connectionError}
+                      settings={
+                        <Settings
+                          language={language}
+                          changeLanguage={changeLanguage}
+                          spokenReplies={spokenReplies}
+                          changeSpokenReplies={changeSpokenReplies}
+                          feedbackOn={feedbackOn}
+                          changeFeedback={changeFeedback}
+                          address={address}
+                          setAddress={setAddress}
+                          connect={connect}
+                          browserSignIn={browserSignIn}
+                          openBrowser={openBrowser}
+                          disconnect={disconnect}
+                          connection={connection}
+                          error={
+                            settingsError ? "storage_error" : connectionError
+                          }
+                        />
+                      }
+                    />
+                  ) : (
+                    <Text>{translate(language)("loading")}</Text>
+                  )}
+                </KeyboardAvoidingView>
+              </SafeAreaView>
+            </PetStage>
           </View>
         </SafeAreaProvider>
       </MotionProvider>
