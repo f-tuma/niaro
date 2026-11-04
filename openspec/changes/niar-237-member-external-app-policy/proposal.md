@@ -42,3 +42,5 @@ None.
 - Console: `apps/server-admin/web/mcp-page.tsx`, `mcp-oauth-client.tsx`, `mcp-consent.tsx`, `mcp-copy.ts`, `overview-page.tsx`/`lib/needs-attention.ts`, `audit-page.tsx`, web app `app/account-page.tsx`.
 - Data: additive SQLite columns and tables; legacy OAuth clients keep working through a one-time approval backfill (see design).
 - Risk: under the default `review`, members' new manual grants stop working until approved and members cannot link apps nobody approved for their workspace; mitigated by the backfill for existing apps, the visible queue and the Needs attention row.
+
+> Note (2026-11-04, after NIAR-288/289): MCP no longer admits tasks, and apps may now arrive by their CIMD client ID without registering. The app approval in this change must also cover CIMD clients, keyed by their `client_id`.

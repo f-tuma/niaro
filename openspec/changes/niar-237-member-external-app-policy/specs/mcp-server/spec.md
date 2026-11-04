@@ -120,7 +120,7 @@ Owners and administrators SHALL list the selected workspace's active member gran
 #### Scenario: Administrator revokes a member's grant
 
 - **WHEN** an administrator revokes a member's active manual grant
-- **THEN** the member's next MCP request with it is refused and admitted work stops before its next dispatch
+- **THEN** the member's next MCP request with it is refused
 
 #### Scenario: Approval withdrawn
 
@@ -129,7 +129,7 @@ Owners and administrators SHALL list the selected workspace's active member gran
 
 ### Requirement: Tightening the policy
 
-Switching a workspace to `off` SHALL revoke, in the same transaction, every member grant in it, manual and OAuth, active and pending, and admitted work SHALL stop before its next dispatch; app states SHALL stay recorded. Switching from `free` to `review` SHALL keep existing active grants and approved apps; only new grants and apps SHALL wait.
+Switching a workspace to `off` SHALL revoke, in the same transaction, every member grant in it, manual and OAuth, active and pending; app states SHALL stay recorded. Switching from `free` to `review` SHALL keep existing active grants and approved apps; only new grants and apps SHALL wait.
 
 #### Scenario: Turned off
 
@@ -163,7 +163,7 @@ OAuth links SHALL be audited as `mcp.access_issued` like manual grants, with whe
 
 ### Requirement: Manual access grants
 
-The system SHALL let a person issue, from a live browser session only, a grant for one of their workspaces with a label, scopes from `native.view`, `native.run`, `services.call`, and an expiry of at most 30 days; the user SHALL come from the session, never from input. The token (prefix `agent_mcp_`, 256 random bits) SHALL be shown once and only its digest stored. A person SHALL hold at most 50 active or pending grants per server. No scope SHALL permit approving an action.
+The system SHALL let a person issue, from a live browser session only, a grant for one of their workspaces with a label, scopes from `data.read`, `memory.write`, `services.call`, and an expiry of at most 30 days; the user SHALL come from the session, never from input. The token (prefix `agent_mcp_`, 256 random bits) SHALL be shown once and only its digest stored. A person SHALL hold at most 50 active or pending grants per server. No scope SHALL permit approving an action.
 
 #### Scenario: Token shown once
 
@@ -175,28 +175,38 @@ The system SHALL let a person issue, from a live browser session only, a grant f
 - **WHEN** a person with 50 active grants on the server issues another
 - **THEN** issuance is refused
 
+#### Scenario: Retired scope
+
+- **WHEN** a person issues a grant with the scope `native.run`
+- **THEN** issuance is refused as invalid
+
 ### Requirement: Grant revalidation
 
-The system SHALL check on every use, and before every durable dispatch or commit of work admitted through MCP, that the grant is approved, unexpired and unrevoked, bound to this server and workspace, that the original organization membership still exists and that the person still has access to the workspace with their current role. Removing a member SHALL delete their grants; rejoining SHALL NOT restore them.
+The system SHALL check on every MCP call, and again inside every write or save it starts, that the grant is approved, unexpired and unrevoked, bound to this server and workspace, that the original organization membership still exists and that the person still has access to the workspace with their current role. Removing a member SHALL delete their grants; rejoining SHALL NOT restore them.
 
 #### Scenario: Removed from the workspace
 
 - **WHEN** a person loses access to the workspace after issuing a grant
-- **THEN** further MCP requests with that grant are refused and admitted work stops before its next dispatch
+- **THEN** further MCP requests with that grant are refused and nothing more is read or saved for it
 
 #### Scenario: Grant still pending
 
-- **WHEN** work would be admitted with a grant that is still `pending`
-- **THEN** it is refused with 403 `mcp_access_pending` and nothing is admitted
+- **WHEN** an MCP call is made with a grant that is still `pending`
+- **THEN** it is refused with 403 `mcp_access_pending` and nothing is read, saved or dispatched
 
 ### Requirement: OAuth client registration
 
-The system SHALL let a signed-in organization member register a public OAuth client (token endpoint authentication `none`) for one of their workspaces with a name and 1–5 exact redirect URIs, which SHALL be HTTPS outside development, and return its client ID and its approval state in that workspace.
+The system SHALL let a signed-in organization member register a public OAuth client (token endpoint authentication `none`) for one of their workspaces with a name and 1–5 callbacks, each HTTPS or plain HTTP on `localhost`, `127.0.0.1` or `[::1]`, and return its client ID and its approval state in that workspace. A loopback callback SHALL match any port at authorization; every other callback SHALL match exactly.
 
 #### Scenario: Plain-HTTP callback
 
-- **WHEN** a member registers a client with an `http://` callback on a production server
+- **WHEN** a member registers a client with an `http://` callback on a host other than `localhost`, `127.0.0.1` or `[::1]`
 - **THEN** registration fails with `mcp_oauth_redirect_invalid`
+
+#### Scenario: Local app on a free port
+
+- **WHEN** a production server has a client registered with `http://localhost/callback` and the client authorizes with `http://localhost:49152/callback`
+- **THEN** the callback is accepted
 
 #### Scenario: Workspace without access
 
@@ -205,7 +215,7 @@ The system SHALL let a signed-in organization member register a public OAuth cli
 
 ### Requirement: OAuth authorization and consent
 
-The system SHALL use the authorization-code grant with required PKCE `S256` and a signed authorization request. After sign-in, the person SHALL see the verified client, their account and the requested permissions and SHALL explicitly choose the workspace and a subset of the requested scopes; nothing SHALL be selected automatically. Acceptance SHALL require the real browser origin, a current session and an accessible workspace, and SHALL create a grant bound to that browser session.
+The system SHALL use the authorization-code grant with required PKCE `S256` and a signed authorization request. After sign-in, the person SHALL see the client's verified name, where it comes from (its `client_id` host, or registered manually on this server), their account, the requested permissions and how long the connection lasts, and SHALL explicitly choose the workspace and a subset of the requested permissions; nothing SHALL be selected automatically.
 
 #### Scenario: Scope escalation
 
@@ -216,6 +226,16 @@ The system SHALL use the authorization-code grant with required PKCE `S256` and 
 
 - **WHEN** an authorization request uses `code_challenge_method=plain`
 - **THEN** it is refused
+
+#### Scenario: Client known by its metadata document
+
+- **WHEN** ChatGPT asks for access with the client ID `https://chatgpt.com/oauth/client.json`
+- **THEN** the consent page shows the name from that document and `chatgpt.com`
+
+#### Scenario: Client registered by an administrator
+
+- **WHEN** a client registered on this server asks for access
+- **THEN** the consent page shows its registered name and that it was registered manually
 
 #### Scenario: App not linkable in the workspace
 
