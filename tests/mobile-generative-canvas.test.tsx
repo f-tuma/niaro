@@ -12,8 +12,9 @@ more = Accordion([AccordionItem("Source", [Text("Original source")])])`;
 function show(
   source = program,
   options: { disabled?: boolean; streaming?: boolean } = {},
+  taken = true,
 ) {
-  const followUp = jest.fn();
+  const followUp = jest.fn((_text: string) => taken);
   const view = render(
     <GenerativeUiView
       program={source}
@@ -62,7 +63,7 @@ test("expanding and returning retain the selected tab, sorting, form values and 
   expect(followUp).not.toHaveBeenCalled();
 });
 
-test("expanded follow-up closes the canvas and hands only a draft to the chat", () => {
+test("a sent expanded follow-up closes the canvas so the chat shows the message (NIAR-291)", () => {
   const { followUp } = show();
   expand();
   fireEvent.press(screen.getByRole("tab", { name: "Details" }));
@@ -71,6 +72,15 @@ test("expanded follow-up closes the canvas and hands only a draft to the chat", 
   expect(screen.queryByTestId("generative-ui-expanded")).toBeNull();
   expect(followUp).toHaveBeenCalledTimes(1);
   expect(followUp).toHaveBeenCalledWith("Plan a trip\nDestination: Vienna");
+});
+
+test("an expanded follow-up the chat did not take keeps the canvas open (NIAR-291)", () => {
+  const { followUp } = show(program, {}, false);
+  expand();
+  fireEvent.press(screen.getByRole("tab", { name: "Details" }));
+  fireEvent.press(screen.getByRole("button", { name: "Prepare question" }));
+  expect(followUp).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId("generative-ui-expanded")).toBeTruthy();
 });
 
 test("read-only answers can expand for reading but their fields and follow-ups stay inert", () => {

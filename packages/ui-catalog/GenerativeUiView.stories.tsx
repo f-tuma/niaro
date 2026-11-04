@@ -26,7 +26,7 @@ const meta = {
     language: "en",
     disabled: false,
     streaming: false,
-    onFollowUp: () => {},
+    onFollowUp: () => true,
     onOpenUrl: () => {},
   },
 } satisfies Meta<typeof GenerativeUiView>;

@@ -19,7 +19,7 @@ root = Stack([...])
 - There are no images and no data fetching (no Query or Mutation).`;
 
 const RULES = [
-  "@ToAssistant(message) puts the message in the person's message box; they review and send it. Write the whole request in the message: nothing hidden travels with it.",
+  "@ToAssistant(message) sends the message as the person's own message when they press the button. Write the whole request in the message: nothing hidden travels with it.",
   "In a Form, the button's @ToAssistant message is sent together with the answers.",
   "@OpenUrl and Link take a complete http(s) address from the data; never invent one.",
   "Prefer one Table or List over many separate blocks; at most 50 rows.",
@@ -56,11 +56,11 @@ export function generativeUiInstructions() {
     // The built-in description offers hidden context, which we never send.
     .replace(
       /(@ToAssistant\(message: string, context\?: any\)) — .*$/m,
-      "$1 — Put a follow-up request in the person's message box",
+      "$1 — Send a follow-up request as the person's message",
     )
     .replace(
       "Buttons without an action automatically send their label to the assistant (equivalent to @ToAssistant(label)).",
-      "A button without an action puts its label in the person's message box.",
+      "A button without an action sends its label as the person's message.",
     );
   return instructions;
 }

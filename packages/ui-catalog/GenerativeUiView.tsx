@@ -46,16 +46,19 @@ export type GenerativeUiViewProps = {
   streaming?: boolean;
   /** Read-only history: controls are disabled and actions do nothing. */
   disabled?: boolean;
+  /** A follow-up cannot be sent now (busy, offline): its controls wait. */
+  blocked?: boolean;
   language: Language;
-  /** A follow-up for the person's message box; never sent from here. */
-  onFollowUp: (text: string) => void;
+  /** Sends a follow-up as the person's message; false when not taken. */
+  onFollowUp: (text: string) => boolean;
   /** Opens a checked http(s) address; the system browser by default. */
   onOpenUrl?: (href: string) => void;
 };
 
 /**
  * Generated UI of an assistant answer, drawn with the app's own components.
- * It is presentation only: it fetches nothing and sends nothing.
+ * It is presentation only: it fetches nothing, and a follow-up is sent by
+ * the chat as the person's own message.
  */
 export function GenerativeUiView(props: GenerativeUiViewProps) {
   // An answer revision gets its own local fields and presentation state.
@@ -72,6 +75,7 @@ function GenerativeUiAnswer({
   program,
   streaming = false,
   disabled = false,
+  blocked = false,
   language,
   onFollowUp,
   onOpenUrl,
@@ -88,10 +92,10 @@ function GenerativeUiAnswer({
   const closeControl = useRef<View>(null);
   const followUp = useCallback(
     (text: string) => {
-      // The existing host callback focuses its composer on the next frame.
-      // Close first so that draft is visible, with no request sent here.
-      setExpanded(false);
-      onFollowUp(text);
+      // A sent follow-up closes the full screen, so the chat shows it.
+      const taken = onFollowUp(text);
+      if (taken) setExpanded(false);
+      return taken;
     },
     [onFollowUp],
   );
@@ -99,6 +103,7 @@ function GenerativeUiAnswer({
     program,
     streaming,
     disabled,
+    blocked,
     language,
     onFollowUp: followUp,
     onOpenUrl,

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   BuiltinActionType,
   Renderer,
@@ -19,6 +19,7 @@ import {
 } from "../../../../../packages/openui-library/program";
 import {
   followUpMessage,
+  followUpScope,
   type FollowUpField,
 } from "../../../../../packages/openui-library/follow-up";
 import { useChatCopy } from "../chat-copy";
@@ -81,13 +82,14 @@ export const webGenerativeUiLibrary = createLibrary({
 
 /**
  * The generated part of an assistant answer. It is presentation only: a
- * button puts a follow-up in the composer for the person to send, a link
+ * button sends its follow-up as the person's own message, once; a link
  * opens a checked web address, and nothing else runs.
  */
 export function GeneratedUi({
   program,
   streaming = false,
   disabled = false,
+  blocked = false,
   onFollowUp,
 }: {
   /** An admitted program, or while streaming the raw reply so far. */
@@ -95,10 +97,28 @@ export function GeneratedUi({
   streaming?: boolean;
   /** A read-only chat: shown, never acted on. */
   disabled?: boolean;
-  onFollowUp: (text: string) => void;
+  /** A follow-up cannot be sent now; its buttons wait, as Send does. */
+  blocked?: boolean;
+  /** Sends a follow-up as a message; false when the chat did not take it. */
+  onFollowUp: (text: string) => boolean;
 }) {
   const { language } = useChatCopy();
   const [fields] = useState(() => new Map<string, FollowUpField>());
+  // Marked at once, before the next render, so a second press of the same
+  // form or button never sends again.
+  const sent = useRef(new Set<string>());
+  const [answered, setAnswered] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const pressing = useRef<string | undefined>(undefined);
+  const press = useCallback((once: string, run: () => void) => {
+    pressing.current = once;
+    try {
+      run();
+    } finally {
+      pressing.current = undefined;
+    }
+  }, []);
   // A partial reply is drawn as it grows; a finished one passes the same
   // admission as on the server first.
   const source = useMemo(() => {
@@ -106,11 +126,19 @@ export function GeneratedUi({
     const checked = checkProgram(program);
     return checked.ok ? checked.program : null;
   }, [program, streaming]);
-  const scope = useMemo(() => ({ disabled, fields }), [disabled, fields]);
+  const scope = useMemo(
+    () => ({ disabled, blocked, fields, answered, press }),
+    [disabled, blocked, fields, answered, press],
+  );
   const onAction = useCallback(
     (event: ActionEvent) => {
       if (disabled) return;
       if (event.type === BuiltinActionType.ContinueConversation) {
+        // One press sends one message; a form or button answers once.
+        const once =
+          pressing.current ??
+          followUpScope(event.formName, event.humanFriendlyMessage);
+        if (blocked || sent.current.has(once)) return;
         // Hidden context is never sent: only what the person can read.
         const text = followUpMessage({
           message: event.humanFriendlyMessage,
@@ -119,13 +147,16 @@ export function GeneratedUi({
           fields,
           language,
         });
-        if (text) onFollowUp(text);
+        // A message the chat did not take leaves the form as it was.
+        if (!text || !onFollowUp(text)) return;
+        sent.current.add(once);
+        setAnswered(new Set(sent.current));
       } else if (event.type === BuiltinActionType.OpenUrl) {
         const href = safeUrl(event.params.url);
         if (href) window.open(href, "_blank", "noopener,noreferrer");
       }
     },
-    [disabled, fields, language, onFollowUp],
+    [disabled, blocked, fields, language, onFollowUp],
   );
   if (!source) return null;
   return (

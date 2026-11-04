@@ -645,7 +645,7 @@ test("an archived chat opened by its address can be restored and then continues"
   expect(text(root)).toContain("Založ Jana");
 });
 
-test("an answer's generated part follows its text and fills the composer, never sends", async () => {
+test("an answer's generated part follows its text and sends its follow-up at once, leaving the composer as it was (NIAR-291)", async () => {
   const program = [
     "root = Stack([t, b])",
     't = Text("Mám dva termíny.")',
@@ -669,7 +669,7 @@ test("an answer's generated part follows its text and fills the composer, never 
       },
     ],
   };
-  const { session, sent } = fakeSession(storeWith([conversation]), {
+  const { session, sent, publish } = fakeSession(storeWith([conversation]), {
     "conv-1": { conversation: summary("conv-1") },
   });
   const root = (await render(session, "conv-1")).root;
@@ -687,9 +687,147 @@ test("an answer's generated part follows its text and fills the composer, never 
     parts.map((part) => part.props["data-host"] ?? part.props["data-testid"]),
   ).toEqual(["Markdown", "generated-ui"]);
   expect(text(parts[1]!)).toContain("Mám dva termíny.");
+  // A half-written message waits in the composer.
+  await act(async () =>
+    root
+      .findByType("textarea")
+      .props.onChange({ target: { value: "Ještě jedna věc" } }),
+  );
+  (session.send as jest.Mock).mockImplementationOnce(
+    (command: SessionCommand) => {
+      sent.push(command);
+      publish({ pending: command, commandStates: { chat: "sending" } });
+      return new Promise<void>(() => {});
+    },
+  );
   await act(async () => button(answer, "Úterý").props.onClick());
-  expect(root.findByType("textarea").props.value).toBe("Potvrzuji úterý");
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({
+    type: "message.send",
+    conversationId: "conv-1",
+    text: "Potvrzuji úterý",
+  });
+  expect(sent[0]).not.toHaveProperty("mentions");
+  // The person's own message, on its way; the draft stays untouched.
+  expect(text(byTestId(root, "pending-message"))).toContain("Potvrzuji úterý");
+  expect(root.findByType("textarea").props.value).toBe("Ještě jedna věc");
+  // Answered: a second press sends nothing, even once the chat is free.
+  await act(async () => publish({ pending: null, commandStates: {} }));
+  const tuesday = button(answer, "Úterý");
+  expect(tuesday.props.disabled).toBe(true);
+  await act(async () => tuesday.props.onClick());
+  expect(sent).toHaveLength(1);
+});
+
+test("only the latest reply asks: once the person wrote after it, its follow-ups are done, also when reopened (NIAR-291)", async () => {
+  const asking = {
+    id: "m-2",
+    role: "assistant" as const,
+    text: "Mám to poslat?",
+    ui: {
+      type: "openui.program" as const,
+      version: 1 as const,
+      library: "niaro-ui@1" as const,
+      program: [
+        "root = Stack([b, f])",
+        'b = Buttons([Button("Ano", @ToAssistant("Ano, pošli"), "primary"), Button("Ne")])',
+        'f = Form("pozn", [TextField("text", "Poznámka")], Button("Odeslat odpovědi", @ToAssistant("Odpovědi")))',
+      ].join("\n"),
+    },
+  };
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Pošli nabídku"), asking],
+  };
+  const { session, sent, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  expect(button(root, "Ne").props.disabled).toBe(false);
+  await act(async () => button(root, "Ano").props.onClick());
+  expect(sent).toHaveLength(1);
+  // Recorded after the reply: the other choice and the form are done too.
+  await act(async () =>
+    publish({
+      store: storeWith([
+        {
+          ...conversation,
+          revision: 5,
+          messages: [...conversation.messages, user("m-3", "Ano, pošli")],
+        },
+      ]),
+    }),
+  );
+  expect(button(root, "Ne").props.disabled).toBe(true);
+  expect(button(root, "Odeslat odpovědi").props.disabled).toBe(true);
+  await act(async () => button(root, "Ne").props.onClick());
+  await act(async () => button(root, "Odeslat odpovědi").props.onClick());
+  expect(sent).toHaveLength(1);
+});
+
+test("a reopened chat whose reply the person already answered asks nothing more (NIAR-291)", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 5,
+    messages: [
+      user("m-1", "Pošli nabídku"),
+      {
+        id: "m-2",
+        role: "assistant",
+        text: "Mám to poslat?",
+        ui: {
+          type: "openui.program",
+          version: 1,
+          library: "niaro-ui@1",
+          program: 'root = Stack([Buttons([Button("Ano"), Button("Ne")])])',
+        },
+      },
+      user("m-3", "Něco jiného"),
+    ],
+  };
+  const { session, sent } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  expect(button(root, "Ano").props.disabled).toBe(true);
+  expect(button(root, "Ne").props.disabled).toBe(true);
+  await act(async () => button(root, "Ano").props.onClick());
   expect(sent).toEqual([]);
+});
+
+test("a generated follow-up waits while the chat cannot send, as Send does (NIAR-291)", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [
+      {
+        id: "m-1",
+        role: "assistant",
+        text: "Hotovo.",
+        ui: {
+          type: "openui.program",
+          version: 1,
+          library: "niaro-ui@1",
+          program: 'root = Stack([Button("Další krok")])',
+        },
+      },
+    ],
+  };
+  const { session, sent, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  await act(async () => publish({ status: "offline" }));
+  expect(button(root, "Další krok").props.disabled).toBe(true);
+  await act(async () => button(root, "Další krok").props.onClick());
+  expect(sent).toEqual([]);
+  expect(root.findByType("textarea").props.value).toBe("");
+  await act(async () => publish({ status: "online" }));
+  expect(button(root, "Další krok").props.disabled).toBe(false);
+  await act(async () => button(root, "Další krok").props.onClick());
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ type: "message.send", text: "Další krok" });
 });
 
 test("a generated answer in an archived chat is shown but does nothing", async () => {

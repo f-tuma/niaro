@@ -30,6 +30,7 @@ import { checkProgram, safeUrl } from "../openui-library/program";
 import {
   followUpKey,
   followUpMessage,
+  followUpScope,
   type FollowUpField,
 } from "../openui-library/follow-up";
 
@@ -37,7 +38,8 @@ import {
  * The phone's OpenUI runtime on lang-core, mirroring react-lang's semantics
  * without Query, Mutation or tool calls: `$variables` and form fields live
  * in one store, actions run locally (@Set, @Reset), open a checked web link,
- * or put a follow-up in the person's message box. Nothing is ever sent here.
+ * or hand a follow-up to the chat, which sends it as the person's message.
+ * Each form, or button outside a form, sends its follow-up once.
  */
 export type FieldKind = FollowUpField["kind"];
 export type FieldError = "required" | "date";
@@ -47,7 +49,11 @@ export type GenerativeUiRuntime = {
   context: EvaluationContext;
   streaming: boolean;
   disabled: boolean;
+  /** A follow-up cannot be sent now (busy, offline): its controls wait. */
+  blocked: boolean;
   language: Language;
+  /** Whether this form (or button outside a form) already sent its follow-up. */
+  answered(form: string | undefined, label: string): boolean;
   /** Labels of the shown form fields, by followUpKey(form, name). */
   fields: Map<string, Field>;
   getFieldValue(form: string | undefined, name: string): unknown;
@@ -133,6 +139,7 @@ export function useGenerativeUi({
   program,
   streaming,
   disabled,
+  blocked = false,
   language,
   onFollowUp,
   onOpenUrl,
@@ -140,8 +147,10 @@ export function useGenerativeUi({
   program: string;
   streaming: boolean;
   disabled: boolean;
+  blocked?: boolean;
   language: Language;
-  onFollowUp: (text: string) => void;
+  /** Sends a follow-up as a message; false when the chat did not take it. */
+  onFollowUp: (text: string) => boolean;
   onOpenUrl?: (href: string) => void;
 }) {
   const parser = useMemo(
@@ -235,12 +244,25 @@ export function useGenerativeUi({
     else void Linking.openURL(href).catch(() => {});
   }, []);
   const inactive = disabled || streaming;
+  // Marked at once, before the next render, so a second press of the same
+  // form or button never sends again.
+  const sent = useRef(new Set<string>());
+  const [answeredScopes, setAnsweredScopes] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const answered = useCallback(
+    (form: string | undefined, label: string) =>
+      answeredScopes.has(followUpScope(form, label)),
+    [answeredScopes],
+  );
   const trigger = useCallback(
     (label: string, form: string | undefined, action: unknown) => {
       if (inactive) return;
-      // The step's words and the answered fields, for the person to send.
-      // A step's hidden `context` is never added.
+      const once = followUpScope(form, label);
+      // The step's words and the answered fields, sent as the person's
+      // message; one per press. A step's hidden `context` is never added.
       const followUp = (message: string) => {
+        if (blocked || sent.current.has(once)) return;
         const text = followUpMessage({
           message,
           formName: form,
@@ -248,7 +270,10 @@ export function useGenerativeUi({
           fields,
           language: latest.current.language,
         });
-        if (text) latest.current.onFollowUp(text);
+        // A message the chat did not take leaves the form as it was.
+        if (!text || !latest.current.onFollowUp(text)) return;
+        sent.current.add(once);
+        setAnsweredScopes(new Set(sent.current));
       };
       if (!isPlan(action)) {
         const legacy = record(action);
@@ -281,7 +306,7 @@ export function useGenerativeUi({
           // @Run and library actions: nothing runs on the phone.
         }
     },
-    [inactive, store, fields, context, declarations, openUrl],
+    [inactive, blocked, store, fields, context, declarations, openUrl],
   );
   const invalid = useCallback(
     (form: string) => {
@@ -310,7 +335,9 @@ export function useGenerativeUi({
       context,
       streaming,
       disabled,
+      blocked,
       language,
+      answered,
       fields,
       getFieldValue,
       setFieldValue,
@@ -323,7 +350,9 @@ export function useGenerativeUi({
       context,
       streaming,
       disabled,
+      blocked,
       language,
+      answered,
       fields,
       getFieldValue,
       setFieldValue,
@@ -378,7 +407,12 @@ export function useGenerativeField({
   return {
     value: current,
     setValue: (next: unknown) => {
-      if (runtime.disabled || runtime.streaming) return;
+      if (
+        runtime.disabled ||
+        runtime.streaming ||
+        (form !== undefined && runtime.answered(form, ""))
+      )
+        return;
       field.setValue(next);
       if (field.isReactive) runtime.setFieldValue(form, kind, name, next);
     },

@@ -37,8 +37,18 @@ export type MobileChat = {
   online: boolean;
   /** An archived chat: shown, never acted on. */
   readOnly: boolean;
-  /** A generated answer's follow-up goes to the composer, never sent. */
-  followUp: (text: string) => void;
+  /**
+   * A generated answer's follow-up, sent at once as the person's message;
+   * the composer is left as it is. False when the chat did not take it.
+   */
+  followUp: (text: string) => boolean;
+  /** A follow-up cannot be sent now, as Send cannot. */
+  followUpBlocked: boolean;
+  /**
+   * The chat's latest reply, when nothing of the person follows it: only
+   * its generated follow-ups can still be sent.
+   */
+  latestReplyId?: string;
   /** A sign-in card's "Continue": the message that goes on. */
   continueWith: (text: string) => void;
   reviewOffer: (offer: ProcessOfferResult) => void;
@@ -93,6 +103,7 @@ export function AnswerBody({
           program={m.ui.program}
           language={chat.language}
           disabled={chat.readOnly}
+          blocked={chat.followUpBlocked || chat.latestReplyId !== m.id}
           onFollowUp={chat.followUp}
         />
       ) : null}
@@ -540,4 +551,4 @@ export function AnswerDraft({
     </View>
   );
 }
-const noFollowUp = () => {};
+const noFollowUp = () => false;

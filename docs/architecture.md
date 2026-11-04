@@ -154,8 +154,8 @@ the decision, then the reason.
 
 - **Generated UI is an inline OpenUI Lang program,** not a tool call: one
   shared spec drives the prompt, the server validator and both renderers. It
-  runs locally with no cloud or telemetry; follow-ups never send by
-  themselves.
+  runs locally with no cloud or telemetry; a pressed follow-up is sent once
+  as the person's own message, with only the words they can see.
 - **Server cards are deterministic** and never model-authored.
 - **The web chat uses assistant-ui with an external store:** the session stays
   the source of truth, system UI is `niaro.*` tool parts and the app owns the

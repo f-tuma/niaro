@@ -32,6 +32,7 @@ import {
 } from "@admin/components/ui/select";
 import {
   followUpKey,
+  followUpScope,
   type FollowUpField,
 } from "../../../../../packages/openui-library/follow-up";
 import { GENERATIVE_UI_LIMITS } from "../../../../../packages/openui-library/spec";
@@ -45,22 +46,24 @@ const plan = (action: unknown): ActionPlan | undefined =>
     ? (action as ActionPlan)
     : undefined;
 /** Runs a button's steps as react-lang's own components do. A follow-up in a
- * form first checks its required fields. Nothing runs in a read-only chat. */
+ * form first checks its required fields; it is sent once and waits while the
+ * chat cannot send. Nothing runs in a read-only chat. */
 function useAction(label: string, action: unknown) {
   const trigger = useTriggerAction();
   const formName = useFormName();
   const validation = useFormValidation();
   const streaming = useIsStreaming();
-  const { disabled } = useGeneratedUiScope();
+  const { disabled, blocked, answered, press } = useGeneratedUiScope();
   const steps = plan(action);
-  const off = disabled || streaming;
+  const followUp =
+    !steps || steps.steps.some((step) => step.type === "continue_conversation");
+  const once = followUpScope(formName, label);
+  const off =
+    disabled || streaming || (followUp && (blocked || answered.has(once)));
   const run = () => {
     if (off) return;
-    const followUp =
-      !steps ||
-      steps.steps.some((step) => step.type === "continue_conversation");
     if (followUp && validation && !validation.validateForm()) return;
-    void trigger(label, formName, steps);
+    press(once, () => void trigger(label, formName, steps));
   };
   return { off, run };
 }
@@ -176,8 +179,11 @@ function useFormField<T>(
   const setFieldValue = useSetFieldValue();
   const validation = useFormValidation();
   const streaming = useIsStreaming();
-  const { disabled, fields } = useGeneratedUiScope();
+  const { disabled, fields, answered } = useGeneratedUiScope();
   const key = followUpKey(formName, name);
+  // A sent form keeps its answers, no longer editable.
+  const sent =
+    formName !== undefined && answered.has(followUpScope(formName, ""));
   useEffect(() => {
     fields.set(key, { label, kind });
     return () => {
@@ -206,7 +212,7 @@ function useFormField<T>(
       if (field.isReactive) setFieldValue(formName, kind, name, next, false);
       validation?.clearFieldError(name);
     },
-    off: disabled || streaming,
+    off: disabled || streaming || sent,
     invalid: !!validation?.getFieldError(name),
   };
 }

@@ -44,6 +44,7 @@ import {
   useRenderNode,
   useRuntime,
   type FieldError,
+  type GenerativeUiRuntime,
   type FieldKind,
 } from "./generative-ui-runtime";
 
@@ -447,7 +448,11 @@ function ListItemView({ props }: GenerativeProps) {
       value={str(props.meta)}
       trailing={isElement(props.badge) ? render(props.badge) : undefined}
       strong
-      disabled={runtime.disabled}
+      disabled={
+        action === undefined
+          ? runtime.disabled
+          : actionOff(runtime, form, title, action)
+      }
       onPress={
         action === undefined
           ? undefined
@@ -710,6 +715,19 @@ const followsUp = (action: unknown) =>
       )
     : !(action as { type?: unknown } | undefined)?.type ||
       (action as { type?: unknown }).type === "continue_conversation";
+/** A control is off in a read-only chat; a follow-up also while the chat
+ * cannot send and once its form or button has sent it. */
+function actionOff(
+  runtime: GenerativeUiRuntime,
+  form: string | undefined,
+  label: string,
+  action: unknown,
+) {
+  return (
+    runtime.disabled ||
+    (!!followsUp(action) && (runtime.blocked || runtime.answered(form, label)))
+  );
+}
 
 function ButtonView({ props }: GenerativeProps) {
   const runtime = useRuntime();
@@ -719,14 +737,15 @@ function ButtonView({ props }: GenerativeProps) {
   if (!label) return null;
   const variant: ButtonVariant =
     props.variant === "primary" ? "primary" : "secondary";
+  const off = actionOff(runtime, form, label, props.action);
   return (
     <Button
       label={label}
       variant={variant}
-      disabled={runtime.disabled}
+      disabled={off}
       style={styles.button}
       onPress={() => {
-        if (runtime.disabled || runtime.streaming) return;
+        if (off || runtime.streaming) return;
         // A form's answers go into the follow-up only once they are complete.
         if (form !== undefined && formErrors && followsUp(props.action)) {
           const errors = runtime.invalid(form);
@@ -790,6 +809,7 @@ function FormView({ props }: GenerativeProps) {
 /** A form field's value, its error and the change that clears it. */
 function useFormField(props: Record<string, unknown>, kind: FieldKind) {
   const runtime = useRuntime();
+  const form = useContext(FormNameContext);
   const formErrors = useContext(FormErrorsContext);
   const name = str(props.name) ?? "";
   const label = str(props.label) ?? "";
@@ -805,7 +825,9 @@ function useFormField(props: Record<string, unknown>, kind: FieldKind) {
     name,
     label,
     value: field.value,
-    disabled: runtime.disabled,
+    // A sent form keeps its answers, no longer editable.
+    disabled:
+      runtime.disabled || (form !== undefined && runtime.answered(form, "")),
     language: runtime.language,
     error,
     change: (value: unknown) => {

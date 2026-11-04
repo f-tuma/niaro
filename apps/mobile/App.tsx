@@ -1188,10 +1188,13 @@ export function Workspace({
     options: {
       withoutProcess?: true;
       mentions?: MessageMention[];
-      /** Again: the composer's draft and attached task stay where they are. */
+      /**
+       * Again or a generated answer's follow-up: the composer's draft, files
+       * and attached task stay where they are.
+       */
       detached?: true;
     } = {},
-  ) => {
+  ): boolean => {
     // A new attempt replaces the previous failure; a new one is set below.
     setReplyError(null);
     const attachmentEntries = session?.attachments?.getSnapshot().entries ?? [];
@@ -1200,12 +1203,13 @@ export function Workspace({
       !session ||
       sessionOwner.current !== session ||
       (!value.trim() && !attachmentReady) ||
-      (attachmentEntries.length > 0 && (!attachmentReady || !!replyContext)) ||
+      (attachmentEntries.length > 0 &&
+        (!attachmentReady || !!replyContext || !!options.detached)) ||
       busy ||
       !online ||
       historySelection?.readOnly
     )
-      return;
+      return false;
     const selectedMentions = replyContext
       ? []
       : (options.mentions ?? mentions.payload(value));
@@ -1220,7 +1224,7 @@ export function Workspace({
             });
         })
         .catch(() => setReplyError("requestRejected"));
-      return;
+      return true;
     }
     nearBottom.current = true;
     const generation = contextGeneration.current;
@@ -1275,7 +1279,7 @@ export function Workspace({
         command = { ...command, session: "new" as const };
     } catch {
       setReplyError("process_question_changed");
-      return;
+      return false;
     }
     if (isProcessReply(replyContext)) {
       setAnswerCaption({
@@ -1311,8 +1315,10 @@ export function Workspace({
       (clearedRevision !== undefined &&
         draftRevision.current === clearedRevision);
     const delivery = session.send(command, false, undefined, noticeOwner);
+    const taken =
+      session.getSnapshot().pending?.commandId === command.commandId;
     if (
-      session.getSnapshot().pending?.commandId !== command.commandId &&
+      !taken &&
       clearedRevision !== undefined &&
       draftRevision.current === clearedRevision &&
       conversationRef.current === command.conversationId
@@ -1411,6 +1417,8 @@ export function Workspace({
               : "requestRejected",
         );
       });
+    // Whether the session took the chat message (it is then in the chat).
+    return taken;
   };
   const conversation = store?.conversations[conversationId];
   // Earlier sessions stay on the server; the chat shows only this session.
@@ -1815,12 +1823,23 @@ export function Workspace({
     busy,
     online,
     readOnly: !!historySelection?.readOnly,
-    followUp: (followUp) => {
-      // A follow-up is a new message the person reviews and sends.
-      setContext(undefined);
-      setDraft(followUp);
-      requestAnimationFrame(() => composerInput.current?.focus());
-    },
+    // A generated answer's follow-up is the person's own message, sent at
+    // once; -1 owns no draft, so the composer's text, reply and task stay.
+    followUp: (text) =>
+      submitMessage(text, null, -1, { detached: true, mentions: [] }),
+    // As Send waits; files in the composer go with a typed message only.
+    followUpBlocked:
+      busy ||
+      !online ||
+      !!historySelection?.readOnly ||
+      attachments.state.entries.length > 0,
+    // Once the person wrote after a reply (sent or failed), its follow-ups
+    // are done; this holds after a reload too.
+    latestReplyId:
+      messages[messages.length - 1]?.role === "assistant" &&
+      !selectFailedMessages(state, conversationId).length
+        ? messages[messages.length - 1]!.id
+        : undefined,
     continueWith: (text) => submitMessage(text, null),
     reviewOffer: (offer) => openProcesses(offer),
     declineOffer: (text) =>

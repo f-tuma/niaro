@@ -580,6 +580,7 @@ export function ChatNextConversation({
    * resets it on send) and never comes back once the session takes it: the
    * message is then in the chat, still working, failed with Try again, or
    * answered. Only a send the session did not take returns to the composer.
+   * Returns whether the session took it (or will, once the chat is saved).
    */
   const submitMessage = (
     value: string,
@@ -591,7 +592,7 @@ export function ChatNextConversation({
       detached?: true;
       withAttachments?: true;
     } = {},
-  ): void => {
+  ): boolean => {
     const text = value.trim();
     const attachmentEntries = session.attachments?.getSnapshot().entries ?? [];
     const attachmentReady = !!session.attachments?.ready;
@@ -609,7 +610,7 @@ export function ChatNextConversation({
       (historyLoading && !options.detached)
     ) {
       if (!options.detached && !draftRef.current.trim()) setComposerText(value);
-      return;
+      return false;
     }
     setReplyError(null);
     const mentions = options.mentions ?? messageMentions(value, picked);
@@ -625,7 +626,7 @@ export function ChatNextConversation({
             setReplyError("chatSendFailed");
           }
         });
-      return;
+      return true;
     }
     const task =
       !replyContext && !options.detached ? attachedTaskRef.current : undefined;
@@ -666,7 +667,7 @@ export function ChatNextConversation({
     } catch {
       if (!options.detached && !draftRef.current.trim()) setComposerText(value);
       setReplyError("process_question_changed");
-      return;
+      return false;
     }
     if (!processReply)
       rememberMentions(
@@ -678,7 +679,9 @@ export function ChatNextConversation({
       ? draftRevision.current
       : undefined;
     const delivery = session.send(command, false, undefined, noticeOwner);
-    if (session.getSnapshot().pending?.commandId !== command.commandId) {
+    const taken =
+      session.getSnapshot().pending?.commandId === command.commandId;
+    if (!taken) {
       // Never taken: the words did not leave this device.
       if (!options.detached && !draftRef.current.trim()) setComposerText(value);
     } else if (
@@ -725,6 +728,7 @@ export function ChatNextConversation({
           ),
         );
       });
+    return taken;
   };
   // The accepted process answer retires its question once the run records
   // it exactly; a lost or refused one is offered for review below the thread.
@@ -831,22 +835,10 @@ export function ChatNextConversation({
   const shortcutQuestion = [...work]
     .reverse()
     .find((w) => w.native?.question?.options)?.id;
-  const lastFollowUp = useRef("");
-  const followUp = (text: string) => {
-    setContext(undefined);
-    const current = draftRef.current.trim();
-    const next =
-      !current || current === lastFollowUp.current
-        ? text
-        : `${draftRef.current.trimEnd()}\n\n${text}`;
-    lastFollowUp.current = text;
-    setComposerText(next);
-    requestAnimationFrame(() => {
-      const composer = composerRef.current;
-      composer?.focus();
-      composer?.setSelectionRange(next.length, next.length);
-    });
-  };
+  // A generated answer's follow-up is the person's own message, sent at once
+  // through the composer's path; the composer's draft, reply and task stay.
+  const followUp = (text: string) =>
+    submitMessage(text, null, { detached: true, mentions: [] });
   const reuseMessage = async (text: string, sourceMessageId?: string) => {
     const source = sourceMessageId
       ? messages.find(
@@ -1220,6 +1212,13 @@ export function ChatNextConversation({
     },
     decide,
     followUp,
+    // As Send waits; files in the composer go with a typed message only.
+    followUpBlocked:
+      !online ||
+      busy ||
+      readOnly ||
+      !valid ||
+      attachments.state.entries.length > 0,
     continueWith: (text) => submitMessage(text, null, { detached: true }),
     declineOffer: (requestText) => {
       if (requestText)

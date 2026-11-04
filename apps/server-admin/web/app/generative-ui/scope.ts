@@ -6,12 +6,22 @@ import type { FollowUpField } from "../../../../../packages/openui-library/follo
 export type GeneratedUiScope = {
   /** A read-only chat: controls are off and actions do nothing. */
   disabled: boolean;
+  /** A follow-up cannot be sent now (busy, offline): its buttons wait. */
+  blocked: boolean;
   /** Labels of the form fields this answer shows, by `followUpKey`. */
   fields: Map<string, FollowUpField>;
+  /** Follow-ups already sent, by `followUpScope`: each is sent once. */
+  answered: ReadonlySet<string>;
+  /** Runs a press of this form or button (`followUpScope`); its steps run
+   * synchronously, so a follow-up they send is marked as this press. */
+  press: (once: string, run: () => void) => void;
 };
 export const GeneratedUiScopeContext = createContext<GeneratedUiScope>({
   disabled: true,
+  blocked: true,
   fields: new Map(),
+  answered: new Set(),
+  press: () => {},
 });
 export const useGeneratedUiScope = () => useContext(GeneratedUiScopeContext);
 

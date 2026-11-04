@@ -63,9 +63,11 @@ const click = (root: ReactTestInstance, label: string) =>
 
 async function render(
   program: string,
-  options: { streaming?: boolean; disabled?: boolean } = {},
+  options: { streaming?: boolean; disabled?: boolean; blocked?: boolean } = {},
+  taken = true,
 ) {
-  const onFollowUp = jest.fn();
+  // The chat takes the message (or not) and sends it; nothing is composed.
+  const onFollowUp = jest.fn((_text: string) => taken);
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
     renderer = TestRenderer.create(
@@ -166,7 +168,7 @@ test("a streamed reply is drawn as it grows and acts only once it is complete", 
   expect(onFollowUp).toHaveBeenCalledWith("Ukaž podrobnosti");
 });
 
-test("a form's answers go to the composer under their labels, after the required ones", async () => {
+test("a form sends its answers under their labels once, after the required ones (NIAR-291)", async () => {
   const { root, onFollowUp } = await render(
     [
       "root = Stack([f])",
@@ -198,14 +200,86 @@ test("a form's answers go to the composer under their labels, after the required
   expect(onFollowUp).toHaveBeenLastCalledWith(
     "Posílám údaje\nJméno: Jan\nDatum: 2026-10-24\nTyp: Firma\nSouhlas: ne",
   );
+  // Answered: the form keeps its answers and sends nothing more.
+  expect(button(root, "Odeslat").props.disabled).toBe(true);
+  expect(button(root, "Zrušit").props.disabled).toBe(true);
+  expect(
+    hosts(root, "input").every((input) => input.props.disabled === true),
+  ).toBe(true);
+  expect(select.props.disabled).toBe(true);
+  const checkbox = root.find(
+    (node) => typeof node.props.onCheckedChange === "function",
+  );
+  expect(checkbox.props.disabled).toBe(true);
+  await click(root, "Odeslat");
+  await click(root, "Zrušit");
+  expect(onFollowUp).toHaveBeenCalledTimes(1);
+});
+
+test("a ticked box is sent as yes", async () => {
+  const { root, onFollowUp } = await render(
+    [
+      "root = Stack([f])",
+      'f = Form("souhlas", [Checkbox("ok", "Souhlas")], Button("Odeslat", @ToAssistant("Odpověď")))',
+    ].join("\n"),
+  );
   const checkbox = root.find(
     (node) => typeof node.props.onCheckedChange === "function",
   );
   await act(async () => checkbox.props.onCheckedChange(true));
   await click(root, "Odeslat");
-  expect(onFollowUp).toHaveBeenLastCalledWith(
-    "Posílám údaje\nJméno: Jan\nDatum: 2026-10-24\nTyp: Firma\nSouhlas: ano",
+  expect(onFollowUp).toHaveBeenCalledWith("Odpověď\nSouhlas: ano");
+});
+
+test("a double press sends once and one press sends one message (NIAR-291)", async () => {
+  const { root, onFollowUp } = await render(
+    [
+      "root = Stack([b])",
+      'b = Button("Úterý", Action([@ToAssistant("Potvrzuji úterý"), @ToAssistant("A ještě")]))',
+    ].join("\n"),
   );
+  const tuesday = button(root, "Úterý");
+  await act(async () => {
+    tuesday.props.onClick();
+    tuesday.props.onClick();
+  });
+  expect(onFollowUp).toHaveBeenCalledTimes(1);
+  expect(onFollowUp).toHaveBeenCalledWith("Potvrzuji úterý");
+  expect(button(root, "Úterý").props.disabled).toBe(true);
+});
+
+test("a follow-up the chat did not take leaves the form to press again (NIAR-291)", async () => {
+  const { root, onFollowUp } = await render(
+    'root = Stack([Form("f", [TextField("a", "Odpověď")], Button("Odeslat", @ToAssistant("Hotovo")))])',
+    {},
+    false,
+  );
+  await act(async () =>
+    hosts(root, "input")[0]!.props.onChange({ target: { value: "ano" } }),
+  );
+  await click(root, "Odeslat");
+  await click(root, "Odeslat");
+  expect(onFollowUp).toHaveBeenCalledTimes(2);
+  expect(onFollowUp).toHaveBeenLastCalledWith("Hotovo\nOdpověď: ano");
+  expect(button(root, "Odeslat").props.disabled).toBe(false);
+  expect(hosts(root, "input")[0]!.props.disabled).toBe(false);
+});
+
+test("while the chat cannot send, follow-ups wait and the rest still works (NIAR-291)", async () => {
+  const { root, onFollowUp } = await render(
+    [
+      "root = Stack([f, w])",
+      'f = Form("f", [TextField("a", "Odpověď")], Button("Odeslat", @ToAssistant("Hotovo")))',
+      'w = Button("Web", @OpenUrl("https://example.com/a"))',
+    ].join("\n"),
+    { blocked: true },
+  );
+  expect(button(root, "Odeslat").props.disabled).toBe(true);
+  expect(hosts(root, "input")[0]!.props.disabled).toBe(false);
+  await click(root, "Odeslat");
+  expect(onFollowUp).not.toHaveBeenCalled();
+  await click(root, "Web");
+  expect(open).toHaveBeenCalledTimes(1);
 });
 
 test("a bound field quotes its value; a row's action and a bare button ask by their words", async () => {
@@ -220,11 +294,8 @@ test("a bound field quotes its value; a row's action and a bare button ask by th
   );
   await click(root, "Poslat");
   expect(onFollowUp).toHaveBeenLastCalledWith("Pošli to\nKomu: Petr");
-  await act(async () =>
-    hosts(root, "input")[0]!.props.onChange({ target: { value: "Eva" } }),
-  );
-  await click(root, "Poslat");
-  expect(onFollowUp).toHaveBeenLastCalledWith("Pošli to\nKomu: Eva");
+  // The sent form is answered; the row and the bare button are their own.
+  expect(button(root, "Poslat").props.disabled).toBe(true);
   await click(root, "Faktura 12");
   expect(onFollowUp).toHaveBeenLastCalledWith("Ukaž fakturu 12");
   await click(root, "Co dál?");
