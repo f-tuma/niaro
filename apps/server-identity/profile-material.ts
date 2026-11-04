@@ -158,6 +158,19 @@ export function containsCredential(text: string) {
   const value = folded(text);
   return credentials.some((pattern) => pattern.test(value));
 }
+/**
+ * Why a fact must not be kept, or null: a secret, a never-kept category
+ * (openspec memory "Never-kept categories are shown") or an instruction.
+ */
+export function profileTextRefusal(
+  text: string,
+): "secret" | "sensitive" | "instruction" | null {
+  const value = folded(text);
+  if (credentials.some((pattern) => pattern.test(value))) return "secret";
+  if (sensitive.some((pattern) => pattern.test(value))) return "sensitive";
+  if (instructions.some((pattern) => pattern.test(value))) return "instruction";
+  return null;
+}
 export function isPersonalObservation(text: string) {
   return /\b(?:kids|children|family|spouse|wife|husband|hobb\w*|football|soccer|deti|rodin\w*|manzel\w*|fotbal\w*|konick\w*)\b/.test(
     folded(text),

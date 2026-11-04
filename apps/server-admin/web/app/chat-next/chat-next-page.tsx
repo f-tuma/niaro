@@ -178,6 +178,7 @@ import {
   userParts,
   type NextChat,
 } from "./parts";
+import { MemorySaveLines, useChatMemorySaves } from "./memory-saves";
 import {
   appendedText,
   failedMessage as failedThreadMessage,
@@ -1206,7 +1207,9 @@ export function ChatNextConversation({
       composerRef.current?.focus();
   }, [routeId]);
 
+  const memorySaves = useChatMemorySaves(id);
   const chat: NextChat = {
+    memorySaves,
     session,
     state,
     conversationId: id,
@@ -1969,6 +1972,7 @@ function AssistantMessage() {
               {copy.stillWriting}
             </p>
           )}
+          {!live && <MemorySaveLines commandId={meta.replyToCommandId} />}
         </article>
         {!live && !!text.trim() && (
           <MessageActions

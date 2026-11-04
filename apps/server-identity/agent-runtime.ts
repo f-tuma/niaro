@@ -1462,6 +1462,11 @@ For names, interpret Czech inflections as search variants (for example 'Petra Sl
               commandId: turn.commandId,
               text: turn.text,
               conversationId: turn.working?.conversationId,
+              // Only the person's own words may become a saved fact.
+              personText: turn.history
+                .filter((message) => message.role === "user")
+                .slice(-12)
+                .map((message) => message.text),
               callId: call.id,
               ...(checkpoint ? { checkpoint } : {}),
             });

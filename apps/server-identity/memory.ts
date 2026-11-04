@@ -584,6 +584,7 @@ export class MemoryStore {
       section: filters.section ?? null,
       personal: filters.personal ?? null,
       history: filters.history ?? false,
+      conversationId: filters.conversationId ?? null,
       limit: filters.limit ?? 50,
     };
     const actor = this.actor(raw);
@@ -600,7 +601,12 @@ export class MemoryStore {
             item.source.section === normalized.section)) &&
         (!normalized.personal ||
           (item.source?.type === "observed" &&
-            item.source.personal === (normalized.personal === "personal"))),
+            item.source.personal === (normalized.personal === "personal"))) &&
+        // Saves from one chat: shown there under the reply that made them.
+        (!normalized.conversationId ||
+          (item.status === "active" &&
+            item.source?.type === "user_message" &&
+            item.source.conversationId === normalized.conversationId)),
     );
     const generation = this.fingerprint([
       actor.organizationId,

@@ -78,7 +78,9 @@ async function rememberInChat(h: TrustHarness, content: string, id: string) {
   h.onChat(() => {
     if (called) return { content: "The server saved the preference." };
     called = true;
-    return h.call("memory_remember", { content, kind: "preference" });
+    return h.call("memory_remember", {
+      facts: [{ text: content, kind: "preference" }],
+    });
   });
   await h.send(`Zapamatuj si: ${content}`, {
     id,
@@ -1282,8 +1284,7 @@ export const memoryScenarios: TrustScenario[] = [
             };
           called = true;
           return h.call("memory_remember", {
-            content: "TEST tool-injected memory",
-            kind: "fact",
+            facts: [{ text: "TEST tool-injected memory", kind: "fact" }],
           });
         });
         const injectionStart = h.requests.length;
@@ -1299,9 +1300,12 @@ export const memoryScenarios: TrustScenario[] = [
               .slice(injectionStart)
               .findLast((entry) => entry.messages)!;
             assert(
-              toolResults(last).some(
-                (entry) =>
-                  entry.error === "memory_explicit_instruction_required",
+              toolResults(last).some((entry) =>
+                (
+                  entry as { results?: { reason?: string }[] }
+                ).results?.some(
+                  (result) => result.reason === "not_from_person",
+                ),
               ),
             );
             assert.equal(

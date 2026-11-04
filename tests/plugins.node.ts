@@ -505,23 +505,25 @@ test("a memory override runs through the host's memory capability", async (t) =>
     },
   );
   const meta = { commandId: "TEST-command", callId: "TEST-call" };
+  // The host refuses a fact the person did not write, whatever the plugin does.
+  const refused = (await runtime.invoke!(
+    "memory_remember",
+    { facts: [{ text: "Invoices go to billing", kind: "note" }] },
+    {
+      ...meta,
+      text: "What is the weather?",
+    },
+  )) as { results: { status: string; reason?: string }[] };
   assert.deepEqual(
-    await runtime.invoke!(
-      "memory_remember",
-      { content: "TEST", kind: "note" },
-      {
-        ...meta,
-        text: "What is TEST?",
-      },
-    ),
-    { error: "memory_explicit_instruction_required" },
+    refused.results.map(({ status, reason }) => [status, reason]),
+    [["refused", "not_from_person"]],
   );
   const saved = (await runtime.invoke!(
     "memory_remember",
-    { content: "TEST fact", kind: "fact" },
+    { facts: [{ text: "TEST fact", kind: "fact" }] },
     { ...meta, text: "Remember: TEST fact" },
-  )) as { status: string };
-  assert.equal(saved.status, "active");
+  )) as { results: { status: string }[] };
+  assert.equal(saved.results[0]!.status, "saved");
   const found = (await runtime.invoke!(
     "memory_search",
     { query: "TEST fact" },

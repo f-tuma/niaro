@@ -840,6 +840,9 @@ export class IdentityService {
       nativeStorageUrl: catalog.store.nativeStorageUrl,
       onMutation: (actor, action, source) => {
         this.profileCursor.privacyMutation(actor);
+        // A save or deletion in chat shows at once in the chat's "Saved to
+        // memory" lines and in About you, on the web and the phone.
+        if (source === "chat") this.petChanged(actor);
         this.audit.append({
           organizationId: actor.organizationId,
           workspaceId: actor.workspaceId,

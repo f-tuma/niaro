@@ -57,6 +57,56 @@ export function memoryQueryTerms(query: string) {
   return [...new Set(memoryTokens(query))].slice(0, MEMORY_QUERY_TERMS);
 }
 
+/** Two memories say exactly the same when this key is equal (case, spacing
+ * and punctuation aside); used to skip duplicate saves. */
+export const sameMemoryText = (value: string) =>
+  value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[\s\p{P}]+/gu, " ")
+    .trim();
+
+/** Folded words of asking to remember, never content of a fact. */
+const REQUEST_WORDS = new Set(
+  "zapamatuj zapamatovat zapamatujes uloz ulozit ulozis prosim pamet pameti remember save memory".split(
+    " ",
+  ),
+);
+/** A chat fact needs this share of its distinct tokens in the person's words. */
+export const PERSON_SUPPORT_SHARE = { numerator: 2, denominator: 3 } as const;
+/**
+ * Whether the person wrote a fact themselves (NIAR-292): of the fact's n
+ * distinct content tokens (words of the request itself, such as
+ * "zapamatuj", "prosím", "remember", left out), at least ⌊2n/3⌋ and at
+ * least one must match a
+ * token of the person's own messages by the memory token rule, and every
+ * token with a digit (a date, a number, part of an address) must appear
+ * exactly in them. A fact
+ * without content tokens is never supported. Text a service, a tool or the
+ * assistant wrote is not passed here, so it can never support a fact.
+ */
+export function supportedByPerson(fact: string, personText: readonly string[]) {
+  // The words of the request itself ("zapamatuj si je prosím") are no fact.
+  const tokens = [...new Set(memoryTokens(fact))].filter(
+    (token) => !REQUEST_WORDS.has(token),
+  );
+  if (!tokens.length) return false;
+  const own = new Set(personText.flatMap((text) => memoryTokens(text)));
+  const words = [...own];
+  // Every number of the fact (a date, an amount) must be the person's own.
+  if (tokens.some((token) => /\d/u.test(token) && !own.has(token)))
+    return false;
+  const supported = tokens.filter(
+    (token) =>
+      own.has(token) || words.some((word) => memoryTermsMatch(token, word)),
+  ).length;
+  const { numerator, denominator } = PERSON_SUPPORT_SHARE;
+  return (
+    supported >=
+    Math.max(1, Math.floor((tokens.length * numerator) / denominator))
+  );
+}
+
 /**
  * BM25 score of each document for the query, in input order. A document
  * matching no term scores 0. Scores are rounded to 1e-9 so equal evidence

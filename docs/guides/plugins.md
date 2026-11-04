@@ -260,7 +260,8 @@ Server-wide values for other plugins' declared settings go under
 The server checks what a plugin declares, not what its code does. A plugin
 can read the data volume (including the identity database and its secret),
 reach the network and read environment variables. An edited memory plugin
-could drop its explicit-command check.
+could drop its explicit-command check for corrections and deletions; the
+server's own check that a saved fact is in the person's words stays.
 
 - Review plugins like server changes; prefer pure plugins.
 - Editing a plugin in the console is running code on the server. Turn editing

@@ -59,11 +59,15 @@ function watchPet(query: string, listener: () => void) {
 }
 function usePetTransport() {
   const { workspace, identity } = useApp();
-  const userId = identity.user?.id;
+  const userId = identity?.user?.id;
+  const organizationId = workspace?.organizationId;
+  const workspaceId = workspace?.workspaceId;
   return useMemo(() => {
+    // Signed out or between workspaces: nothing to read yet.
+    if (!organizationId || !workspaceId) return null;
     const suffix = new URLSearchParams({
-      organizationId: workspace.organizationId,
-      workspaceId: workspace.workspaceId,
+      organizationId,
+      workspaceId,
       profile: "work-pet/1",
     });
     const validate = <
@@ -72,8 +76,8 @@ function usePetTransport() {
       value: T,
     ): T => {
       if (
-        value.organizationId !== workspace.organizationId ||
-        value.workspaceId !== workspace.workspaceId ||
+        value.organizationId !== organizationId ||
+        value.workspaceId !== workspaceId ||
         value.userId !== userId
       )
         throw Error("owner_changed");
@@ -107,7 +111,7 @@ function usePetTransport() {
           ),
         ),
     };
-  }, [workspace.organizationId, workspace.workspaceId, userId]);
+  }, [organizationId, workspaceId, userId]);
 }
 export function usePetProfile() {
   const { workspace, identity } = useApp();

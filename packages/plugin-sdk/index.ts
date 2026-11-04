@@ -54,6 +54,27 @@ export type MemoryRecord = {
 };
 /** A committed change to saved memory. */
 export type MemoryReceipt = { id: string; revision: number; status: string };
+/**
+ * Why the host refused one fact: it is not in the person's own words in this
+ * conversation, falls in a never-kept category, looks like a secret or an
+ * instruction, or memory is off or full for the person.
+ */
+export type MemoryFactRefusal =
+  | "not_from_person"
+  | "sensitive"
+  | "secret"
+  | "instruction"
+  | "opted_out"
+  | "memory_full";
+/** What became of one fact the agent asked to save, in the order sent. */
+export type MemoryFactOutcome =
+  | {
+      text: string;
+      status: "saved" | "already_saved";
+      id: string;
+      revision: number;
+    }
+  | { text: string; status: "refused"; reason: MemoryFactRefusal };
 
 /**
  * The host's saved-memory store for the person and workspace of the turn.
@@ -62,10 +83,15 @@ export type MemoryReceipt = { id: string; revision: number; status: string };
  */
 export interface MemoryCapability {
   search(query?: string): Promise<{ version: number; items: MemoryRecord[] }>;
+  /**
+   * Saves each fact as the person's own private assertion, attributed to
+   * this chat message. The host refuses, per fact, what the person did not
+   * write themselves in this conversation, never-kept categories and
+   * secrets, and skips exact duplicates.
+   */
   remember(input: {
-    content: string;
-    kind: MemoryKind;
-  }): Promise<MemoryReceipt>;
+    facts: { content: string; kind: MemoryKind }[];
+  }): Promise<{ results: MemoryFactOutcome[] }>;
   /** null: no active private record with this id and exactly this content. */
   forget(input: {
     id: string;
