@@ -50,6 +50,7 @@ import { IdentityError } from "./error";
 import { MeetingAudioArchive } from "./meeting-audio-archive";
 import { VoiceProfiles } from "./meeting-voices";
 import { ListMarkCounter } from "./list-marks";
+import { MEMORY_PREFIX, memoryQueryTerms } from "./memory-ranking";
 
 const digest = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -66,6 +67,20 @@ const fold = (value: string) =>
 /** A LIKE pattern for folded text containing `needle`. */
 const likePattern = (needle: string) =>
   `%${fold(needle).replace(/[\\%_]/g, (c) => "\\" + c)}%`;
+/**
+ * The query's words as search stems: accents and case folded, stop words
+ * dropped, and a word of five or more letters cut to its first five, the
+ * prefix rule saved memory uses, so "zakázka" also finds "zakázky".
+ */
+function searchStems(query: string) {
+  return [
+    ...new Set(
+      memoryQueryTerms(query)
+        .slice(0, 5)
+        .map((term) => term.slice(0, MEMORY_PREFIX)),
+    ),
+  ];
+}
 /** About `size` characters of `text` around the folded match at `index`. */
 function snippetAround(text: string, needle: string, size = 160) {
   const flat = text.replace(/\s+/gu, " ").trim();
@@ -485,7 +500,8 @@ export class MeetingStore {
     return typeof row?.summary === "string" ? row.summary.trim() : "";
   }
   /**
-   * The owner's meetings whose name, summary or transcript contains `query`
+   * The owner's meetings whose name, summary or transcript contains `query`,
+   * then those holding each of its words by stem (see searchStems)
    * (case and accents ignored), newest first, with where each matched.
    * Bounded by the owner's 100 meetings; at most `limit` results.
    */
@@ -502,15 +518,48 @@ export class MeetingStore {
         (!options.to || m.recordedAt <= options.to),
     );
     if (!needle) return [];
-    const pattern = likePattern(needle);
+    // Exact phrase first; then every word by its stem, so Czech inflections
+    // ("zakázka", "zakázky") and missing accents still find the meeting.
+    const phrase = this.matchMeetings(meetings, [needle], limit);
+    const stems = searchStems(needle);
+    if (!stems.length || (stems.length === 1 && stems[0] === fold(needle)))
+      return phrase;
+    const found = new Set(phrase.map((hit) => hit.meeting.id));
+    return [
+      ...phrase,
+      ...this.matchMeetings(
+        meetings.filter((meeting) => !found.has(meeting.id)),
+        stems,
+        limit - phrase.length,
+      ),
+    ];
+  }
+  /** Meetings whose title, summary or one transcript segment holds every needle. */
+  private matchMeetings(
+    meetings: Meeting[],
+    needles: string[],
+    limit: number,
+  ): MeetingSearchHit[] {
+    if (limit <= 0) return [];
+    const folded = needles.map(fold);
+    const holds = (text: string) => {
+      const value = fold(text);
+      return folded.every((needle) => value.includes(needle));
+    };
     const segment = this.db.prepare(
-      `SELECT json_extract(value,'$.text') AS text, json_extract(value,'$.startSeconds') AS start FROM niaro_meeting_segment WHERE id=? AND ${FOLD_FUNCTION}(json_extract(value,'$.text')) LIKE ? ESCAPE '\\' ORDER BY segment LIMIT 1`,
+      `SELECT json_extract(value,'$.text') AS text, json_extract(value,'$.startSeconds') AS start FROM niaro_meeting_segment WHERE id=? AND ${needles
+        .map(
+          () =>
+            `${FOLD_FUNCTION}(json_extract(value,'$.text')) LIKE ? ESCAPE '\\'`,
+        )
+        .join(" AND ")} ORDER BY segment LIMIT 1`,
     );
+    const patterns = needles.map(likePattern);
     const hits: MeetingSearchHit[] = [];
     for (const meeting of meetings) {
       if (hits.length >= limit) break;
       const summary = this.summary(meeting.id);
-      if (fold(meeting.title).includes(fold(needle))) {
+      if (holds(meeting.title)) {
         hits.push({
           meeting,
           field: "title",
@@ -523,22 +572,22 @@ export class MeetingStore {
         });
         continue;
       }
-      if (summary && fold(summary).includes(fold(needle))) {
+      if (summary && holds(summary)) {
         hits.push({
           meeting,
           field: "summary",
-          snippet: snippetAround(summary, needle),
+          snippet: snippetAround(summary, needles[0]!),
           at: null,
           summary,
         });
         continue;
       }
-      const row = segment.get(meeting.id, pattern);
+      const row = segment.get(meeting.id, ...patterns);
       if (row && typeof row.text === "string")
         hits.push({
           meeting,
           field: "transcript",
-          snippet: snippetAround(row.text, needle),
+          snippet: snippetAround(row.text, needles[0]!),
           at: Number(row.start) || 0,
           summary,
         });

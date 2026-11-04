@@ -171,6 +171,13 @@ test("search finds names, summaries and transcripts without case or accents, per
     assert.equal(transcript?.field, "transcript");
     assert.equal(transcript?.at, 60);
     assert.match(transcript!.snippet, /Šťastného/);
+    // Other forms of a word, with or without accents, find it by its stem.
+    assert.deepEqual(hit("rozpočtu"), [[meeting.id, "summary", null]]);
+    assert.deepEqual(hit("ceniku a rozpoctem"), [
+      [meeting.id, "summary", null],
+    ]);
+    assert.deepEqual(hit("Šťastný"), [[meeting.id, "transcript", 60]]);
+    assert.deepEqual(hit("rozpočtu Šťastný"), []);
     assert.deepEqual(hit("50%_"), []);
     assert.deepEqual(hit("ceník", stranger), []);
     assert.deepEqual(

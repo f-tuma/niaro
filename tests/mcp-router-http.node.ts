@@ -207,6 +207,15 @@ test("search, meetings, tasks and memory read the person's data and save memory 
       hits.some((hit) => hit.kind === "tasks"),
       "The meeting's action item is a task: " + JSON.stringify(hits),
     );
+    // Another form of the word still finds the meeting (NIAR-290).
+    const inflected = await call(client, "niaro_search", {
+      query: "Quasars",
+      kinds: ["meetings"],
+    });
+    assert.deepEqual(
+      (inflected.value.hits as { id: string }[]).map((hit) => hit.id),
+      [meetingId],
+    );
 
     // The meeting as the app shows it, its transcript paged with speakers.
     const first = await call(client, "niaro_meeting_get", {
