@@ -88,6 +88,7 @@ test("fresh identity seeds its OAuth resource and retains configuration and its 
       "data.read",
       "memory.write",
       "services.call",
+      "offline_access",
     ]);
     await first.close();
     const key = readFileSync(h.secret);
@@ -130,6 +131,7 @@ test("an OAuth resource stored with retired scopes gets the current ones on reop
       "data.read",
       "memory.write",
       "services.call",
+      "offline_access",
     ]);
     await reopened.close();
   } finally {

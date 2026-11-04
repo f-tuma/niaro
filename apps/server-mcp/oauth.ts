@@ -6,9 +6,12 @@ import {
   oauthProvider,
   getOAuthProviderApi,
   getOAuthProviderState,
+  type ClientMetadataResourceFetch,
   type OAuthOptions,
   type Scope as OAuthScope,
 } from "@better-auth/oauth-provider";
+import { createCimdClientDiscovery } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import {
   APIError,
   createAuthEndpoint,
@@ -29,13 +32,59 @@ import {
 import { IdentityError } from "../server-identity/error";
 
 export const MCP_OAUTH_TOKEN_PREFIX = "agent_mcp_oauth_";
+export const MCP_OAUTH_REFRESH_PREFIX = "agent_mcp_refresh_";
 export const MCP_OAUTH_GRANT_CLAIM = "urn:agent:mcp:grant-id";
+/** An OAuth link lasts at most this long from consent, like a manual grant. */
+export const MCP_OAUTH_GRANT_DAYS = 30;
+const GRANT_MS = MCP_OAUTH_GRANT_DAYS * 24 * 60 * 60 * 1000;
+/** Asks for a refresh token; it is never a permission the person chooses. */
+const OFFLINE = "offline_access";
+const OAUTH_SCOPES = [...MCP_ACCESS_SCOPES, OFFLINE];
+/** Clients that name themselves by an HTTPS metadata document (CIMD). */
+const METADATA_CLIENT = "cimd";
 const Scope = z.enum(MCP_ACCESS_SCOPES);
 const Scopes = z
   .array(Scope)
   .min(1)
-  .max(3)
+  .max(MCP_ACCESS_SCOPES.length)
   .refine((values) => new Set(values).size === values.length);
+/** Splits stored or requested OAuth scopes into MCP permissions and the
+ * refresh flag. Anything else, or a list without a permission, is invalid. */
+function splitScopes(raw: unknown) {
+  const list = z.array(z.string()).safeParse(raw);
+  if (!list.success) return null;
+  const offline = list.data.filter((scope) => scope === OFFLINE).length;
+  const scopes = Scopes.safeParse(
+    list.data.filter((scope) => scope !== OFFLINE),
+  );
+  if (!scopes.success || offline > 1) return null;
+  return { scopes: scopes.data, offline: offline === 1 };
+}
+const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+const loopback = (url: URL) =>
+  url.protocol === "http:" && LOOPBACK_HOSTS.includes(url.hostname);
+/** Exact callback match, except that a loopback callback may use any port
+ * (RFC 8252): local apps such as Claude Code pick a free port each time. */
+function callbackMatches(registered: string, requested: string) {
+  if (registered === requested) return true;
+  try {
+    const known = new URL(registered);
+    const asked = new URL(requested);
+    if (!loopback(known) || !loopback(asked)) return false;
+    known.port = "";
+    asked.port = "";
+    return known.href === asked.href;
+  } catch {
+    return false;
+  }
+}
+const parseJson = (value: unknown) => {
+  try {
+    return JSON.parse(String(value)) as unknown;
+  } catch {
+    return undefined;
+  }
+};
 const Query = z.string().min(1).max(16_384);
 const ConsentInput = z.strictObject({
   oauth_query: Query,
@@ -87,11 +136,16 @@ export type McpOAuthOptions = {
   }) => unknown;
   accessTokenTtlSeconds?: number;
   allowInsecureDevelopment?: boolean;
+  /** Tests only (requires allowInsecureDevelopment): serves client metadata
+   * documents without the network. Production always uses the resolve-once,
+   * public-address-only transport of the CIMD plugin. */
+  clientMetadataFetch?: ClientMetadataResourceFetch;
 };
 
 /** Official OAuth provider plus authenticated, explicitly selected MCP consent.
  * All HTTP/API dispatches and runtime validation must run in the identity queue.
- * No network client discovery or dynamic registration is enabled. */
+ * Clients are registered by an administrator or name themselves with an HTTPS
+ * client metadata document (CIMD); dynamic registration stays closed. */
 export function createMcpOAuth(options: McpOAuthOptions) {
   const origin = new URL(options.baseURL).origin;
   const authPath = options.authPath ?? "/admin/auth";
@@ -105,6 +159,7 @@ export function createMcpOAuth(options: McpOAuthOptions) {
     !Number.isSafeInteger(accessTtl) ||
     accessTtl < 60 ||
     accessTtl > 86_400 ||
+    (options.clientMetadataFetch && !options.allowInsecureDevelopment) ||
     !authPath.startsWith("/admin/") ||
     !consentPage.startsWith("/admin/")
   )
@@ -152,17 +207,16 @@ export function createMcpOAuth(options: McpOAuthOptions) {
       throw error;
     }
   };
-  const assertActiveGrant = (
+  /** The OAuth link itself: bound client, resource and the grant's own
+   * lifetime. The browser session it was approved in is not part of it. */
+  const assertBinding = (
     grantId: string,
-    requiredScopes: readonly McpAccessScope[] = [],
+    requiredScopes: readonly McpAccessScope[],
   ) => {
     const binding = options.db
       .prepare("SELECT * FROM agent_mcp_oauth_binding WHERE grant_id=?")
       .get(grantId);
-    if (!binding) return; // Manual MCP grants have their own lifetime checks.
-    const parent = options.db
-      .prepare('SELECT "expiresAt" FROM session WHERE id=? AND "userId"=?')
-      .get(binding.session_id ?? null, binding.user_id!);
+    if (!binding) return;
     const client = options.db
       .prepare('SELECT disabled FROM "oauthClient" WHERE "clientId"=?')
       .get(binding.client_id!);
@@ -171,71 +225,128 @@ export function createMcpOAuth(options: McpOAuthOptions) {
         'SELECT disabled,"allowedScopes" FROM "oauthResource" WHERE identifier=?',
       )
       .get(resource);
-    const now = Date.now();
     if (
-      !parent ||
-      Date.parse(String(parent.expiresAt)) <= now ||
       !client ||
       client.disabled ||
       !resourceRow ||
       resourceRow.disabled ||
-      Number(binding.expires_at) <= now
+      Number(binding.expires_at) <= Date.now()
     )
       throw new IdentityError(401, "mcp_unauthorized");
-    const allowed = Scopes.safeParse(
-      JSON.parse(String(resourceRow.allowedScopes)),
-    );
-    if (!allowed.success || !mcpScopesAllow(allowed.data, requiredScopes))
+    const allowed = splitScopes(parseJson(resourceRow.allowedScopes));
+    if (!allowed || !mcpScopesAllow(allowed.scopes, requiredScopes))
       throw new APIError("FORBIDDEN", {
         error: "insufficient_scope",
         mcpCode: "mcp_insufficient_scope",
       });
-    const tokens = options.db
-      .prepare(
-        `SELECT "expiresAt",scopes,resources FROM "oauthAccessToken"
+    return {
+      userId: String(binding.user_id),
+      clientId: String(binding.client_id),
+    };
+  };
+  /** Durable work continues while the link can still act: a live access
+   * token, or a live refresh token the client may use for its next one. */
+  const assertActiveGrant = (
+    grantId: string,
+    requiredScopes: readonly McpAccessScope[] = [],
+  ) => {
+    const binding = assertBinding(grantId, requiredScopes);
+    if (!binding) return; // Manual MCP grants have their own lifetime checks.
+    const now = Date.now();
+    const live = ["oauthAccessToken", "oauthRefreshToken"].some((table) =>
+      options.db
+        .prepare(
+          `SELECT "expiresAt",scopes,resources FROM "${table}"
       WHERE "referenceId"=? AND "userId"=? AND "clientId"=? AND revoked IS NULL`,
-      )
-      .all(grantId, binding.user_id!, binding.client_id!);
+        )
+        .all(grantId, binding.userId, binding.clientId)
+        .some((row) => {
+          const scopes = splitScopes(parseJson(row.scopes));
+          const resources = z
+            .array(z.string())
+            .safeParse(parseJson(row.resources));
+          return (
+            Date.parse(String(row.expiresAt)) > now &&
+            scopes !== null &&
+            mcpScopesAllow(scopes.scopes, requiredScopes) &&
+            resources.success &&
+            resources.data.length === 1 &&
+            resources.data[0] === resource
+          );
+        }),
+    );
+    if (!live) throw new IdentityError(401, "mcp_unauthorized");
+  };
+  /** A refresh is a new use of the grant: the same checks as an MCP request
+   * (membership, workspace access, server) plus the link itself. */
+  const assertRefreshable = (row: Record<string, unknown>) => {
+    const grantId = typeof row.referenceId === "string" ? row.referenceId : "";
+    const scopes = splitScopes(parseJson(row.scopes));
+    if (!grantId || !scopes?.offline) throw invalid("invalid_grant");
+    const binding = assertBinding(grantId, scopes.scopes);
     if (
-      !tokens.some((row) => {
-        const expires = Date.parse(String(row.expiresAt));
-        const scopes = Scopes.safeParse(JSON.parse(String(row.scopes)));
-        const resources = z
-          .array(z.string())
-          .safeParse(JSON.parse(String(row.resources)));
-        return (
-          expires > now &&
-          scopes.success &&
-          mcpScopesAllow(scopes.data, requiredScopes) &&
-          resources.success &&
-          resources.data.length === 1 &&
-          resources.data[0] === resource
-        );
-      })
+      !binding ||
+      binding.userId !== row.userId ||
+      binding.clientId !== row.clientId
     )
-      throw new IdentityError(401, "mcp_unauthorized");
+      throw invalid("invalid_grant");
+    const principal = checkGrant(grantId, {
+      serverId: serverId(),
+      requiredScopes: scopes.scopes,
+    });
+    if (principal.userId !== row.userId) throw invalid("invalid_grant");
+  };
+  /** Ends what is left of a link that can no longer act. */
+  const revokeLink = (grantId: string) => {
+    const at = new Date().toISOString();
+    for (const table of ["oauthAccessToken", "oauthRefreshToken"])
+      options.db
+        .prepare(
+          `UPDATE "${table}" SET revoked=? WHERE "referenceId"=? AND revoked IS NULL`,
+        )
+        .run(at, grantId);
   };
   const providerOptions: OAuthOptions<OAuthScope[]> = {
-    scopes: [...MCP_ACCESS_SCOPES],
-    grantTypes: ["authorization_code"],
+    scopes: [...OAUTH_SCOPES],
+    grantTypes: ["authorization_code", "refresh_token"],
     loginPage: options.loginPage ?? consentPage,
     consentPage,
     disableJwtPlugin: true,
+    // Access and refresh tokens are kept only as hashes.
     storeTokens: "hashed",
-    prefix: { opaqueAccessToken: MCP_OAUTH_TOKEN_PREFIX },
+    prefix: {
+      opaqueAccessToken: MCP_OAUTH_TOKEN_PREFIX,
+      refreshToken: MCP_OAUTH_REFRESH_PREFIX,
+    },
     accessTokenExpiresIn: accessTtl,
+    // Each refresh rotates the token; the after hook caps it at the grant.
+    refreshTokenExpiresIn: GRANT_MS / 1000,
+    refreshTokenReuseInterval: 0,
     codeExpiresIn: 60,
     resources: [
       {
         identifier: resource,
-        allowedScopes: [...MCP_ACCESS_SCOPES],
+        allowedScopes: [...OAUTH_SCOPES],
         accessTokenTtl: accessTtl,
       },
     ],
+    // Metadata-document clients are linked to the MCP resource on discovery.
+    clientRegistrationDefaultResources: [resource],
     allowDynamicClientRegistration: false,
-    // In provider 1.7.6 this also advertises the supported public-client token
-    // method "none". The independent DCR flag above still closes registration.
-    allowUnauthenticatedClientRegistration: true,
+    extensions: [
+      {
+        // The plugin validates the client_id URL (HTTPS, public host, no
+        // fragment), fetches at most 5 KB without redirects within budgets,
+        // and checks the document names itself. The Node transport resolves
+        // DNS once, refuses private addresses and pins the connection.
+        clientDiscovery: createCimdClientDiscovery({
+          fetchClientMetadataResource:
+            options.clientMetadataFetch ?? fetchClientMetadataResource,
+          metadataProfile: "mcp-2026-07-28",
+          metadataRevalidationInterval: "6h",
+        }),
+      },
+    ],
     enforcePerClientResources: true,
     clientPrivileges: () => clientManagement.getStore() === true,
     resourcePrivileges: () => clientManagement.getStore() === true,
@@ -243,9 +354,10 @@ export function createMcpOAuth(options: McpOAuthOptions) {
       page: consentPage,
       shouldRedirect: () => !selection.getStore(),
       consentReferenceId: ({ user, session, scopes }) => {
-        const requiredScopes = Scopes.parse(scopes);
+        const requiredScopes = splitScopes(scopes)?.scopes;
         const chosen = selection.getStore();
         if (
+          !requiredScopes ||
           !chosen ||
           chosen.sessionId !== session.id ||
           chosen.grant.userId !== user.id ||
@@ -260,9 +372,16 @@ export function createMcpOAuth(options: McpOAuthOptions) {
         return chosen.grant.id;
       },
     },
-    customTokenResponseFields: ({ user, verificationValue, scopes }) => {
-      const requiredScopes = Scopes.parse(scopes);
-      if (!user || !verificationValue?.referenceId)
+    customTokenResponseFields: ({
+      grantType,
+      user,
+      verificationValue,
+      scopes,
+    }) => {
+      // A refresh was revalidated by the before hook, which knows its grant.
+      if (grantType === "refresh_token") return {};
+      const requiredScopes = splitScopes(scopes)?.scopes;
+      if (!requiredScopes || !user || !verificationValue?.referenceId)
         throw invalid("invalid_grant");
       const principal = checkGrant(verificationValue.referenceId, {
         serverId: serverId(),
@@ -299,25 +418,42 @@ export function createMcpOAuth(options: McpOAuthOptions) {
         "SELECT name,redirect_uris FROM agent_mcp_oauth_client WHERE client_id=?",
       )
       .get(clientId);
+    // Resolves a metadata-document client too (cached, or fetched safely).
     const client = await getOAuthProviderApi(ctx, providerOptions).getClient(
       clientId,
     );
+    const discovered = client?.clientDiscoveryId === METADATA_CLIENT;
     if (
-      !managed ||
       !client ||
       client.disabled ||
       client.skipConsent ||
-      client.tokenEndpointAuthMethod !== "none"
+      (managed
+        ? client.clientDiscoveryId || client.tokenEndpointAuthMethod !== "none"
+        : !discovered ||
+          !["none", "private_key_jwt"].includes(
+            client.tokenEndpointAuthMethod ?? "",
+          ))
     )
       throw invalid("invalid_client");
     const redirects = z
       .array(z.string())
-      .parse(JSON.parse(String(managed.redirect_uris)));
-    if (!redirects.includes(query.get("redirect_uri") ?? "")) throw invalid();
-    const requestedScopes = Scopes.safeParse(
-      (query.get("scope") ?? "").split(" "),
-    );
-    if (!requestedScopes.success) throw invalid("invalid_scope");
+      .parse(
+        managed
+          ? parseJson(managed.redirect_uris)
+          : (client.redirectUris ?? []),
+      );
+    const redirectUri = query.get("redirect_uri") ?? "";
+    if (!redirects.some((known) => callbackMatches(known, redirectUri)))
+      throw invalid();
+    const requested = splitScopes((query.get("scope") ?? "").split(" "));
+    if (!requested) throw invalid("invalid_scope");
+    // Shown on consent: a metadata client is known by the host of its own
+    // client_id URL, which the document had to come from.
+    const clientName = (managed ? String(managed.name) : (client.name ?? ""))
+      .replace(/\p{Cc}/gu, "")
+      .trim()
+      .slice(0, 80);
+    if (!clientName) throw invalid("invalid_client");
     const prompts = (query.get("prompt") ?? "").split(" ");
     const sessionCreatedAt = ctx.context.session?.session.createdAt;
     const issuedAt = state.signedQueryIssuedAt;
@@ -348,8 +484,10 @@ export function createMcpOAuth(options: McpOAuthOptions) {
     return {
       query,
       clientId,
-      clientName: String(managed.name),
-      requestedScopes: requestedScopes.data,
+      clientName,
+      clientHost: managed ? null : new URL(clientId).host,
+      requestedScopes: requested.scopes,
+      offline: requested.offline,
       requiresSignIn,
     };
   };
@@ -368,7 +506,12 @@ export function createMcpOAuth(options: McpOAuthOptions) {
           return {
             clientId: request.clientId,
             clientName: request.clientName,
+            // null: registered by an administrator of this server.
+            clientHost: request.clientHost,
             scopes: request.requestedScopes,
+            // The client asked to stay connected (refresh tokens) for at
+            // most this many days; otherwise each access lasts one hour.
+            connectionDays: request.offline ? MCP_OAUTH_GRANT_DAYS : null,
             resource,
             redirectUri: request.query.get("redirect_uri")!,
             userId: ctx.context.session.user.id,
@@ -411,7 +554,10 @@ export function createMcpOAuth(options: McpOAuthOptions) {
                 body: {
                   oauth_query: ctx.body.oauth_query,
                   accept: ctx.body.accept,
-                  scope: acceptedScopes.join(" "),
+                  scope: [
+                    ...acceptedScopes,
+                    ...(request.offline ? [OFFLINE] : []),
+                  ].join(" "),
                 },
               },
             );
@@ -447,12 +593,12 @@ export function createMcpOAuth(options: McpOAuthOptions) {
               sessionId: ctx.context.session.session.id,
               serverId: serverId(),
               workspaceId: ctx.body.workspaceId,
-              label: `OAuth: ${request.clientName}`,
+              label: `OAuth: ${request.clientName}${
+                request.clientHost ? ` (${request.clientHost})` : ""
+              }`.slice(0, 100),
               scopes: acceptedScopes,
-              expiresAt: Math.min(
-                Date.now() + accessTtl * 1000,
-                ctx.context.session.session.expiresAt.getTime(),
-              ),
+              // Not bound to this browser session; see assertBinding.
+              expiresAt: Date.now() + GRANT_MS,
             });
           } catch (error) {
             if (error instanceof IdentityError)
@@ -502,7 +648,10 @@ export function createMcpOAuth(options: McpOAuthOptions) {
             target: z.strictObject({
               serverId: IdentityId,
               workspaceId: IdentityId.optional(),
-              requiredScopes: z.array(Scope).max(3).optional(),
+              requiredScopes: z
+                .array(Scope)
+                .max(MCP_ACCESS_SCOPES.length)
+                .optional(),
             }),
           }),
         },
@@ -516,7 +665,9 @@ export function createMcpOAuth(options: McpOAuthOptions) {
             : [payload.aud];
           const grantedScopes = (
             typeof payload.scope === "string" ? payload.scope : ""
-          ).split(" ");
+          )
+            .split(" ")
+            .filter((scope) => scope !== OFFLINE);
           const grantId = payload[MCP_OAUTH_GRANT_CLAIM];
           if (
             payload.iss !== issuer ||
@@ -571,6 +722,49 @@ export function createMcpOAuth(options: McpOAuthOptions) {
       },
     ],
     hooks: {
+      before: [
+        {
+          matcher: (ctx: { path?: string }) => ctx.path === "/oauth2/token",
+          handler: createAuthMiddleware(async (ctx) => {
+            const body: unknown = ctx.body;
+            if (
+              !body ||
+              typeof body !== "object" ||
+              !("grant_type" in body) ||
+              body.grant_type !== "refresh_token" ||
+              !("refresh_token" in body) ||
+              typeof body.refresh_token !== "string" ||
+              !body.refresh_token.startsWith(MCP_OAUTH_REFRESH_PREFIX)
+            )
+              return;
+            const hash = await getOAuthProviderApi(
+              ctx,
+              providerOptions,
+            ).hashToken(
+              body.refresh_token.slice(MCP_OAUTH_REFRESH_PREFIX.length),
+              "refresh_token",
+            );
+            const row = options.db
+              .prepare(
+                'SELECT "referenceId","clientId","userId",scopes,revoked FROM "oauthRefreshToken" WHERE token=?',
+              )
+              .get(hash);
+            // Unknown and already used tokens are refused by the provider,
+            // which also ends the whole chain when a used one comes back.
+            if (!row || row.revoked !== null) return;
+            try {
+              assertRefreshable(row);
+            } catch {
+              if (typeof row.referenceId === "string")
+                revokeLink(row.referenceId);
+              throw new APIError("BAD_REQUEST", {
+                error: "invalid_grant",
+                error_description: "access to this workspace has ended",
+              });
+            }
+          }),
+        },
+      ],
       after: [
         {
           matcher: (ctx: { path?: string }) => ctx.path === "/oauth2/token",
@@ -602,15 +796,46 @@ export function createMcpOAuth(options: McpOAuthOptions) {
               )
               .get(row.referenceId!);
             if (!binding) throw invalid("invalid_grant");
+            const grantEnd = Number(binding.expires_at);
             const expiry = Math.min(
               Date.parse(String(row.expiresAt)),
-              Number(binding.expires_at),
+              grantEnd,
             );
+            // Tokens never outlive the grant and do not hang on the browser
+            // session the consent came from: signing out there keeps them.
             await ctx.context.adapter.update({
               model: "oauthAccessToken",
               where: [{ field: "id", value: String(row.id) }],
-              update: { expiresAt: new Date(expiry) },
+              update: { expiresAt: new Date(expiry), sessionId: null },
             });
+            if (
+              "refresh_token" in body &&
+              typeof body.refresh_token === "string" &&
+              body.refresh_token.startsWith(MCP_OAUTH_REFRESH_PREFIX)
+            ) {
+              const refresh = options.db
+                .prepare(
+                  'SELECT id,"referenceId","expiresAt" FROM "oauthRefreshToken" WHERE token=?',
+                )
+                .get(
+                  await api.hashToken(
+                    body.refresh_token.slice(MCP_OAUTH_REFRESH_PREFIX.length),
+                    "refresh_token",
+                  ),
+                );
+              if (!refresh || refresh.referenceId !== row.referenceId)
+                throw invalid("invalid_grant");
+              await ctx.context.adapter.update({
+                model: "oauthRefreshToken",
+                where: [{ field: "id", value: String(refresh.id) }],
+                update: {
+                  expiresAt: new Date(
+                    Math.min(Date.parse(String(refresh.expiresAt)), grantEnd),
+                  ),
+                  sessionId: null,
+                },
+              });
+            }
             return ctx.json({
               ...body,
               expires_in: Math.max(0, Math.floor((expiry - Date.now()) / 1000)),
@@ -622,47 +847,41 @@ export function createMcpOAuth(options: McpOAuthOptions) {
     },
   };
   return {
-    /** Run after auth migrations. A resource or a registered client stored
-     * before the current scopes (NIAR-289 renamed them) gets the current list,
-     * so OAuth clients can request every scope. Unchanged rows are not written. */
+    /** Run after auth migrations. A resource or administrator-registered
+     * client stored before a scope existed keeps its list; give both every
+     * current OAuth scope (including the refresh request). */
     upgradeResourceScopes() {
-      const current = (raw: unknown) => {
-        try {
-          const scopes = Scopes.safeParse(JSON.parse(String(raw)));
-          return (
-            scopes.success &&
-            MCP_ACCESS_SCOPES.every((scope) => scopes.data.includes(scope))
-          );
-        } catch {
-          return false;
-        }
+      const complete = (stored: unknown) => {
+        const list = z.array(z.string()).safeParse(parseJson(stored));
+        return (
+          list.success &&
+          list.data.length === OAUTH_SCOPES.length &&
+          OAUTH_SCOPES.every((scope) => list.data.includes(scope))
+        );
       };
-      const all = JSON.stringify([...MCP_ACCESS_SCOPES]);
       const row = options.db
         .prepare(
           'SELECT "allowedScopes" FROM "oauthResource" WHERE identifier=?',
         )
         .get(resource);
-      if (row && !current(row.allowedScopes))
+      if (row && !complete(row.allowedScopes))
         options.db
           .prepare(
             'UPDATE "oauthResource" SET "allowedScopes"=? WHERE identifier=?',
           )
-          .run(all, resource);
-      const columns = options.db
-        .prepare('PRAGMA table_info("oauthClient")')
-        .all()
-        .map((column) => String(column.name));
-      if (!columns.includes("scopes") || !columns.includes("clientId")) return;
-      for (const client of options.db
+          .run(JSON.stringify(OAUTH_SCOPES), resource);
+      const clients = options.db
         .prepare(
-          'SELECT "clientId",scopes FROM "oauthClient" WHERE "clientId" IN (SELECT client_id FROM agent_mcp_oauth_client)',
+          `SELECT c."clientId",c.scopes FROM "oauthClient" c
+          JOIN agent_mcp_oauth_client m ON m.client_id=c."clientId"
+          WHERE c."clientDiscoveryId" IS NULL`,
         )
-        .all())
-        if (!current(client.scopes))
+        .all();
+      for (const client of clients)
+        if (!complete(client.scopes))
           options.db
             .prepare('UPDATE "oauthClient" SET scopes=? WHERE "clientId"=?')
-            .run(all, String(client.clientId));
+            .run(JSON.stringify(OAUTH_SCOPES), String(client.clientId));
     },
     provider,
     companion,
@@ -685,15 +904,18 @@ export function createMcpOAuth(options: McpOAuthOptions) {
           redirectUris: z.array(z.url()).min(1).max(5),
         })
         .parse(raw);
+      // HTTPS, or plain HTTP on this computer's loopback address for local
+      // apps (Claude Code and the like), on every server; the port is free.
+      let local = false;
       for (const redirect of input.redirectUris) {
         const url = new URL(redirect);
-        const development =
-          options.allowInsecureDevelopment &&
-          url.protocol === "http:" &&
-          ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+        const onLoopback = loopback(url);
+        local ||= onLoopback;
         if (
-          (!development && url.protocol !== "https:") ||
-          url.hash ||
+          (!onLoopback &&
+            (url.protocol !== "https:" ||
+              LOOPBACK_HOSTS.includes(url.hostname))) ||
+          redirect.includes("#") ||
           url.username ||
           url.password
         )
@@ -718,7 +940,7 @@ export function createMcpOAuth(options: McpOAuthOptions) {
             headers,
             body: {
               identifier: resource,
-              allowedScopes: [...MCP_ACCESS_SCOPES],
+              allowedScopes: [...OAUTH_SCOPES],
               accessTokenTtl: accessTtl,
             },
             asResponse: false,
@@ -738,12 +960,13 @@ export function createMcpOAuth(options: McpOAuthOptions) {
             client_name: input.name,
             redirect_uris: input.redirectUris,
             token_endpoint_auth_method: "none",
-            application_type: "web",
-            grant_types: ["authorization_code"],
+            // The provider accepts loopback callbacks only for native apps.
+            application_type: local ? "native" : "web",
+            grant_types: ["authorization_code", "refresh_token"],
             response_types: ["code"],
             require_pkce: true,
             skip_consent: false,
-            scope: MCP_ACCESS_SCOPES.join(" "),
+            scope: OAUTH_SCOPES.join(" "),
             resources: [resource],
           },
           asResponse: false,

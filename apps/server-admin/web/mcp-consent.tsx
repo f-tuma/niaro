@@ -39,8 +39,12 @@ const ScopeSchema = z.enum(MCP_SCOPES);
 type Scope = z.infer<typeof ScopeSchema>;
 const ConsentInfoSchema = z.object({
   clientName: z.string().min(1).max(100),
-  clientId: z.string().min(1).max(200),
+  // A metadata-document client's ID is the URL of its document.
+  clientId: z.string().min(1).max(2048),
+  // Host of that URL; null for a client registered on this server.
+  clientHost: z.string().min(1).max(255).nullable().default(null),
   scopes: z.array(ScopeSchema).min(1).max(3),
+  connectionDays: z.number().int().positive().max(366).nullable().default(null),
   resource: z.url().max(2048),
   redirectUri: z.url().max(2048),
   requiresSignIn: z.boolean().default(false),
@@ -212,8 +216,21 @@ export function McpConsent({ logout }: { logout?: () => void } = {}) {
               items={[
                 { label: copy.oauthClient, value: info.clientName },
                 {
+                  label: copy.clientOrigin,
+                  value: info.clientHost ?? copy.clientManual,
+                },
+                {
                   label: copy.redirectDomain,
                   value: new URL(info.redirectUri).host,
+                },
+                {
+                  label: copy.connectionLasts,
+                  value: info.connectionDays
+                    ? copy.connectionDays.replace(
+                        "{days}",
+                        String(info.connectionDays),
+                      )
+                    : copy.connectionHour,
                 },
               ]}
             />
