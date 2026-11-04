@@ -5,6 +5,7 @@ import { Workspace } from "../apps/mobile/App";
 import type { Section } from "../apps/mobile/ScreenChrome";
 import type {
   ClientSession,
+  SessionCommand,
   SessionState,
 } from "../packages/client-core/session";
 import { fromSnapshot } from "../packages/client-core/store";
@@ -50,8 +51,10 @@ table = Table(["Branch", "Revenue"], [["Prague", 520], ["Brno", 310], ["Zlín", 
 function show(
   program: string,
   options: Partial<React.ComponentProps<typeof GenerativeUiView>> = {},
+  taken = true,
 ) {
-  const onFollowUp = jest.fn();
+  // The chat takes the message (or not) and sends it; nothing is composed.
+  const onFollowUp = jest.fn((_text: string) => taken);
   const onOpenUrl = jest.fn();
   const view = render(
     <GenerativeUiView
@@ -158,7 +161,7 @@ test("a streaming program renders progressively and stays inert", () => {
   expect(screen.getByText("Prague")).toBeTruthy();
 });
 
-test("@ToAssistant and a plain button only fill the message box", () => {
+test("@ToAssistant and a plain button send their words, without hidden context, once each (NIAR-291)", () => {
   const fetch = jest.spyOn(globalThis, "fetch");
   const { onFollowUp } = show(`root = Stack([b])
 b = Buttons([Button("Compare", @ToAssistant("Compare with last year", "hidden context"), "primary"), Button("Tell me more"), Button("Other", null, "primary")])`);
@@ -167,8 +170,50 @@ b = Buttons([Button("Compare", @ToAssistant("Compare with last year", "hidden co
   fireEvent.press(screen.getByRole("button", { name: "Tell me more" }));
   expect(onFollowUp).toHaveBeenLastCalledWith("Tell me more");
   expect(onFollowUp).toHaveBeenCalledTimes(2);
+  // Each was answered: a second press sends nothing.
+  const compare = screen.getByRole("button", { name: "Compare" });
+  expect(compare.props.accessibilityState?.disabled).toBe(true);
+  fireEvent.press(compare);
+  fireEvent.press(screen.getByRole("button", { name: "Tell me more" }));
+  expect(onFollowUp).toHaveBeenCalledTimes(2);
   expect(fetch).not.toHaveBeenCalled();
   fetch.mockRestore();
+});
+
+test("a sent form is answered: its fields and buttons no longer act (NIAR-291)", () => {
+  const { onFollowUp } = show(`root = Stack([f])
+f = Form("pick", [TextField("note", "Note")], Buttons([Button("Send answers", @ToAssistant("Answers"), "primary"), Button("Skip", @ToAssistant("Skip it"))]))`);
+  fireEvent.changeText(screen.getByLabelText("Note"), "Early");
+  fireEvent.press(screen.getByRole("button", { name: "Send answers" }));
+  expect(onFollowUp).toHaveBeenCalledWith("Answers\nNote: Early");
+  expect(screen.getByLabelText("Note").props.editable).toBe(false);
+  fireEvent.changeText(screen.getByLabelText("Note"), "Late");
+  fireEvent.press(screen.getByRole("button", { name: "Send answers" }));
+  fireEvent.press(screen.getByRole("button", { name: "Skip" }));
+  expect(onFollowUp).toHaveBeenCalledTimes(1);
+});
+
+test("a follow-up the chat did not take can be pressed again (NIAR-291)", () => {
+  const { onFollowUp } = show(`root = Stack([Button("Next step")])`, {}, false);
+  fireEvent.press(screen.getByRole("button", { name: "Next step" }));
+  fireEvent.press(screen.getByRole("button", { name: "Next step" }));
+  expect(onFollowUp).toHaveBeenCalledTimes(2);
+});
+
+test("while the chat cannot send, follow-ups wait and fields still take answers (NIAR-291)", () => {
+  const { onFollowUp, onOpenUrl } = show(
+    `root = Stack([f, w])
+f = Form("pick", [TextField("note", "Note")], Button("Send answers", @ToAssistant("Answers")))
+w = Button("Report", @OpenUrl("https://example.test/report"))`,
+    { blocked: true },
+  );
+  expect(screen.getByLabelText("Note").props.editable).not.toBe(false);
+  const send = screen.getByRole("button", { name: "Send answers" });
+  expect(send.props.accessibilityState?.disabled).toBe(true);
+  fireEvent.press(send);
+  expect(onFollowUp).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByRole("button", { name: "Report" }));
+  expect(onOpenUrl).toHaveBeenCalledWith("https://example.test/report");
 });
 
 const form = `$days = "3"
@@ -337,7 +382,7 @@ line = LineChart(["Mon", "Tue"], [Series("Calls", [2, 5]), Series("Mails", [1, 1
   ).toBeTruthy();
 });
 
-test("in chat, generated UI follows the answer text and a follow-up only fills the composer", async () => {
+test("in chat, generated UI follows the answer text and a follow-up is sent at once, leaving the composer as it was (NIAR-291)", async () => {
   const snapshot = emptySnapshot();
   const messages: (typeof snapshot)["conversations"][number]["messages"] = [
     { id: "m-1", role: "user", text: "TEST How did Q3 go?" },
@@ -442,13 +487,53 @@ test("in chat, generated UI follows the answer text and a follow-up only fills t
   expect(screen.getByText("TEST Earlier card.")).toBeTruthy();
   expect(screen.getByText("TEST Old card\nOwner: Anna")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "TEST Go" })).toBeNull();
+  const composer = () => screen.getByLabelText(translate("en")("composer"));
+  // A half-written message waits in the composer.
+  fireEvent.changeText(composer(), "TEST still typing");
+  const publish = (next: Partial<SessionState>) => {
+    state = { ...state, ...next };
+    listeners.forEach((listener) => listener());
+  };
+  // Offline, the follow-up waits as Send does.
+  await act(async () => publish({ status: "offline" }));
+  expect(
+    screen.getByRole("button", { name: "Compare" }).props.accessibilityState
+      ?.disabled,
+  ).toBe(true);
   await act(async () => {
     fireEvent.press(screen.getByRole("button", { name: "Compare" }));
   });
-  expect(screen.getByLabelText(translate("en")("composer")).props.value).toBe(
-    "TEST Compare with last year",
-  );
   expect(session.send).not.toHaveBeenCalled();
+  await act(async () => publish({ status: "online" }));
+  (session.send as jest.Mock).mockImplementationOnce(
+    (command: Extract<SessionCommand, { type: "message.send" }>) => {
+      publish({ pending: command, commandStates: { chat: "sending" } });
+      return new Promise<void>(() => {});
+    },
+  );
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Compare" }));
+  });
+  expect(session.send).toHaveBeenCalledTimes(1);
+  expect((session.send as jest.Mock).mock.calls[0]![0]).toMatchObject({
+    type: "message.send",
+    conversationId: "conversation-1",
+    text: "TEST Compare with last year",
+  });
+  expect((session.send as jest.Mock).mock.calls[0]![0]).not.toHaveProperty(
+    "mentions",
+  );
+  // The person's own message, on its way; the draft stays untouched.
+  expect(screen.getByText("TEST Compare with last year")).toBeTruthy();
+  expect(composer().props.value).toBe("TEST still typing");
+  // Answered: once the chat is free again, the button sends nothing more.
+  await act(async () => publish({ pending: null, commandStates: {} }));
+  const compare = screen.getByRole("button", { name: "Compare" });
+  expect(compare.props.accessibilityState?.disabled).toBe(true);
+  await act(async () => {
+    fireEvent.press(compare);
+  });
+  expect(session.send).toHaveBeenCalledTimes(1);
 });
 
 test("in chat, an answer shows as it is written, inert, until the stored reply replaces it", async () => {

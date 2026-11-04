@@ -56,8 +56,13 @@ export type NextChat = {
   stale: boolean;
   rememberTarget?: { organizationId: string; workspaceId: string };
   decide: (operationId: string, approved: boolean) => Promise<boolean>;
-  /** A generated answer's follow-up goes to the composer, never sent. */
-  followUp: (text: string) => void;
+  /**
+   * A generated answer's follow-up, sent at once as the person's message;
+   * the composer is left as it is. False when the chat did not take it.
+   */
+  followUp: (text: string) => boolean;
+  /** A follow-up cannot be sent now, as Send cannot. */
+  followUpBlocked: boolean;
   /** A sign-in card's "Continue": the message that goes on. */
   continueWith: (text: string) => void;
   declineOffer: (requestText: string) => void;
@@ -157,6 +162,7 @@ function OpenUiPart({
       program={args.program}
       streaming={!!args.streaming}
       disabled={chat.readOnly || !!args.streaming}
+      blocked={chat.followUpBlocked}
       onFollowUp={chat.followUp}
     />
   );

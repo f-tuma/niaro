@@ -8,6 +8,12 @@ export type FollowUpField = {
 export type FollowUpFields = ReadonlyMap<string, FollowUpField>;
 export const followUpKey = (form: string | undefined, name: string) =>
   `${form ?? ""}/${name}`;
+/**
+ * What one follow-up answers, so it is sent once: a form as a whole, or a
+ * button outside a form by its label.
+ */
+export const followUpScope = (form: string | undefined, label: string) =>
+  form !== undefined ? `form:${form}` : `button:${label}`;
 
 const unwrap = (entry: unknown) =>
   entry &&
@@ -18,9 +24,9 @@ const unwrap = (entry: unknown) =>
     : entry;
 
 /**
- * The message a @ToAssistant step puts in the person's message box: the
- * step's own words, then each answered field as "Label: value". The person
- * reads and sends it; nothing travels that they cannot see.
+ * The message a @ToAssistant step sends as the person's own message: the
+ * step's own words, then each answered field as "Label: value". Nothing
+ * travels that the person cannot see.
  */
 export function followUpMessage({
   message,

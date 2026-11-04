@@ -246,7 +246,7 @@ export const DateField = define(
 const field = z.union([TextField.ref, Select.ref, Checkbox.ref, DateField.ref]);
 export const Form = define(
   "Form",
-  "Questions the person answers; the button's @ToAssistant message is sent with the answers after the person reviews it.",
+  "Questions the person answers; pressing the button sends its @ToAssistant message with the answers.",
   z.object({
     name: short,
     fields: z.array(field).max(12),

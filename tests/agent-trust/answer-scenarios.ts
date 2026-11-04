@@ -329,7 +329,7 @@ export const answerScenarios: TrustScenario[] = [
         probe.observe("uiAdmission", {
           program: message.ui?.program,
           boundary:
-            "A follow-up button only fills the person's message box on the client; the server sees it as an ordinary message",
+            "A follow-up button sends the person's visible words as an ordinary message from the client; nothing hidden travels with it",
         });
       } finally {
         await h.close();
