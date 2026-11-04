@@ -131,7 +131,7 @@ async function fixture(rateLimit = false) {
     });
   async function start(
     cookie = alice.cookie,
-    scopes = "native.view native.run",
+    scopes = "data.read memory.write",
     patch: Record<string, string> = {},
   ) {
     const verifier = randomBytes(32).toString("base64url");
@@ -208,7 +208,7 @@ async function fixture(rateLimit = false) {
   async function token(
     workspaceId = "workspace-a",
     cookie = alice.cookie,
-    scopes = "native.view native.run",
+    scopes = "data.read memory.write",
   ) {
     const flow = await start(cookie, scopes),
       code = await consent(flow, workspaceId, cookie);
@@ -238,7 +238,7 @@ async function fixture(rateLimit = false) {
 const target = {
   serverId: "server-a",
   workspaceId: "workspace-a",
-  requiredScopes: ["native.view"] as const,
+  requiredScopes: ["data.read"] as const,
 };
 const accessTarget = { ...target, requiredScopes: [...target.requiredScopes] };
 function unauthorized(error: unknown) {
@@ -297,7 +297,7 @@ test("official provider discovery, PKCE linking and opaque tokens resolve the ex
     assert.equal(preview.status, 200, await preview.clone().text());
     const info = await preview.json();
     assert.equal(info.userId, f.alice.id);
-    assert.deepEqual(info.scopes, ["native.view", "native.run"]);
+    assert.deepEqual(info.scopes, ["data.read", "memory.write"]);
     assert.equal(
       f.db.prepare("SELECT count(*) AS n FROM agent_mcp_access").get()!.n,
       0,
@@ -346,7 +346,7 @@ test("official provider discovery, PKCE linking and opaque tokens resolve the ex
 test("signed consent requires authenticated browser origin, explicit accessible workspace and a subset of scopes; direct provider consent cannot bypass selection", async () => {
   const f = await fixture();
   try {
-    const flow = await f.start(f.alice.cookie, "native.view");
+    const flow = await f.start(f.alice.cookie, "data.read");
     assert.equal(
       (
         await f.request("/mcp/oauth/consent-info", {
@@ -359,7 +359,7 @@ test("signed consent requires authenticated browser origin, explicit accessible 
       (
         await f.request(
           "/mcp/oauth/consent-info",
-          { oauth_query: `${flow.oauth_query}&scope=native.run` },
+          { oauth_query: `${flow.oauth_query}&scope=memory.write` },
           f.alice.cookie,
         )
       ).status,
@@ -383,7 +383,7 @@ test("signed consent requires authenticated browser origin, explicit accessible 
             oauth_query: flow.oauth_query,
             accept: true,
             workspaceId: "workspace-a",
-            scopes: ["native.run"],
+            scopes: ["memory.write"],
           },
           f.alice.cookie,
         )
@@ -496,7 +496,7 @@ test("the provider rejects wrong verifier/client/redirect/resource, code reuse a
       redirect_uri: "https://evil.example.test/callback",
       response_type: "code",
       resource: f.oauth.resource,
-      scope: "native.view",
+      scope: "data.read",
       code_challenge: randomBytes(32).toString("base64url"),
       code_challenge_method: "S256",
     });
@@ -535,8 +535,8 @@ test("OAuth token/local grant revocation and original membership removal invalid
       { ...accessTarget, workspaceId: "workspace-b" },
     );
     assert.notEqual(principalA.grantId, principalB.grantId);
-    f.oauth.assertActiveGrant(principalA.grantId, ["native.view"]);
-    f.oauth.assertActiveGrant(principalB.grantId, ["native.view"]);
+    f.oauth.assertActiveGrant(principalA.grantId, ["data.read"]);
+    f.oauth.assertActiveGrant(principalB.grantId, ["data.read"]);
     const revoked = await f.auth.handler(
       new Request(`${f.oauth.issuer}/oauth2/revoke`, {
         method: "POST",
@@ -550,7 +550,7 @@ test("OAuth token/local grant revocation and original membership removal invalid
     );
     assert.equal(revoked.status, 200, await revoked.clone().text());
     assert.throws(
-      () => f.oauth.assertActiveGrant(principalB.grantId, ["native.view"]),
+      () => f.oauth.assertActiveGrant(principalB.grantId, ["data.read"]),
       unauthorized,
     );
     await assert.rejects(
@@ -630,13 +630,13 @@ test("OAuth token/local grant revocation and original membership removal invalid
 test("durable OAuth authority rechecks browser logout, client disable, token expiry and scope without persisting bearer secrets", async () => {
   const f = await fixture();
   try {
-    const view = await f.token("workspace-a", f.alice.cookie, "native.view");
+    const view = await f.token("workspace-a", f.alice.cookie, "data.read");
     const principal = await f.oauth.authenticate(
       f.auth,
       `Bearer ${view.data.access_token}`,
       accessTarget,
     );
-    f.oauth.assertActiveGrant(principal.grantId, ["native.view"]);
+    f.oauth.assertActiveGrant(principal.grantId, ["data.read"]);
     const wide = await f.token();
     const wideActor = await f.oauth.authenticate(
       f.auth,
@@ -645,33 +645,33 @@ test("durable OAuth authority rechecks browser logout, client disable, token exp
     );
     f.db
       .prepare('UPDATE "oauthAccessToken" SET scopes=? WHERE "referenceId"=?')
-      .run(JSON.stringify(["native.view"]), wideActor.grantId);
+      .run(JSON.stringify(["data.read"]), wideActor.grantId);
     const narrowed = await f.oauth.authenticate(
       f.auth,
       `Bearer ${wide.data.access_token}`,
       accessTarget,
     );
-    assert.deepEqual(narrowed.scopes, ["native.view"]);
+    assert.deepEqual(narrowed.scopes, ["data.read"]);
     assert(
       f.grants
         .authenticateGrant(narrowed.grantId, accessTarget)
-        .scopes.includes("native.run"),
+        .scopes.includes("memory.write"),
     );
     f.oauth.assertActiveGrant(narrowed.grantId, narrowed.scopes);
     await assert.rejects(() =>
       f.oauth.authenticate(f.auth, `Bearer ${view.data.access_token}`, {
         ...accessTarget,
-        requiredScopes: ["native.run"],
+        requiredScopes: ["memory.write"],
       }),
     );
     assert.throws(() =>
-      f.oauth.assertActiveGrant(principal.grantId, ["native.run"]),
+      f.oauth.assertActiveGrant(principal.grantId, ["memory.write"]),
     );
     f.db
       .prepare('UPDATE "oauthClient" SET disabled=1 WHERE "clientId"=?')
       .run(f.client.clientId);
     assert.throws(
-      () => f.oauth.assertActiveGrant(principal.grantId, ["native.view"]),
+      () => f.oauth.assertActiveGrant(principal.grantId, ["data.read"]),
       unauthorized,
     );
     await assert.rejects(
@@ -692,7 +692,7 @@ test("durable OAuth authority rechecks browser logout, client disable, token exp
       )
       .run(new Date(Date.now() - 1_000).toISOString(), principal.grantId);
     assert.throws(
-      () => f.oauth.assertActiveGrant(principal.grantId, ["native.view"]),
+      () => f.oauth.assertActiveGrant(principal.grantId, ["data.read"]),
       unauthorized,
     );
     const current = await f.token();
@@ -709,7 +709,7 @@ test("durable OAuth authority rechecks browser logout, client disable, token exp
       .get(actor.grantId)!;
     assert.equal(binding.session_id, null);
     assert.throws(
-      () => f.oauth.assertActiveGrant(actor.grantId, ["native.run"]),
+      () => f.oauth.assertActiveGrant(actor.grantId, ["memory.write"]),
       unauthorized,
     );
     await assert.rejects(
@@ -803,7 +803,7 @@ test("stale max_age and login prompts require canonical fresh sign-in before any
         .run(new Date(Date.now() - 300_000).toISOString(), f.alice.id);
       const flow = await f.start(
         f.alice.cookie,
-        "native.view native.run",
+        "data.read memory.write",
         patch,
       );
       const preview = await f.request(
@@ -845,7 +845,7 @@ test("official sign-in with the signed query resumes and normalizes max_age=0 be
     f.db
       .prepare('UPDATE session SET "createdAt"=? WHERE "userId"=?')
       .run(new Date(Date.now() - 300_000).toISOString(), f.alice.id);
-    const flow = await f.start(f.alice.cookie, "native.view native.run", {
+    const flow = await f.start(f.alice.cookie, "data.read memory.write", {
       max_age: "0",
       prompt: "login consent",
     });

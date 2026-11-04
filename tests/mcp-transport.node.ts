@@ -3,19 +3,26 @@ import { once } from "node:events";
 import { createServer, request as httpRequest } from "node:http";
 import type { IncomingMessage } from "node:http";
 import { test } from "node:test";
+import { z } from "zod";
 import {
   createMcpHttpHandler,
+  inputSchema,
+  invalidInput,
   McpAuthenticationError,
-  McpTaskError,
-  type McpTaskHandlers,
+  McpToolError,
+  type McpToolHandlers,
 } from "../apps/server-mcp/transport";
 
 type Context = { owner: string };
 type Call = { tool: string; context: Context; input: unknown };
+const echoSchema = z.strictObject({
+  text: z.string().min(1).max(4_000),
+  count: z.number().int().min(1).max(10).default(1),
+});
 
 async function fixture(
   options: {
-    tasks?: Partial<McpTaskHandlers<Context>>;
+    call?: McpToolHandlers<Context>["call"];
     authenticate?: (
       request: IncomingMessage,
     ) => Context | null | Promise<Context | null>;
@@ -28,6 +35,10 @@ async function fixture(
   const handler = createMcpHttpHandler({
     allowedOrigins: ["https://client.example"],
     allowedHosts: options.allowedHosts,
+    resourceMetadataUrl:
+      "https://niaro.example/.well-known/oauth-protected-resource/mcp",
+    scopes: ["data.read", "memory.write", "services.call"],
+    instructions: "TEST instructions",
     authenticate: async (request) => {
       authentications += 1;
       if (options.authenticate) return options.authenticate(request);
@@ -36,24 +47,26 @@ async function fixture(
         ? { owner: token.slice("Bearer TEST-".length) }
         : null;
     },
-    tasks: {
-      submit: (context, input) => {
-        calls.push({ tool: "submit", context, input });
-        return { taskId: "TEST-task", status: "accepted" };
-      },
-      get: (context, input) => {
-        calls.push({ tool: "get", context, input });
-        return { taskId: input.taskId, status: "working" };
-      },
-      respond: (context, input) => {
-        calls.push({ tool: "respond", context, input });
-        return { taskId: input.taskId, status: "working" };
-      },
-      cancel: (context, input) => {
-        calls.push({ tool: "cancel", context, input });
-        return { taskId: input.taskId, status: "cancelled" };
-      },
-      ...options.tasks,
+    tools: {
+      list: () => [
+        {
+          name: "test_echo",
+          description: "TEST echo",
+          inputSchema: inputSchema(echoSchema),
+          annotations: { readOnlyHint: true },
+        },
+      ],
+      call:
+        options.call ??
+        ((context, name, input) => {
+          if (name !== "test_echo")
+            throw new McpToolError("unknown_tool", "Unknown tool.");
+          const parsed = echoSchema.safeParse(input);
+          if (!parsed.success)
+            throw invalidInput(parsed.error, { text: "hello" });
+          calls.push({ tool: name, context, input: parsed.data });
+          return { result: { echo: parsed.data.text } };
+        }),
     },
   });
   const server = createServer((request, response) => {
@@ -132,6 +145,7 @@ test("MCP initialize and tools/list use authenticated stateless JSON responses",
     assert.equal(initialized.id, "TEST-init");
     assert.equal(initialized.result.protocolVersion, "2025-11-25");
     assert.equal(initialized.result.serverInfo.name, "niaro");
+    assert.equal(initialized.result.instructions, "TEST instructions");
 
     const response = await app.post({
       jsonrpc: "2.0",
@@ -142,11 +156,10 @@ test("MCP initialize and tools/list use authenticated stateless JSON responses",
     const tools = (await response.json()).result.tools;
     assert.deepEqual(
       tools.map((tool: { name: string }) => tool.name),
-      ["task_submit", "task_get", "task_respond", "task_cancel"],
+      ["test_echo"],
     );
     assert.equal(tools[0].inputSchema.additionalProperties, false);
     assert.equal(tools[0].inputSchema.properties.text.maxLength, 4_000);
-    assert.equal(tools[1].inputSchema.properties.waitMs.maximum, 10_000);
     assert.equal(app.authentications(), 2);
     assert.deepEqual(app.calls, []);
   } finally {
@@ -157,142 +170,58 @@ test("MCP initialize and tools/list use authenticated stateless JSON responses",
 test("MCP tools pass validated values and the current authentication context", async () => {
   const app = await fixture();
   try {
-    const submitted = await app.call("task_submit", {
-      requestId: "TEST-submit",
-      text: "Create an offer",
-      timeZone: "Europe/Prague",
-    });
-    assert.deepEqual(submitted.result.structuredContent, {
-      taskId: "TEST-task",
-      status: "accepted",
-    });
+    const echoed = await app.call("test_echo", { text: "Hello" });
+    assert.deepEqual(echoed.result.structuredContent, { echo: "Hello" });
     assert.deepEqual(
-      JSON.parse(submitted.result.content[0].text),
-      submitted.result.structuredContent,
+      JSON.parse(echoed.result.content[0].text),
+      echoed.result.structuredContent,
     );
-    const read = await app.post(
+    const other = await app.post(
       {
         jsonrpc: "2.0",
         id: 2,
         method: "tools/call",
-        params: { name: "task_get", arguments: { taskId: "TEST-task" } },
+        params: { name: "test_echo", arguments: { text: "B", count: 2 } },
       },
       {
         authorization: "Bearer TEST-b",
         "mcp-session-id": "TEST-unused-session",
       },
     );
-    assert.equal(read.status, 200);
-    assert.equal(
-      (await read.json()).result.structuredContent.status,
-      "working",
-    );
-    await app.call("task_respond", {
-      taskId: "TEST-task",
-      requestId: "TEST-respond",
-      inputId: "TEST-input",
-      expectedRevision: 1,
-      text: "Confirmed",
-    });
-    await app.call("task_cancel", {
-      taskId: "TEST-task",
-      requestId: "TEST-cancel",
-    });
+    assert.equal(other.status, 200);
+    assert.equal((await other.json()).result.structuredContent.echo, "B");
     assert.deepEqual(app.calls, [
       {
-        tool: "submit",
+        tool: "test_echo",
         context: { owner: "a" },
-        input: {
-          requestId: "TEST-submit",
-          text: "Create an offer",
-          language: "cs",
-          timeZone: "Europe/Prague",
-        },
+        input: { text: "Hello", count: 1 },
       },
       {
-        tool: "get",
+        tool: "test_echo",
         context: { owner: "b" },
-        input: { taskId: "TEST-task", waitMs: 0 },
-      },
-      {
-        tool: "respond",
-        context: { owner: "a" },
-        input: {
-          taskId: "TEST-task",
-          requestId: "TEST-respond",
-          inputId: "TEST-input",
-          expectedRevision: 1,
-          text: "Confirmed",
-        },
-      },
-      {
-        tool: "cancel",
-        context: { owner: "a" },
-        input: { taskId: "TEST-task", requestId: "TEST-cancel" },
+        input: { text: "B", count: 2 },
       },
     ]);
-    assert.equal(app.authentications(), 4);
+    assert.equal(app.authentications(), 2);
   } finally {
     await app.close();
   }
 });
 
-test("MCP schema rejects malformed identifiers, oversized text and unsafe task inputs", async () => {
+test("MCP validation errors name each wrong field and show a correct call", async () => {
   const app = await fixture();
   try {
-    const invalid: [string, unknown][] = [
-      ["task_submit", { requestId: "bad key", text: "Task" }],
-      ["task_submit", { requestId: "TEST-id", text: "  \n\t" }],
-      ["task_submit", { requestId: "TEST-id", text: "x".repeat(4_001) }],
-      ["task_submit", { requestId: "TEST-id", text: "Task", language: "de" }],
-      [
-        "task_submit",
-        { requestId: "TEST-id", text: "Task", timeZone: "TEST/invalid" },
-      ],
-      [
-        "task_submit",
-        { requestId: "TEST-id", text: "Task", timeZone: "+01:00" },
-      ],
-      [
-        "task_submit",
-        { requestId: "TEST-id", text: "Task", conversationId: "TEST-chat" },
-      ],
-      ["task_get", { taskId: "TEST-task", waitMs: 10_001 }],
-      ["task_get", { taskId: "TEST-task", waitMs: -1 }],
-      ["task_get", { taskId: "TEST-task", waitMs: 0.5 }],
-      [
-        "task_respond",
-        {
-          taskId: "TEST-task",
-          requestId: "TEST-id",
-          inputId: "TEST-input",
-          expectedRevision: 0,
-          text: "Reply",
-        },
-      ],
-      [
-        "task_respond",
-        {
-          taskId: "TEST-task",
-          requestId: "TEST-id",
-          expectedRevision: 1,
-          text: "Reply",
-        },
-      ],
-      ["task_cancel", { taskId: "TEST-task" }],
-      [
-        "task_cancel",
-        { taskId: "TEST-task", requestId: "TEST-id", owner: "other" },
-      ],
-    ];
-    for (const [name, args] of invalid) {
-      const result = await app.call(name, args);
-      assert.equal(
-        result.result.isError,
-        true,
-        name + " " + JSON.stringify(args),
-      );
-    }
+    const invalid = await app.call("test_echo", {
+      count: 11,
+      owner: "other",
+    });
+    assert.equal(invalid.result.isError, true);
+    const error = invalid.result.structuredContent.error;
+    assert.equal(error.code, "invalid_input");
+    assert.match(error.message, /text:/);
+    assert.match(error.message, /count:/);
+    assert.match(error.message, /unknown field\(s\) owner/);
+    assert.match(error.message, /A correct call looks like \{"text":"hello"\}/);
     assert.deepEqual(app.calls, []);
   } finally {
     await app.close();
@@ -324,8 +253,8 @@ test("MCP rejects unsupported HTTP methods and JSON-RPC methods", async () => {
       id: 3,
       method: "tools/call",
       params: {
-        name: "task_submit",
-        arguments: { requestId: "TEST-id", text: "Task" },
+        name: "test_echo",
+        arguments: { text: "Task" },
         task: { ttl: 60_000 },
       },
     });
@@ -379,8 +308,8 @@ test("MCP validates HTTP protocol headers, malformed JSON and the bounded reques
       id: 1,
       method: "tools/call",
       params: {
-        name: "task_submit",
-        arguments: { requestId: "TEST-id", text: "x".repeat(64 * 1024) },
+        name: "test_echo",
+        arguments: { text: "x".repeat(64 * 1024) },
       },
     });
     assert.equal(oversized.status, 413);
@@ -528,74 +457,48 @@ test("MCP exposes deliberate public authentication errors and withholds internal
   }
 });
 
-test("MCP preserves public task errors and withholds internal handler failures", async () => {
+test("MCP preserves public tool errors and withholds internal handler failures", async () => {
   const app = await fixture({
-    tasks: {
-      submit: () => {
-        throw Error("TEST private backend details");
-      },
-      cancel: () => {
-        throw new McpTaskError("task_not_found", "Task was not found.");
-      },
+    call: (_, name) => {
+      if (name === "test_missing")
+        throw new McpToolError("not_found", "Nothing was found.");
+      throw Error("TEST private backend details");
     },
   });
   try {
-    const failed = await app.call("task_submit", {
-      requestId: "TEST-id",
-      text: "Task",
-    });
+    const failed = await app.call("test_echo", { text: "Task" });
     assert.equal(failed.result.isError, true);
     assert.deepEqual(failed.result.structuredContent.error, {
-      code: "task_failed",
-      message: "The task operation failed.",
+      code: "tool_failed",
+      message: "The tool call failed.",
     });
     assert.doesNotMatch(JSON.stringify(failed), /TEST private/);
-    const missing = await app.call("task_cancel", {
-      taskId: "TEST-task",
-      requestId: "TEST-id",
-    });
+    const missing = await app.call("test_missing", {});
     assert.equal(missing.result.isError, true);
-    assert.equal(missing.result.structuredContent.error.code, "task_not_found");
+    assert.equal(missing.result.structuredContent.error.code, "not_found");
   } finally {
     await app.close();
   }
 });
 
-test("MCP bounds a task_get handler that never resolves without invoking task cancellation", async () => {
-  let getInput: unknown;
-  let cancellations = 0;
-  const app = await fixture({
-    tasks: {
-      get: (_, input) => {
-        getInput = input;
-        return new Promise(() => {});
-      },
-      cancel: () => {
-        cancellations += 1;
-        return {};
-      },
-    },
-  });
+test("MCP 401 challenge names the resource metadata and the scopes", async () => {
+  const app = await fixture();
   try {
-    const started = Date.now();
-    const result = await app.call("task_get", { taskId: "TEST-task" });
-    assert.equal(result.result.isError, true);
+    const response = await app.post({}, { authorization: "Bearer TEST-none" });
+    assert.equal(response.status, 401);
     assert.equal(
-      result.result.structuredContent.error.code,
-      "task_get_timeout",
+      response.headers.get("www-authenticate"),
+      'Bearer realm="mcp", resource_metadata="https://niaro.example/.well-known/oauth-protected-resource/mcp", scope="data.read memory.write services.call"',
     );
-    assert(Date.now() - started < 3_000);
-    assert.deepEqual(getInput, { taskId: "TEST-task", waitMs: 0 });
-    assert.equal(cancellations, 0);
   } finally {
     await app.close();
   }
 });
 
-test("MCP lost submit acknowledgement does not abort accepted native work", async () => {
-  let accepted!: () => void;
-  const admitted = new Promise<void>((resolve) => {
-    accepted = resolve;
+test("MCP lost acknowledgement does not abort a started call", async () => {
+  let started!: () => void;
+  const running = new Promise<void>((resolve) => {
+    started = resolve;
   });
   let release!: () => void;
   const released = new Promise<void>((resolve) => {
@@ -605,19 +508,14 @@ test("MCP lost submit acknowledgement does not abort accepted native work", asyn
   const completion = new Promise<void>((resolve) => {
     completed = resolve;
   });
-  let cancellations = 0;
+  let aborted = false;
   const app = await fixture({
-    tasks: {
-      submit: async () => {
-        accepted();
-        await released;
-        completed();
-        return { taskId: "TEST-durable-task", status: "accepted" };
-      },
-      cancel: () => {
-        cancellations += 1;
-        return {};
-      },
+    call: async (_context, _name, _input, signal) => {
+      started();
+      await released;
+      aborted = signal.aborted;
+      completed();
+      return { result: { done: true } };
     },
   });
   try {
@@ -634,18 +532,15 @@ test("MCP lost submit acknowledgement does not abort accepted native work", asyn
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
-        params: {
-          name: "task_submit",
-          arguments: { requestId: "TEST-submit", text: "Task" },
-        },
+        params: { name: "test_echo", arguments: { text: "Write" } },
       }),
     });
-    await admitted;
+    await running;
     controller.abort();
     await assert.rejects(response, { name: "AbortError" });
     release();
     await completion;
-    assert.equal(cancellations, 0);
+    assert.equal(aborted, false);
   } finally {
     release();
     await app.close();

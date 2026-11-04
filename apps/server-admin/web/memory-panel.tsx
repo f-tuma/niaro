@@ -814,11 +814,13 @@ function MemoryRecords({
               const source =
                 item.source?.type === "observed"
                   ? copy.observed
-                  : item.trust === "model_inference"
-                    ? copy.model_inference
-                    : item.source
-                      ? copy[item.source.type]
-                      : copy.unknownSource;
+                  : item.source?.type === "external_app"
+                    ? item.source.name
+                    : item.trust === "model_inference"
+                      ? copy.model_inference
+                      : item.source
+                        ? copy[item.source.type]
+                        : copy.unknownSource;
               return (
                 <Item key={item.id} variant="row" size="row">
                   <ItemContent>

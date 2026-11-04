@@ -85,8 +85,8 @@ test("fresh identity seeds its OAuth resource and retains configuration and its 
     );
     assert.equal(resources[0]!.identifier, "http://127.0.0.1:42371/mcp");
     assert.deepEqual(JSON.parse(String(resources[0]!.allowedScopes)), [
-      "native.view",
-      "native.run",
+      "data.read",
+      "memory.write",
       "services.call",
     ]);
     await first.close();
@@ -114,21 +114,21 @@ test("fresh identity seeds its OAuth resource and retains configuration and its 
   }
 });
 
-test("an OAuth resource created before connector mode gains its scope on reopen", async () => {
+test("an OAuth resource stored with retired scopes gets the current ones on reopen", async () => {
   const h = fixture();
   try {
     const first = await openIdentity(h.config);
     first["db"]
       .prepare('UPDATE "oauthResource" SET "allowedScopes"=?')
-      .run(JSON.stringify(["native.view", "native.run"]));
+      .run(JSON.stringify(["native.view", "native.run", "services.call"]));
     await first.close();
     const reopened = await openIdentity(h.config);
     const [resource] = reopened["db"]
       .prepare('SELECT "allowedScopes" FROM "oauthResource"')
       .all();
     assert.deepEqual(JSON.parse(String(resource!.allowedScopes)), [
-      "native.view",
-      "native.run",
+      "data.read",
+      "memory.write",
       "services.call",
     ]);
     await reopened.close();

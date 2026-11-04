@@ -214,15 +214,27 @@ Docker images), and running your own next to Niaro:
 ## External AI apps
 
 **External AI apps** (`/admin/mcp`) connects an AI app such as Claude to
-Niaro's MCP endpoint `https://<server>/mcp`. Behavior, tools and the task
-contract: [mcp-server](../../openspec/specs/mcp-server/spec.md).
+Niaro's MCP endpoint `https://<server>/mcp`. The app's own model does the
+thinking; Niaro supplies the person's data and actions and makes no model
+call of its own. Behavior and tools:
+[mcp-server](../../openspec/specs/mcp-server/spec.md).
+
+| Permission                                 | Tools                                                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| **Read your Niaro data** (`data.read`)     | `niaro_search` (meetings, tasks, chats, memory), `niaro_meeting_get`, `niaro_tasks_list`, `niaro_memory_list` |
+| **Save to your memory** (`memory.write`)   | `niaro_memory_save`: facts about the person, shown in their profile as saved by the app and deletable there   |
+| **Call service actions** (`services.call`) | one tool per permitted service action, and `niaro_call_status`                                                |
+
+The server's instructions ask the app to search Niaro before asking the
+person and to save durable facts about them as it learns them. Memory must
+be turned on for the workspace (**Built-in tools → Memory**) for saves to
+work.
 
 ### Access token
 
 1. Sign in with your own account and select the workspace.
-2. **Connect an app**: **Client name**, mode **Runs actions** (the app calls
-   the workspace's service actions as tools) or **Hands over tasks** (Niaro's
-   agent does the work), permissions, **Valid for** 1, 7 or 30 days.
+2. **Connect an app**: **Client name**, **Permissions** (all three are
+   preselected), **Valid for** 1, 7 or 30 days.
 3. Copy the token now; it is shown only once.
 4. Configure the app with the **Address for AI apps** and the token. The page
    shows an **Example client configuration**; the exact format depends on the
@@ -262,9 +274,11 @@ OAuth access lasts at most an hour; link again after it expires.
   person's access; use OAuth or personal connectors instead. Remote
   connectors run from Anthropic's cloud, so the server must be publicly
   reachable.
-- Reuse the same `requestId` when retrying a request whose answer was lost.
-- After `task_submit`, poll `task_get` until the task finishes.
+- A write tool takes an optional `requestId`; reusing it when retrying a call
+  whose answer was lost runs the action at most once.
 - Never resubmit a write whose outcome is unknown; check the service first.
+- Access made before NIAR-289 with the old "Hands over tasks" mode was
+  removed at upgrade; connect the app again.
 - A connector call that needs approval returns an approval link; the person
   who owns the access approves it in Niaro, then the app reads the result with
   `niaro_call_status`.

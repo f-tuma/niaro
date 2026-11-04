@@ -7,6 +7,8 @@ export const AUDIT_PROFILE = "agent-audit/1" as const;
 export const AuditAction = z.enum([
   "mcp.access_issued",
   "mcp.access_revoked",
+  /** A person's own AI app read their Niaro data (search, meeting, tasks, memory). */
+  "mcp.data_read",
   "auth.provider_changed",
   "hosted.server_changed",
   "server.settings_changed",
@@ -141,6 +143,11 @@ export const AuditDetails = z.strictObject({
   reason: AuditReason.optional(),
   /** Result of an automatic OAuth probe of a service address. */
   oauthProbe: z.enum(["configured", "metadata", "none"]).optional(),
+  /** Which Niaro data tool an external AI app called. */
+  mcpTool: z
+    .string()
+    .regex(/^niaro_[a-z_]{1,40}$/)
+    .optional(),
   /** Actions a person's own service gained when its tools were read. */
   added: z.number().int().nonnegative().optional(),
 });

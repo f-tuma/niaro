@@ -80,8 +80,8 @@ export class AuditStore {
     if (query.category)
       where.push(
         query.category === "tools"
-          ? "a.action IN ('tool.invoked','calendar.executed','catalog.action_invoked')"
-          : "a.action NOT IN ('tool.invoked','calendar.executed','catalog.action_invoked')",
+          ? "a.action IN ('tool.invoked','calendar.executed','catalog.action_invoked','mcp.data_read')"
+          : "a.action NOT IN ('tool.invoked','calendar.executed','catalog.action_invoked','mcp.data_read')",
       );
     if (query.outcome) {
       where.push("a.outcome=?");

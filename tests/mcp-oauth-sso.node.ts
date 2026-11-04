@@ -255,7 +255,7 @@ test("service callback preserves the official canonical MCP SSO resume before br
       redirect_uri: "https://external.example.test/callback",
       response_type: "code",
       resource: f.mcpOAuth.resource,
-      scope: "native.view native.run",
+      scope: "data.read memory.write",
       max_age: "0",
       state: "TESTstate",
       code_challenge_method: "S256",
@@ -380,7 +380,7 @@ test("service callback preserves the official canonical MCP SSO resume before br
         await f.mcpOAuth.authenticate(f.auth, `Bearer ${access}`, {
           serverId: "server-a",
           workspaceId: "workspace-a",
-          requiredScopes: ["native.run"],
+          requiredScopes: ["memory.write"],
         })
       ).userId,
       f.actor.userId,

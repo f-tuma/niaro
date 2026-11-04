@@ -62,20 +62,9 @@ export type CatalogRuntime = {
     language: Language,
   ) => Promise<ServiceAnswer>;
   /** Exact passive command projection, including plain replies omitted from Tasks. */
-  readTask?: (commandId: string) => Promise<
-    | (import("../../packages/protocol").WorkItem & {
-        cancellationSettled?: true;
-        /** A canonical question/approval still needs its resume authority closed. */
-        cancellationPending?: true;
-      })
-    | null
-  >;
-  /** Cancel an exactly pinned, settled native suspension without resuming it. */
-  cancelTask?: (binding: {
-    workItemId: string;
-    expectedWorkRevision: number;
-    conversationId: string;
-  }) => Promise<ServiceAnswer>;
+  readTask?: (
+    commandId: string,
+  ) => Promise<import("../../packages/protocol").WorkItem | null>;
   /**
    * The person cancels their own open chat task at its exact native revision:
    * a paused question or approval closes (the approval is declined), a run
@@ -411,7 +400,6 @@ export function createCatalogRuntime(
     taskWindow,
     tasks: async () => (await taskWindow()).items,
     readTask: (commandId) => native.readTask!(commandId),
-    cancelTask: (binding) => native.cancelTask!(binding),
     cancelOpenTask: async (binding) => {
       const saved = await context.serial(async () => {
         await actor();

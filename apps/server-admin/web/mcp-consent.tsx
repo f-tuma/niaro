@@ -32,10 +32,10 @@ import { Spinner } from "@admin/components/ui/spinner";
 import { useAdmin } from "./context";
 import { useConsoleScope } from "./console-scope";
 import { authApi, ApiError } from "./lib/api";
-import { useMcpCopy } from "./mcp-copy";
+import { MCP_SCOPES, mcpScopeCopy, useMcpCopy } from "./mcp-copy";
 import { readMcpOAuthQuery } from "./lib/mcp-oauth-query";
 
-const ScopeSchema = z.enum(["native.view", "native.run", "services.call"]);
+const ScopeSchema = z.enum(MCP_SCOPES);
 type Scope = z.infer<typeof ScopeSchema>;
 const ConsentInfoSchema = z.object({
   clientName: z.string().min(1).max(100),
@@ -339,11 +339,7 @@ export function McpConsent({ logout }: { logout?: () => void } = {}) {
                         }
                       />
                       <FieldLabel htmlFor={`${id}-${permission}`}>
-                        {permission === "services.call"
-                          ? copy.connectorScope
-                          : permission === "native.run"
-                            ? copy.runOnly
-                            : copy.viewOnly}
+                        {copy[mcpScopeCopy[permission][0]]}
                       </FieldLabel>
                     </Field>
                   ))}

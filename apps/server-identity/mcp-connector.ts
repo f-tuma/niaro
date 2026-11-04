@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import type {
   Service,
   ServiceAction,
 } from "../../packages/protocol/service-catalog";
-import { MCP_CONNECTOR_STATUS_TOOL } from "../server-mcp/transport";
+import { MCP_CONNECTOR_STATUS_TOOL } from "../server-mcp/router";
 import type { StoredInvocation } from "./service-catalog";
 
 /** Connector mode exposes each permitted, enabled catalog action as one MCP tool. */
@@ -20,7 +21,31 @@ export type ConnectorTool = {
   };
   service: Service;
   action: ServiceAction;
+  /** A write whose schema carries Niaro's optional `requestId` key. */
+  idempotent: boolean;
 };
+
+/** The client's idempotency key on write tools; stripped before the service. */
+export const MCP_REQUEST_ID = "requestId";
+export const MCP_REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
+const requestIdProperty = {
+  type: "string",
+  minLength: 1,
+  maxLength: 160,
+  pattern: MCP_REQUEST_ID_PATTERN.source,
+  description:
+    "Optional idempotency key (letters, digits, . _ : -). Reuse the same value when retrying after a lost response; the call then runs at most once.",
+};
+/** The receipt of a keyed call: one per grant and key, whatever the tool. */
+export function connectorRequestId(grantId: string, key: string) {
+  return (
+    "mcp-" +
+    createHash("sha256")
+      .update(`niaro-mcp-request/1\0${grantId}\0${key}`)
+      .digest("base64url")
+      .slice(0, 43)
+  );
+}
 
 const slug = (value: string) =>
   value
@@ -59,16 +84,35 @@ export function connectorTools(
           ? `A person must approve each call in Niaro before it runs; the result then says where, and ${MCP_CONNECTOR_STATUS_TOOL} returns the outcome.`
           : "",
       ].filter(Boolean);
+      const schema =
+        action.inputSchema.type === "object"
+          ? (action.inputSchema as ConnectorTool["inputSchema"])
+          : ({
+              type: "object",
+              ...action.inputSchema,
+            } as ConnectorTool["inputSchema"]);
+      const properties =
+        schema.properties && typeof schema.properties === "object"
+          ? (schema.properties as Record<string, unknown>)
+          : {};
+      // A service that names its own field requestId keeps it unchanged.
+      const idempotent =
+        action.effect === "write" && !(MCP_REQUEST_ID in properties);
       tools.push({
         name,
         description: [action.description.trim(), ...notes]
           .filter(Boolean)
           .join("\n\n")
           .slice(0, 2000),
-        inputSchema:
-          action.inputSchema.type === "object"
-            ? (action.inputSchema as ConnectorTool["inputSchema"])
-            : { type: "object", ...action.inputSchema },
+        inputSchema: idempotent
+          ? {
+              ...schema,
+              properties: {
+                ...properties,
+                [MCP_REQUEST_ID]: requestIdProperty,
+              },
+            }
+          : schema,
         annotations: {
           title: `${action.name} (${service.name})`,
           readOnlyHint: action.effect === "read",
@@ -77,6 +121,7 @@ export function connectorTools(
         },
         service,
         action,
+        idempotent,
       });
     }
   }

@@ -105,8 +105,10 @@ the decision, then the reason.
   the original member record, so leaving and rejoining never restores access.
   No refresh tokens; manual tokens expire within 30 days; OAuth uses the
   Better Auth provider with pinned callbacks and PKCE S256; dynamic client
-  registration and metadata fetching are off (SSRF risk). A durable job keeps
-  only the grant id and revalidates it before each dispatch.
+  registration and metadata fetching are off (SSRF risk). MCP is a router:
+  the app's own model plans, Niaro serves the person's data with their app
+  visibility and runs catalog actions, re-authenticating the grant on every
+  call and never calling a model for it.
 - **The activity log holds metadata only,** written in the same transaction as
   the change. It is not tamper-evident and has no retention.
 

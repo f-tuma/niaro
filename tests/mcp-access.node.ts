@@ -46,7 +46,7 @@ function fixture() {
     store.issue({
       ...management,
       label: "TEST own client",
-      scopes: ["native.view", "native.run"],
+      scopes: ["data.read", "memory.write"],
       expiresAt: now + 3_600_000,
       ...overrides,
     });
@@ -81,7 +81,7 @@ test("MCP secret is returned once, only its digest persists; principal and disco
     assert.match(first.accessToken, /^agent_mcp_[A-Za-z0-9_-]{43}$/);
     const principal = f.store.authenticate(`Bearer ${first.accessToken}`, {
       serverId: "server-a",
-      requiredScopes: ["native.view", "native.run"],
+      requiredScopes: ["data.read", "memory.write"],
     });
     assert.deepEqual(principal, {
       grantId: first.grant.id,
@@ -91,8 +91,9 @@ test("MCP secret is returned once, only its digest persists; principal and disco
       workspaceId: "workspace-a",
       serverId: "server-a",
       role: "member",
-      scopes: ["native.view", "native.run"],
+      scopes: ["data.read", "memory.write"],
       expiresAt: first.grant.expiresAt,
+      label: first.grant.label,
     });
     const persisted = f.db.prepare("SELECT * FROM agent_mcp_access").get()!;
     assert.match(String(persisted.token_digest), /^[a-f0-9]{64}$/);
@@ -174,7 +175,7 @@ test("explicit admin issuance binds to the target user's current identity, and r
       userId: "alice",
       administratorSessionId: "admin-session",
       label: "TEST admin grant",
-      scopes: ["native.view"],
+      scopes: ["data.read"],
       expiresAt: f.now() + 60_000,
     };
     const grant = f.store.issueForUser(input);
@@ -234,7 +235,7 @@ test("explicit admin issuance binds to the target user's current identity, and r
 test("MCP never authenticates mobile, admin, session, refresh or grant-ID credentials, and denies cross-server, workspace and scope requests", () => {
   const f = fixture();
   try {
-    const grant = f.issue({ scopes: ["native.view"] });
+    const grant = f.issue({ scopes: ["data.read"] });
     const header = `Bearer ${grant.accessToken}`;
     for (const invalid of [
       undefined,
@@ -268,7 +269,7 @@ test("MCP never authenticates mobile, admin, session, refresh or grant-ID creden
       () =>
         f.store.authenticate(header, {
           ...target,
-          requiredScopes: ["native.run"],
+          requiredScopes: ["memory.write"],
         }),
       403,
       "mcp_insufficient_scope",
@@ -280,7 +281,7 @@ test("MCP never authenticates mobile, admin, session, refresh or grant-ID creden
     );
     denied(() => f.issue({ scopes: [] }), 400, "mcp_access_invalid");
     denied(
-      () => f.issue({ scopes: ["native.view", "native.view"] }),
+      () => f.issue({ scopes: ["data.read", "data.read"] }),
       400,
       "mcp_access_invalid",
     );
@@ -297,7 +298,7 @@ test("MCP never authenticates mobile, admin, session, refresh or grant-ID creden
       () =>
         f.store.authenticateGrant(grant.grant.id, {
           ...target,
-          requiredScopes: ["native.run"],
+          requiredScopes: ["memory.write"],
         }),
       403,
       "mcp_insufficient_scope",
@@ -314,7 +315,7 @@ test("MCP never authenticates mobile, admin, session, refresh or grant-ID creden
     assert.equal(
       f.store.authenticate(header, {
         ...target,
-        requiredScopes: ["native.view"],
+        requiredScopes: ["data.read"],
       }).userId,
       "alice",
     );
@@ -336,7 +337,7 @@ test("expiry, scoped owner revocation, and active-grant limits are enforced by b
     const first = limited.issue({
       ...f.management,
       label: "TEST limit",
-      scopes: ["native.view"],
+      scopes: ["data.read"],
       expiresAt: f.now() + 1_000,
     });
     denied(
@@ -344,7 +345,7 @@ test("expiry, scoped owner revocation, and active-grant limits are enforced by b
         limited.issue({
           ...f.management,
           label: "TEST excess",
-          scopes: ["native.view"],
+          scopes: ["data.read"],
           expiresAt: f.now() + 1_000,
         }),
       429,
@@ -392,7 +393,7 @@ test("expiry, scoped owner revocation, and active-grant limits are enforced by b
     const next = limited.issue({
       ...f.management,
       label: "TEST replacement",
-      scopes: ["native.run"],
+      scopes: ["memory.write"],
       expiresAt: f.now() + 1_000,
     });
     f.enabled.delete("server-a");
@@ -515,7 +516,7 @@ test("the person's own grants are listed across workspaces and end together, OAu
       serverId: "server-a",
       workspaceId: "workspace-a",
       label: "TEST bob",
-      scopes: ["native.view"],
+      scopes: ["data.read"],
       expiresAt: f.now() + 3_600_000,
     });
     // The OAuth provider's token tables, as far as revocation needs them.

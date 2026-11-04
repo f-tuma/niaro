@@ -83,14 +83,24 @@ describe("admin navigation", () => {
       expect(catalogCopy[language].decisionModelHint).not.toMatch(/\//);
   });
 
-  test("external AI app modes say what they do", () => {
-    expect([mcpCopy.en.connector, mcpCopy.en.processor]).toEqual([
-      "Runs actions",
-      "Hands over tasks",
+  test("external AI app permissions say what they allow", () => {
+    expect([
+      mcpCopy.en.scopeDataRead,
+      mcpCopy.en.scopeMemoryWrite,
+      mcpCopy.en.connectorScope,
+    ]).toEqual([
+      "Read your Niaro data",
+      "Save to your memory",
+      "Call service actions",
     ]);
-    expect([mcpCopy.cs.connector, mcpCopy.cs.processor]).toEqual([
-      "Spouští akce",
-      "Předává úkoly",
+    expect([
+      mcpCopy.cs.scopeDataRead,
+      mcpCopy.cs.scopeMemoryWrite,
+      mcpCopy.cs.connectorScope,
+    ]).toEqual([
+      "Číst tvá data v Niaro",
+      "Ukládat do tvé paměti",
+      "Volat akce služeb",
     ]);
   });
 });
