@@ -73,6 +73,11 @@ test(
         issuer.authorization_endpoint,
         h.origin + "/admin/auth/oauth2/authorize",
       );
+      assert.equal(issuer.client_id_metadata_document_supported, true);
+      assert(issuer.grant_types_supported.includes("refresh_token"));
+      assert(issuer.scopes_supported.includes("offline_access"));
+      assert(!metadata.scopes_supported.includes("offline_access"));
+      assert(!issuer.registration_endpoint);
 
       const password = "TEST-design-HTTP-password-only-2026";
       const credentials = { email: "owner@example.test", password };
@@ -196,13 +201,15 @@ test(
       }
       assert.equal(result.status, "succeeded", JSON.stringify(result));
       assert.equal(result.reply, "TEST OAuth native result");
+      // The OAuth link does not hang on the browser session it came from.
       const logout = await browser("/admin/auth/sign-out", {});
       assert.equal(logout.status, 200);
-      const revoked = await fetch(resource, {
+      const kept = await fetch(resource, {
         method: "POST",
         headers: { Authorization: "Bearer " + token.access_token },
       });
-      assert.equal(revoked.status, 401);
+      assert.notEqual(kept.status, 401);
+      await client.listTools();
     } finally {
       await client.close();
       await h.close();

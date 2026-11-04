@@ -88,6 +88,7 @@ test("fresh identity seeds its OAuth resource and retains configuration and its 
       "native.view",
       "native.run",
       "services.call",
+      "offline_access",
     ]);
     await first.close();
     const key = readFileSync(h.secret);
@@ -130,6 +131,7 @@ test("an OAuth resource created before connector mode gains its scope on reopen"
       "native.view",
       "native.run",
       "services.call",
+      "offline_access",
     ]);
     await reopened.close();
   } finally {
