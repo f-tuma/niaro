@@ -382,44 +382,46 @@ line = LineChart(["Mon", "Tue"], [Series("Calls", [2, 5]), Series("Mails", [1, 1
   ).toBeTruthy();
 });
 
-test("in chat, generated UI follows the answer text and a follow-up is sent at once, leaving the composer as it was (NIAR-291)", async () => {
+type StoredMessages = ReturnType<
+  typeof emptySnapshot
+>["conversations"][number]["messages"];
+const askingReply: StoredMessages[number] = {
+  id: "m-2",
+  role: "assistant",
+  text: "TEST Sales grew.",
+  ui: {
+    type: "openui.program",
+    version: 1,
+    library: "niaro-ui@1",
+    program: `root = Stack([Metric("Revenue", 410), Buttons([Button("Compare", @ToAssistant("TEST Compare with last year")), Button("No thanks")])])`,
+  },
+};
+const earlierCard: StoredMessages[number] = {
+  id: "m-0",
+  role: "assistant",
+  text: "TEST Earlier card.",
+  result: {
+    type: "card.document",
+    version: 1,
+    document: {
+      id: "TEST-card",
+      revision: 1,
+      title: "TEST Old card",
+      root: ["owner", "go"],
+      nodes: [
+        { id: "owner", type: "field", label: "Owner", value: "Anna" },
+        { id: "go", type: "button", actionId: "go" },
+      ],
+      actions: [
+        { id: "go", kind: "reply", label: "TEST Go", variant: "primary" },
+      ],
+    },
+  },
+};
+
+/** The phone's chat with these stored messages, as after opening it. */
+async function showChat(messages: StoredMessages) {
   const snapshot = emptySnapshot();
-  const messages: (typeof snapshot)["conversations"][number]["messages"] = [
-    { id: "m-1", role: "user", text: "TEST How did Q3 go?" },
-    {
-      id: "m-2",
-      role: "assistant",
-      text: "TEST Sales grew.",
-      ui: {
-        type: "openui.program",
-        version: 1,
-        library: "niaro-ui@1",
-        program: `root = Stack([Metric("Revenue", 410), Button("Compare", @ToAssistant("TEST Compare with last year"))])`,
-      },
-    },
-    {
-      id: "m-3",
-      role: "assistant",
-      text: "TEST Earlier card.",
-      result: {
-        type: "card.document",
-        version: 1,
-        document: {
-          id: "TEST-card",
-          revision: 1,
-          title: "TEST Old card",
-          root: ["owner", "go"],
-          nodes: [
-            { id: "owner", type: "field", label: "Owner", value: "Anna" },
-            { id: "go", type: "button", actionId: "go" },
-          ],
-          actions: [
-            { id: "go", kind: "reply", label: "TEST Go", variant: "primary" },
-          ],
-        },
-      },
-    },
-  ];
   let state: SessionState = {
     store: fromSnapshot("https://fixture.test/v1/a", snapshot.scope, snapshot),
     status: "online",
@@ -433,6 +435,24 @@ test("in chat, generated UI follows the answer text and a follow-up is sent at o
     activityConnection: "waiting",
   };
   const listeners = new Set<() => void>();
+  const publish = (next: Partial<SessionState>) => {
+    state = { ...state, ...next };
+    listeners.forEach((listener) => listener());
+  };
+  const withMessages = (list: StoredMessages, revision: number) => {
+    const store = state.store!;
+    return {
+      ...store,
+      conversations: {
+        ...store.conversations,
+        "conversation-1": {
+          ...store.conversations["conversation-1"]!,
+          revision,
+          messages: list,
+        },
+      },
+    };
+  };
   const session = {
     getSnapshot: () => state,
     subscribe: (listener: () => void) => {
@@ -463,24 +483,22 @@ test("in chat, generated UI follows the answer text and a follow-up is sent at o
   // The chat shows this session's messages: they arrive after it opens.
   await act(async () => {
     for (let i = 0; i < 10; i++) await Promise.resolve();
-    const store = state.store!;
-    state = {
-      ...state,
-      store: {
-        ...store,
-        conversations: {
-          ...store.conversations,
-          "conversation-1": {
-            ...store.conversations["conversation-1"]!,
-            revision: 2,
-            messages,
-          },
-        },
-      },
-    };
-    listeners.forEach((listener) => listener());
+    publish({ store: withMessages(messages, 2) });
     for (let i = 0; i < 10; i++) await Promise.resolve();
   });
+  return { session, publish, withMessages };
+}
+const disabled = (name: string) =>
+  screen.getByRole("button", { name }).props.accessibilityState?.disabled ===
+  true;
+
+test("in chat, generated UI follows the answer text and a follow-up is sent at once, leaving the composer as it was (NIAR-291)", async () => {
+  const messages: StoredMessages = [
+    { id: "m-1", role: "user", text: "TEST How did Q3 go?" },
+    earlierCard,
+    askingReply,
+  ];
+  const { session, publish, withMessages } = await showChat(messages);
   expect(screen.getByText("TEST Sales grew.")).toBeTruthy();
   expect(screen.getByLabelText("Revenue, 410")).toBeTruthy();
   // A stored answer card reads as text, without its controls.
@@ -490,23 +508,20 @@ test("in chat, generated UI follows the answer text and a follow-up is sent at o
   const composer = () => screen.getByLabelText(translate("en")("composer"));
   // A half-written message waits in the composer.
   fireEvent.changeText(composer(), "TEST still typing");
-  const publish = (next: Partial<SessionState>) => {
-    state = { ...state, ...next };
-    listeners.forEach((listener) => listener());
-  };
   // Offline, the follow-up waits as Send does.
   await act(async () => publish({ status: "offline" }));
-  expect(
-    screen.getByRole("button", { name: "Compare" }).props.accessibilityState
-      ?.disabled,
-  ).toBe(true);
+  expect(disabled("Compare")).toBe(true);
   await act(async () => {
     fireEvent.press(screen.getByRole("button", { name: "Compare" }));
   });
   expect(session.send).not.toHaveBeenCalled();
   await act(async () => publish({ status: "online" }));
+  // The latest reply asks.
+  expect(disabled("No thanks")).toBe(false);
+  let sent!: Extract<SessionCommand, { type: "message.send" }>;
   (session.send as jest.Mock).mockImplementationOnce(
     (command: Extract<SessionCommand, { type: "message.send" }>) => {
+      sent = command;
       publish({ pending: command, commandStates: { chat: "sending" } });
       return new Promise<void>(() => {});
     },
@@ -515,25 +530,51 @@ test("in chat, generated UI follows the answer text and a follow-up is sent at o
     fireEvent.press(screen.getByRole("button", { name: "Compare" }));
   });
   expect(session.send).toHaveBeenCalledTimes(1);
-  expect((session.send as jest.Mock).mock.calls[0]![0]).toMatchObject({
+  expect(sent).toMatchObject({
     type: "message.send",
     conversationId: "conversation-1",
     text: "TEST Compare with last year",
   });
-  expect((session.send as jest.Mock).mock.calls[0]![0]).not.toHaveProperty(
-    "mentions",
-  );
+  expect(sent).not.toHaveProperty("mentions");
   // The person's own message, on its way; the draft stays untouched.
   expect(screen.getByText("TEST Compare with last year")).toBeTruthy();
   expect(composer().props.value).toBe("TEST still typing");
-  // Answered: once the chat is free again, the button sends nothing more.
-  await act(async () => publish({ pending: null, commandStates: {} }));
-  const compare = screen.getByRole("button", { name: "Compare" });
-  expect(compare.props.accessibilityState?.disabled).toBe(true);
+  // Recorded after the reply: the reply no longer asks, its other choice
+  // included.
+  await act(async () =>
+    publish({
+      pending: null,
+      commandStates: {},
+      store: withMessages(
+        [
+          ...messages,
+          { id: "m-3", role: "user", text: "TEST Compare with last year" },
+        ],
+        3,
+      ),
+    }),
+  );
+  expect(disabled("Compare")).toBe(true);
+  expect(disabled("No thanks")).toBe(true);
   await act(async () => {
-    fireEvent.press(compare);
+    fireEvent.press(screen.getByRole("button", { name: "No thanks" }));
   });
   expect(session.send).toHaveBeenCalledTimes(1);
+});
+
+test("in chat, a reopened reply the person already answered asks nothing more (NIAR-291)", async () => {
+  const { session } = await showChat([
+    { id: "m-1", role: "user", text: "TEST How did Q3 go?" },
+    askingReply,
+    { id: "m-3", role: "user", text: "TEST Something else" },
+  ]);
+  expect(screen.getByText("TEST Sales grew.")).toBeTruthy();
+  expect(disabled("Compare")).toBe(true);
+  expect(disabled("No thanks")).toBe(true);
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Compare" }));
+  });
+  expect(session.send).not.toHaveBeenCalled();
 });
 
 test("in chat, an answer shows as it is written, inert, until the stored reply replaces it", async () => {

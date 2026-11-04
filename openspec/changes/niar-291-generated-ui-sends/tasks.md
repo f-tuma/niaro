@@ -15,6 +15,11 @@
 - [x] 3.1 The runtime and `GenerativeUiView` do the same; the full-screen answer closes once the message is taken.
 - [x] 3.2 `followUp` sends with `submitMessage` owning no draft; a detached send never takes the composer's files.
 
-## 4. Verification
+## 4. Latest reply only
 
-- [x] 4.1 Jest: `tests/web-generative-ui.test.tsx`, `tests/web-chat.test.tsx`, `tests/mobile-generative-ui.test.tsx`, `tests/mobile-generative-canvas.test.tsx` (sent at once, composer untouched, single use, not taken, offline, read-only).
+- [x] 4.1 Web: a reply's follow-ups wait unless it is the thread's last message (assistant-ui `isLast`; pending and failed messages count).
+- [x] 4.2 Phone: `latestReplyId` is the last stored message when it is a reply and no failed message follows.
+
+## 5. Verification
+
+- [x] 5.1 Jest: `tests/web-generative-ui.test.tsx`, `tests/web-chat.test.tsx`, `tests/mobile-generative-ui.test.tsx`, `tests/mobile-generative-canvas.test.tsx` (sent at once, composer untouched, single use, not taken, offline, read-only, latest reply only, reopened chat).

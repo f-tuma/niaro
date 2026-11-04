@@ -157,12 +157,15 @@ function OpenUiPart({
   args,
 }: ToolCallMessagePartProps<{ program: string; streaming?: boolean }>) {
   const chat = useNextChat();
+  // Only the chat's latest reply asks: once anything follows it (a message
+  // of the person, sent, on its way or failed), its follow-ups are done.
+  const last = useAuiState((s) => s.message.isLast);
   return (
     <GeneratedUi
       program={args.program}
       streaming={!!args.streaming}
       disabled={chat.readOnly || !!args.streaming}
-      blocked={chat.followUpBlocked}
+      blocked={chat.followUpBlocked || !last}
       onFollowUp={chat.followUp}
     />
   );

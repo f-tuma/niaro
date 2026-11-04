@@ -44,6 +44,11 @@ export type MobileChat = {
   followUp: (text: string) => boolean;
   /** A follow-up cannot be sent now, as Send cannot. */
   followUpBlocked: boolean;
+  /**
+   * The chat's latest reply, when nothing of the person follows it: only
+   * its generated follow-ups can still be sent.
+   */
+  latestReplyId?: string;
   /** A sign-in card's "Continue": the message that goes on. */
   continueWith: (text: string) => void;
   reviewOffer: (offer: ProcessOfferResult) => void;
@@ -98,7 +103,7 @@ export function AnswerBody({
           program={m.ui.program}
           language={chat.language}
           disabled={chat.readOnly}
-          blocked={chat.followUpBlocked}
+          blocked={chat.followUpBlocked || chat.latestReplyId !== m.id}
           onFollowUp={chat.followUp}
         />
       ) : null}

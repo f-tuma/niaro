@@ -7,7 +7,7 @@
 
 ### Requirement: Follow-up actions send at once
 
-A `@ToAssistant` action, a button without an action and a `Form`'s button SHALL send the message at once as the person's own message, by the path and rules of a typed one; the composer's draft SHALL stay. A `Form` SHALL add its answered fields as `Label: value` lines; hidden `context` is never sent. A form, or a button outside one, SHALL send once; while the chat cannot send, it SHALL wait. `@OpenUrl` and `Link` SHALL open only an http(s) address checked again on the client.
+A `@ToAssistant` action, a button without an action and a `Form`'s button SHALL send the message at once as the person's own message, as a typed one is sent; the composer's draft SHALL stay. A `Form` SHALL add its answered fields as `Label: value` lines; hidden `context` is never sent. Only the chat's latest reply SHALL send follow-ups, each form or button once, and none while the chat cannot send. `@OpenUrl` and `Link` SHALL open only an http(s) address checked again on the client.
 
 #### Scenario: Form follow-up
 
@@ -19,6 +19,11 @@ A `@ToAssistant` action, a button without an action and a `Form`'s button SHALL 
 
 - **WHEN** the person presses the button of a form that has already sent its answers
 - **THEN** nothing more is sent and the form's fields and buttons no longer act
+
+#### Scenario: Reply already answered
+
+- **WHEN** a message of the person follows a reply with buttons, for example the other choice of a Yes/No pair, also after the chat is reopened
+- **THEN** that reply's follow-up buttons no longer act and nothing is sent
 
 #### Scenario: Chat cannot send
 

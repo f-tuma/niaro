@@ -1833,6 +1833,13 @@ export function Workspace({
       !online ||
       !!historySelection?.readOnly ||
       attachments.state.entries.length > 0,
+    // Once the person wrote after a reply (sent or failed), its follow-ups
+    // are done; this holds after a reload too.
+    latestReplyId:
+      messages[messages.length - 1]?.role === "assistant" &&
+      !selectFailedMessages(state, conversationId).length
+        ? messages[messages.length - 1]!.id
+        : undefined,
     continueWith: (text) => submitMessage(text, null),
     reviewOffer: (offer) => openProcesses(offer),
     declineOffer: (text) =>

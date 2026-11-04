@@ -719,6 +719,83 @@ test("an answer's generated part follows its text and sends its follow-up at onc
   expect(sent).toHaveLength(1);
 });
 
+test("only the latest reply asks: once the person wrote after it, its follow-ups are done, also when reopened (NIAR-291)", async () => {
+  const asking = {
+    id: "m-2",
+    role: "assistant" as const,
+    text: "Mám to poslat?",
+    ui: {
+      type: "openui.program" as const,
+      version: 1 as const,
+      library: "niaro-ui@1" as const,
+      program: [
+        "root = Stack([b, f])",
+        'b = Buttons([Button("Ano", @ToAssistant("Ano, pošli"), "primary"), Button("Ne")])',
+        'f = Form("pozn", [TextField("text", "Poznámka")], Button("Odeslat odpovědi", @ToAssistant("Odpovědi")))',
+      ].join("\n"),
+    },
+  };
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 4,
+    messages: [user("m-1", "Pošli nabídku"), asking],
+  };
+  const { session, sent, publish } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  expect(button(root, "Ne").props.disabled).toBe(false);
+  await act(async () => button(root, "Ano").props.onClick());
+  expect(sent).toHaveLength(1);
+  // Recorded after the reply: the other choice and the form are done too.
+  await act(async () =>
+    publish({
+      store: storeWith([
+        {
+          ...conversation,
+          revision: 5,
+          messages: [...conversation.messages, user("m-3", "Ano, pošli")],
+        },
+      ]),
+    }),
+  );
+  expect(button(root, "Ne").props.disabled).toBe(true);
+  expect(button(root, "Odeslat odpovědi").props.disabled).toBe(true);
+  await act(async () => button(root, "Ne").props.onClick());
+  await act(async () => button(root, "Odeslat odpovědi").props.onClick());
+  expect(sent).toHaveLength(1);
+});
+
+test("a reopened chat whose reply the person already answered asks nothing more (NIAR-291)", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 5,
+    messages: [
+      user("m-1", "Pošli nabídku"),
+      {
+        id: "m-2",
+        role: "assistant",
+        text: "Mám to poslat?",
+        ui: {
+          type: "openui.program",
+          version: 1,
+          library: "niaro-ui@1",
+          program: 'root = Stack([Buttons([Button("Ano"), Button("Ne")])])',
+        },
+      },
+      user("m-3", "Něco jiného"),
+    ],
+  };
+  const { session, sent } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  const root = (await render(session, "conv-1")).root;
+  expect(button(root, "Ano").props.disabled).toBe(true);
+  expect(button(root, "Ne").props.disabled).toBe(true);
+  await act(async () => button(root, "Ano").props.onClick());
+  expect(sent).toEqual([]);
+});
+
 test("a generated follow-up waits while the chat cannot send, as Send does (NIAR-291)", async () => {
   const conversation: Conversation = {
     id: "conv-1",
