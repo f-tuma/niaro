@@ -100,8 +100,9 @@ test("memory chat: explicit notes persist into new sessions, opt-out and deletio
                   function: {
                     name: "memory_remember",
                     arguments: JSON.stringify({
-                      content: "TEST private preference",
-                      kind: "preference",
+                      facts: [
+                        { text: "TEST private preference", kind: "preference" },
+                      ],
                     }),
                   },
                 },

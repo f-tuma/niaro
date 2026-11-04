@@ -86,6 +86,8 @@ export type NextChat = {
   retryFailed?: (commandId: string) => void;
   /** Lets a failed message go; nothing goes back to the composer. */
   dismissFailed: (commandId: string) => void;
+  /** This chat's saves to memory, shown under the replies that made them. */
+  memorySaves?: import("./memory-saves").ChatMemorySaves;
 };
 const NextChatContext = createContext<NextChat | null>(null);
 export const NextChatProvider = NextChatContext.Provider;

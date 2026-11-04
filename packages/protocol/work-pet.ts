@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IdentityId } from "./identity";
+import { MessageSchema } from "./index";
 import {
   MemoryItemSchema,
   MemoryContentSchema,
@@ -84,6 +85,8 @@ export const PetMemoryQuerySchema = z.strictObject({
   section: ObservationSectionSchema.optional(),
   personal: z.enum(["work", "personal"]).optional(),
   history: z.boolean().optional(),
+  /** Only what the person had saved from this chat ("Saved to memory" lines). */
+  conversationId: MessageSchema.shape.id.optional(),
   limit: z.number().int().min(1).max(100).optional(),
   cursor: z
     .string()

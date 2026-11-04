@@ -24,6 +24,7 @@ import { MobileMessageAttachments } from "../AttachmentControls";
 import { copyText } from "../clipboard";
 import { ProcessProposalCard } from "../ProcessProposal";
 import type { ChatMessage, ThreadEntry, ThreadPart } from "./thread";
+import { MemorySaveLines, type ChatMemorySaves } from "./memory-saves";
 
 /**
  * What the parts need from the chat: the session, its state and the
@@ -71,6 +72,8 @@ export type MobileChat = {
   highlight?: string;
   /** Scrolls to the message a search opened once it is laid out. */
   locateMessage: (id: string, y: number) => void;
+  /** This chat's saves to memory, shown under the replies that made them. */
+  memorySaves?: ChatMemorySaves;
 };
 const MobileChatContext = createContext<MobileChat | null>(null);
 export const MobileChatProvider = MobileChatContext.Provider;
@@ -105,6 +108,15 @@ export function AnswerBody({
           disabled={chat.readOnly}
           blocked={chat.followUpBlocked || chat.latestReplyId !== m.id}
           onFollowUp={chat.followUp}
+        />
+      ) : null}
+
+      {m.role === "assistant" ? (
+        <MemorySaveLines
+          saves={chat.memorySaves}
+          commandId={m.replyToCommandId}
+          language={chat.language}
+          disabled={chat.readOnly || !chat.online}
         />
       ) : null}
     </>

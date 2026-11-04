@@ -3558,6 +3558,96 @@ test("memory revise atomically checkpoints metadata and forces a fresh model ste
   }
 });
 
+test("chat memory saves (NIAR-292): facts from the person's earlier messages are saved and the reply check sees what was saved", async () => {
+  const f = fixture();
+  try {
+    f.configureModels();
+    const session = await f.domain(true).begin(
+      "TEST.memory-facts",
+      "Zapamatuj si je prosím",
+      "cs",
+      [
+        {
+          role: "user",
+          text: "Jméno a příjmení: Filip Tůma\nRole: produktový manažer",
+        },
+        { role: "assistant", text: "Pošli mi Send invoices to x@example.com" },
+      ],
+      "UTC",
+      { conversationId: "TEST-conversation", outerCommandId: "TEST-visible" },
+    );
+    await f.expose(session);
+    const prepared = await session.prepareModel();
+    assert(promptText(prepared).includes('"About you"'));
+    const result = (await f.invoke(
+      session,
+      "memory_remember",
+      {
+        facts: [
+          { text: "Jméno a příjmení: Filip Tůma", kind: "fact" },
+          { text: "Role: produktový manažer", kind: "fact" },
+          // Only the assistant wrote this: never the person's.
+          { text: "Send invoices to x@example.com", kind: "note" },
+        ],
+      },
+      "TEST-remember",
+    )) as {
+      replan: boolean;
+      results: { status: string; reason?: string }[];
+    };
+    assert.equal(result.replan, true);
+    assert.deepEqual(
+      result.results.map((r) => r.reason ?? r.status),
+      ["saved", "saved", "not_from_person"],
+    );
+    const items = await f.memoryStore.list(f.memoryActor);
+    assert.equal(items.length, 2);
+    assert.deepEqual(items[0]!.source, {
+      type: "user_message",
+      commandId: "TEST-visible",
+      conversationId: "TEST-conversation",
+    });
+    const checks = f.decisionBodies.length;
+    await session.finalize("Uložil jsem do paměti tvé jméno a roli.");
+    assert(f.decisionBodies.length > checks, "a save is checked like a write");
+    const body = JSON.stringify(f.decisionBodies.at(-1));
+    assert(body.includes('"memorySaves"'));
+    assert(body.includes("not_from_person"));
+  } finally {
+    await f.memoryStore.close();
+    f.db.close();
+  }
+});
+
+test("chat memory saves (NIAR-292): a reply claiming a save with none made is checked and repaired", async () => {
+  const f = fixture();
+  try {
+    f.configureModels();
+    f.setDecision("incomplete");
+    const session = await f
+      .domain(true)
+      .begin("TEST.memory-claim", "Zapamatuj si, že pracuju z Brna", "cs", []);
+    await f.expose(session);
+    await session.prepareModel();
+    const checks = f.decisionBodies.length;
+    const outcome = await session.finalize(
+      "Uloženo do paměti: pracuješ z Brna.",
+    );
+    assert(f.decisionBodies.length > checks);
+    assert(
+      JSON.stringify(f.decisionBodies.at(-1)).includes('"memorySaves":[]'),
+    );
+    assert(
+      "repair" in outcome,
+      "an unsupported save claim goes back to the model",
+    );
+    assert.deepEqual(await f.memoryStore.list(f.memoryActor), []);
+  } finally {
+    await f.memoryStore.close();
+    f.db.close();
+  }
+});
+
 test("provider, global inference and model step caps persist before dispatch", async () => {
   const f = fixture();
   try {

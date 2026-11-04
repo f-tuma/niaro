@@ -221,6 +221,10 @@ export const en = {
   messageCopied: "Copied",
   messageEdit: "Edit",
   messageAgain: "Again",
+  // NIAR-292: a save to memory, shown under the reply that made it.
+  memorySavedLine: "Saved to memory",
+  memorySavedDelete: "Delete",
+  memorySavedDeleteLabel: "Delete from memory",
   searchMeetings: "Meetings",
   attachmentWait: "Wait for the attachment",
   attachmentFailedSend: "An attachment failed",
@@ -1218,6 +1222,10 @@ export const cs: Record<TranslationKey, string> = {
   messageCopied: "Zkopírováno",
   messageEdit: "Upravit",
   messageAgain: "Znovu",
+  // NIAR-292: a save to memory, shown under the reply that made it.
+  memorySavedLine: "Uloženo do paměti",
+  memorySavedDelete: "Smazat",
+  memorySavedDeleteLabel: "Smazat z paměti",
   searchMeetings: "Schůzky",
   attachmentWait: "Počkej na přílohu",
   attachmentFailedSend: "Příloha se nenahrála",

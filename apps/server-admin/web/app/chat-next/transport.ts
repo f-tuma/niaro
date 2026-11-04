@@ -66,6 +66,8 @@ export type NextMeta = {
   editable?: boolean;
   /** Why the live answer stopped, or why a message failed, in the person's language. */
   hint?: string;
+  /** The request a stored answer replies to: its saves to memory show under it. */
+  replyToCommandId?: string;
 };
 export const nextMeta = (message: {
   metadata?: { custom?: Record<string, unknown> | undefined } | undefined;
@@ -189,6 +191,7 @@ export function storedMessage(
     metadata: {
       custom: {
         ...meta,
+        ...(m.replyToCommandId ? { replyToCommandId: m.replyToCommandId } : {}),
         ...(options.requestText !== undefined && withText
           ? {
               requestText: options.requestText,

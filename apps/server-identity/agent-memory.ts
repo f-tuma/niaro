@@ -33,6 +33,15 @@ export interface AgentMemory {
       commandId: string;
       text: string;
       conversationId?: string;
+      /**
+       * The person's own earlier messages in this conversation (never tool,
+       * service or assistant text). With `text`, the only words a saved
+       * fact may come from.
+       */
+      personText?: readonly string[];
+      /** The chat message's own command id, when it differs from commandId:
+       * saved memory names it so the chat can show the save in place. */
+      messageCommandId?: string;
       callId: string;
       /** Request lifetime and synchronous request authority, rechecked at publication. */
       signal?: AbortSignal;

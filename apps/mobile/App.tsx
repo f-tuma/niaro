@@ -200,6 +200,7 @@ import { OtherChatNotice } from "./chat/OtherChatNotice";
 import { answerAnnouncement } from "./chat/announce";
 import { ChatFooter } from "./chat/composer";
 import { MobileChatProvider, type MobileChat } from "./chat/parts";
+import { useChatMemorySaves } from "./chat/memory-saves";
 import { projectThread, trailingWork, visibleMessages } from "./chat/thread";
 import {
   chrome as styles,
@@ -1817,6 +1818,14 @@ export function Workspace({
     pending: state.pending,
     conversationId,
   });
+  // Saves to memory show under the replies that made them (NIAR-292).
+  const memorySaves = useChatMemorySaves(
+    session,
+    conversationId,
+    petProfile.changes,
+    messages.filter((message) => message.role === "assistant").length,
+    randomUUID,
+  );
   const chat: MobileChat = {
     session,
     language,
@@ -1907,6 +1916,7 @@ export function Workspace({
         }),
       );
     },
+    memorySaves,
   };
   const failedMessages = selectFailedMessages(state, conversationId);
   // This chat's saved process answers with a card show in its thread.

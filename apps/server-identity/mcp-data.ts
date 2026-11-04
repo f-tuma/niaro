@@ -24,7 +24,11 @@ import { IdentityError } from "./error";
 import { mcpScope, type McpAccessScope, type McpPrincipal } from "./mcp-access";
 import type { MeetingStore } from "./meeting-store";
 import type { MemoryActor, MemoryReadOptions, MemoryStore } from "./memory";
-import { memoryQueryTerms, memoryScores } from "./memory-ranking";
+import {
+  memoryQueryTerms,
+  memoryScores,
+  sameMemoryText,
+} from "./memory-ranking";
 import { containsCredential } from "./profile-material";
 
 /**
@@ -106,12 +110,7 @@ const short = (value: string, size: number) => {
   const flat = value.replace(/\s+/gu, " ").trim();
   return flat.length > size ? flat.slice(0, size - 1).trimEnd() + "…" : flat;
 };
-const normalized = (value: string) =>
-  value
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/[\s\p{P}]+/gu, " ")
-    .trim();
+const normalized = sameMemoryText;
 const offsetCursor = (offset: number) =>
   Buffer.from(JSON.stringify({ offset })).toString("base64url");
 function readOffset(cursor: string | undefined) {

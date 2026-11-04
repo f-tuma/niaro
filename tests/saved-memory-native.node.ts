@@ -555,7 +555,14 @@ for (const failure of [
             : "Remember: TEST request-lifetime preference";
       const args =
         name === "memory_remember"
-          ? { content: "TEST request-lifetime preference", kind: "preference" }
+          ? {
+              facts: [
+                {
+                  text: "TEST request-lifetime preference",
+                  kind: "preference",
+                },
+              ],
+            }
           : {
               id: old!.id,
               revision: old!.revision,
