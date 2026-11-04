@@ -1195,7 +1195,6 @@ export function createNativeCatalogRuntime(
       if (!state) return null;
       let task = (await projectTasks([state], true))[0] ?? null;
       if (!task) return null;
-      let cancellationSettled = false;
       if (!state.pending && !["expired", "superseded"].includes(task.status)) {
         const owner = await nativeCatalogOwner(controller);
         let settled = false;
@@ -1212,7 +1211,6 @@ export function createNativeCatalogRuntime(
                 })) &&
                 owner.isSettled(state.runId)
               : await retired(owner, state);
-          cancellationSettled = !!state.taskCancellation && settled;
         } catch {
           settled = false;
         }
@@ -1248,13 +1246,8 @@ export function createNativeCatalogRuntime(
           },
         };
       }
-      return {
-        ...task,
-        ...(cancellationSettled ? { cancellationSettled: true as const } : {}),
-        ...(state.pending ? { cancellationPending: true as const } : {}),
-      };
+      return task;
     },
-    cancelTask,
     cancelOpenTask,
     async settleStaleTasks(conversationId) {
       const stale = await context.serial(async () => {

@@ -99,7 +99,7 @@ test("invitation links, passwords, reset links and own sign-ins", async (t) => {
       workspaceId,
       "TEST-server",
       "TEST desktop",
-      '["native.run"]',
+      '["memory.write"]',
       Date.now(),
       Date.now() + 3_600_000,
     );

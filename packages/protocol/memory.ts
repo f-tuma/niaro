@@ -86,6 +86,12 @@ const explicitSources = [
     serviceId: IdentityId,
     verifiedAt: z.iso.datetime(),
   }),
+  /** Saved by the person's own AI app over MCP; `name` is its access label. */
+  z.strictObject({
+    type: z.literal("external_app"),
+    grantId: IdentityId,
+    name: z.string().trim().min(1).max(100),
+  }),
 ] as const;
 export const MemorySourceSchema = z.discriminatedUnion("type", [
   ...explicitSources,

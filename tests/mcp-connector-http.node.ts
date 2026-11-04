@@ -82,6 +82,10 @@ test("connector exposes permitted service actions and keeps approval with a pers
     const invalid = await call(client, lookup.name, {});
     assert.equal(invalid.isError, true);
     assert.equal(invalid.value.error?.code, "integration_input_invalid");
+    assert.match(
+      (invalid.value.error as { message?: string }).message ?? "",
+      /\/name: Required field is missing/,
+    );
     assert.equal(h.dispatches.length, before + 1);
 
     // A write that needs approval waits; the client cannot approve it.
@@ -152,7 +156,7 @@ test("connector exposes permitted service actions and keeps approval with a pers
     );
     assert.equal(h.dispatches.length, before + 2);
 
-    // Task tools are not part of a connector grant.
+    // Niaro's own agent takes no tasks over MCP.
     const task = await call(client, "task_submit", {
       requestId: "TEST-connector-task",
       text: "TEST",
@@ -163,27 +167,30 @@ test("connector exposes permitted service actions and keeps approval with a pers
   }
 });
 
-test("processor grants do not expose service actions, and revoked connectors stop", async () => {
+test("data grants do not expose service actions, and revoked connectors stop", async () => {
   const h = await fixture;
-  const processor = await issue(h, ["native.view", "native.run"]);
-  const processorClient = await connect(h, processor.accessToken);
+  const data = await issue(h, ["data.read"]);
+  const dataClient = await connect(h, data.accessToken);
   try {
-    const names = (await processorClient.listTools()).tools.map((t) => t.name);
-    assert.deepEqual(names.sort(), [
-      "task_cancel",
-      "task_get",
-      "task_respond",
-      "task_submit",
-    ]);
-    const direct = await call(
-      processorClient,
-      "test_design_service__test_lookup",
-      { name: "TEST" },
-    );
+    const names = (await dataClient.listTools()).tools.map((t) => t.name);
+    assert(!names.includes("niaro_call_status"), names.join());
+    const before = h.dispatches.length;
+    const direct = await call(dataClient, "test_design_service__test_lookup", {
+      name: "TEST",
+    });
     assert.equal(direct.isError, true);
+    assert.equal(h.dispatches.length, before);
   } finally {
-    await processorClient.close();
+    await dataClient.close();
   }
+  // Retired processor scopes cannot be issued any more.
+  const retired = await h.request("owner", "api/identity/mcp/access/issue", {
+    workspaceId: h.target.workspaceId,
+    label: "TEST processor client",
+    scopes: ["native.view", "native.run"],
+    expiresAt: Date.now() + 3_600_000,
+  });
+  assert.equal(retired.status, 400);
 
   const connector = await issue(h, ["services.call"]);
   const revoked = await h.request("owner", "api/identity/mcp/access/revoke", {

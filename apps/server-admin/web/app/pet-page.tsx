@@ -520,7 +520,10 @@ function PetPageOwner({ manager }: { manager: boolean }) {
           );
         })}
       </div>
-      <div className="grid grid-cols-2 gap-2.5 data-[dock=true]:gap-2" data-dock={dock}>
+      <div
+        className="grid grid-cols-2 gap-2.5 data-[dock=true]:gap-2"
+        data-dock={dock}
+      >
         <Toggle
           variant="outline"
           size="lg"
@@ -649,11 +652,13 @@ function PetPageOwner({ manager }: { manager: boolean }) {
                   ? item.source.sources.length
                   : 1;
               const trust =
-                item.trust === "user_assertion"
-                  ? copy.assertion
-                  : item.trust === "verified_result"
-                    ? copy.verified
-                    : copy.inference;
+                item.source?.type === "external_app"
+                  ? `${copy.fromApp} ${item.source.name}`
+                  : item.trust === "user_assertion"
+                    ? copy.assertion
+                    : item.trust === "verified_result"
+                      ? copy.verified
+                      : copy.inference;
               const meta = [
                 trust +
                   (item.seenAt
@@ -747,7 +752,9 @@ function PetPageOwner({ manager }: { manager: boolean }) {
                           <p>
                             {item.source?.type === "verified_operation"
                               ? `${copy.verified} · ${item.source.serviceId}`
-                              : copy.assertion}{" "}
+                              : item.source?.type === "external_app"
+                                ? `${copy.fromApp} ${item.source.name}`
+                                : copy.assertion}{" "}
                             ·{" "}
                             {new Date(item.createdAt).toLocaleString(language)}
                           </p>
@@ -1140,9 +1147,7 @@ function PetPageOwner({ manager }: { manager: boolean }) {
           </div>
         ) : (
           <>
-            <div className="flex flex-col gap-4">
-              {screen}
-            </div>
+            <div className="flex flex-col gap-4">{screen}</div>
             {controls}
           </>
         )}

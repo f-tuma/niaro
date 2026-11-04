@@ -694,13 +694,15 @@ export function PetProfile({
   const row = (item: MemoryItem) => {
     const observed = item.source?.type === "observed" ? item.source : null;
     const meta = [
-      item.trust === "user_assertion"
-        ? c.assertion
-        : item.trust === "verified_result"
-          ? item.source?.type === "verified_operation"
-            ? `${c.verified} · ${item.source.serviceId}`
-            : c.verified
-          : c.inference,
+      item.source?.type === "external_app"
+        ? `${c.fromApp} ${item.source.name}`
+        : item.trust === "user_assertion"
+          ? c.assertion
+          : item.trust === "verified_result"
+            ? item.source?.type === "verified_operation"
+              ? `${c.verified} · ${item.source.serviceId}`
+              : c.verified
+            : c.inference,
       observed && item.seenAt
         ? f.lastSeen(item.seenAt)
         : !observed

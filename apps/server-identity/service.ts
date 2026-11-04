@@ -20,9 +20,14 @@ import {
   type McpPrincipal,
   type McpAccessScope,
 } from "./mcp-access";
-import { McpAdmissionStore, mcpScope } from "../server-mcp/admission";
-import { connectorResult, connectorTools } from "./mcp-connector";
-import type { McpTasks } from "../server-mcp/tasks";
+import {
+  connectorRequestId,
+  connectorResult,
+  connectorTools,
+  MCP_REQUEST_ID,
+  MCP_REQUEST_ID_PATTERN,
+} from "./mcp-connector";
+import { McpDataTools } from "./mcp-data";
 import { createMcpOAuth, MCP_OAUTH_TOKEN_PREFIX } from "../server-mcp/oauth";
 import {
   MEETING_SETTINGS_DEFAULTS,
@@ -93,8 +98,6 @@ import { CalendarCommand } from "../../packages/protocol/workspace-calendar";
 import { WorkspaceCalendarStore } from "./workspace-calendar";
 import { CalDavCalendar } from "../fixture-server/calendar";
 import {
-  AUTH_PROFILE,
-  PROFILE,
   sameScope,
   type AuthSession,
   type Scope,
@@ -651,8 +654,7 @@ function logFailure(step: string, error: unknown) {
 }
 export class IdentityService {
   private mcpGrants: McpAccessStore;
-  private mcpAdmissions: McpAdmissionStore;
-  private mcpTaskRunner?: McpTasks;
+  private mcpDataTools!: McpDataTools;
   private loops: LoopsStore;
   private serviceFlows: ServiceMobileFlows;
   private plugins: WorkspacePluginStore;
@@ -757,7 +759,6 @@ export class IdentityService {
     this.mcpGrants = new McpAccessStore(db, {
       checkServer: (id) => !this.closing && id === this.workflowServerId,
     });
-    this.mcpAdmissions = new McpAdmissionStore(db);
     this.meetings = new MeetingStore(db);
     const meetingOptions = { ...MEETING_SETTINGS_DEFAULTS, ...meetingSettings };
     this.meetingRetentionDays = meetingOptions.audioRetentionDays;
@@ -853,6 +854,28 @@ export class IdentityService {
           details: {},
         });
       },
+    });
+    this.mcpDataTools = new McpDataTools({
+      principal: (grantId, serverId, scopes) =>
+        this.mcpPrincipal(grantId, serverId, scopes),
+      serial: (fn) => this.serial(async () => fn()),
+      meetings: this.meetings,
+      memory: this.memory,
+      memorySettings: (workspaceId) => {
+        const config = this.plugins.read(workspaceId).settings;
+        return {
+          enabled: config.enabled.includes("memory"),
+          settings: MemorySettingsSchema.parse(config.memory ?? {}),
+        };
+      },
+      memoryReadOptions: (role) => ({
+        sourceAccess: (source, actor) =>
+          this.memorySourceAccess(source, actor, role),
+        observationSourceView: (source, actor) =>
+          this.observationSourceView(source, actor),
+      }),
+      memorySaved: (actor) => this.petChanged(actor),
+      audit: (record) => this.audit.append(record),
     });
     this.processes = new ServiceProcessStore(
       db,
@@ -3273,17 +3296,28 @@ export class IdentityService {
       return this.mcpGrants.authenticate(header, { serverId });
     });
   }
-  /** Connector mode: the grant re-authenticates (with its membership) on every
-   * read and inside the catalog's dispatch guard; nothing is cached per client. */
-  private connectorPrincipal(grantId: string, serverId: string) {
+  /** The grant re-authenticates (with its membership and, for OAuth, its
+   * browser session) on every MCP read and inside every commit; nothing is
+   * cached per client. Call inside the identity queue. */
+  private mcpPrincipal(
+    grantId: string,
+    serverId: string,
+    scopes: McpAccessScope[],
+  ) {
     if (this.closing) throw new IdentityError(503, "identity_unavailable");
-    const scopes: McpAccessScope[] = ["services.call"];
     const principal = this.mcpGrants.authenticateGrant(grantId, {
       serverId,
       requiredScopes: scopes,
     });
-    this.mcpActor(principal, scopes);
+    this.mcpOAuth?.assertActiveGrant(principal.grantId, scopes);
     return principal;
+  }
+  private connectorPrincipal(grantId: string, serverId: string) {
+    return this.mcpPrincipal(grantId, serverId, ["services.call"]);
+  }
+  /** Niaro data and memory for the person's own AI app (`niaro_*` tools). */
+  mcpData() {
+    return this.mcpDataTools;
   }
   private connectorContext(grantId: string, serverId: string): CatalogContext {
     return {
@@ -3343,6 +3377,40 @@ export class IdentityService {
       (item) => item.name === name,
     );
     if (!tool) throw new IdentityError(404, "mcp_tool_not_found");
+    // A write may carry the client's idempotency key: the same grant and key
+    // with the same input return the first receipt; other input conflicts.
+    let key: string | undefined;
+    let serviceInput = input;
+    if (tool.idempotent && MCP_REQUEST_ID in input) {
+      const { [MCP_REQUEST_ID]: value, ...rest } = input;
+      if (typeof value !== "string" || !MCP_REQUEST_ID_PATTERN.test(value))
+        throw new IdentityError(400, "mcp_request_id_invalid");
+      key = value;
+      serviceInput = rest;
+    }
+    const requestId = key
+      ? connectorRequestId(principal.grantId, key)
+      : randomUUID();
+    if (key) {
+      const earlier = await this.serial(async () => {
+        const current = this.connectorPrincipal(
+          principal.grantId,
+          principal.serverId,
+        );
+        return this.catalog.store.invocation(
+          requestId,
+          current.workspaceId,
+          current.userId,
+        );
+      });
+      if (
+        earlier &&
+        (earlier.serviceId !== tool.service.id ||
+          earlier.actionId !== tool.action.id ||
+          JSON.stringify(earlier.input) !== JSON.stringify(serviceInput))
+      )
+        throw new IdentityError(409, "mcp_request_id_conflict");
+    }
     const receipt = await this.catalog.invoke(
       {
         organizationId: principal.organizationId,
@@ -3351,8 +3419,8 @@ export class IdentityService {
         serviceRevision: tool.service.revision,
         actionId: tool.action.id,
         revision: tool.action.revision,
-        input,
-        requestId: randomUUID(),
+        input: serviceInput,
+        requestId,
         // Approval stays with a person in the console, never with the client.
         approve: false,
       },
@@ -3360,10 +3428,11 @@ export class IdentityService {
       signal,
       "mcp",
     );
-    return connectorResult(
+    const result = connectorResult(
       receipt,
       this.connectorApprovalUrl(principal.workspaceId, receipt.id),
     );
+    return key ? { ...result, requestId: key } : result;
   }
   mcpConnectorStatus(principal: McpPrincipal, requestId: string) {
     return this.serial(async () => {
@@ -3371,60 +3440,23 @@ export class IdentityService {
         principal.grantId,
         principal.serverId,
       );
-      const receipt = this.catalog.store.invocation(
-        IdentityId.parse(requestId),
-        current.workspaceId,
-        current.userId,
-      );
+      // A receipt id, or the client's own key of a keyed write.
+      const lookup = (id: string) =>
+        this.catalog.store.invocation(id, current.workspaceId, current.userId);
+      const own = IdentityId.safeParse(requestId).success
+        ? lookup(requestId)
+        : undefined;
+      const keyed = own
+        ? undefined
+        : lookup(connectorRequestId(current.grantId, requestId));
+      const receipt = own ?? keyed;
       if (!receipt) throw new IdentityError(404, "mcp_call_not_found");
-      return connectorResult(
+      const result = connectorResult(
         receipt,
         this.connectorApprovalUrl(current.workspaceId, receipt.id),
       );
+      return keyed ? { ...result, requestId } : result;
     });
-  }
-  mcpTaskDependencies() {
-    return {
-      attach: (runner: McpTasks) => {
-        this.mcpTaskRunner = runner;
-      },
-      store: this.mcpAdmissions,
-      run: <T>(fn: () => T) =>
-        this.serial(async () => {
-          if (this.closing)
-            throw new IdentityError(503, "identity_unavailable");
-          return fn();
-        }),
-      access: (
-        grantId: string,
-        serverId: string,
-        requiredScopes: McpAccessScope[],
-        workspaceId?: string,
-        credentialKind?: "mcp" | "browser",
-        memberId?: string,
-      ) =>
-        credentialKind === "browser" && workspaceId
-          ? this.browserRuntimeAccess(grantId, workspaceId, serverId, memberId)
-          : this.mcpRuntimeAccess(grantId, serverId, requiredScopes),
-    };
-  }
-  private mcpActor(
-    principal: McpPrincipal,
-    requiredScopes: McpAccessScope[] = principal.scopes,
-  ) {
-    this.mcpOAuth?.assertActiveGrant(principal.grantId, requiredScopes);
-    return {
-      grant: { organization_id: principal.organizationId },
-      role: principal.role,
-      credentialId: principal.grantId,
-      session: {
-        authProfile: AUTH_PROFILE,
-        profile: PROFILE,
-        expiresAt: principal.expiresAt,
-        scope: mcpScope(principal),
-        permissions: ["workflow.read", "workflow.write"],
-      } satisfies AuthSession,
-    };
   }
   mcpServerId() {
     return this.closing ? undefined : this.workflowServerId;
@@ -3547,97 +3579,6 @@ export class IdentityService {
     } catch {
       return fail(503, "temporarily_unavailable");
     }
-  }
-  async mcpRuntimeAccess(
-    grantId: string,
-    serverId: string,
-    requiredScopes: McpAccessScope[],
-  ) {
-    const principal = await this.serial(async () =>
-      this.mcpGrants.authenticateGrant(grantId, { serverId, requiredScopes }),
-    );
-    return this.accountRuntimeAccess(principal.workspaceId, serverId, () =>
-      this.mcpActor(
-        this.mcpGrants.authenticateGrant(grantId, { serverId, requiredScopes }),
-        requiredScopes,
-      ),
-    );
-  }
-  private browserRuntimeActor(
-    sessionId: string,
-    workspaceId: string,
-    serverId: string,
-  ) {
-    if (this.closing || this.workflowServerId !== serverId)
-      throw new IdentityError(503, "identity_unavailable");
-    const row = this.db
-      .prepare(
-        `SELECT s."userId" AS user_id,s."expiresAt" AS expires_at,
-      m.id AS member_id,m.role,w.organization_id
-      FROM session s JOIN member m ON m."userId"=s."userId"
-      JOIN agent_workspace w ON w.organization_id=m."organizationId"
-      WHERE s.id=? AND w.id=?`,
-      )
-      .get(sessionId, workspaceId);
-    const expiresAt =
-      row &&
-      (typeof row.expires_at === "number"
-        ? row.expires_at
-        : new Date(String(row.expires_at)).getTime());
-    if (
-      !row ||
-      !expiresAt ||
-      !Number.isFinite(expiresAt) ||
-      expiresAt <= Date.now()
-    )
-      throw new IdentityError(401, "identity_unauthorized");
-    const role = OrganizationRole.parse(row.role);
-    if (
-      role === "member" &&
-      !this.db
-        .prepare(
-          "SELECT 1 FROM agent_workspace_member WHERE workspace_id=? AND member_id=?",
-        )
-        .get(workspaceId, String(row.member_id))
-    )
-      throw new IdentityError(403, "identity_forbidden");
-    const principal = {
-      grantId: sessionId,
-      userId: String(row.user_id),
-      memberId: String(row.member_id),
-      organizationId: String(row.organization_id),
-      workspaceId,
-      serverId,
-      role,
-      scopes: ["native.view", "native.run"] as McpAccessScope[],
-      expiresAt: new Date(expiresAt).toISOString(),
-    };
-    return { principal, runtime: this.mcpActor(principal) };
-  }
-  private async browserRuntimeAccess(
-    sessionId: string,
-    workspaceId: string,
-    serverId: string,
-    memberId?: string,
-  ) {
-    const initial = await this.serial(async () =>
-      this.browserRuntimeActor(sessionId, workspaceId, serverId),
-    );
-    if (memberId && initial.principal.memberId !== memberId)
-      throw new IdentityError(403, "identity_forbidden");
-    return this.accountRuntimeAccess(workspaceId, serverId, () => {
-      const current = this.browserRuntimeActor(
-        sessionId,
-        workspaceId,
-        serverId,
-      );
-      if (
-        current.principal.memberId !== initial.principal.memberId ||
-        current.principal.userId !== initial.principal.userId
-      )
-        throw new IdentityError(403, "identity_forbidden");
-      return current.runtime;
-    });
   }
   private accountRuntimeAccess(
     workspaceId: string,
@@ -4534,7 +4475,6 @@ export class IdentityService {
     for (const stream of this.petStreams) stream.end();
     await this.profileLearner?.close();
     await this.hubScheduler.stop();
-    await this.mcpTaskRunner?.close();
     clearInterval(this.memoryMaintenance);
     clearInterval(this.connectionKeeper);
     this.connectionKeeperAbort.abort();
@@ -5155,82 +5095,6 @@ export class IdentityService {
       return respond(error instanceof IdentityError ? error.status : 400, {
         error: "identity_invalid_input",
       });
-    }
-    if (url.pathname.startsWith("/admin/api/identity/mcp/task/")) {
-      try {
-        if (req.method !== "POST")
-          return respond(405, { error: "method_not_allowed" });
-        if (isOperator())
-          throw new IdentityError(403, "identity_account_required");
-        if (!this.mcpTaskRunner || !this.workflowServerId)
-          throw new IdentityError(503, "mcp_unavailable");
-        const input = z
-          .strictObject({
-            workspaceId: IdentityId,
-            taskId: IdentityId,
-            requestId: IdentityId.optional(),
-            input: z
-              .strictObject({
-                operationId: IdentityId,
-                expectedRevision: z
-                  .number()
-                  .int()
-                  .positive()
-                  .max(Number.MAX_SAFE_INTEGER),
-              })
-              .optional(),
-            approved: z.boolean().optional(),
-          })
-          .parse(payload);
-        const principal = await this.serial(async () => {
-          const session = await this.getSession(req);
-          if (!session) throw new IdentityError(401, "identity_unauthorized");
-          return this.browserRuntimeActor(
-            session.session.id,
-            input.workspaceId,
-            this.workflowServerId!,
-          ).principal;
-        });
-        const access = await this.browserRuntimeAccess(
-          principal.grantId,
-          input.workspaceId,
-          principal.serverId,
-          principal.memberId,
-        );
-        const action = url.pathname.split("/").at(-1);
-        if (
-          action === "get" &&
-          input.requestId === undefined &&
-          input.input === undefined &&
-          input.approved === undefined
-        )
-          return respond(
-            200,
-            await this.mcpTaskRunner.humanGet(principal, access, input.taskId),
-          );
-        if (
-          action === "decide" &&
-          input.requestId &&
-          input.input &&
-          input.approved !== undefined
-        )
-          return respond(
-            202,
-            await this.mcpTaskRunner.humanDecide(principal, access, {
-              taskId: input.taskId,
-              requestId: input.requestId,
-              input: input.input,
-              approved: input.approved,
-            }),
-          );
-        throw new IdentityError(400, "identity_invalid_input");
-      } catch (error) {
-        if (error instanceof IdentityError)
-          return respond(error.status, { error: error.code });
-        if (error instanceof ModelError)
-          return respond(503, { error: error.code });
-        return respond(400, { error: "identity_invalid_input" });
-      }
     }
     if (url.pathname.startsWith("/admin/api/identity/catalog")) {
       if (this.closing) return respond(503, { error: "identity_unavailable" });

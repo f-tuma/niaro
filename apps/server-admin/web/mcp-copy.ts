@@ -1,12 +1,16 @@
 import { useAdmin } from "./context";
 
 const en = {
-  mode: "Mode",
-  connector: "Runs actions",
-  connectorHint: "Calls enabled service actions directly as tools.",
-  processor: "Hands over tasks",
-  processorHint: "Submits tasks; the server runs them with its own model.",
   connectorScope: "Call service actions",
+  scopeServicesCallHint:
+    "Runs the workspace's enabled service actions; a write can wait for your approval in Niaro.",
+  scopeDataRead: "Read your Niaro data",
+  scopeDataReadHint:
+    "Searches and reads your meetings, tasks, chats and what Niaro knows about you.",
+  scopeMemoryWrite: "Save to your memory",
+  scopeMemoryWriteHint:
+    "Saves what the app learns about you. You see and delete it in your profile.",
+  scopesRequired: "Choose at least one permission.",
   createToken: "Connect an app",
   createTokenHint: "Its token is shown only once.",
   copyEndpoint: "Copy URL",
@@ -50,7 +54,6 @@ const en = {
   requestDetails: "Request details",
   workspace: "Workspace",
   organization: "Organization",
-  runOnly: "View & run tasks",
   reauthenticate: "This client requires a new sign-in.",
   reauthenticateAction: "Sign in again",
   accountOnly: "Sign in with an account to manage external AI apps.",
@@ -63,8 +66,6 @@ const en = {
   labelPlaceholder: "For example, Claude Desktop",
   labelInvalid: "Enter a client name between 1 and 100 characters.",
   permissions: "Permissions",
-  viewOnly: "View only",
-  viewRun: "View & run",
   expires: "Expires",
   tokenTitle: "Your new access token",
   tokenHint: "Copy the token now, it is shown only once.",
@@ -86,60 +87,36 @@ const en = {
   loading: "Loading external AI apps…",
   forbidden:
     "You do not have permission to manage external AI apps in this workspace.",
-  taskForbidden: "You do not have permission to view or decide this task.",
   authError: "Your session has expired. Sign in again.",
   notFound:
-    "The requested task or access token was not found in this workspace.",
+    "The requested call or access token was not found in this workspace.",
   conflict: "This request has changed. Refresh it before deciding again.",
   invalid:
     "The server could not accept this request. Check the values and try again.",
   failed: "External AI apps could not be updated. Try again.",
   loadFailed: "External AI apps could not be loaded. Try again.",
-  taskLoadFailed: "The task could not be loaded. Try again.",
+  callLoadFailed: "The call could not be loaded. Try again.",
   rateError: "Too many requests. Wait a moment and try again.",
-  task: "MCP task",
-  taskId: "Task ID",
-  approval: "Approval needed",
-  operation: "Operation",
   service: "Service",
   effect: "Effect",
   read: "Reads data",
   write: "Changes data",
-  fullInput: "Full operation input (JSON)",
-  fullReviewHint:
-    "Some operation details are shortened. Open the full input below before confirming.",
-  incompleteReview:
-    "The operation details are incomplete or no longer awaiting approval. Refresh this task before deciding.",
-  operationId: "Operation ID",
-  revision: "Revision",
-  details: "Operation details",
-  confirm: "Approve",
-  reject: "Reject",
-  decisionSaved: "Your decision has been saved.",
-  taskWorkspaceMismatch:
-    "This task belongs to a different workspace. Select its workspace before viewing or deciding it.",
-  selectTaskWorkspace: "Select task workspace",
-  pending: "Running",
-  completed: "Completed",
-  failedTask: "Failed",
-  cancelled: "Cancelled",
-  waiting: "Waiting for input",
-  waitingApproval: "Waiting for approval",
-  queued: "Queued",
-  waitingSystem: "Waiting for the system",
-  scheduled: "Scheduled",
-  superseded: "Replaced",
-  unknown: "Result unavailable",
-  inputRequired: "This task is waiting for input from its MCP client.",
+  callWorkspaceMismatch:
+    "This call belongs to a different workspace. Select its workspace before deciding it.",
+  selectCallWorkspace: "Select its workspace",
 };
 
 const cs: Record<keyof typeof en, string> = {
-  mode: "Režim",
-  connector: "Spouští akce",
-  connectorHint: "Volá zapnuté akce služeb přímo jako nástroje.",
-  processor: "Předává úkoly",
-  processorHint: "Zadává úlohy, server je provede vlastním modelem.",
   connectorScope: "Volat akce služeb",
+  scopeServicesCallHint:
+    "Spouští zapnuté akce služeb pracovního prostoru; zápis může čekat na tvé schválení v Niaro.",
+  scopeDataRead: "Číst tvá data v Niaro",
+  scopeDataReadHint:
+    "Prohledává a čte tvé schůzky, úkoly, chaty a to, co o tobě Niaro ví.",
+  scopeMemoryWrite: "Ukládat do tvé paměti",
+  scopeMemoryWriteHint:
+    "Ukládá, co se o tobě aplikace dozví. Uvidíš a smažeš to ve svém profilu.",
+  scopesRequired: "Vyber aspoň jedno oprávnění.",
   createToken: "Připojit aplikaci",
   createTokenHint: "Její token se zobrazí jen jednou.",
   copyEndpoint: "Kopírovat URL",
@@ -183,7 +160,6 @@ const cs: Record<keyof typeof en, string> = {
   requestDetails: "Podrobnosti požadavku",
   workspace: "Pracovní prostor",
   organization: "Organizace",
-  runOnly: "Čtení a spouštění úloh",
   reauthenticate: "Klient vyžaduje nové přihlášení.",
   reauthenticateAction: "Přihlásit znovu",
   accountOnly: "Pro správu externích AI aplikací se přihlas účtem.",
@@ -196,8 +172,6 @@ const cs: Record<keyof typeof en, string> = {
   labelPlaceholder: "Např. Claude Desktop",
   labelInvalid: "Zadej název klienta (1 až 100 znaků).",
   permissions: "Oprávnění",
-  viewOnly: "Jen čtení",
-  viewRun: "Čtení a spouštění",
   expires: "Platnost do",
   tokenTitle: "Tvůj nový přístupový token",
   tokenHint: "Zkopíruj si token hned, zobrazí se jen jednou.",
@@ -219,52 +193,37 @@ const cs: Record<keyof typeof en, string> = {
   loading: "Načítám externí AI aplikace…",
   forbidden:
     "V tomto pracovním prostoru nemáš oprávnění spravovat externí AI aplikace.",
-  taskForbidden: "Nemáš oprávnění zobrazit tuto úlohu ani o ní rozhodnout.",
   authError: "Relace vypršela. Přihlas se znovu.",
-  notFound: "Úloha ani přístupový token v tomto pracovním prostoru nejsou.",
+  notFound: "Volání ani přístupový token v tomto pracovním prostoru nejsou.",
   conflict: "Požadavek se změnil. Před rozhodnutím ho obnov.",
   invalid: "Server požadavek nepřijal. Zkontroluj hodnoty a zkus to znovu.",
   failed: "Externí AI aplikace se nepodařilo změnit. Zkus to znovu.",
   loadFailed: "Externí AI aplikace se nepodařilo načíst. Zkus to znovu.",
-  taskLoadFailed: "Úlohu se nepodařilo načíst. Zkus to znovu.",
+  callLoadFailed: "Volání se nepodařilo načíst. Zkus to znovu.",
   rateError: "Příliš mnoho požadavků. Chvíli počkej a zkus to znovu.",
-  task: "MCP úloha",
-  taskId: "ID úlohy",
-  approval: "Čeká na schválení",
-  operation: "Operace",
   service: "Služba",
   effect: "Účinek",
   read: "Čte data",
   write: "Mění data",
-  fullInput: "Úplný vstup operace (JSON)",
-  fullReviewHint:
-    "Některé podrobnosti jsou zkrácené. Před potvrzením rozbal úplný vstup níže.",
-  incompleteReview:
-    "Údaje o operaci nejsou úplné nebo už nečeká na schválení. Před rozhodnutím úlohu obnov.",
-  operationId: "ID operace",
-  revision: "Revize",
-  details: "Podrobnosti operace",
-  confirm: "Schválit",
-  reject: "Odmítnout",
-  decisionSaved: "Rozhodnutí uloženo.",
-  taskWorkspaceMismatch:
-    "Úloha patří do jiného pracovního prostoru. Nejdřív ho vyber.",
-  selectTaskWorkspace: "Vybrat pracovní prostor úlohy",
-  pending: "Běží",
-  completed: "Dokončeno",
-  failedTask: "Selhalo",
-  cancelled: "Zrušeno",
-  waiting: "Čeká na vstup",
-  waitingApproval: "Čeká na schválení",
-  queued: "Ve frontě",
-  waitingSystem: "Čeká na systém",
-  scheduled: "Naplánováno",
-  superseded: "Nahrazeno",
-  unknown: "Výsledek není dostupný",
-  inputRequired: "Úloha čeká na vstup od MCP klienta.",
+  callWorkspaceMismatch:
+    "Volání patří do jiného pracovního prostoru. Před rozhodnutím ho vyber.",
+  selectCallWorkspace: "Vybrat jeho pracovní prostor",
 };
 
 export type McpCopy = typeof en;
+/** What a person's own AI app may do, in the order they are offered. */
+export const MCP_SCOPES = [
+  "data.read",
+  "memory.write",
+  "services.call",
+] as const;
+export type McpScope = (typeof MCP_SCOPES)[number];
+/** Each scope's label and hint. */
+export const mcpScopeCopy = {
+  "data.read": ["scopeDataRead", "scopeDataReadHint"],
+  "memory.write": ["scopeMemoryWrite", "scopeMemoryWriteHint"],
+  "services.call": ["connectorScope", "scopeServicesCallHint"],
+} as const satisfies Record<McpScope, readonly [keyof McpCopy, keyof McpCopy]>;
 export const mcpCopy = { en, cs };
 export function useMcpCopy(): McpCopy {
   return useAdmin().language === "cs" ? cs : en;

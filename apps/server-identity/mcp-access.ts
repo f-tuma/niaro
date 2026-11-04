@@ -8,25 +8,31 @@ import {
 } from "../../packages/protocol/identity";
 import { IdentityError } from "./error";
 
-/** Processor scopes submit/observe server-run tasks; the connector scope calls
- * the workspace's permitted service actions directly from the MCP client. */
+/** What a person's own AI app may do: read their Niaro data, save into their
+ * Niaro memory and call the workspace's permitted service actions. */
 export const MCP_ACCESS_SCOPES = [
-  "native.view",
-  "native.run",
+  "data.read",
+  "memory.write",
   "services.call",
 ] as const;
 export type McpAccessScope = (typeof MCP_ACCESS_SCOPES)[number];
-/** Running a task includes reading its status/result; view alone cannot run it. */
 export function mcpScopesAllow(
   granted: readonly string[],
   required: readonly McpAccessScope[],
 ) {
-  return required.every(
-    (scope) =>
-      granted.includes(scope) ||
-      (scope === "native.view" && granted.includes("native.run")),
-  );
+  return required.every((scope) => granted.includes(scope));
 }
+/** The person's own data scope (same as their app session) for a grant. */
+export const mcpScope = (actor: {
+  workspaceId: string;
+  serverId: string;
+  userId: string;
+}) => ({
+  connectionId: `account-${actor.workspaceId}`,
+  serverId: actor.serverId,
+  workspaceId: actor.workspaceId,
+  userId: actor.userId,
+});
 const Scope = z.enum(MCP_ACCESS_SCOPES);
 const Scopes = z
   .array(Scope)
@@ -85,6 +91,8 @@ export type McpPrincipal = {
   role: z.infer<typeof OrganizationRole>;
   scopes: McpAccessScope[];
   expiresAt: string;
+  /** The grant's label (the app's name), shown as the source of its saves. */
+  label: string;
 };
 type StoredGrant = {
   id: string;
@@ -159,6 +167,27 @@ export class McpAccessStore {
     ) STRICT;
     CREATE INDEX IF NOT EXISTS agent_mcp_access_owner
       ON agent_mcp_access(user_id,server_id,workspace_id);`);
+    this.dropRetiredAccess();
+  }
+  /** NIAR-289: MCP no longer hands tasks to Niaro's agent. Grants holding the
+   * retired processor scopes are deleted (their OAuth binding goes with them)
+   * and the task tables are dropped; the app links again with the new scopes. */
+  private dropRetiredAccess() {
+    const known = MCP_ACCESS_SCOPES.map((scope) => `'${scope}'`).join(",");
+    const retired = `EXISTS (SELECT 1 FROM json_each(scopes_json) WHERE value NOT IN (${known}))`;
+    if (
+      this.db
+        .prepare(`SELECT 1 FROM agent_mcp_access WHERE ${retired} LIMIT 1`)
+        .get()
+    )
+      this.db.prepare(`DELETE FROM agent_mcp_access WHERE ${retired}`).run();
+    for (const table of ["agent_mcp_request", "agent_mcp_task"])
+      if (
+        this.db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
+          .get(table)
+      )
+        this.db.exec(`DROP TABLE ${table}`);
   }
   private checkServer(serverId: string) {
     if (!this.options.checkServer(serverId))
@@ -434,6 +463,7 @@ export class McpAccessStore {
       role: member.role,
       scopes,
       expiresAt: new Date(row.expires_at).toISOString(),
+      label: row.label,
     };
   }
   authenticate(

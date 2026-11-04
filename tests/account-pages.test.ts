@@ -117,7 +117,7 @@ test("the account access list parses the server's shape", () => {
         id: "c".repeat(32),
         label: "TEST desktop",
         workspaceName: "TEST Workspace",
-        scopes: ["native.run"],
+        scopes: ["data.read"],
         createdAt: 1,
         expiresAt: 2,
         lastUsedAt: null,

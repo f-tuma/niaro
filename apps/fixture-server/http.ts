@@ -102,7 +102,10 @@ import {
   eventsWithoutProcessWork,
 } from "../../packages/protocol/process-work";
 import { IdentityError } from "../server-identity/error";
-import type { McpPrincipal } from "../server-identity/mcp-access";
+import {
+  MCP_ACCESS_SCOPES,
+  type McpPrincipal,
+} from "../server-identity/mcp-access";
 import {
   BrowserLoginStart,
   BrowserLoginSecret,
@@ -121,14 +124,20 @@ import {
 import { VoiceError, type Transcriber } from "./voice";
 import { ModelError, type DecisionRouter } from "./decision";
 import { ModelService } from "./model-service";
-import { McpTasks } from "../server-mcp/tasks";
 import { HubRunner } from "../server-identity/hub-runner";
 import { PROCESS_QUESTION_EXECUTION_PROFILE } from "../../packages/protocol/process-questions";
 import {
   createMcpHttpHandler,
   McpAuthenticationError,
-  McpTaskError,
+  McpToolError,
 } from "../server-mcp/transport";
+import {
+  createMcpRouter,
+  MCP_SERVER_INFO,
+  MCP_SERVER_INSTRUCTIONS,
+  type McpRouterBackend,
+} from "../server-mcp/router";
+import { CHAT_SEARCH_MAX_LIMIT } from "../../packages/protocol/chat-search";
 import {
   REQUEST_INTERRUPTION_PROFILE,
   RequestInterruptionRequestSchema,
@@ -187,6 +196,10 @@ async function body(req: IncomingMessage, limit = 65536) {
 const connectorFailures: Record<string, string> = {
   mcp_tool_not_found: "This tool is no longer available. List the tools again.",
   mcp_call_not_found: "No call with this requestId exists for this access.",
+  mcp_request_id_invalid:
+    "requestId must be 1-160 letters, digits or . _ : - characters.",
+  mcp_request_id_conflict:
+    "This requestId was already used for a different call. Use a new requestId for a new call; reuse one only to retry the same call.",
   service_oauth_connection_required:
     "The person must first connect their own account to this service in Niaro.",
   catalog_action_denied: "This action is disabled or not permitted.",
@@ -194,19 +207,28 @@ const connectorFailures: Record<string, string> = {
     "The service configuration changed. List the tools again and retry.",
   catalog_pending_limit:
     "Too many calls are waiting for approval. Ask the person to review them in Niaro.",
-  integration_schema_unsupported: "The input does not match the tool schema.",
-  integration_input_invalid: "The input does not match the tool schema.",
+  integration_schema_unsupported:
+    "The input does not match the tool's input schema.",
+  integration_input_invalid:
+    "The input does not match the tool's input schema. Fix these fields and call again:",
 };
-function connectorHandlers(
+/**
+ * The MCP router's backend: Niaro data from the identity service, the
+ * person's chats from this server's storage and the connector's catalog
+ * actions. Every path re-authenticates the grant; none calls a model.
+ */
+function mcpBackend(
   identity: NonNullable<FixtureServerOptions["identity"]>,
-) {
+  storage: FixtureStorage,
+): McpRouterBackend<McpPrincipal> | undefined {
+  const data = identity.mcpData?.();
+  if (!data) return undefined;
   const { mcpConnectorTools, mcpConnectorCall, mcpConnectorStatus } = identity;
-  if (!mcpConnectorTools || !mcpConnectorCall || !mcpConnectorStatus)
-    return undefined;
-  const publicError = async <T>(run: () => Promise<T>) => {
+  const publicError = async <T>(work: () => Promise<T>) => {
     try {
-      return await run();
+      return await work();
     } catch (error) {
+      if (error instanceof McpToolError) throw error;
       const code =
         error instanceof IdentityError
           ? error.code
@@ -222,7 +244,7 @@ function connectorHandlers(
               }
             ).failure?.fields ?? [])
           : [];
-      throw new McpTaskError(
+      throw new McpToolError(
         code in connectorFailures ? code : "call_failed",
         [
           connectorFailures[code] ?? "The service call failed.",
@@ -234,32 +256,88 @@ function connectorHandlers(
     }
   };
   return {
-    modes: (principal: McpPrincipal) => ({
-      tasks: principal.scopes.some((scope) => scope.startsWith("native.")),
-      connector: principal.scopes.includes("services.call"),
-    }),
-    list: async (principal: McpPrincipal) =>
-      (await mcpConnectorTools.call(identity, principal)).map(
-        ({ name, description, inputSchema, annotations }) => ({
-          name,
-          description,
-          inputSchema,
-          annotations,
-        }),
-      ),
-    call: (
-      principal: McpPrincipal,
-      name: string,
-      input: Record<string, unknown>,
-      signal: AbortSignal,
-    ) =>
-      publicError(() =>
-        mcpConnectorCall.call(identity, principal, name, input, signal),
-      ),
-    status: (principal: McpPrincipal, requestId: string) =>
-      publicError(() =>
-        mcpConnectorStatus.call(identity, principal, requestId),
-      ),
+    scopes: (principal) => principal.scopes,
+    search: {
+      meetings: (principal, query, offset, take) =>
+        data.searchMeetings(principal, query, offset, take),
+      tasks: (principal, query, offset, take, full) =>
+        data.searchTasks(principal, query, offset, take, full),
+      memory: (principal, query, offset, take) =>
+        data.searchMemory(principal, query, offset, take),
+      // The person's own chats with Niaro, as their app's search finds them.
+      chats: async (principal, query, offset, take, full) => {
+        let page;
+        try {
+          // The grant is checked again first; the scope is its current one.
+          const scope = await data.dataScope(principal);
+          page = storage.searchConversations(scope, query, {
+            after: offset || undefined,
+            limit: Math.min(take, CHAT_SEARCH_MAX_LIMIT),
+            includeArchived: true,
+            archivedOnly: false,
+          });
+        } catch (error) {
+          if (error instanceof ChatSearchUnavailable)
+            return { hits: [], more: false };
+          if (error instanceof ChatSearchRateLimited)
+            throw new McpToolError(
+              "rate_limited",
+              "Too many chat searches. Wait ten seconds and try again.",
+            );
+          throw error;
+        }
+        return {
+          more: page.nextAfter !== null,
+          hits: page.results.map((result) => ({
+            kind: "chats" as const,
+            id: result.conversation.id,
+            title: result.conversation.title || "Chat",
+            date: result.conversation.updatedAt,
+            ...(result.matches[0]
+              ? {
+                  snippet: full
+                    ? result.matches.map((match) => match.snippet).join(" | ")
+                    : result.matches[0].snippet,
+                }
+              : {}),
+            ...(result.conversation.archived ? { archived: true } : {}),
+          })),
+        };
+      },
+    },
+    meeting: (principal, input) => data.meeting(principal, input),
+    tasks: (principal, input) => data.tasks(principal, input),
+    memoryList: (principal, input) => data.memoryList(principal, input),
+    memorySave: (principal, input) => data.memorySave(principal, input),
+    audit: (principal, tool, outcome) => data.audit(principal, tool, outcome),
+    ...(mcpConnectorTools && mcpConnectorCall && mcpConnectorStatus
+      ? {
+          connector: {
+            list: async (principal: McpPrincipal) =>
+              (await mcpConnectorTools.call(identity, principal)).map(
+                ({ name, description, inputSchema, annotations }) => ({
+                  name,
+                  description,
+                  inputSchema,
+                  annotations,
+                }),
+              ),
+            call: (
+              principal: McpPrincipal,
+              name: string,
+              input: Record<string, unknown>,
+              signal: AbortSignal,
+            ) =>
+              publicError(() =>
+                mcpConnectorCall.call(identity, principal, name, input, signal),
+              ),
+            status: (principal: McpPrincipal, requestId: string) =>
+              publicError(() =>
+                mcpConnectorStatus.call(identity, principal, requestId),
+              ),
+          },
+        }
+      : {}),
   };
 }
 export type FixtureServerOptions = {
@@ -296,7 +374,7 @@ export type FixtureServerOptions = {
       Pick<
         IdentityService,
         | "mcpAuthenticate"
-        | "mcpTaskDependencies"
+        | "mcpData"
         | "mcpPublicHttp"
         | "baseURL"
         | "mcpConnectorTools"
@@ -451,18 +529,6 @@ export function createFixtureServer(
   const speechActive = new Set<string>();
   const browserAttempts = new Map<string, { count: number; until: number }>();
   const modelControllers = new Set<AbortController>();
-  const mcpTasks =
-    options.identity?.mcpTaskDependencies &&
-    options.identity.baseURL &&
-    accountModels
-      ? new McpTasks(
-          options.identity.mcpTaskDependencies(),
-          storage,
-          accountModels,
-          (task) =>
-            `${options.identity!.baseURL}/admin/mcp?taskId=${encodeURIComponent(task.id)}&workspaceId=${encodeURIComponent(task.scope.workspaceId)}`,
-        )
-      : undefined;
   // Hub refreshes run in the background through the ordinary start steps.
   const identity = options.identity;
   const hubRunner =
@@ -547,15 +613,20 @@ export function createFixtureServer(
   // Scheduled fills share the runner's per-person lanes with the page's.
   if (hubRunner)
     identity?.attachHubRunner?.((...args) => hubRunner.launch(...args));
+  const mcpRouter = options.identity
+    ? mcpBackend(options.identity, storage)
+    : undefined;
   const mcp =
-    mcpTasks && options.identity?.mcpAuthenticate && options.identity.baseURL
+    mcpRouter && options.identity?.mcpAuthenticate && options.identity.baseURL
       ? createMcpHttpHandler({
-          tasks: mcpTasks,
+          tools: createMcpRouter(mcpRouter),
+          instructions: MCP_SERVER_INSTRUCTIONS,
+          serverInfo: MCP_SERVER_INFO,
+          scopes: MCP_ACCESS_SCOPES,
           allowedOrigins: [
             ...new Set([...origins, new URL(options.identity.baseURL).origin]),
           ],
           allowedHosts: [new URL(options.identity.baseURL).host],
-          connector: connectorHandlers(options.identity),
           resourceMetadataUrl: `${options.identity.baseURL}/.well-known/oauth-protected-resource/mcp`,
           authenticate: async (req) => {
             try {
@@ -2014,7 +2085,6 @@ export function createFixtureServer(
     if (closed) return;
     closed = true;
     clearInterval(timer);
-    mcpTasks?.stop();
     void hubRunner?.close();
     worker.stop();
     attachmentCleanup.stop();

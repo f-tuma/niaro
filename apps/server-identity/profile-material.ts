@@ -153,6 +153,11 @@ export function isSafeProfileText(text: string) {
     pattern.test(value),
   );
 }
+/** Passwords, keys, tokens, account, card or personal ID numbers. */
+export function containsCredential(text: string) {
+  const value = folded(text);
+  return credentials.some((pattern) => pattern.test(value));
+}
 export function isPersonalObservation(text: string) {
   return /\b(?:kids|children|family|spouse|wife|husband|hobb\w*|football|soccer|deti|rodin\w*|manzel\w*|fotbal\w*|konick\w*)\b/.test(
     folded(text),

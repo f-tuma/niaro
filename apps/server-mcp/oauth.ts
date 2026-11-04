@@ -622,26 +622,47 @@ export function createMcpOAuth(options: McpOAuthOptions) {
     },
   };
   return {
-    /** Run after auth migrations. Resources created before a scope existed keep
-     * their stored list; extend it so OAuth clients can request every scope. */
+    /** Run after auth migrations. A resource or a registered client stored
+     * before the current scopes (NIAR-289 renamed them) gets the current list,
+     * so OAuth clients can request every scope. Unchanged rows are not written. */
     upgradeResourceScopes() {
+      const current = (raw: unknown) => {
+        try {
+          const scopes = Scopes.safeParse(JSON.parse(String(raw)));
+          return (
+            scopes.success &&
+            MCP_ACCESS_SCOPES.every((scope) => scopes.data.includes(scope))
+          );
+        } catch {
+          return false;
+        }
+      };
+      const all = JSON.stringify([...MCP_ACCESS_SCOPES]);
       const row = options.db
         .prepare(
           'SELECT "allowedScopes" FROM "oauthResource" WHERE identifier=?',
         )
         .get(resource);
-      if (!row) return;
-      const current = Scopes.safeParse(JSON.parse(String(row.allowedScopes)));
-      if (
-        current.success &&
-        MCP_ACCESS_SCOPES.every((scope) => current.data.includes(scope))
-      )
-        return;
-      options.db
+      if (row && !current(row.allowedScopes))
+        options.db
+          .prepare(
+            'UPDATE "oauthResource" SET "allowedScopes"=? WHERE identifier=?',
+          )
+          .run(all, resource);
+      const columns = options.db
+        .prepare('PRAGMA table_info("oauthClient")')
+        .all()
+        .map((column) => String(column.name));
+      if (!columns.includes("scopes") || !columns.includes("clientId")) return;
+      for (const client of options.db
         .prepare(
-          'UPDATE "oauthResource" SET "allowedScopes"=? WHERE identifier=?',
+          'SELECT "clientId",scopes FROM "oauthClient" WHERE "clientId" IN (SELECT client_id FROM agent_mcp_oauth_client)',
         )
-        .run(JSON.stringify([...MCP_ACCESS_SCOPES]), resource);
+        .all())
+        if (!current(client.scopes))
+          options.db
+            .prepare('UPDATE "oauthClient" SET scopes=? WHERE "clientId"=?')
+            .run(all, String(client.clientId));
     },
     provider,
     companion,

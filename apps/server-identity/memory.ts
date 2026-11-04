@@ -199,7 +199,7 @@ export type MemoryCommit = {
   check?: () => void;
   checkpoint?: (item: MemoryItem) => void;
   revoked?: (item: MemoryItem) => void;
-  source?: "chat" | "console";
+  source?: "chat" | "console" | "mcp";
   run?: <T>(fn: () => T) => Promise<T>;
   observationSourceAccess?: (
     source: ObservationSource,
@@ -219,7 +219,7 @@ type MemoryOptions = {
   onMutation?: (
     actor: MemoryActor,
     action: "remember" | "revise" | "forget" | "preference",
-    source: "chat" | "console",
+    source: "chat" | "console" | "mcp",
   ) => void;
 };
 const payloadOwners = new WeakMap<
@@ -1737,7 +1737,10 @@ export class MemoryStore {
       ? "model_inference"
       : source.type === "verified_operation"
         ? "verified_result"
-        : "user_assertion";
+        : // The person's own AI app wrote it from their conversation.
+          source.type === "external_app"
+          ? "model_inference"
+          : "user_assertion";
   }
   private stage(
     actor: MemoryActor,
