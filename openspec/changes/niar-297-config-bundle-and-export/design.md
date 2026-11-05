@@ -4,7 +4,7 @@
 
 `{profile: "niaro-config-bundle", version: 1, exportedAt, source: {server}, organization: {<key>: data}, workspaces: [{name, sections: {<key>: data}}]}`. The envelope only names sections; each section's data carries its own `version` and is validated by that section's schema, so the file version stays stable when a section is added or reshaped.
 
-Every section is one `ConfigSection` (`apps/server-identity/config-bundle/registry.ts`): `key`, `schema`, `export(ctx)` and `apply(ctx, data, outcome)`. `index.ts` lists them in apply order (server settings, providers, models, installed connectors; then roles, services, routing, usage, plugins, skills, processes), so what a later section names exists when it is applied. NIAR-293 (routing reshaped into roles and tiers) replaces `sections/routing.ts` and its section version; NIAR-295 (workspace instructions and starters) adds one more entry. Nothing else reads routing.
+Every section is one `ConfigSection` (`apps/server-identity/config-bundle/registry.ts`): `key`, `schema`, `export(ctx)` and `apply(ctx, data, outcome)`. `index.ts` lists them in apply order (server settings, providers, models, the organization model policy, installed connectors, default instructions; then roles, services, routing, usage, plugins, skills, instructions, processes), so what a later section names exists when it is applied. `sections/routing.ts` carries the NIAR-293 model policy: the organization default (`modelPolicy`, roles, tiers and options) and each workspace's overrides (`routing` version 2), with models named by provider and model. `sections/instructions.ts` carries the NIAR-295 instructions and starters (current text only, not the history); an import that changes them saves a new version.
 
 ## References by name
 

@@ -1,122 +1,261 @@
+/* eslint-disable @typescript-eslint/no-redeclare -- Each schema deliberately shares its inferred TypeScript type name. */
 import { z } from "zod";
 import { IdentityName } from "../../../../packages/protocol/identity";
-import { Routing } from "../../../../packages/protocol/service-catalog";
+import {
+  MAX_MODEL_TIERS,
+  MAX_ROLE_MODELS,
+  ModelRole,
+  OrganizationModelPolicy,
+  SelectorOptions,
+  SpeechOptions,
+  TierId,
+  WorkspaceModelPolicy,
+  type OrganizationModelPolicyValue,
+  type PolicyOptionsValue,
+  type RoleRouteValue,
+  type WorkspaceModelPolicyValue,
+} from "../../../../packages/protocol/model-policy";
 import { ModelRef, modelRefs, serviceRefs } from "../refs";
-import { ConfigConflict, same, workspaceSection } from "../registry";
+import {
+  ConfigConflict,
+  organizationSection,
+  same,
+  workspaceSection,
+  type OrganizationContext,
+} from "../registry";
 
 /**
- * Model choice of a workspace, against today's `Routing` type. Kept on its
- * own so a reshaped routing policy (roles and tiers) replaces this one file
- * and its section key version; nothing else in the bundle reads routing.
+ * The model policy in a bundle: the same roles, tiers and options the Models
+ * page edits, with catalog models named by provider and model instead of ids.
+ * The organization's default and each workspace's overrides travel apart,
+ * so a workspace imported into another organization keeps only what it
+ * changed.
  */
-const shape = Routing.shape;
-const RoutingSectionSchema = z.strictObject({
-  version: z.literal(1),
-  model: ModelRef.nullable(),
-  voiceModel: ModelRef.nullable(),
-  voiceMode: shape.voiceMode.unwrap(),
-  voiceMethod: shape.voiceMethod.unwrap(),
-  meetingTranscriptionModel: ModelRef.nullable(),
-  speech: z.strictObject({
-    model: ModelRef.nullable(),
-    method: z.enum(["reader", "speech"]),
-    zeroDataRetention: z.boolean(),
-    voice: z
-      .string()
-      .trim()
-      .min(1)
-      .max(200)
-      .regex(/^[a-zA-Z0-9._:/-]+$/),
-  }),
-  decision: z.strictObject({
-    enabled: z.boolean(),
-    model: ModelRef.nullable(),
-    minConfidence: z.number().min(0.5).max(1),
-  }),
-  planner: shape.planner.unwrap(),
-  services: z
-    .array(
-      z.strictObject({ service: IdentityName, model: ModelRef.nullable() }),
-    )
-    .max(100),
+const RefList = z.array(ModelRef).max(MAX_ROLE_MODELS);
+const RouteRef = z.strictObject({
+  models: RefList,
+  tier: TierId.nullable(),
+  fallback: z.boolean(),
 });
-type RoutingSection = z.infer<typeof RoutingSectionSchema>;
+type RouteRef = z.infer<typeof RouteRef>;
+const EscalationRef = z.strictObject({
+  mode: z.enum(["stop", "escalate"]),
+  models: RefList,
+  tier: TierId.nullable(),
+});
+const RolesRef = z.partialRecord(ModelRole, RouteRef);
 
-export const routingSection = workspaceSection<RoutingSection>({
+const OrganizationPolicySection = z.strictObject({
+  version: z.literal(1),
+  roles: RolesRef,
+  tiers: z
+    .array(
+      z.strictObject({
+        id: TierId,
+        name: z.string().trim().min(1).max(40),
+        models: RefList.min(1),
+      }),
+    )
+    .max(MAX_MODEL_TIERS),
+  options: z.strictObject({
+    serverVoice: z.boolean(),
+    speech: SpeechOptions,
+    selector: SelectorOptions,
+    escalation: EscalationRef,
+  }),
+});
+type OrganizationPolicySection = z.infer<typeof OrganizationPolicySection>;
+
+const WorkspacePolicySection = z.strictObject({
+  version: z.literal(2),
+  roles: RolesRef,
+  services: z
+    .array(z.strictObject({ service: IdentityName, route: RouteRef }))
+    .max(100),
+  options: z.strictObject({
+    serverVoice: z.boolean().optional(),
+    speech: SpeechOptions.optional(),
+    selector: SelectorOptions.optional(),
+    escalation: EscalationRef.optional(),
+  }),
+});
+type WorkspacePolicySection = z.infer<typeof WorkspacePolicySection>;
+
+type Refs = ReturnType<typeof modelRefs>;
+/** A model the catalog no longer has drops out of the exported list. */
+const toRefs = (refs: Refs, ids: readonly string[]) =>
+  ids.flatMap((id) => {
+    const ref = refs.ref(id);
+    return ref ? [ref] : [];
+  });
+const toIds = (refs: Refs, list: readonly ModelRef[]) =>
+  list.map((ref) => refs.find(ref).model.id);
+const routeOut = (refs: Refs, route: RoleRouteValue): RouteRef => ({
+  models: toRefs(refs, route.models),
+  tier: route.tier,
+  fallback: route.fallback,
+});
+const routeIn = (refs: Refs, route: RouteRef): RoleRouteValue => ({
+  models: toIds(refs, route.models),
+  tier: route.tier,
+  fallback: route.fallback,
+});
+function rolesOut(refs: Refs, roles: Partial<Record<string, RoleRouteValue>>) {
+  const out: z.infer<typeof RolesRef> = {};
+  for (const role of ModelRole.options) {
+    const route = roles[role];
+    if (route) out[role] = routeOut(refs, route);
+  }
+  return out;
+}
+function rolesIn(refs: Refs, roles: z.infer<typeof RolesRef>) {
+  const out: Partial<Record<z.infer<typeof ModelRole>, RoleRouteValue>> = {};
+  for (const role of ModelRole.options) {
+    const route = roles[role];
+    if (route) out[role] = routeIn(refs, route);
+  }
+  return out;
+}
+const escalationOut = (
+  refs: Refs,
+  value: PolicyOptionsValue["escalation"],
+) => ({
+  mode: value.mode,
+  models: toRefs(refs, value.models),
+  tier: value.tier,
+});
+const escalationIn = (
+  refs: Refs,
+  value: z.infer<typeof EscalationRef>,
+): PolicyOptionsValue["escalation"] => ({
+  mode: value.mode,
+  models: toIds(refs, value.models),
+  tier: value.tier,
+});
+/** The organization's stored default; it does not depend on a workspace. */
+const organizationPolicy = (ctx: OrganizationContext) =>
+  ctx.catalog.modelPolicies(ctx.organizationId, ctx.organizationId)
+    .organization;
+/** A policy that fails the protocol's own rules is a conflict, not a crash. */
+function parsed<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value);
+  if (!result.success) throw new ConfigConflict("invalid");
+  return result.data;
+}
+
+/** The organization's default model policy, after the models it names. */
+export const modelPolicySection =
+  organizationSection<OrganizationPolicySection>({
+    key: "modelPolicy",
+    schema: OrganizationPolicySection,
+    export: (ctx) => {
+      const refs = modelRefs(ctx);
+      const { policy } = organizationPolicy(ctx);
+      return {
+        version: 1,
+        roles: rolesOut(refs, policy.roles),
+        tiers: policy.tiers.map((tier) => ({
+          id: tier.id,
+          name: tier.name,
+          models: toRefs(refs, tier.models),
+        })),
+        options: {
+          serverVoice: policy.options.serverVoice,
+          speech: policy.options.speech,
+          selector: policy.options.selector,
+          escalation: escalationOut(refs, policy.options.escalation),
+        },
+      };
+    },
+    apply: (ctx, data, outcome) => {
+      outcome.item("Organization model policy", () => {
+        const refs = modelRefs(ctx);
+        const current = organizationPolicy(ctx);
+        const desired: OrganizationModelPolicyValue = parsed(
+          OrganizationModelPolicy,
+          {
+            roles: rolesIn(refs, data.roles),
+            tiers: data.tiers.map((tier) => ({
+              id: tier.id,
+              name: tier.name,
+              models: toIds(refs, tier.models),
+            })),
+            options: {
+              serverVoice: data.options.serverVoice,
+              speech: data.options.speech,
+              selector: data.options.selector,
+              escalation: escalationIn(refs, data.options.escalation),
+            },
+          },
+        );
+        if (same(current.policy, desired)) return "unchanged";
+        ctx.catalog.command({
+          organizationId: ctx.organizationId,
+          workspaceId: ctx.organizationId,
+          type: "saveOrganizationModelPolicy",
+          revision: current.revision,
+          policy: desired,
+        });
+        return "changed";
+      });
+    },
+  });
+
+/** A workspace's overrides of the organization's model policy. */
+export const routingSection = workspaceSection<WorkspacePolicySection>({
   key: "routing",
-  schema: RoutingSectionSchema,
+  schema: WorkspacePolicySection,
   export: (ctx) => {
-    const route = ctx.catalog.routing(ctx.workspaceId);
-    const models = modelRefs(ctx),
+    const refs = modelRefs(ctx),
       services = serviceRefs(ctx);
+    const { policy } = ctx.catalog.modelPolicies(
+      ctx.organizationId,
+      ctx.workspaceId,
+    ).workspace;
+    const { escalation, ...options } = policy.options;
     return {
-      version: 1,
-      model: models.ref(route.modelId),
-      voiceModel: models.ref(route.voiceModelId),
-      voiceMode: route.voiceMode,
-      voiceMethod: route.voiceMethod,
-      meetingTranscriptionModel: models.ref(route.meetingTranscriptionModelId),
-      speech: {
-        model: models.ref(route.speech.modelId),
-        method: route.speech.method,
-        zeroDataRetention: route.speech.zeroDataRetention,
-        voice: route.speech.voice,
-      },
-      decision: {
-        enabled: route.decision.enabled,
-        model: models.ref(route.decision.modelId),
-        minConfidence: route.decision.minConfidence,
-      },
-      planner: route.planner,
+      version: 2,
+      roles: rolesOut(refs, policy.roles),
       // A member's own service has no shared model choice.
-      services: route.services.flatMap((entry) => {
+      services: policy.services.flatMap((entry) => {
         const service = services.services.find((s) => s.id === entry.serviceId);
         return service
-          ? [{ service: service.name, model: models.ref(entry.modelId) }]
+          ? [{ service: service.name, route: routeOut(refs, entry.route) }]
           : [];
       }),
+      options: {
+        ...options,
+        ...(escalation ? { escalation: escalationOut(refs, escalation) } : {}),
+      },
     };
   },
   apply: (ctx, data, outcome) => {
-    outcome.item("Model choice", () => {
-      const models = modelRefs(ctx),
+    outcome.item("Workspace model policy", () => {
+      const refs = modelRefs(ctx),
         services = serviceRefs(ctx);
-      const current = ctx.catalog.routing(ctx.workspaceId);
-      const { revision, ...stored } = current;
-      const desired = {
-        modelId: models.id(data.model),
-        voiceModelId: models.id(data.voiceModel),
-        voiceMode: data.voiceMode,
-        voiceMethod: data.voiceMethod,
-        meetingTranscriptionModelId: models.id(data.meetingTranscriptionModel),
-        speech: {
-          modelId: models.id(data.speech.model),
-          method: data.speech.method,
-          zeroDataRetention: data.speech.zeroDataRetention,
-          voice: data.speech.voice,
-        },
-        decision: {
-          enabled: data.decision.enabled,
-          modelId: models.id(data.decision.model),
-          minConfidence: data.decision.minConfidence,
-        },
-        planner: data.planner,
+      const current = ctx.catalog.modelPolicies(
+        ctx.organizationId,
+        ctx.workspaceId,
+      ).workspace;
+      const { escalation, ...options } = data.options;
+      const desired: WorkspaceModelPolicyValue = parsed(WorkspaceModelPolicy, {
+        roles: rolesIn(refs, data.roles),
         services: data.services.map((entry) => ({
           serviceId: services.find(entry.service).id,
-          modelId: models.id(entry.model),
+          route: routeIn(refs, entry.route),
         })),
-      };
-      if (
-        new Set(desired.services.map((s) => s.serviceId)).size !==
-        desired.services.length
-      )
-        throw new ConfigConflict("invalid");
-      if (same(stored, desired)) return "unchanged";
+        options: {
+          ...options,
+          ...(escalation ? { escalation: escalationIn(refs, escalation) } : {}),
+        },
+      });
+      if (same(current.policy, desired)) return "unchanged";
       ctx.catalog.command({
         organizationId: ctx.organizationId,
         workspaceId: ctx.workspaceId,
-        type: "saveRouting",
-        routing: { revision, ...desired },
+        type: "saveWorkspaceModelPolicy",
+        revision: current.revision,
+        policy: desired,
       });
       return "changed";
     });

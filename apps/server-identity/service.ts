@@ -6734,6 +6734,7 @@ export class IdentityService {
                 db: this.db,
                 catalog: this.catalog.store,
                 skills: this.skills,
+                instructions: this.instructions,
                 processes: this.processes,
                 plugins: this.plugins,
                 serverSettings: this.serverSettingsStore,

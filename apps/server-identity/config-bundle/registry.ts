@@ -12,6 +12,7 @@ import { IdentityError } from "../error";
 import type { ServerSettingsStore } from "../server-settings";
 import type { ServiceCatalogStore } from "../service-catalog";
 import type { ServiceProcessStore } from "../service-processes";
+import type { InstructionsStore } from "../instructions-store";
 import type { SkillStore } from "../skill-store";
 import type { WorkspacePluginStore } from "../workspace-plugins";
 
@@ -20,6 +21,7 @@ export type ConfigStores = {
   db: DatabaseSync;
   catalog: ServiceCatalogStore;
   skills: SkillStore;
+  instructions: InstructionsStore;
   processes: ServiceProcessStore;
   plugins: WorkspacePluginStore;
   serverSettings?: ServerSettingsStore;

@@ -296,12 +296,25 @@ test(
       ).id;
       catalog = await a.catalog();
       await command({
-        type: "saveRouting",
-        routing: {
-          ...catalog.routing,
-          modelId,
-          planner: "model",
-          services: [{ serviceId, modelId }],
+        type: "saveOrganizationModelPolicy",
+        revision: 0,
+        policy: {
+          roles: { chat: { models: [modelId], tier: null, fallback: true } },
+          tiers: [{ id: "fast", name: "Fast", models: [modelId] }],
+        },
+      });
+      await command({
+        type: "saveWorkspaceModelPolicy",
+        revision: 0,
+        policy: {
+          roles: { background: { models: [], tier: "fast", fallback: false } },
+          services: [
+            {
+              serviceId,
+              route: { models: [modelId], tier: null, fallback: false },
+            },
+          ],
+          options: { selector: { minConfidence: 0.9 } },
         },
       });
       catalog = await a.catalog();
@@ -329,6 +342,20 @@ test(
           ],
         },
       });
+      for (const [scope, text] of [
+        [{ type: "organization" }, "TEST Default tone."],
+        [
+          { type: "workspace", workspaceId: a.target.workspaceId },
+          "TEST Sales tone for {workspace.name}.",
+        ],
+      ] as const)
+        await a.ok("admin/api/identity/instructions/command", {
+          organizationId: a.target.organizationId,
+          type: "save",
+          scope,
+          revision: 0,
+          content: { text, starters: ["TEST Summarize my week"] },
+        });
       await a.ok("admin/api/identity/plugins", {
         ...a.target,
         revision: 0,
@@ -423,6 +450,8 @@ test(
       assert.deepEqual(forbidden, []);
       assert.deepEqual(Object.keys(bundle.organization).sort(), [
         "hosted",
+        "instructions",
+        "modelPolicy",
         "models",
         "providers",
         "serverSettings",
@@ -437,6 +466,7 @@ test(
       const workspace = bundle.workspaces[0]!;
       assert.equal(workspace.name, "TEST Workspace");
       assert.deepEqual(Object.keys(workspace.sections).sort(), [
+        "instructions",
         "plugins",
         "processes",
         "roles",
@@ -477,7 +507,12 @@ test(
       ]);
       assert.deepEqual(section(first, "services").needsKey, ["TEST CRM"]);
       assert.deepEqual(section(first, "processes").added, ["TEST Lookup"]);
-      assert.deepEqual(section(first, "routing").changed, ["Model choice"]);
+      assert.deepEqual(section(first, "modelPolicy").changed, [
+        "Organization model policy",
+      ]);
+      assert.deepEqual(section(first, "routing").changed, [
+        "Workspace model policy",
+      ]);
       for (const s of first.sections)
         assert.deepEqual(s.conflicts, [], `${s.key}: ${JSON.stringify(s)}`);
       // A preview changes nothing.

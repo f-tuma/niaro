@@ -2,7 +2,7 @@
 
 ### Requirement: Configuration bundle export
 
-Owners and administrators SHALL export the organization or one workspace as JSON `niaro-config-bundle` v1 (`GET …/config-bundle/export`), one typed section per part: providers, models, connectors, server settings, roles, services, routing, usage, plugins, skills, processes. It SHALL hold no keys, tokens, sign-ins or per-person grants.
+Owners and administrators SHALL export the organization or one workspace as JSON `niaro-config-bundle` v1 (`GET …/config-bundle/export`), one typed section per part: providers, models, the model policy, connectors, server settings, instructions, roles, services, routing, usage, plugins, skills, processes. It SHALL hold no keys, tokens, sign-ins or per-person grants.
 
 #### Scenario: Provider with a key
 

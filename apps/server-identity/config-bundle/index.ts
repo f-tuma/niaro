@@ -24,8 +24,12 @@ import {
   providersSection,
   serverSettingsSection,
 } from "./sections/organization";
+import {
+  organizationInstructionsSection,
+  workspaceInstructionsSection,
+} from "./sections/instructions";
 import { processesSection } from "./sections/processes";
-import { routingSection } from "./sections/routing";
+import { modelPolicySection, routingSection } from "./sections/routing";
 import {
   pluginsSection,
   rolesSection,
@@ -43,7 +47,9 @@ export const ORGANIZATION_SECTIONS: readonly OrganizationSection<never>[] = [
   serverSettingsSection,
   providersSection,
   modelsSection,
+  modelPolicySection,
   hostedSection,
+  organizationInstructionsSection,
 ] as unknown as OrganizationSection<never>[];
 export const WORKSPACE_SECTIONS: readonly WorkspaceSection<never>[] = [
   rolesSection,
@@ -52,6 +58,7 @@ export const WORKSPACE_SECTIONS: readonly WorkspaceSection<never>[] = [
   usageSection,
   pluginsSection,
   skillsSection,
+  workspaceInstructionsSection,
   processesSection,
 ] as unknown as WorkspaceSection<never>[];
 
