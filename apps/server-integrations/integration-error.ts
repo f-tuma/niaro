@@ -9,3 +9,15 @@ export class IntegrationError extends Error {
     super(code);
   }
 }
+
+/**
+ * The connection failed before a byte of the request left this server, so
+ * the provider provably never saw it. Only this error lets a model call fall
+ * back to the next model of its role; it keeps the ordinary code.
+ */
+export class RequestNotSent extends IntegrationError {
+  readonly notSent = true;
+  constructor() {
+    super("integration_unavailable", 502);
+  }
+}

@@ -150,6 +150,8 @@ export const AuditDetails = z.strictObject({
     .optional(),
   /** Actions a person's own service gained when its tools were read. */
   added: z.number().int().nonnegative().optional(),
+  /** Which model policy changed: the organization's default or a workspace's overrides. */
+  policyScope: z.enum(["organization", "workspace"]).optional(),
 });
 export const AuditRecordSchema = z.strictObject({
   organizationId: IdentityId,

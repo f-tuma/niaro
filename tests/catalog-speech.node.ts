@@ -16,6 +16,7 @@ import {
 import { messageCommand } from "../packages/client-core/commands";
 import { CatalogSchema } from "../packages/protocol/service-catalog";
 import type { IntegrationTransport } from "../apps/server-integrations/transport";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 test("catalog speech routes are isolated, revocable, budgeted and preserve model usage references", async () => {
   const root = mkdtempSync(join(tmpdir(), "catalog-voice-"));
@@ -184,9 +185,8 @@ test("catalog speech routes are isolated, revocable, budgeted and preserve model
     ).id;
     const configure = async (enabled: boolean) => {
       await command({
-        type: "saveRouting",
-        routing: {
-          ...(await inventory()).routing,
+        ...routingCommand({
+          ...currentRouting((await inventory()).policy),
           modelId: agent,
           speech: {
             modelId: enabled ? model : null,
@@ -194,7 +194,7 @@ test("catalog speech routes are isolated, revocable, budgeted and preserve model
             voice: "alloy",
             zeroDataRetention,
           },
-        },
+        }),
       });
     };
     await configure(true);

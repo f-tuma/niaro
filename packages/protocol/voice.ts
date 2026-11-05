@@ -80,6 +80,7 @@ export const VoiceCapabilitiesSchema = z.discriminatedUnion("engine", [
 ]);
 export type VoiceCapabilities = z.infer<typeof VoiceCapabilitiesSchema>;
 export type VoiceEngine = VoiceCapabilities["engine"];
+/** A cloud engine names the model its configuration or catalog chose; there is no built-in one. */
 export const voiceCapabilities = (
   enabled: boolean,
   engine: VoiceEngine = "whisper.cpp",
@@ -89,10 +90,7 @@ export const voiceCapabilities = (
     profile: VOICE_PROFILE,
     enabled,
     engine,
-    model:
-      engine === "openrouter"
-        ? (model ?? "google/gemini-3.1-flash-lite")
-        : "small",
+    model: engine === "openrouter" ? model : "small",
     processing: engine === "openrouter" ? "cloud" : "connected_server",
     languages: ["en", "cs"],
     maxSeconds: VOICE_SECONDS,

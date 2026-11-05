@@ -1,7 +1,11 @@
 export const OPENROUTER_URL = "https://openrouter.ai/api/v1";
-export const JEV_DECISION_MODEL = "typesafe/jev-1.13";
 
-/** Provider-specific API identities, not display-name matching. Router modalities describe forwarding. */
+/**
+ * A model's kind decides its capabilities: decision and transcription models
+ * have no tools or audio, speech models only audio output, routers no audio.
+ * Kinds come from discovery or from the administrator; no model is
+ * recognized by its ID. Reviewed voices stay only on models that speak.
+ */
 export function normalizeModelCapabilities<
   T extends {
     model: string;
@@ -9,17 +13,16 @@ export function normalizeModelCapabilities<
     tools: boolean | null;
     audioInput: boolean | null;
     audioOutput?: boolean | null;
+    voices?: { voice: string; label: string }[];
   },
->(providerUrl: string, value: T): T {
-  let kind = value.kind;
-  if (providerUrl.replace(/\/$/, "") === OPENROUTER_URL) {
-    if (value.model === "typesafe/jev-router") kind = "router";
-    if ([JEV_DECISION_MODEL, "~typesafe/jev-latest"].includes(value.model))
-      kind = "decision";
-  }
+>(value: T): T {
+  const kind = value.kind;
+  const speaks = kind === "speech" || (kind === "chat" && !!value.audioOutput);
+  const voiced =
+    value.voices && !speaks ? { ...value, voices: [] } : { ...value };
   if (kind === "speech")
     return {
-      ...value,
+      ...voiced,
       kind,
       tools: false,
       audioInput: false,
@@ -27,13 +30,13 @@ export function normalizeModelCapabilities<
     };
   if (kind === "decision" || kind === "transcription")
     return {
-      ...value,
+      ...voiced,
       kind,
       tools: false,
       audioInput: false,
       audioOutput: false,
     };
   if (kind === "router")
-    return { ...value, kind, audioInput: false, audioOutput: false };
-  return value;
+    return { ...voiced, kind, audioInput: false, audioOutput: false };
+  return voiced;
 }

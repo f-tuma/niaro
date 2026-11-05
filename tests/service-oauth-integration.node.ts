@@ -11,6 +11,7 @@ import { CatalogCommand } from "../packages/protocol/service-catalog";
 import type { ServiceOAuthStatus } from "../packages/protocol/service-oauth";
 import type { AuditRecord } from "../packages/protocol/audit";
 import type { TransportRequest } from "../apps/server-integrations/transport";
+import { routingCommand } from "./helpers/model-policy";
 
 const target = {
   organizationId: "org",
@@ -552,13 +553,12 @@ test("Jev advises using public metadata only and never changes authentication po
       },
     });
     h.command({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 0,
         modelId: chatModel,
         decision: { enabled: true, modelId, minConfidence: 0.8 },
         services: [],
-      },
+      }),
     });
     const before = h.oauth.config(h.snapshot());
     assert.deepEqual(await h.call("suggest"), {

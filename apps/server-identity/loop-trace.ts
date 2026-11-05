@@ -98,3 +98,23 @@ export function toolOutcome(value: unknown): z.infer<typeof LoopStatus> {
   if (result.error || result.status === "failed") return "failed";
   return "succeeded";
 }
+/**
+ * Which role a model served and why (primary, fallback: <cause>, escalated
+ * after …), for a run's step. A service route shows as "service": the
+ * service is named by the step itself.
+ */
+export function routeDetails(selected: {
+  route?: { role: string; reason: string };
+}) {
+  return selected.route
+    ? [
+        {
+          label: "Role",
+          value: selected.route.role.startsWith("service:")
+            ? "service"
+            : selected.route.role,
+        },
+        { label: "Reason", value: selected.route.reason },
+      ]
+    : [];
+}

@@ -22,7 +22,7 @@ import {
   ProviderSettings,
   CatalogModelSchema,
   CatalogModelSettings,
-  Routing,
+  type CatalogModel,
   PersonalServicesManagement,
   PersonalServicesPolicy,
   type PersonalServicesManagementValue,
@@ -33,7 +33,39 @@ import {
   type ActionInvokeRequest,
   type PersonalOwnershipValue,
 } from "../../packages/protocol/service-catalog";
-import { normalizeModelCapabilities } from "../server-integrations/model-capabilities";
+import {
+  normalizeModelCapabilities,
+  OPENROUTER_URL,
+} from "../server-integrations/model-capabilities";
+import {
+  budgetedReach,
+  MODEL_ROLES,
+  OrganizationModelPolicy,
+  WorkspaceModelPolicy,
+  type OrganizationModelPolicyValue,
+  type ModelPolicyViewValue,
+  type WorkspaceModelPolicyValue,
+} from "../../packages/protocol/model-policy";
+import type {
+  ModelRouteChoice,
+  NiaroModelSelection,
+} from "../server-integrations/mastra-model";
+import {
+  referencedModels,
+  referencedTiers,
+  isLegacyRouting,
+  seedOrganizationPolicy,
+  workspacePolicyFromLegacy,
+  effectiveOptions,
+  effectiveRole,
+  effectiveRoute,
+  emptyOrganizationPolicy,
+  emptyWorkspacePolicy,
+  notDispatchedCause,
+  policyView,
+  type RouteKey,
+  type StoredModelPolicies,
+} from "./model-policy";
 import { validateEndpoint } from "../server-integrations/transport";
 import {
   schemaValidator,
@@ -66,6 +98,16 @@ import {
 import type { Scope } from "../../packages/protocol";
 import { OutputVoiceStore } from "./output-voice";
 import type { SpeechVoiceRoute } from "../server-integrations/speech-voices";
+/** What a model must offer for a use; "any" only asks that it is enabled. */
+export type ModelCapability =
+  | "tools"
+  | "chat"
+  | "audioInput"
+  | "audioOutput"
+  | "decision"
+  | "transcription"
+  | "speech"
+  | "any";
 type Row = {
   id: string;
   scope_id: string;
@@ -190,6 +232,7 @@ export class ServiceCatalogStore {
     ) STRICT;
     CREATE INDEX IF NOT EXISTS agent_catalog_scope ON agent_catalog(scope_id,kind);
     CREATE TABLE IF NOT EXISTS agent_catalog_routing (workspace_id TEXT PRIMARY KEY REFERENCES agent_workspace(id) ON DELETE CASCADE, revision INTEGER NOT NULL, data TEXT NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS agent_model_policy (organization_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, data TEXT NOT NULL) STRICT;
     CREATE TABLE IF NOT EXISTS agent_provider_usage (provider_id TEXT NOT NULL, day TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(provider_id,day)) STRICT;
     CREATE TABLE IF NOT EXISTS agent_service_invocation (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, data TEXT NOT NULL) STRICT;
     CREATE INDEX IF NOT EXISTS agent_service_invocation_person ON agent_service_invocation(workspace_id,user_id);
@@ -211,6 +254,7 @@ export class ServiceCatalogStore {
       );
     this.inferenceBudget = new InferenceBudgetStore(db);
     this.outputVoice = new OutputVoiceStore(db);
+    this.migrateLegacyRouting();
     // A write interrupted after dispatch must never be retried automatically.
     for (const row of db
       .prepare("SELECT id,data FROM agent_service_invocation")
@@ -236,6 +280,95 @@ export class ServiceCatalogStore {
           );
       }
     }
+  }
+  /**
+   * Routing of the old single-choice shape becomes a workspace policy, and
+   * an organization without a default gets one from its first migrated
+   * workspace; each workspace then keeps only what differs. Runs once: a
+   * migrated row has `roles`.
+   */
+  private migrateLegacyRouting() {
+    const rows = this.db
+      .prepare(
+        "SELECT r.workspace_id,r.data,w.organization_id FROM agent_catalog_routing r JOIN agent_workspace w ON w.id=r.workspace_id ORDER BY w.rowid",
+      )
+      .all()
+      .filter((row) => isLegacyRouting(JSON.parse(String(row.data))));
+    if (!rows.length) return;
+    const byOrg = new Map<
+      string,
+      { workspaceId: string; policy: WorkspaceModelPolicyValue }[]
+    >();
+    for (const row of rows) {
+      const org = String(row.organization_id);
+      const workspaceId = String(row.workspace_id);
+      const policy = workspacePolicyFromLegacy(JSON.parse(String(row.data)));
+      const search = this.legacySearchModel(org, workspaceId);
+      if (search)
+        policy.roles.web_search = {
+          models: [search],
+          tier: null,
+          fallback: false,
+        };
+      byOrg.set(org, [...(byOrg.get(org) ?? []), { workspaceId, policy }]);
+    }
+    this.db.exec("SAVEPOINT model_policy_migration");
+    try {
+      for (const [org, items] of byOrg) {
+        const seeded = !this.db
+          .prepare("SELECT 1 FROM agent_model_policy WHERE organization_id=?")
+          .get(org);
+        if (seeded) {
+          const result = seedOrganizationPolicy(items.map((i) => i.policy));
+          this.db
+            .prepare("INSERT INTO agent_model_policy VALUES (?,1,?)")
+            .run(org, JSON.stringify(result.organization));
+          result.workspaces.forEach((policy, index) => {
+            items[index]!.policy = policy;
+          });
+        }
+        for (const item of items)
+          this.db
+            .prepare(
+              "UPDATE agent_catalog_routing SET revision=revision+1,data=? WHERE workspace_id=?",
+            )
+            .run(JSON.stringify(item.policy), item.workspaceId);
+      }
+      this.db.exec("RELEASE model_policy_migration");
+    } catch (error) {
+      this.db.exec(
+        "ROLLBACK TO model_policy_migration; RELEASE model_policy_migration",
+      );
+      throw error;
+    }
+  }
+  /** The web plugin's former "search model" setting, as a catalog model of the organization. */
+  private legacySearchModel(org: string, workspaceId: string) {
+    const table = this.db
+      .prepare(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_workspace_plugins'",
+      )
+      .get();
+    if (!table) return undefined;
+    const row = this.db
+      .prepare(
+        "SELECT settings FROM agent_workspace_plugins WHERE workspace_id=?",
+      )
+      .get(workspaceId);
+    let model: unknown;
+    try {
+      model = (
+        JSON.parse(String(row?.settings ?? "null")) as {
+          settings?: { web?: { searchModel?: unknown } };
+        } | null
+      )?.settings?.web?.searchModel;
+    } catch {
+      return undefined;
+    }
+    if (typeof model !== "string" || !model.trim()) return undefined;
+    return this.rows(org, "model").find(
+      (candidate) => JSON.parse(candidate.data).model === model.trim(),
+    )?.id;
   }
   private seal(value: string, id: string, scope: string) {
     const iv = randomBytes(12),
@@ -317,8 +450,9 @@ export class ServiceCatalogStore {
       ...this.dto(row),
       hasCredential: !!row.secret,
       modelId:
-        this.routing(workspaceId).services.find((s) => s.serviceId === id)
-          ?.modelId ?? null,
+        this.workspacePolicy(workspaceId).services.find(
+          (s) => s.serviceId === id,
+        )?.route.models[0] ?? null,
       actions: this.rows(id, "action").map((r) => this.dto(r)),
     });
   }
@@ -358,21 +492,13 @@ export class ServiceCatalogStore {
       .run(id, new Date().toISOString().slice(0, 10));
     return { provider, key };
   }
-  routing(workspaceId: string) {
-    const row = this.db
-      .prepare("SELECT * FROM agent_catalog_routing WHERE workspace_id=?")
-      .get(workspaceId);
-    return Routing.parse({
-      revision: row?.revision ?? 0,
-      ...(row ? JSON.parse(String(row.data)) : { modelId: null, services: [] }),
-    });
-  }
   private normalizeModel<T extends z.infer<typeof CatalogModelSettings>>(
     org: string,
     value: T,
   ): T {
-    const provider = this.dto(this.row(org, "provider", value.providerId));
-    return normalizeModelCapabilities(String(provider.url), value);
+    // The provider must exist; a model's kind decides its capabilities.
+    this.row(org, "provider", value.providerId);
+    return normalizeModelCapabilities(value);
   }
   private readModel(org: string, row: Row) {
     return this.normalizeModel(org, CatalogModelSchema.parse(this.dto(row)));
@@ -404,89 +530,279 @@ export class ServiceCatalogStore {
       this.usage(id) < settings.dailyRequestLimit
     );
   }
-  model(
-    orgId: string,
-    id: string,
-    capability:
-      | "tools"
-      | "chat"
-      | "audioInput"
-      | "audioOutput"
-      | "decision"
-      | "transcription"
-      | "speech" = "tools",
-  ) {
+  model(orgId: string, id: string, capability: ModelCapability = "tools") {
     const model = this.readModel(orgId, this.row(orgId, "model", id));
     const value = this.provider(orgId, model.providerId);
     const supported =
-      capability === "decision" ||
-      capability === "transcription" ||
-      capability === "speech"
-        ? model.kind === capability
-        : capability === "tools"
-          ? (model.kind === "chat" || model.kind === "router") && model.tools
-          : capability === "chat"
-            ? model.kind === "chat" || model.kind === "router"
-            : model.kind === "chat" && model[capability];
-    const openRouter =
-      value.provider.url.replace(/\/$/, "") === "https://openrouter.ai/api/v1";
+      capability === "any"
+        ? true
+        : capability === "decision" ||
+            capability === "transcription" ||
+            capability === "speech"
+          ? model.kind === capability
+          : capability === "tools"
+            ? (model.kind === "chat" || model.kind === "router") && model.tools
+            : capability === "chat"
+              ? model.kind === "chat" || model.kind === "router"
+              : model.kind === "chat" && model[capability];
+    const openRouter = value.provider.url.replace(/\/$/, "") === OPENROUTER_URL;
     if (
       !model.enabled ||
       !supported ||
       !value.provider.enabled ||
-      (capability !== "tools" && !openRouter)
+      (capability !== "tools" && capability !== "any" && !openRouter)
     )
       throw new IdentityError(409, "catalog_model_unavailable");
     return { model, ...value };
   }
-  resolveModel(orgId: string, workspaceId: string, serviceId?: string) {
-    const route = this.routing(workspaceId);
-    const id =
-      (serviceId
-        ? route.services.find((s) => s.serviceId === serviceId)?.modelId
-        : null) ?? route.modelId;
-    return id ? this.model(orgId, id) : undefined;
+  /** The stored policies a workspace runs on: the organization's default and the workspace's overrides. */
+  modelPolicies(orgId: string, workspaceId: string): StoredModelPolicies {
+    const org = this.db
+      .prepare(
+        "SELECT revision,data FROM agent_model_policy WHERE organization_id=?",
+      )
+      .get(orgId);
+    const ws = this.db
+      .prepare(
+        "SELECT revision,data FROM agent_catalog_routing WHERE workspace_id=?",
+      )
+      .get(workspaceId);
+    return {
+      organization: {
+        revision: Number(org?.revision ?? 0),
+        policy: org
+          ? OrganizationModelPolicy.parse(JSON.parse(String(org.data)))
+          : emptyOrganizationPolicy(),
+      },
+      workspace: {
+        revision: Number(ws?.revision ?? 0),
+        policy: ws
+          ? WorkspaceModelPolicy.parse(JSON.parse(String(ws.data)))
+          : emptyWorkspacePolicy(),
+      },
+    };
   }
+  /**
+   * The one typed read of the model policy, for administration and the
+   * configuration bundle: the organization's default and, with a
+   * workspace, its overrides and what applies there.
+   */
+  readModelPolicy(orgId: string, workspaceId: string): ModelPolicyViewValue {
+    return policyView(
+      this.modelPolicies(orgId, workspaceId),
+      this.rows(workspaceId, "service").map((row) => row.id),
+    );
+  }
+  /** One role, a service override or the escalation route as it applies to the workspace. */
+  route(orgId: string, workspaceId: string, key: RouteKey) {
+    return effectiveRoute(this.modelPolicies(orgId, workspaceId), key);
+  }
+  routeOptions(orgId: string, workspaceId: string) {
+    return effectiveOptions(this.modelPolicies(orgId, workspaceId));
+  }
+  /** What a model must offer to serve a route. The method follows its kind. */
+  private fit(key: RouteKey, model: { kind: string }): ModelCapability {
+    const role =
+      key.startsWith("service:") || key === "escalation" ? "chat" : key;
+    switch (role) {
+      case "checker":
+      case "selector":
+        return model.kind === "decision" ? "decision" : "tools";
+      case "web_search":
+        return "chat";
+      case "voice_input":
+        return model.kind === "transcription" ? "transcription" : "audioInput";
+      case "meeting_transcription":
+        return "transcription";
+      case "speech":
+        return model.kind === "speech" ? "speech" : "audioOutput";
+      case "embedding":
+      case "vision":
+        return "any";
+      default:
+        return "tools";
+    }
+  }
+  private fitModel(orgId: string, key: RouteKey, id: string) {
+    const kind = this.readModel(orgId, this.row(orgId, "model", id)).kind;
+    return this.model(orgId, id, this.fit(key, { kind }));
+  }
+  /**
+   * The model that serves a route now: its first model, or with fallback on
+   * the first one that is available (enabled, fit, its provider enabled and
+   * under its daily limit). Undefined when the route has no models.
+   */
+  selectRoute(
+    orgId: string,
+    workspaceId: string,
+    key: RouteKey,
+    reason = "primary",
+    after = -1,
+  ) {
+    const route = this.route(orgId, workspaceId, key);
+    const candidates = route.fallback ? route.models : route.models.slice(0, 1);
+    let cause: string | undefined;
+    let last: unknown;
+    for (const [index, id] of candidates.entries()) {
+      if (index <= after) continue;
+      try {
+        const selected = this.fitModel(orgId, key, id);
+        if (
+          route.fallback &&
+          selected.provider.requestsToday >= selected.provider.dailyRequestLimit
+        ) {
+          cause = "provider_limit";
+          last = new IdentityError(429, "catalog_provider_limit");
+          continue;
+        }
+        return {
+          ...selected,
+          route: {
+            role: key,
+            index,
+            fallback: route.fallback,
+            reason: cause ? `fallback: ${cause}` : reason,
+          } satisfies ModelRouteChoice,
+        };
+      } catch (error) {
+        // Without fallback the first model's own failure stands, as before.
+        if (!route.fallback || !(error instanceof IdentityError)) throw error;
+        cause =
+          error.code === "catalog_not_found"
+            ? "model_removed"
+            : error.code === "catalog_model_unavailable"
+              ? "model_unavailable"
+              : error.code;
+        last = error;
+      }
+    }
+    if (last) throw last;
+    return undefined;
+  }
+  /**
+   * The next model of the same route after a call that provably never
+   * reached its provider, when the route's fallback is on. Never after an
+   * unknown outcome or a call that was sent.
+   */
+  fallbackAfter(
+    orgId: string,
+    workspaceId: string,
+    selected: NiaroModelSelection,
+    error: unknown,
+  ) {
+    const cause = notDispatchedCause(error);
+    if (!cause || !selected.route?.fallback) return undefined;
+    try {
+      return this.selectRoute(
+        orgId,
+        workspaceId,
+        selected.route.role as RouteKey,
+        `fallback: ${cause}`,
+        selected.route.index,
+      );
+    } catch {
+      return undefined;
+    }
+  }
+  /** Whether a selection still serves its route: same revisions, still listed, still fit. */
+  stillRouted(
+    orgId: string,
+    workspaceId: string,
+    selected: NiaroModelSelection,
+  ) {
+    const key = (selected.route?.role ?? "chat") as RouteKey;
+    const route = this.route(orgId, workspaceId, key);
+    const listed = route.fallback ? route.models : route.models.slice(0, 1);
+    if (!listed.includes(selected.model.id)) return false;
+    try {
+      const current = this.fitModel(orgId, key, selected.model.id);
+      return (
+        current.model.revision === selected.model.revision &&
+        current.provider.id === selected.provider.id &&
+        current.provider.revision === selected.provider.revision
+      );
+    } catch (error) {
+      if (error instanceof IdentityError && error.status !== 403) return false;
+      throw error;
+    }
+  }
+  /** The chat model, or the service's own models for its actions. */
+  resolveModel(orgId: string, workspaceId: string, serviceId?: string) {
+    return this.selectRoute(
+      orgId,
+      workspaceId,
+      serviceId ? `service:${serviceId}` : "chat",
+    );
+  }
+  /** Background work: widget fills and opens, memory and profile extraction, meeting analysis, action naming. */
+  resolveBackground(orgId: string, workspaceId: string) {
+    return this.selectRoute(orgId, workspaceId, "background");
+  }
+  resolveDesigner(orgId: string, workspaceId: string) {
+    return this.selectRoute(orgId, workspaceId, "designer");
+  }
+  /** The selector picks services and actions; it never approves or grants. */
+  resolveDecision(orgId: string, workspaceId: string) {
+    return this.selectRoute(orgId, workspaceId, "selector");
+  }
+  /** The checker compares writes and answers with the request; it never approves. */
+  resolveChecker(orgId: string, workspaceId: string) {
+    return this.selectRoute(orgId, workspaceId, "checker");
+  }
+  /** The models a checker rejection repeats its step with, when escalation is on. */
+  resolveEscalation(orgId: string, workspaceId: string, reason: string) {
+    return this.selectRoute(orgId, workspaceId, "escalation", reason);
+  }
+  /** Voice input: a chat model with audio input interprets, a transcription model transcribes. */
   resolveVoice(orgId: string, workspaceId: string) {
-    const route = this.routing(workspaceId);
-    const id = route.voiceMode === "catalog" ? route.voiceModelId : null;
-    return id
+    const selected = this.selectRoute(orgId, workspaceId, "voice_input");
+    return selected
       ? {
-          ...this.model(
-            orgId,
-            id,
-            route.voiceMethod === "transcription"
-              ? "transcription"
-              : "audioInput",
-          ),
-          method: route.voiceMethod,
+          ...selected,
+          method:
+            selected.model.kind === "transcription"
+              ? ("transcription" as const)
+              : ("interpreter" as const),
         }
       : undefined;
+  }
+  /** Whether the server's own speech recognition may serve voice input here. */
+  serverVoiceAllowed(orgId: string, workspaceId: string) {
+    const policies = this.modelPolicies(orgId, workspaceId);
+    return (
+      effectiveOptions(policies).serverVoice &&
+      !effectiveRole(policies, "voice_input").models.length
+    );
   }
   /** The separate speech-to-text model for meetings, when one is set. */
   resolveMeetingTranscription(orgId: string, workspaceId: string) {
-    const id = this.routing(workspaceId).meetingTranscriptionModelId;
-    return id
-      ? {
-          ...this.model(orgId, id, "transcription"),
-          method: "transcription" as const,
-        }
+    const selected = this.selectRoute(
+      orgId,
+      workspaceId,
+      "meeting_transcription",
+    );
+    return selected
+      ? { ...selected, method: "transcription" as const }
       : undefined;
   }
+  private speechVoice(model: CatalogModel, voice: string | null) {
+    return voice ?? model.voices?.[0]?.voice ?? null;
+  }
   resolveSpeech(orgId: string, workspaceId: string) {
-    const route = this.routing(workspaceId).speech;
-    return route.modelId
-      ? {
-          ...this.model(
-            orgId,
-            route.modelId,
-            route.method === "reader" ? "audioOutput" : "speech",
-          ),
-          method: route.method,
-          voice: route.voice,
-          zeroDataRetention: route.zeroDataRetention,
-        }
-      : undefined;
+    const selected = this.selectRoute(orgId, workspaceId, "speech");
+    if (!selected) return undefined;
+    const options = this.routeOptions(orgId, workspaceId).speech;
+    const voice = this.speechVoice(selected.model, options.voice);
+    if (!voice) throw new IdentityError(409, "catalog_model_unavailable");
+    return {
+      ...selected,
+      method:
+        selected.model.kind === "speech"
+          ? ("speech" as const)
+          : ("reader" as const),
+      voice,
+      zeroDataRetention: options.zeroDataRetention,
+    };
   }
   /** Passive settings/compatibility metadata: never decrypt a credential or contact a provider. */
   speechVoiceRoute(
@@ -495,56 +811,51 @@ export class ServiceCatalogStore {
   ): SpeechVoiceRoute | null {
     try {
       if (this.workspaceOrganization(workspaceId) !== orgId) return null;
-      const speech = this.routing(workspaceId).speech;
-      if (!speech.modelId) return null;
-      const model = this.readModel(
-        orgId,
-        this.row(orgId, "model", speech.modelId),
-      );
+      const id = this.route(orgId, workspaceId, "speech").models[0];
+      if (!id) return null;
+      const options = this.routeOptions(orgId, workspaceId).speech;
+      const model = this.readModel(orgId, this.row(orgId, "model", id));
       const row = this.row(orgId, "provider", model.providerId);
       const provider = ProviderSettings.parse(JSON.parse(row.data));
+      const method = model.kind === "speech" ? "speech" : "reader";
+      const voice = this.speechVoice(model, options.voice);
       if (
+        !voice ||
         !model.enabled ||
         !provider.enabled ||
         !row.secret ||
-        provider.url.replace(/\/$/, "") !== "https://openrouter.ai/api/v1" ||
-        (speech.method === "reader"
+        provider.url.replace(/\/$/, "") !== OPENROUTER_URL ||
+        (method === "reader"
           ? model.kind !== "chat" || !model.audioOutput
           : model.kind !== "speech")
       )
         return null;
       return {
         provider: { id: row.id, revision: row.revision, url: provider.url },
-        model: { id: model.id, revision: model.revision, model: model.model },
-        method: speech.method,
-        format: speech.method === "reader" ? "pcm16" : "mp3",
-        voice: speech.voice,
-        zeroDataRetention: speech.zeroDataRetention,
+        model: {
+          id: model.id,
+          revision: model.revision,
+          model: model.model,
+          voices: model.voices ?? [],
+        },
+        method,
+        format: method === "reader" ? "pcm16" : "mp3",
+        voice,
+        zeroDataRetention: options.zeroDataRetention,
       };
     } catch {
       return null;
     }
   }
   /**
-   * The model of the web plugin's searches: the organization's chat model
-   * with this model ID (for example "openai/gpt-4o-mini") on an OpenRouter
-   * provider, or the workspace's chat model when the ID is empty. The
-   * decision model answers through another API and cannot search.
+   * The model of the web plugin's searches: the web search role (by default
+   * the chat models), a chat or router model on OpenRouter. The decision
+   * model answers through another API and cannot search.
    */
-  resolveWebSearch(orgId: string, workspaceId: string, model: string) {
-    const id = model
-      ? this.rows(orgId, "model").find(
-          (row) => this.readModel(orgId, row).model === model,
-        )?.id
-      : this.routing(workspaceId).modelId;
-    if (!id) throw new IdentityError(409, "catalog_model_unavailable");
-    return this.model(orgId, id, "chat");
-  }
-  resolveDecision(orgId: string, workspaceId: string) {
-    const route = this.routing(workspaceId).decision;
-    return route.enabled && route.modelId
-      ? this.model(orgId, route.modelId, "decision")
-      : undefined;
+  resolveWebSearch(orgId: string, workspaceId: string) {
+    const selected = this.selectRoute(orgId, workspaceId, "web_search");
+    if (!selected) throw new IdentityError(409, "catalog_model_unavailable");
+    return selected;
   }
   /** Passive access decision shared by execution inventory and action dispatch. */
   serviceAllowed(
@@ -941,8 +1252,11 @@ export class ServiceCatalogStore {
     }
     for (const row of this.rows(orgId, "provider")) add(row);
     for (const row of this.rows(orgId, "model")) add(row);
-    const { revision: _revision, ...routing } = this.routing(workspaceId);
-    shape.set(`routing:${workspaceId}`, JSON.stringify(routing));
+    const policies = this.modelPolicies(orgId, workspaceId);
+    shape.set(
+      `policy:${workspaceId}`,
+      JSON.stringify([policies.organization.policy, policies.workspace.policy]),
+    );
     return shape;
   }
   inventory(orgId: string, workspaceId: string, actor: CatalogActor): Catalog {
@@ -1005,9 +1319,15 @@ export class ServiceCatalogStore {
       models: manage
         ? this.rows(orgId, "model").map((r) => this.readModel(orgId, r))
         : [],
-      routing: manage
-        ? this.routing(workspaceId)
-        : { revision: 0, modelId: null, services: [] },
+      policy: manage
+        ? this.readModelPolicy(orgId, workspaceId)
+        : policyView(
+            {
+              organization: { revision: 0, policy: emptyOrganizationPolicy() },
+              workspace: { revision: 0, policy: emptyWorkspacePolicy() },
+            },
+            [],
+          ),
     });
   }
   /** Model IDs in the organization, for the process designer's own safe
@@ -1195,7 +1515,8 @@ export class ServiceCatalogStore {
   command(input: z.infer<typeof CatalogCommand>) {
     if (
       ![
-        "saveRouting",
+        "saveOrganizationModelPolicy",
+        "saveWorkspaceModelPolicy",
         "saveProvider",
         "removeProvider",
         "saveModel",
@@ -1468,108 +1789,210 @@ export class ServiceCatalogStore {
           this.normalizeModel(org, input.settings),
         );
       case "removeModel": {
-        for (const row of this.db
-          .prepare(
-            "SELECT r.* FROM agent_catalog_routing r JOIN agent_workspace w ON w.id=r.workspace_id WHERE w.organization_id=?",
-          )
-          .all(org)) {
-          const route = Routing.parse({
-            revision: row.revision,
-            ...JSON.parse(String(row.data)),
-          });
-          if (
-            route.modelId === input.id ||
-            route.voiceModelId === input.id ||
-            route.meetingTranscriptionModelId === input.id ||
-            route.speech.modelId === input.id ||
-            route.decision.modelId === input.id ||
-            route.services.some((s) => s.modelId === input.id)
-          )
-            throw new IdentityError(409, "catalog_model_in_use");
-        }
+        // Every list that names it keeps it: roles, services, tiers and
+        // escalation of the organization and of each workspace.
+        const policies = [
+          this.organizationPolicy(org),
+          ...this.db
+            .prepare(
+              "SELECT r.data FROM agent_catalog_routing r JOIN agent_workspace w ON w.id=r.workspace_id WHERE w.organization_id=?",
+            )
+            .all(org)
+            .map((row) =>
+              WorkspaceModelPolicy.parse(JSON.parse(String(row.data))),
+            ),
+        ];
+        if (policies.some((policy) => referencedModels(policy).has(input.id)))
+          throw new IdentityError(409, "catalog_model_in_use");
         this.remove(org, "model", input.id, input.revision);
         return input.id;
       }
-      case "saveRouting": {
-        if (this.routing(ws).revision !== input.routing.revision)
-          throw new IdentityError(409, "catalog_conflict");
-        if (input.routing.modelId) this.model(org, input.routing.modelId);
-        if (
-          input.routing.voiceMode === "catalog" &&
-          !input.routing.voiceModelId
-        )
-          throw new IdentityError(409, "catalog_model_required");
-        if (input.routing.voiceModelId)
-          this.model(
-            org,
-            input.routing.voiceModelId,
-            input.routing.voiceMethod === "transcription"
-              ? "transcription"
-              : "audioInput",
-          );
-        if (input.routing.meetingTranscriptionModelId)
-          this.model(
-            org,
-            input.routing.meetingTranscriptionModelId,
-            "transcription",
-          );
-        if (input.routing.speech.modelId)
-          this.model(
-            org,
-            input.routing.speech.modelId,
-            input.routing.speech.method === "reader" ? "audioOutput" : "speech",
-          );
-        if (
-          input.routing.decision.enabled &&
-          (!input.routing.decision.modelId || !input.routing.modelId)
-        )
-          throw new IdentityError(409, "catalog_model_required");
-        if (input.routing.decision.modelId)
-          this.model(org, input.routing.decision.modelId, "decision");
-        if (
-          new Set(input.routing.services.map((s) => s.serviceId)).size !==
-          input.routing.services.length
-        )
-          throw new IdentityError(400, "catalog_binding_invalid");
-        for (const s of input.routing.services) {
-          this.row(ws, "service", s.serviceId);
-          if (s.modelId) this.model(org, s.modelId);
-        }
-        this.db
-          .prepare(
-            "INSERT INTO agent_catalog_routing VALUES (?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET revision=excluded.revision,data=excluded.data",
-          )
-          .run(
-            ws,
-            input.routing.revision + 1,
-            JSON.stringify({
-              modelId: input.routing.modelId,
-              voiceModelId: input.routing.voiceModelId,
-              voiceMode: input.routing.voiceMode,
-              voiceMethod: input.routing.voiceMethod,
-              meetingTranscriptionModelId:
-                input.routing.meetingTranscriptionModelId,
-              decision: input.routing.decision,
-              planner: input.routing.planner,
-              speech: input.routing.speech,
-              services: input.routing.services,
-            }),
-          );
-        return ws;
-      }
+      case "saveOrganizationModelPolicy":
+        return this.saveOrganizationPolicy(org, input.revision, input.policy);
+      case "saveWorkspaceModelPolicy":
+        return this.saveWorkspacePolicy(org, ws, input.revision, input.policy);
     }
   }
+  private organizationPolicy(org: string) {
+    const row = this.db
+      .prepare("SELECT data FROM agent_model_policy WHERE organization_id=?")
+      .get(org);
+    return row
+      ? OrganizationModelPolicy.parse(JSON.parse(String(row.data)))
+      : emptyOrganizationPolicy();
+  }
+  private workspacePolicy(ws: string) {
+    const row = this.db
+      .prepare("SELECT data FROM agent_catalog_routing WHERE workspace_id=?")
+      .get(ws);
+    return row
+      ? WorkspaceModelPolicy.parse(JSON.parse(String(row.data)))
+      : emptyWorkspacePolicy();
+  }
+  /**
+   * Saves the organization's default after checking it against every
+   * workspace that inherits it: tiers they point to must remain, and each
+   * workspace must stay valid under the new default.
+   */
+  private saveOrganizationPolicy(
+    org: string,
+    revision: number,
+    policy: OrganizationModelPolicyValue,
+  ) {
+    const current = this.db
+      .prepare(
+        "SELECT revision FROM agent_model_policy WHERE organization_id=?",
+      )
+      .get(org);
+    if (Number(current?.revision ?? 0) !== revision)
+      throw new IdentityError(409, "catalog_conflict");
+    for (const tier of policy.tiers)
+      for (const id of tier.models) this.row(org, "model", id);
+    const workspaces = this.db
+      .prepare("SELECT id FROM agent_workspace WHERE organization_id=?")
+      .all(org)
+      .map((row) => String(row.id));
+    for (const ws of workspaces) {
+      const local = this.workspacePolicy(ws);
+      this.validatePolicies(
+        org,
+        ws,
+        {
+          organization: { revision, policy },
+          workspace: { revision: 0, policy: local },
+        },
+        [
+          ...MODEL_ROLES.filter(
+            (role) => !local.roles[role] || local.roles[role]?.tier,
+          ),
+          ...local.services.flatMap((service) =>
+            service.route.tier ? [`service:${service.serviceId}` as const] : [],
+          ),
+          "escalation",
+        ],
+      );
+    }
+    this.db
+      .prepare(
+        "INSERT INTO agent_model_policy VALUES (?,?,?) ON CONFLICT(organization_id) DO UPDATE SET revision=excluded.revision,data=excluded.data",
+      )
+      .run(org, revision + 1, JSON.stringify(policy));
+    return org;
+  }
+  private saveWorkspacePolicy(
+    org: string,
+    ws: string,
+    revision: number,
+    policy: WorkspaceModelPolicyValue,
+  ) {
+    const current = this.modelPolicies(org, ws);
+    if (current.workspace.revision !== revision)
+      throw new IdentityError(409, "catalog_conflict");
+    for (const service of policy.services)
+      this.row(ws, "service", service.serviceId);
+    this.validatePolicies(
+      org,
+      ws,
+      { ...current, workspace: { revision, policy } },
+      [
+        ...MODEL_ROLES.filter((role) => !!policy.roles[role]),
+        ...policy.services.map(
+          (service) => `service:${service.serviceId}` as const,
+        ),
+        ...(policy.options.escalation ? ["escalation" as const] : []),
+      ],
+    );
+    this.db
+      .prepare(
+        "INSERT INTO agent_catalog_routing VALUES (?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET revision=excluded.revision,data=excluded.data",
+      )
+      .run(ws, revision + 1, JSON.stringify(policy));
+    return ws;
+  }
+  /**
+   * A workspace's policies after a save: the routes that changed name only
+   * enabled models fit for their role, every tier they point to exists, the
+   * selector has a chat model beside it and spoken replies have a voice.
+   */
+  private validatePolicies(
+    org: string,
+    ws: string,
+    policies: StoredModelPolicies,
+    changed: RouteKey[],
+  ) {
+    const tiers = new Set(policies.organization.policy.tiers.map((t) => t.id));
+    for (const id of [
+      ...referencedTiers(policies.organization.policy),
+      ...referencedTiers(policies.workspace.policy),
+    ])
+      if (!tiers.has(id))
+        throw new IdentityError(409, "catalog_tier_not_found");
+    // A route that follows another role is checked as that role; web
+    // search on non-OpenRouter chat models fails at use, as before.
+    for (const key of changed) {
+      const route = effectiveRoute(policies, key);
+      if (route.source !== "inherited")
+        for (const id of route.models) this.fitModel(org, key, id);
+    }
+    if (
+      effectiveRole(policies, "selector").models.length &&
+      !effectiveRole(policies, "chat").models.length
+    )
+      throw new IdentityError(409, "catalog_model_required");
+    const speech = effectiveRole(policies, "speech");
+    const voice = effectiveOptions(policies).speech.voice;
+    for (const id of speech.fallback
+      ? speech.models
+      : speech.models.slice(0, 1))
+      if (
+        !this.speechVoice(
+          this.readModel(org, this.row(org, "model", id)),
+          voice,
+        )
+      )
+        throw new IdentityError(409, "catalog_voice_required");
+  }
+  /**
+   * In enforce mode: the models a budgeted role, a service override or
+   * escalation can reach in this workspace that have no price. Empty in
+   * observe mode. The Usage limits and Models pages refuse to save while
+   * this is not empty; at use an unpriced call is refused before dispatch.
+   */
+  unpricedRouteModels(
+    org: string,
+    ws: string,
+    policies = this.modelPolicies(org, ws),
+    settings?: { mode: string; prices: { modelId: string }[] },
+  ) {
+    let budget = settings;
+    if (!budget)
+      try {
+        budget = this.inferenceBudget.policy(org, ws).settings;
+      } catch {
+        return [];
+      }
+    if (budget.mode !== "enforce") return [];
+    const reach = budgetedReach(
+      policyView(
+        policies,
+        this.rows(ws, "service").map((row) => row.id),
+      ).effective,
+    );
+    return [...reach]
+      .filter(([id]) => !budget.prices.some((price) => price.modelId === id))
+      .map(([modelId, routes]) => ({ modelId, routes }));
+  }
   private cleanRouting(ws: string, serviceId: string) {
-    // Keep every routing setting (including the planner); only drop the service.
-    const { revision: _revision, ...route } = this.routing(ws);
+    // Keep every other setting; only drop the service's own models.
+    const policy = this.workspacePolicy(ws);
     this.db
       .prepare(
         "UPDATE agent_catalog_routing SET revision=revision+1,data=? WHERE workspace_id=?",
       )
       .run(
         JSON.stringify({
-          ...route,
-          services: route.services.filter((s) => s.serviceId !== serviceId),
+          ...policy,
+          services: policy.services.filter((s) => s.serviceId !== serviceId),
         }),
         ws,
       );

@@ -21,6 +21,7 @@ import {
 } from "../../packages/protocol";
 import { coordinatorHttpFixture } from "./process-coordinator-http";
 import type { StoppedCopyProof } from "./process-design-http";
+import { routingCommand } from "./model-policy";
 
 export const historicalModes = ["agent", "progressive"] as const;
 export const historicalOutcomes = [
@@ -112,14 +113,13 @@ export async function runHistoricalHttpCase(
       },
     });
     await h.catalog({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 0,
         planner: mode === "agent" ? "model" : "jev",
         modelId: h.modelId,
         decision: { enabled: true, modelId: decisionId, minConfidence: 0.8 },
         services: [{ serviceId: h.serviceId, modelId: h.modelId }],
-      },
+      }),
     });
     h.beforeDispatch(() => {
       serviceAttempts++;
@@ -295,6 +295,11 @@ export async function runHistoricalHttpCase(
           scope,
           h.target.organizationId,
           true,
+          false,
+          undefined,
+          undefined,
+          // These fixtures seed a historical turn of this loop.
+          mode,
         ),
       };
     };

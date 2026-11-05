@@ -16,7 +16,11 @@ test.each(["en", "cs"] as const)(
     render(
       <VoiceServiceCard
         language={language}
-        capabilities={voiceCapabilities(true, "openrouter")}
+        capabilities={voiceCapabilities(
+          true,
+          "openrouter",
+          "google/gemini-3.1-flash-lite",
+        )}
       />,
     );
     expect(screen.getByText(/Gemini 3\.1 Flash Lite/)).toBeTruthy();
@@ -29,7 +33,11 @@ test("disabled cloud remains disclosed; unknown service never claims local proce
   const { rerender } = render(
     <VoiceServiceCard
       language="en"
-      capabilities={voiceCapabilities(false, "openrouter")}
+      capabilities={voiceCapabilities(
+        false,
+        "openrouter",
+        "google/gemini-3.1-flash-lite",
+      )}
     />,
   );
   expect(screen.getByText(/Not available/)).toBeTruthy();
@@ -77,7 +85,9 @@ test("switching connection ignores old capability response and aborts its reques
     />,
   );
   await act(async () => {
-    finish(voiceCapabilities(true, "openrouter"));
+    finish(
+      voiceCapabilities(true, "openrouter", "google/gemini-3.1-flash-lite"),
+    );
   });
   expect(screen.getByText(/Whisper small/)).toBeTruthy();
   expect(screen.queryByText(/Gemini 3\.1 Flash Lite/)).toBeNull();

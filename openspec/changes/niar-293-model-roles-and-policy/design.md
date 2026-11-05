@@ -43,7 +43,7 @@ Jev's kind forcing and discovery addition are removed: a model's kind comes from
 
 ## D8 Budget and removal
 
-`unpricedRouteModels` (enforce mode only) uses `budgetedReach`; saving the budget in enforce mode, a workspace policy, or an organization policy that would leave a reachable model unpriced in any enforce-mode workspace fails with `catalog_budget_price_required`. The Usage limits page and Models page show the same list. `removeModel` refuses a model named by any role, service route, tier or escalation of the organization or any workspace.
+`budgetedReach` lists the reachable models; the Usage limits and Models pages name the unpriced ones in enforce mode and refuse to save, and `unpricedRouteModels` gives the server the same list. Saves are not refused on the server: scenarios where a model is unpriced at use (prices gone stale, a test of the refusal) must stay reachable, and every such call is still refused before dispatch with `catalog_budget_price_required`. Rejected alternative: refusing budget and policy saves on the server, which blocked an administrator from changing routing and pricing in either order. `removeModel` refuses a model named by any role, service route, tier or escalation of the organization or any workspace.
 
 ## D9 Migration
 

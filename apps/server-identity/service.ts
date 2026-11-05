@@ -989,7 +989,8 @@ export class IdentityService {
         this.memory.readPreferences(actor).optOut
       )
         throw new IdentityError(403, "identity_forbidden");
-      const selected = this.catalog.store.resolveModel(
+      // Memory and profile extraction is background work.
+      const selected = this.catalog.store.resolveBackground(
         actor.organizationId,
         actor.workspaceId,
       );
@@ -2123,7 +2124,8 @@ export class IdentityService {
       userId,
       role: check().role,
     });
-    const selected = this.catalog.store.resolveModel(
+    // Widget fills and opens are background work.
+    const selected = this.catalog.store.resolveBackground(
       organizationId,
       workspaceId,
     );
@@ -3611,6 +3613,16 @@ export class IdentityService {
       } catch {
         /* Disabled catalog selection must not break authenticated snapshot reads. */
       }
+      // Meeting analysis is background work, on the background role.
+      let backgroundModel: ReturnType<ServiceCatalogStore["resolveBackground"]>;
+      try {
+        backgroundModel = this.catalog.store.resolveBackground(
+          orgId,
+          workspaceId,
+        );
+      } catch {
+        /* As above: an unavailable choice only leaves meetings unanalysed. */
+      }
       const binding = this.connections.binding(workspaceId);
       const inventory = this.connections.list(orgId, workspaceId, initial.role);
       const selected = inventory.connections.find(
@@ -3969,7 +3981,7 @@ export class IdentityService {
       ) => {
         let dispatched = false;
         const model = createNiaroMastraModel(
-          dynamicModel!,
+          backgroundModel!,
           budgetedInferenceTransport(
             this.catalog.transport,
             this.catalog.store.inferenceBudget,
@@ -3979,7 +3991,7 @@ export class IdentityService {
               workspaceId,
               userId: initial.session.scope.userId,
             },
-            dynamicModel!,
+            backgroundModel!,
             "model",
             (fn) => this.serial(fn),
             async () => {
@@ -3995,23 +4007,19 @@ export class IdentityService {
           async (start) =>
             run(() => {
               signal.throwIfAborted();
-              const current = this.catalog.store.resolveModel(
-                orgId,
-                workspaceId,
-              );
               if (
                 dispatched ||
-                !current ||
-                current.model.id !== dynamicModel!.model.id ||
-                current.model.revision !== dynamicModel!.model.revision ||
-                current.provider.id !== dynamicModel!.provider.id ||
-                current.provider.revision !== dynamicModel!.provider.revision
+                !this.catalog.store.stillRouted(
+                  orgId,
+                  workspaceId,
+                  backgroundModel!,
+                )
               )
                 throw new IdentityError(409, "meeting_model_changed");
               this.catalog.store.useProvider(
                 orgId,
-                dynamicModel!.provider.id,
-                dynamicModel!.provider.revision,
+                backgroundModel!.provider.id,
+                backgroundModel!.provider.revision,
               );
               dispatched = true;
               start();
@@ -4046,14 +4054,14 @@ export class IdentityService {
         synthesizer,
         meetingTranscriber,
         timeZone: plugins.settings.timeZone,
-        meetingAnalyzer: dynamicModel
+        meetingAnalyzer: backgroundModel
           ? {
-              model: dynamicModel.model.model,
+              model: backgroundModel.model.model,
               fingerprint: JSON.stringify([
-                dynamicModel.model.id,
-                dynamicModel.model.revision,
-                dynamicModel.provider.id,
-                dynamicModel.provider.revision,
+                backgroundModel.model.id,
+                backgroundModel.model.revision,
+                backgroundModel.provider.id,
+                backgroundModel.provider.revision,
               ]),
               consolidate: async (input, language, signal, runId) => {
                 // One call writes the whole record; long meetings take minutes.
@@ -4268,7 +4276,7 @@ export class IdentityService {
         modelEnabled: !!services.model || !!dynamicModel,
         voiceEnabled:
           !!catalogTranscriber ||
-          (this.catalog.store.routing(workspaceId).voiceMode === "legacy" &&
+          (this.catalog.store.serverVoiceAllowed(orgId, workspaceId) &&
             !!services.transcriber),
         model: services.model
           ? {
@@ -4292,7 +4300,7 @@ export class IdentityService {
             : undefined,
         transcriber:
           catalogTranscriber ??
-          (this.catalog.store.routing(workspaceId).voiceMode === "legacy" &&
+          (this.catalog.store.serverVoiceAllowed(orgId, workspaceId) &&
           services.transcriber
             ? {
                 engine: services.transcriber.engine,
@@ -6895,8 +6903,10 @@ export class IdentityService {
                     value.workspaceId,
                     true,
                   ) ||
-                  (this.catalog.store.routing(value.workspaceId).voiceMode ===
-                    "legacy" &&
+                  (this.catalog.store.serverVoiceAllowed(
+                    value.organizationId,
+                    value.workspaceId,
+                  ) &&
                     !!this.ai.resolve(this.ai.read(value.workspaceId).selection)
                       .transcriber),
               }),

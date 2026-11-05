@@ -20,7 +20,6 @@ import type { Transcriber } from "./voice";
 import { VoiceError, runVoiceProcess, withPreparedVoice } from "./voice-media";
 import { SpeechQueue, type SpeechPriority } from "./speech-queue";
 
-export const GEMINI_ASR_MODEL = "google/gemini-3.1-flash-lite";
 // These are the UI language's instructions, never a hint about the microphone's
 // spoken language. The person may speak Czech in an English interface or vice versa.
 export const transcriptionPrompts = {
@@ -86,7 +85,7 @@ export function assessGeminiTranscript(
 }
 
 const Reply = z.object({
-  model: z.literal(GEMINI_ASR_MODEL),
+  model: z.string().max(200),
   choices: z
     .array(
       z.object({
@@ -109,17 +108,22 @@ export class OpenRouterAsrClient {
     private readonly transport: typeof fetch = fetch,
     private readonly now = () => Date.now(),
   ) {}
+  /** The configured speech recognition model; no model is built in. */
+  get model() {
+    return this.config.voiceModel ?? "";
+  }
   get adminInfo() {
-    return { model: GEMINI_ASR_MODEL, expiresAt: this.config.expiresAt };
+    return { model: this.model, expiresAt: this.config.expiresAt };
   }
   available() {
-    return Date.parse(this.config.expiresAt) > this.now();
+    return !!this.model && Date.parse(this.config.expiresAt) > this.now();
   }
   async transcribe(wav: Buffer, language: Language, signal: AbortSignal) {
     this.lastUsage = undefined;
     signal.throwIfAborted();
     const remaining = Date.parse(this.config.expiresAt) - this.now();
     if (remaining <= 0) throw new VoiceError("voice_model_expired", 503);
+    if (!this.model) throw new VoiceError("voice_processing_failed", 503);
     if (!wav.length || wav.length > VOICE_BYTES)
       throw new VoiceError("voice_duration");
     try {
@@ -149,7 +153,7 @@ export class OpenRouterAsrClient {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: GEMINI_ASR_MODEL,
+            model: this.model,
             stream: false,
             max_tokens: 4096,
             usage: { include: true },
@@ -182,6 +186,8 @@ export class OpenRouterAsrClient {
         throw new VoiceError("voice_processing_failed", 503);
       }
       const reply = Reply.parse(await limitedJson(response));
+      if (reply.model !== this.model)
+        throw new VoiceError("voice_processing_failed", 503);
       controller.signal.throwIfAborted();
       this.lastUsage = {
         costUsd: reply.usage?.cost ?? null,
@@ -276,7 +282,9 @@ export class SpeechProcessor {
 
 export class GeminiTranscriber extends SpeechProcessor implements Transcriber {
   readonly engine = "openrouter" as const;
-  readonly model = GEMINI_ASR_MODEL;
+  get model() {
+    return this.client.model;
+  }
   constructor(
     directory: string,
     readonly client: OpenRouterAsrClient,

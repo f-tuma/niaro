@@ -25,7 +25,7 @@
 
 ## 4. Budget and removal
 
-- [x] 4.1 Enforce mode needs prices for every reachable model: budget, workspace and organization saves (Prices for routed models).
+- [x] 4.1 Enforce mode needs prices for every reachable model: the Usage limits and Models pages name missing ones and refuse to save (Prices for routed models).
 - [x] 4.2 Model removal checks every role, service route, tier and escalation (Model removal).
 
 ## 5. Console

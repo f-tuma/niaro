@@ -16,6 +16,7 @@ import {
   type HubRefresh,
 } from "../packages/protocol/hub";
 import { coordinatorHttpFixture } from "./helpers/process-coordinator-http";
+import { routingCommand } from "./helpers/model-policy";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -570,8 +571,7 @@ test(
         return { content: "TEST done" };
       });
       await h.catalog({
-        type: "saveRouting",
-        routing: { revision: 0, modelId: h.modelId, services: [] },
+        ...routingCommand({ revision: 0, modelId: h.modelId, services: [] }),
       });
       const added = await hub({
         profile: HUB_PROFILE_V3,

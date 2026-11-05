@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 // eslint-disable-next-line import/no-unresolved -- Official SDK export-map subpath.
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { coordinatorHttpFixture } from "./helpers/process-coordinator-http";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 test(
   "public OAuth discovery, canonical fresh sign-in and a data-only grant read the person's Niaro data",
@@ -37,11 +38,15 @@ test(
     };
     try {
       await h.catalog({
-        type: "saveRouting",
-        routing: {
-          ...h.identity["catalog"].store.routing(h.target.workspaceId),
+        ...routingCommand({
+          ...currentRouting(
+            h.identity["catalog"].store.readModelPolicy(
+              h.target.organizationId,
+              h.target.workspaceId,
+            ),
+          ),
           modelId: h.modelId,
-        },
+        }),
       });
       const unauth = await fetch(h.origin + "/mcp", { method: "POST" });
       assert.equal(unauth.status, 401);

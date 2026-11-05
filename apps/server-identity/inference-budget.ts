@@ -13,6 +13,7 @@ import type { CatalogTarget } from "../../packages/protocol/service-catalog";
 import type { NiaroModelSelection } from "../server-integrations/mastra-model";
 import {
   canStream,
+  RequestNotSent,
   streamingTransport,
   type IntegrationTransport,
 } from "../server-integrations/transport";
@@ -533,6 +534,13 @@ export class InferenceBudgetStore {
         id,
       );
   }
+  isDispatched(id: string) {
+    return (
+      this.db
+        .prepare("SELECT status FROM agent_inference_attempt WHERE id=?")
+        .get(id)?.status === "dispatched"
+    );
+  }
   failed(id: string) {
     this.db
       .prepare(
@@ -765,7 +773,19 @@ export function budgetedInferenceTransport(
     } catch (error) {
       await serial(async () => {
         const fail = () => {
-          store.failed(reservation.id);
+          // A connection that failed before the request left cost nothing:
+          // the provider never saw it, so its attempt settles as zero.
+          if (
+            error instanceof RequestNotSent &&
+            store.isDispatched(reservation.id)
+          )
+            store.settle(reservation.id, {
+              inputTokens: 0,
+              outputTokens: 0,
+              costMicros: 0,
+              costSource: "provider",
+            });
+          else store.failed(reservation.id);
           checkpoint?.failed(reservation.id);
         };
         if (checkpoint) checkpoint.atomic(fail);

@@ -125,7 +125,6 @@ test("web is available in every workspace, off until enabled, and its settings a
       "engine",
       "readChars",
       "results",
-      "searchModel",
       "zeroDataRetention",
     ]);
     assert.equal(createNetworkPlugins(before.settings).tools.length, 0);
@@ -140,7 +139,7 @@ test("web is available in every workspace, off until enabled, and its settings a
       enabled: ["datetime", "web"],
       timeZone: "UTC",
       settings: {
-        web: { results: 3, readChars: 4000, searchModel: "TEST-search" },
+        web: { results: 3, readChars: 4000 },
       },
     });
     const after = store.read("TEST-workspace").settings;
@@ -148,7 +147,6 @@ test("web is available in every workspace, off until enabled, and its settings a
     assert.deepEqual(after.settings?.web, {
       results: 3,
       readChars: 4000,
-      searchModel: "TEST-search",
     });
     assert.deepEqual(
       createNetworkPlugins(after)

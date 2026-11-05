@@ -8,7 +8,7 @@
  *     results and characters a call returns, and the shape of the result;
  *   - in the server: public addresses only (every redirect re-checked),
  *     timeouts, a 2 MB response cap, the allowed content types, HTML turned
- *     into readable text, the search through the workspace's model with its
+ *     into readable text, the search through the workspace's web search model with its
  *     inference budget, a cap on calls per agent run, operator logs without
  *     content, and the note on every result that web content is untrusted
  *     data (see openspec/specs/web-access/spec.md).
@@ -36,7 +36,6 @@ export default function webPlugin({ definePlugin, defineTool, z }: PluginSdk) {
         // The model may ask for fewer results than the workspace allows, never more.
         limit: Math.min(input.limit ?? 8, Number(ctx.settings.results)),
         ...(input.freshness ? { freshness: input.freshness } : {}),
-        model: String(ctx.settings.searchModel),
         engine: ctx.settings.engine as "exa" | "native" | "auto",
         zeroDataRetention: ctx.settings.zeroDataRetention !== false,
       });

@@ -832,6 +832,44 @@ export class CatalogController {
       }),
     );
   }
+  /**
+   * The model policy of the organization and a workspace, as one typed
+   * value: for administration and the configuration bundle. Owners and
+   * administrators only.
+   */
+  async readModelPolicy(
+    target: z.infer<typeof CatalogTarget>,
+    context: CatalogContext,
+  ) {
+    return context.serial(async () => {
+      const actor = await context.actor(target);
+      if (actor.role === "member")
+        throw new IdentityError(403, "identity_forbidden");
+      return this.store.readModelPolicy(
+        target.organizationId,
+        target.workspaceId,
+      );
+    });
+  }
+  /**
+   * Saves one scope of the model policy with the same revision check,
+   * validation, policy epoch and audit entry as the console's save.
+   */
+  async writeModelPolicy(
+    input: Extract<
+      z.infer<typeof CatalogCommand>,
+      { type: "saveOrganizationModelPolicy" | "saveWorkspaceModelPolicy" }
+    >,
+    context: CatalogContext,
+  ) {
+    return (await this.handle(
+      "POST",
+      new URL("http://niaro.invalid/admin/api/identity/catalog/command"),
+      input,
+      context,
+      new AbortController().signal,
+    )) as { id: string };
+  }
   async handle(
     method: string,
     url: URL,
@@ -956,16 +994,29 @@ export class CatalogController {
             actorId: actor.userId,
             source: "console",
             action:
-              input.type.includes("Provider") || input.type.includes("Model")
-                ? "catalog.ai_changed"
-                : input.type === "saveRouting"
-                  ? "catalog.routing_changed"
+              input.type === "saveOrganizationModelPolicy" ||
+              input.type === "saveWorkspaceModelPolicy"
+                ? "catalog.routing_changed"
+                : input.type.includes("Provider") ||
+                    input.type.includes("Model")
+                  ? "catalog.ai_changed"
                   : input.type === "reviewPersonalService"
                     ? "catalog.personal_service_reviewed"
                     : "catalog.service_changed",
             targetId: id,
             outcome: "succeeded",
-            details: {},
+            details:
+              input.type === "saveOrganizationModelPolicy" ||
+              input.type === "saveWorkspaceModelPolicy"
+                ? {
+                    policyScope:
+                      input.type === "saveOrganizationModelPolicy"
+                        ? "organization"
+                        : "workspace",
+                    previousRevision: input.revision,
+                    revision: input.revision + 1,
+                  }
+                : {},
           });
           return { id };
         });
@@ -1170,10 +1221,10 @@ export class CatalogController {
         let enriched = false;
         if (input.enrich && freshActions.length) {
           const selected = await context.serial(async () =>
-            this.store.resolveModel(
+            // Naming actions is background work, routed to its own role.
+            this.store.resolveBackground(
               input.organizationId,
               input.workspaceId,
-              input.serviceId,
             ),
           );
           if (!selected) throw new IdentityError(409, "catalog_model_required");

@@ -23,15 +23,6 @@
     }
   ],
   "settings": {
-    "searchModel": {
-      "type": "string",
-      "label": {
-        "en": "Search model (model ID from AI models; empty: the chat model)",
-        "cs": "Model pro hledání (ID modelu z AI modelů; prázdné: model chatu)"
-      },
-      "default": "",
-      "maxLength": 200
-    },
     "engine": {
       "type": "string",
       "label": { "en": "Search engine", "cs": "Vyhledávač" },

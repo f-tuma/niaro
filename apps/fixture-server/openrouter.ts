@@ -16,6 +16,12 @@ const ConfigSchema = z.strictObject({
     .string()
     .regex(/^[a-zA-Z0-9._:/-]+$/)
     .max(160),
+  /** The speech recognition model of this legacy server profile; without it, no voice. */
+  voiceModel: z
+    .string()
+    .regex(/^[a-zA-Z0-9._:/-]+$/)
+    .max(160)
+    .optional(),
   expiresAt: z.iso.datetime(),
   maxRequests: z.number().int().min(1).max(100),
   timeZone: z.string().min(1).max(80),

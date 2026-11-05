@@ -10,7 +10,7 @@ import {
   type IntegrationTransport,
 } from "../server-integrations/transport";
 import { actionFailure } from "../server-integrations/failures";
-import { decideRoute } from "../server-integrations/decisions";
+import { decideChoice } from "../server-integrations/decisions";
 import { complete } from "../server-integrations/models";
 import { contactIdentities } from "../server-integrations/result-presentation";
 import {
@@ -89,6 +89,13 @@ export function createDrainCatalogRuntime(
   legacyEnabled = false,
   pluginSettings?: PluginSettings,
   memory?: AgentMemory,
+  /**
+   * Test fixtures only: the loop a new turn starts in, to seed historical
+   * turns. Without it the drain only finishes turns saved before Mastra;
+   * "selector" picks the progressive loop when the workspace has a
+   * selector, as the old default did.
+   */
+  seed?: "agent" | "progressive" | "legacy" | "selector",
 ): CatalogRuntime {
   const plugins = createInternalPlugins(pluginSettings, { legacy: true });
   const store = controller.store,
@@ -214,6 +221,7 @@ export function createDrainCatalogRuntime(
           legacyEnabled,
           pluginSettings,
           memory,
+          seed,
         ).message(
           commandId,
           text,
@@ -243,12 +251,13 @@ export function createDrainCatalogRuntime(
             : cached.kind === "progressive-1"
               ? "progressive"
               : "legacy";
-        const routing = store.routing(scope.workspaceId);
-        return routing.planner === "model"
-          ? "agent"
-          : routing.decision.enabled
-            ? "progressive"
-            : "legacy";
+        // New turns run on Mastra; only a test fixture seeds one here.
+        if (!seed) throw new IdentityError(409, "catalog_runtime_unsupported");
+        if (seed !== "selector") return seed;
+        return store.route(organizationId, scope.workspaceId, "selector").models
+          .length
+          ? "progressive"
+          : "legacy";
       });
       if (mode === "agent")
         return agent.message(
@@ -664,14 +673,14 @@ export function createDrainCatalogRuntime(
         !turn.serviceId &&
         !turn.decisionChecked &&
         services.length &&
-        prepared.inventory.routing.decision.enabled
+        store.route(organizationId, scope.workspaceId, "selector").models.length
       ) {
         const selected = await context.serial(async () => {
           await check();
           return store.resolveDecision(organizationId, scope.workspaceId);
         });
         if (!selected) throw new IdentityError(409, "catalog_model_required");
-        const answer = await decideRoute(
+        const answer = await decideChoice(
           transport,
           selected,
           {
@@ -708,7 +717,9 @@ export function createDrainCatalogRuntime(
         signal.throwIfAborted();
         turn.decisionChecked = true;
         if (
-          answer.confidence >= prepared.inventory.routing.decision.minConfidence
+          answer.confidence >=
+          store.routeOptions(organizationId, scope.workspaceId).selector
+            .minConfidence
         ) {
           turn.serviceId = services.find(
             (s) => toolName(s.id) === answer.choice,

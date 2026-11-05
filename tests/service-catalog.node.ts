@@ -33,7 +33,7 @@ import {
   type TransportResponse,
 } from "../apps/server-integrations/transport";
 // Legacy planner fixtures remain regression coverage for draining pre-Mastra runs.
-import { createDrainCatalogRuntime as createCatalogRuntime } from "../apps/server-identity/catalog-runtime-legacy";
+import { createDrainCatalogRuntime } from "../apps/server-identity/catalog-runtime-legacy";
 import {
   bindStepResults,
   bindWorkflowInput,
@@ -53,9 +53,21 @@ import type {
 import type { ActivityTool } from "../packages/protocol/activity";
 import type { ModelMessage } from "../apps/server-integrations/models";
 import type { AgentMemory } from "../apps/server-identity/agent-runtime";
+import { routingCommand } from "./helpers/model-policy";
 const target = {
   organizationId: "org",
   workspaceId: "11111111-1111-4111-8111-111111111111",
+};
+type DrainArgs = Parameters<typeof createDrainCatalogRuntime>;
+/**
+ * These fixtures seed historical turns: a new turn starts in the loop the
+ * old default chose (progressive with a selector, else the legacy one)
+ * unless a test asks for the agent loop.
+ */
+const createCatalogRuntime = (...args: DrainArgs) => {
+  const full = [...args] as DrainArgs;
+  full[9] ??= "selector";
+  return createDrainCatalogRuntime(...full);
 };
 function harness(transport?: IntegrationTransport) {
   const db = new DatabaseSync(":memory:");
@@ -508,12 +520,11 @@ test("model batch import enforces authority, revisions, deduplication and routin
       text = find("text");
     const service = h.create();
     await call({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 0,
         modelId: router.id,
         services: [{ serviceId: service, modelId: worker.id }],
-      },
+      }),
     });
     assert.equal(
       h.store.resolveModel("org", target.workspaceId)!.model.model,
@@ -525,18 +536,16 @@ test("model batch import enforces authority, revisions, deduplication and routin
     );
     await assert.rejects(
       call({
-        type: "saveRouting",
-        routing: { revision: 1, modelId: text.id, services: [] },
+        ...routingCommand({ revision: 1, modelId: text.id, services: [] }),
       }),
       { code: "catalog_model_unavailable" },
     );
     await call({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 1,
         modelId: router.id,
         services: [{ serviceId: service, modelId: null }],
-      },
+      }),
     });
     assert.equal(
       h.store.resolveModel("org", target.workspaceId, service)!.model.model,
@@ -544,8 +553,7 @@ test("model batch import enforces authority, revisions, deduplication and routin
     );
     await assert.rejects(
       call({
-        type: "saveRouting",
-        routing: { revision: 1, modelId: worker.id, services: [] },
+        ...routingCommand({ revision: 1, modelId: worker.id, services: [] }),
       }),
       { code: "catalog_conflict" },
     );
@@ -1094,12 +1102,11 @@ test("actual model routing, durable chat card, approval and replay", async () =>
       (model) => catalog.models.find((m) => m.model === model)!.id,
     );
     h.command({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 0,
         modelId: models[0],
         services: [{ serviceId: service, modelId: models[1] }],
-      },
+      }),
     });
     h.setRole("member");
     const scope = {
@@ -1454,8 +1461,7 @@ test("MCP contacts become persisted chat cards; replay never repeats model or se
       role: "owner",
     }).models[0]!.id;
     h.command({
-      type: "saveRouting",
-      routing: { revision: 0, modelId: model, services: [] },
+      ...routingCommand({ revision: 0, modelId: model, services: [] }),
     });
     h.setRole("member");
     const scope = {
@@ -2129,8 +2135,7 @@ test("Decision mode routes only permitted services, preserves approval and repla
           }),
         );
         h.command({
-          type: "saveRouting",
-          routing: {
+          ...routingCommand({
             revision: 0,
             modelId: models[0],
             decision: {
@@ -2139,7 +2144,7 @@ test("Decision mode routes only permitted services, preserves approval and repla
               minConfidence: 0.8,
             },
             services: [{ serviceId: service, modelId: models[1] }],
-          },
+          }),
         });
         h.setRole("member");
         const runtime = createCatalogRuntime(
@@ -2224,33 +2229,58 @@ test("Voice and decision routing validate capability, endpoint, role, scope and 
       decision = model("decision");
     const save = (extra = {}) =>
       h.command({
-        type: "saveRouting",
-        routing: { revision: 0, modelId: chat, services: [], ...extra },
+        ...routingCommand({
+          revision: 0,
+          modelId: chat,
+          services: [],
+          ...extra,
+        }),
       });
     assert.throws(
-      () => save({ voiceModelId: chat }),
+      () => save({ voiceModelId: chat, voiceMode: "catalog" }),
       /catalog_model_unavailable/,
     );
     assert.throws(
       () => save({ modelId: decision }),
       /catalog_model_unavailable/,
     );
+    // Any tool model can pick services now, beside decision models.
+    save({ decision: { enabled: true, modelId: chat, minConfidence: 0.8 } });
+    assert.equal(
+      h.store.resolveDecision("org", target.workspaceId)?.model.id,
+      chat,
+    );
+    const revision = () =>
+      h.store.modelPolicies("org", target.workspaceId).workspace.revision;
+    const resave = (extra = {}) =>
+      h.command(
+        routingCommand({
+          revision: revision(),
+          modelId: chat,
+          services: [],
+          ...extra,
+        }),
+      );
     assert.throws(
       () =>
-        save({
-          decision: { enabled: true, modelId: chat, minConfidence: 0.8 },
+        resave({
+          decision: {
+            enabled: true,
+            modelId: voice + "-missing",
+            minConfidence: 0.8,
+          },
         }),
-      /catalog_model_unavailable/,
+      /catalog_not_found/,
     );
     assert.throws(
       () =>
-        save({
+        resave({
           modelId: null,
           decision: { enabled: true, modelId: decision, minConfidence: 0.8 },
         }),
       /catalog_model_required/,
     );
-    save({
+    resave({
       voiceModelId: voice,
       voiceMode: "catalog",
       decision: { enabled: true, modelId: decision, minConfidence: 0.8 },
@@ -2270,18 +2300,23 @@ test("Voice and decision routing validate capability, endpoint, role, scope and 
         /catalog_model_in_use/,
       );
     const service = h.create();
-    const routed = h.store.routing(target.workspaceId);
+    const routed = h.store.modelPolicies("org", target.workspaceId).workspace;
     h.command({ type: "removeService", id: service, revision: 1 });
-    assert.equal(h.store.routing(target.workspaceId).voiceModelId, voice);
-    // Removing a service rewrites routing without dropping any other setting.
-    assert.deepEqual(h.store.routing(target.workspaceId), {
-      ...routed,
-      revision: routed.revision + 1,
-    });
-    assert.equal(h.store.routing(target.workspaceId).planner, "model");
-    assert.equal(
-      h.store.routing(target.workspaceId).decision.modelId,
-      decision,
+    // Removing a service rewrites the policy without dropping any other setting.
+    assert.deepEqual(
+      h.store.modelPolicies("org", target.workspaceId).workspace,
+      {
+        ...routed,
+        revision: routed.revision + 1,
+      },
+    );
+    assert.deepEqual(
+      h.store.route("org", target.workspaceId, "voice_input").models,
+      [voice],
+    );
+    assert.deepEqual(
+      h.store.route("org", target.workspaceId, "selector").models,
+      [decision],
     );
     h.setRole("member");
     await assert.rejects(
@@ -2291,8 +2326,11 @@ test("Voice and decision routing validate capability, endpoint, role, scope and 
           new URL("https://server.test/admin/api/identity/catalog/command"),
           {
             ...target,
-            type: "saveRouting",
-            routing: h.store.routing(target.workspaceId),
+            type: "saveWorkspaceModelPolicy",
+            revision: h.store.modelPolicies("org", target.workspaceId).workspace
+              .revision,
+            policy: h.store.modelPolicies("org", target.workspaceId).workspace
+              .policy,
           },
           h.context,
           signal(),
@@ -2328,7 +2366,7 @@ test("Voice and decision routing validate capability, endpoint, role, scope and 
   }
 });
 
-test("Jev Decisions is discoverable and importable; router forwarding modalities never enable transcription", async () => {
+test("decision models are entered by kind, never by ID; router forwarding modalities never enable transcription", async () => {
   const h = harness();
   try {
     const providerId = h.command({
@@ -2349,8 +2387,8 @@ test("Jev Decisions is discoverable and importable; router forwarding modalities
         text: JSON.stringify({
           data: [
             {
-              id: "typesafe/jev-router",
-              name: "TypeSafe: Jev Router",
+              id: "test/router",
+              name: "TEST Router",
               supported_parameters: [],
               architecture: {
                 tokenizer: "Router",
@@ -2366,7 +2404,7 @@ test("Jev Decisions is discoverable and importable; router forwarding modalities
               },
             },
             {
-              id: "google/gemini-3.1-flash-lite",
+              id: "test/audio-chat",
               supported_parameters: ["tools"],
               architecture: {
                 tokenizer: "Gemini",
@@ -2381,13 +2419,13 @@ test("Jev Decisions is discoverable and importable; router forwarding modalities
       signal(),
       async (start) => start(),
     );
+    // Discovery adds nothing the provider did not list.
     assert.deepEqual(
       models.map((m) => [m.model, m.kind, m.audioInput]),
       [
-        ["typesafe/jev-1.13", "decision", false],
-        ["typesafe/jev-router", "router", false],
+        ["test/router", "router", false],
         ["other/forwarder", "router", false],
-        ["google/gemini-3.1-flash-lite", "chat", true],
+        ["test/audio-chat", "chat", true],
       ],
     );
     h.command({
@@ -2401,17 +2439,31 @@ test("Jev Decisions is discoverable and importable; router forwarding modalities
         }),
       ),
     });
+    // A decision model is what the administrator says it is.
+    const decisionId = h.command({
+      type: "saveModel",
+      revision: 0,
+      settings: {
+        providerId,
+        name: "TEST decision",
+        model: "test/decision",
+        kind: "decision",
+        tools: true,
+        audioInput: true,
+        enabled: true,
+      },
+    });
     const inv = () =>
       h.store.inventory("org", target.workspaceId, {
         userId: "user",
         role: "owner",
       });
-    const decision = inv().models.find((m) => m.model === "typesafe/jev-1.13")!;
-    const router = inv().models.find((m) => m.model === "typesafe/jev-router")!;
+    const decision = inv().models.find((m) => m.id === decisionId)!;
+    assert.equal(decision.tools, false);
+    assert.equal(decision.audioInput, false);
+    const router = inv().models.find((m) => m.model === "test/router")!;
     const toolRouter = inv().models.find((m) => m.model === "other/forwarder")!;
-    const voice = inv().models.find(
-      (m) => m.model === "google/gemini-3.1-flash-lite",
-    )!;
+    const voice = inv().models.find((m) => m.model === "test/audio-chat")!;
     assert.equal(
       h.store.model("org", decision.id, "decision").model.kind,
       "decision",
@@ -2441,38 +2493,26 @@ test("Jev Decisions is discoverable and importable; router forwarding modalities
       h.store.model("org", voice.id, "audioInput").model.id,
       voice.id,
     );
-    // An entry imported by the previous release is corrected on read without renaming it or changing its identity.
-    const { id, revision, ...old } = router;
+    // A stored router keeps no audio flags, whatever was saved.
+    const { id, revision: _revision, ...old } = router;
     h.db
       .prepare("UPDATE agent_catalog SET data=? WHERE id=?")
-      .run(
-        JSON.stringify({ ...old, kind: "chat", audioInput: true, tools: true }),
-        id,
-      );
+      .run(JSON.stringify({ ...old, audioInput: true, tools: true }), id);
     assert.equal(inv().models.find((m) => m.id === id)!.kind, "router");
     assert.equal(inv().models.find((m) => m.id === id)!.audioInput, false);
     assert.throws(
       () => h.store.model("org", id, "audioInput"),
       /catalog_model_unavailable/,
     );
-    // Even manually misclassifying the known router cannot route it to the Decisions API.
     h.command({
-      type: "saveModel",
-      id,
-      revision,
-      settings: { ...old, kind: "decision", audioInput: true },
-    });
-    assert.equal(inv().models.find((m) => m.id === id)!.kind, "router");
-    h.command({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 0,
         modelId: toolRouter.id,
         voiceModelId: voice.id,
         voiceMode: "catalog",
         decision: { enabled: true, modelId: decision.id, minConfidence: 0.8 },
         services: [],
-      },
+      }),
     });
     assert.equal(
       h.store.resolveDecision("org", target.workspaceId)?.model.id,
@@ -2482,19 +2522,6 @@ test("Jev Decisions is discoverable and importable; router forwarding modalities
       h.store.resolveModel("org", target.workspaceId)?.model.id,
       toolRouter.id,
     );
-    const sameName = h.command({
-      type: "saveModel",
-      revision: 0,
-      settings: {
-        providerId,
-        name: "Jev impostor",
-        model: "test/jev-name-only",
-        kind: "chat",
-        tools: true,
-        enabled: true,
-      },
-    });
-    assert.equal(inv().models.find((m) => m.id === sameName)!.kind, "chat");
   } finally {
     h.db.close();
   }
@@ -2589,34 +2616,28 @@ test("STT discovery and routing stay separate from audio-chat interpretation, wi
     const interpreter = inventory().models.find(
       (m) => m.model === "test/audio-chat",
     )!;
-    assert.equal(
-      h.store.routing(target.workspaceId).voiceMethod,
-      "interpreter",
-    );
-    const save = (voiceMethod: string, voiceModelId: string) =>
+    const policy = () =>
+      h.store.modelPolicies("org", target.workspaceId).workspace;
+    const saveRole = (role: string, models: string[]) =>
       h.command({
-        type: "saveRouting",
-        routing: {
-          ...h.store.routing(target.workspaceId),
-          voiceMode: "catalog",
-          voiceMethod,
-          voiceModelId,
+        type: "saveWorkspaceModelPolicy",
+        revision: policy().revision,
+        policy: {
+          ...policy().policy,
+          roles: {
+            ...policy().policy.roles,
+            [role]: { models, tier: null, fallback: false },
+          },
         },
       });
-    assert.throws(
-      () => save("interpreter", stt.id),
-      /catalog_model_unavailable/,
-    );
-    assert.throws(
-      () => save("transcription", interpreter.id),
-      /catalog_model_unavailable/,
-    );
+    // The method follows the model: a transcription model transcribes, a
+    // chat model with audio input interprets. Text-only models fit neither.
     for (const capability of ["tools", "audioInput", "decision"] as const)
       assert.throws(
         () => h.store.model("org", stt.id, capability),
         /catalog_model_unavailable/,
       );
-    save("transcription", stt.id);
+    saveRole("voice_input", [stt.id]);
     assert.equal(
       h.store.resolveVoice("org", target.workspaceId)?.method,
       "transcription",
@@ -2626,19 +2647,20 @@ test("STT discovery and routing stay separate from audio-chat interpretation, wi
       stt.id,
     );
     assert.equal(
-      new ServiceCatalogStore(h.db, "test-only-secret", []).routing(
+      new ServiceCatalogStore(h.db, "test-only-secret", []).resolveVoice(
+        "org",
         target.workspaceId,
-      ).voiceMethod,
+      )?.method,
       "transcription",
     );
-    // Removing a service must preserve the independently configured voice mode.
+    // Removing a service must preserve the independently configured voice input.
     const service = h.create();
     h.command({ type: "removeService", id: service, revision: 1 });
     assert.equal(
-      h.store.routing(target.workspaceId).voiceMethod,
+      h.store.resolveVoice("org", target.workspaceId)?.method,
       "transcription",
     );
-    save("interpreter", interpreter.id);
+    saveRole("voice_input", [interpreter.id]);
     assert.equal(
       h.store.resolveVoice("org", target.workspaceId)?.method,
       "interpreter",
@@ -2648,40 +2670,19 @@ test("STT discovery and routing stay separate from audio-chat interpretation, wi
       h.store.resolveMeetingTranscription("org", target.workspaceId),
       undefined,
     );
-    const saveMeeting = (meetingTranscriptionModelId: string | null) =>
-      h.command({
-        type: "saveRouting",
-        routing: {
-          ...h.store.routing(target.workspaceId),
-          meetingTranscriptionModelId,
-        },
-      });
     assert.throws(
-      () => saveMeeting(interpreter.id),
+      () => saveRole("meeting_transcription", [interpreter.id]),
       /catalog_model_unavailable/,
     );
-    saveMeeting(stt.id);
+    saveRole("meeting_transcription", [stt.id]);
     assert.equal(
       h.store.resolveMeetingTranscription("org", target.workspaceId)?.model.id,
       stt.id,
     );
+    saveRole("meeting_transcription", []);
     assert.equal(
-      h.store.routing(target.workspaceId).meetingTranscriptionModelId,
-      stt.id,
-    );
-    saveMeeting(null);
-    // Old stored routing has no method; it must keep its original chat-audio endpoint.
-    const {
-      revision: _revision,
-      voiceMethod: _method,
-      ...legacy
-    } = h.store.routing(target.workspaceId);
-    h.db
-      .prepare("UPDATE agent_catalog_routing SET data=? WHERE workspace_id=?")
-      .run(JSON.stringify(legacy), target.workspaceId);
-    assert.equal(
-      h.store.resolveVoice("org", target.workspaceId)?.method,
-      "interpreter",
+      h.store.resolveMeetingTranscription("org", target.workspaceId),
+      undefined,
     );
     await assert.rejects(
       listModels(
@@ -3295,15 +3296,30 @@ test("Twenty import is atomic, enriched in bounded batches, and preserves existi
       type: "importModels",
       providerId,
       providerRevision: 1,
-      models: [{ model: "TEST", name: "TEST", tools: true }],
+      models: [
+        { model: "TEST", name: "TEST", tools: true },
+        { model: "TEST-background", name: "TEST background", tools: true },
+      ],
     });
-    const modelId = h.store.inventory("org", target.workspaceId, {
+    const models = h.store.inventory("org", target.workspaceId, {
       userId: "user",
       role: "owner",
-    }).models[0]!.id;
+    }).models;
+    const modelId = models.find((model) => model.model === "TEST")!.id;
+    const backgroundId = models.find(
+      (model) => model.model === "TEST-background",
+    )!.id;
+    // Naming actions is background work: it runs on the background role.
+    const routed = routingCommand({ revision: 0, modelId, services: [] });
     h.command({
-      type: "saveRouting",
-      routing: { revision: 0, modelId, services: [] },
+      ...routed,
+      policy: {
+        ...routed.policy,
+        roles: {
+          ...routed.policy.roles,
+          background: { models: [backgroundId], tier: null, fallback: false },
+        },
+      },
     });
     const discover = (extra: object = {}) =>
       h.controller.handle(
@@ -3344,9 +3360,13 @@ test("Twenty import is atomic, enriched in bounded batches, and preserves existi
     );
     // Naming calls are reserved and settled in the inference ledger under one admin root.
     const attempts = h.db
-      .prepare("SELECT run_id,status FROM agent_inference_attempt")
+      .prepare("SELECT run_id,status,model_id FROM agent_inference_attempt")
       .all();
     assert.equal(attempts.length, 2);
+    assert.deepEqual(
+      [...new Set(attempts.map((a) => a.model_id))],
+      [backgroundId],
+    );
     assert.equal(new Set(attempts.map((a) => a.run_id)).size, 1);
     assert.match(
       String(attempts[0]!.run_id),
@@ -3423,15 +3443,30 @@ test("Incomplete AI enrichment and revoked metadata discovery leave imports unch
       type: "importModels",
       providerId,
       providerRevision: 1,
-      models: [{ model: "TEST", name: "TEST", tools: true }],
+      models: [
+        { model: "TEST", name: "TEST", tools: true },
+        { model: "TEST-background", name: "TEST background", tools: true },
+      ],
     });
-    const modelId = h.store.inventory("org", target.workspaceId, {
+    const models = h.store.inventory("org", target.workspaceId, {
       userId: "user",
       role: "owner",
-    }).models[0]!.id;
+    }).models;
+    const modelId = models.find((model) => model.model === "TEST")!.id;
+    const backgroundId = models.find(
+      (model) => model.model === "TEST-background",
+    )!.id;
+    // Naming actions is background work: it runs on the background role.
+    const routed = routingCommand({ revision: 0, modelId, services: [] });
     h.command({
-      type: "saveRouting",
-      routing: { revision: 0, modelId, services: [] },
+      ...routed,
+      policy: {
+        ...routed.policy,
+        roles: {
+          ...routed.policy.roles,
+          background: { models: [backgroundId], tier: null, fallback: false },
+        },
+      },
     });
     const discover = () =>
       h.controller.handle(
@@ -3736,17 +3771,34 @@ test("speech discovery distinguishes readers from dedicated TTS and protects rou
     });
     const reader = inv.models.find((m) => m.kind === "chat")!,
       tts = inv.models.find((m) => m.kind === "speech")!;
-    const save = (id: string, method: "reader" | "speech") =>
-      h.command({
-        type: "saveRouting",
-        routing: {
-          ...h.store.routing(target.workspaceId),
-          speech: { modelId: id, method, voice: "TEST" },
+    // The method follows the model: a chat model with audio output reads,
+    // a speech model speaks; a text model fits neither.
+    const save = (id: string) => {
+      const current = h.store.modelPolicies(
+        "org",
+        target.workspaceId,
+      ).workspace;
+      return h.command({
+        type: "saveWorkspaceModelPolicy",
+        revision: current.revision,
+        policy: {
+          ...current.policy,
+          roles: {
+            ...current.policy.roles,
+            speech: { models: [id], tier: null, fallback: false },
+          },
+          options: {
+            ...current.policy.options,
+            speech: { voice: "TEST", zeroDataRetention: true },
+          },
         },
       });
-    assert.throws(() => save(tts.id, "reader"), /catalog_model_unavailable/);
-    assert.throws(() => save(reader.id, "speech"), /catalog_model_unavailable/);
-    save(reader.id, "reader");
+    };
+    save(reader.id);
+    assert.equal(
+      h.store.resolveSpeech("org", target.workspaceId)!.method,
+      "reader",
+    );
     assert.throws(
       () =>
         h.command({
@@ -3762,7 +3814,7 @@ test("speech discovery distinguishes readers from dedicated TTS and protects rou
       h.store.resolveSpeech("org", target.workspaceId)!.model.id,
       reader.id,
     );
-    save(tts.id, "speech");
+    save(tts.id);
     assert.equal(
       h.store.resolveSpeech("org", target.workspaceId)!.method,
       "speech",
@@ -4059,8 +4111,7 @@ async function contactContextHarness(
     role: "owner",
   }).models[0]!.id;
   h.command({
-    type: "saveRouting",
-    routing: { revision: 0, modelId: model, services: [] },
+    ...routingCommand({ revision: 0, modelId: model, services: [] }),
   });
   h.setRole("member");
   const scope = {
@@ -4759,8 +4810,7 @@ function pluginRuntimeHarness(
     role: "owner",
   }).models;
   h.command({
-    type: "saveRouting",
-    routing: {
+    ...routingCommand({
       revision: 0,
       modelId: models.find((m) => m.model === "router")!.id,
       services: service
@@ -4771,7 +4821,7 @@ function pluginRuntimeHarness(
             },
           ]
         : [],
-    },
+    }),
   });
   h.setRole("member");
   const scope = {
@@ -5420,8 +5470,7 @@ function progressiveRuntimeHarness(
     }),
   );
   h.command({
-    type: "saveRouting",
-    routing: {
+    ...routingCommand({
       revision: 0,
       modelId: modelIds[0],
       decision: { enabled: true, modelId: modelIds[3], minConfidence: 0.8 },
@@ -5431,7 +5480,7 @@ function progressiveRuntimeHarness(
             { serviceId: crm, modelId: modelIds[1] },
             { serviceId: calendar, modelId: modelIds[2] },
           ],
-    },
+    }),
   });
   h.setRole("member");
   const scope = {
@@ -5440,6 +5489,7 @@ function progressiveRuntimeHarness(
     workspaceId: target.workspaceId,
     userId: "user",
   };
+  let seed: DrainArgs[9] = "selector";
   const runtime = () =>
     createCatalogRuntime(
       h.controller,
@@ -5451,11 +5501,16 @@ function progressiveRuntimeHarness(
       false,
       { enabled: ["datetime"], timeZone: "Europe/Prague" },
       options.memory,
+      seed,
     );
   return {
     ...h,
     scope,
     runtime,
+    /** The loop new turns of this harness start in. */
+    setSeed: (value: DrainArgs[9]) => {
+      seed = value;
+    },
     models,
     network,
     provider,
@@ -6706,13 +6761,12 @@ function boundedReadHarness(
     }),
   );
   h.command({
-    type: "saveRouting",
-    routing: {
+    ...routingCommand({
       revision: 0,
       modelId: ids[0],
       decision: { enabled: true, modelId: ids[2], minConfidence: 0.8 },
       services: [{ serviceId: service, modelId: ids[1] }],
-    },
+    }),
   });
   h.setRole("member");
   const scope = {
@@ -7230,13 +7284,7 @@ function agentRuntimeHarness(
   const calendar = services.find((s) => s !== crm)!;
   rename(crm.id, "TEST CRM", "Contacts and companies.");
   rename(calendar.id, "TEST Calendar", "Calendar availability and meetings.");
-  const routing = h.store.routing(target.workspaceId);
-  h.setRole("owner");
-  h.command({
-    type: "saveRouting",
-    routing: { ...routing, planner: "model" },
-  });
-  h.setRole("member");
+  h.setSeed("agent");
   // Jev answers by meaning: services and actions by the stated need, checks as passed.
   h.onDecision((body) => {
     const criteria = body.questions!.route.criteria;
@@ -8679,12 +8727,19 @@ test("agent: paused work starts fresh when no continuity checker is configured",
   try {
     h.onChat(() => h.call("ask_user", { question: "Which participant?" }));
     const first = await h.run();
-    const routing = h.store.routing(target.workspaceId);
+    const current = h.store.modelPolicies(
+      target.organizationId,
+      target.workspaceId,
+    ).workspace;
     h.command({
-      type: "saveRouting",
-      routing: {
-        ...routing,
-        decision: { ...routing.decision, enabled: false },
+      type: "saveWorkspaceModelPolicy",
+      revision: current.revision,
+      policy: {
+        ...current.policy,
+        roles: {
+          ...current.policy.roles,
+          selector: { models: [], tier: null, fallback: false },
+        },
       },
     });
     const previousDecisions = h.models.filter((m) => m.questions).length;

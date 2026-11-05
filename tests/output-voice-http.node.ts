@@ -29,6 +29,7 @@ import {
 } from "../packages/protocol/output-voice";
 import { SpeechCapabilitiesSchema } from "../packages/protocol/speech";
 import { seedIdentityFixture } from "./helpers/identity-seed";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 test("output settings: actual reference HTTP derives own mobile/browser actors without provider I/O", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "output-voice-http-"));
@@ -213,21 +214,26 @@ test("output settings: actual reference HTTP derives own mobile/browser actors w
         audioOutput: true,
         tools: false,
         enabled: true,
+        // The voices an administrator reviewed for this model.
+        voices: [
+          { voice: "alloy", label: "Alloy" },
+          { voice: "echo", label: "Echo" },
+          { voice: "shimmer", label: "Shimmer" },
+        ],
       },
     });
     const modelId = (modelResult as { id: string }).id;
     const configure = async (voice = "cedar", enabled = true) =>
       command({
-        type: "saveRouting",
-        routing: {
-          ...(await inventory()).routing,
+        ...routingCommand({
+          ...currentRouting((await inventory()).policy),
           speech: {
             modelId: enabled ? modelId : null,
             method: "reader",
             voice,
             zeroDataRetention: false,
           },
-        },
+        }),
       });
     await configure();
     const issue = async (who = owner, ws = workspaceId) => {

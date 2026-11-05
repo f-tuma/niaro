@@ -35,6 +35,7 @@ import { toolResults, type ModelRequest } from "./agent-trust/harness";
 import { coordinatorHttpFixture } from "./helpers/process-coordinator-http";
 import { ActionSettings } from "../packages/protocol/service-catalog";
 import { LoopDetailSchema, LoopPageSchema } from "../packages/protocol/loops";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 function textProperty(value: unknown, key: string): string {
   assert(value && typeof value === "object" && key in value);
@@ -331,8 +332,7 @@ test("native HTTP binds forms and approval to paired scope and replays after res
     );
     actionName = "action_" + actionId.replaceAll("-", "_");
     await catalog({
-      type: "saveRouting",
-      routing: { revision: 0, planner: "jev", modelId, services: [] },
+      ...routingCommand({ revision: 0, planner: "jev", modelId, services: [] }),
     });
     async function pair(workspace: string) {
       const code = textProperty(
@@ -729,10 +729,14 @@ test("paired mobile HTTP keeps a confirmed note separate from a refused person l
         kind: "decision",
       },
     });
-    const routing = h.identity["catalog"].store.routing(h.target.workspaceId);
+    const routing = currentRouting(
+      h.identity["catalog"].store.readModelPolicy(
+        h.target.organizationId,
+        h.target.workspaceId,
+      ),
+    );
     await h.catalog({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         ...routing,
         modelId: h.modelId,
         decision: {
@@ -740,7 +744,7 @@ test("paired mobile HTTP keeps a confirmed note separate from a refused person l
           modelId: decisionModelId,
           minConfidence: 0.8,
         },
-      },
+      }),
     });
     const inferenceBudget = h.identity["catalog"].store.inferenceBudget;
     const budgetPolicy = inferenceBudget.policy(

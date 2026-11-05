@@ -130,8 +130,8 @@ export type WebPage = {
 /**
  * The public web, through the server. The host keeps the guarantees: public
  * addresses only (every redirect re-checked), size and time limits, allowed
- * content types, a cap on calls per agent run, the workspace's model and
- * inference budget for searches, and operator logs without content. A
+ * content types, a cap on calls per agent run, the workspace's web search
+ * model (its model policy) and inference budget for searches, and operator logs without content. A
  * refused or failed call throws; the host turns it into `{ error }` for the
  * model, so a tool does not need to catch.
  */
@@ -142,8 +142,6 @@ export interface WebCapability {
     limit: number;
     /** A hint for the engine; not every engine filters by date. */
     freshness?: "day" | "week" | "month" | "year";
-    /** A model ID of the workspace's AI models; empty: its chat model. */
-    model?: string;
     /** exa (default), native (the model provider's own search) or auto. */
     engine?: "exa" | "native" | "auto";
     /** Only providers that keep no data (default true). */

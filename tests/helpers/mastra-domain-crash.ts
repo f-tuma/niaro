@@ -18,6 +18,7 @@ import {
 import { MemoryStore } from "../../apps/server-identity/memory";
 import { createMemoryRuntime } from "../../apps/server-identity/memory-runtime";
 import type { IntegrationTransport } from "../../apps/server-integrations/transport";
+import { routingCommand } from "./model-policy";
 
 export const previousPreference = "TEST old private preference";
 export const correctedPreference = "TEST corrected private preference";
@@ -262,7 +263,10 @@ export async function runProductionDomainCrash(
   const controller = new CatalogController(catalog, transport);
   const command = (value: object) =>
     catalog.command(CatalogCommand.parse({ ...target, ...value }));
-  if (!catalog.routing(target.workspaceId).modelId) {
+  if (
+    !catalog.route(target.organizationId, target.workspaceId, "chat").models
+      .length
+  ) {
     const serviceId = actionFixture
       ? command({
           type: "saveService",
@@ -342,14 +346,13 @@ export async function runProductionDomainCrash(
       },
     });
     command({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 0,
         planner: "model",
         modelId,
         services: serviceId ? [{ serviceId, modelId }] : [],
         decision: { enabled: true, modelId: decisionId, minConfidence: 0.8 },
-      },
+      }),
     });
   }
   if (actionFixture) {

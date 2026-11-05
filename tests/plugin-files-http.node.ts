@@ -26,6 +26,7 @@ import {
 } from "../packages/protocol/workspace-plugins";
 import type { IntegrationTransport } from "../apps/server-integrations/transport";
 import type { ModelMessage } from "../apps/server-integrations/models";
+import { routingCommand } from "./helpers/model-policy";
 
 const password = "TEST-plugin-files-password-2026";
 test("plugin files: owners edit plugins in the console, validated, audited and switchable off", async (t) => {
@@ -381,8 +382,7 @@ test("plugin files: owners edit plugins in the console, validated, audited and s
         await owner(`api/identity/catalog?${new URLSearchParams(target)}`)
       ).data.models[0].id;
       await catalog({
-        type: "saveRouting",
-        routing: { revision: 0, modelId, services: [] },
+        ...routingCommand({ revision: 0, modelId, services: [] }),
       });
       const grant = (await owner("api/identity/mobile/pairing", target)).data;
       const paired = await fetch(`${origin}/v1/${workspaceId}/auth/pair`, {

@@ -23,10 +23,10 @@ import {
   type ProcessVersion,
 } from "../../packages/protocol/service-processes";
 import {
-  Routing,
   ServiceSettings,
   ProviderSettings,
 } from "../../packages/protocol/service-catalog";
+import { WorkspaceModelPolicy } from "../../packages/protocol/model-policy";
 import { MemorySettingsSchema } from "../../packages/protocol/memory";
 import {
   processCompilerVersion,
@@ -434,16 +434,15 @@ async function observe(
       db.prepare("INSERT INTO agent_catalog_routing VALUES(?,?,?)").run(
         target.workspaceId,
         1,
+        // The generic agent's model serves chat and every service; no
+        // selector or checker takes part in the comparison.
         JSON.stringify(
-          Routing.parse({
-            revision: 1,
-            modelId: genericModelId ?? null,
-            services: catalog.services.map((s) => ({
-              serviceId: s.id,
-              modelId: genericModelId ?? null,
-            })),
-            planner: "model",
-            decision: { enabled: false, modelId: null, minConfidence: 0.8 },
+          WorkspaceModelPolicy.parse({
+            roles: {
+              chat: { models: genericModelId ? [genericModelId] : [] },
+              selector: { models: [] },
+              checker: { models: [] },
+            },
           }),
         ),
       );

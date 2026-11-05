@@ -14,6 +14,7 @@ import { VOICE_PROFILE, VoiceRequestSchema } from "../packages/protocol/voice";
 import { CatalogSchema } from "../packages/protocol/service-catalog";
 import type { IntegrationTransport } from "../apps/server-integrations/transport";
 import { VoiceError } from "../apps/fixture-server/voice";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 for (const method of ["interpreter", "transcription"] as const) {
   const modelId =
@@ -203,13 +204,12 @@ for (const method of ["interpreter", "transcription"] as const) {
       ).id;
       const configure = async (mode: "catalog" | "disabled") =>
         command({
-          type: "saveRouting",
-          routing: {
-            ...(await inventory()).routing,
+          ...routingCommand({
+            ...currentRouting((await inventory()).policy),
             voiceModelId: mode === "catalog" ? voice : null,
             voiceMode: mode,
             voiceMethod: method,
-          },
+          }),
         });
       await configure("catalog");
       const grant = await admin("api/identity/mobile/pairing", target);

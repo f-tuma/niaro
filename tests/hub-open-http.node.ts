@@ -6,6 +6,7 @@ import {
   HubOpenResultSchema,
 } from "../packages/protocol/hub";
 import { coordinatorHttpFixture } from "./helpers/process-coordinator-http";
+import { routingCommand } from "./helpers/model-policy";
 
 // Its own process: the fixture's sign-ins share one login rate limit per process.
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -95,8 +96,7 @@ test(
         text: JSON.stringify({ value: [message, second] }),
       }));
       await h.catalog({
-        type: "saveRouting",
-        routing: { revision: 0, modelId: h.modelId, services: [] },
+        ...routingCommand({ revision: 0, modelId: h.modelId, services: [] }),
       });
       const added = await hub({
         profile: HUB_PROFILE_V3,

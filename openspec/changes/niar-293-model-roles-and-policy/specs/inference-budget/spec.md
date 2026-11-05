@@ -4,12 +4,12 @@
 
 ### Requirement: Prices for routed models
 
-In enforce mode every model a budgeted role (chat, service routes, checker, selector, background, designer, web search) can reach SHALL have a price: the first model of each route, the others only with fallback on, and the escalation models when escalation is on. Saving the usage policy, a workspace policy or the organization default that would leave such a model unpriced SHALL fail with 409 `catalog_budget_price_required`.
+In enforce mode every model a budgeted role (chat, service routes, checker, selector, background, designer, web search) can reach SHALL have a price: the first model of each route, the others only with fallback on, and the escalation models when escalation is on. The Usage limits and Models pages SHALL name such a model while it has no price and refuse to save; at use a call to it SHALL be refused before dispatch with `catalog_budget_price_required`.
 
 #### Scenario: Fallback model without a price
 
 - **WHEN** a workspace stops at limit and an administrator turns on fallback for chat to an unpriced second model
-- **THEN** the save fails with `catalog_budget_price_required`
+- **THEN** the Models page names that model and does not save
 
 ## MODIFIED Requirements
 

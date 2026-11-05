@@ -21,6 +21,7 @@ import {
   type Command,
 } from "../packages/protocol";
 import { VOICE_PROFILE } from "../packages/protocol/voice";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 const password = "TEST-mobile-password-123";
 const reply: Decision = {
@@ -644,7 +645,7 @@ test("Account mobile bridge: scope, dispatch, revocation and durable receipts", 
           200,
         );
         const catalogPath = `api/identity/catalog?organizationId=${organizationId}&workspaceId=${workspaceId}`;
-        const routing = (await owner(catalogPath)).data.routing;
+        const routing = currentRouting((await owner(catalogPath)).data.policy);
         assert.equal(
           (
             await owner(
@@ -657,12 +658,11 @@ test("Account mobile bridge: scope, dispatch, revocation and durable receipts", 
           (
             await owner("api/identity/catalog/command", {
               ...target,
-              type: "saveRouting",
-              routing: {
+              ...routingCommand({
                 ...routing,
                 voiceMode: "disabled",
                 voiceModelId: null,
-              },
+              }),
             })
           ).status,
           200,

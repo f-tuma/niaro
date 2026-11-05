@@ -23,6 +23,7 @@ import {
   ACTIVITY_PROFILE,
   LEGACY_ACTIVITY_PROFILE,
 } from "../packages/protocol/activity";
+import { routingCommand } from "./helpers/model-policy";
 
 const password = "TEST-plugins-password-only-2026";
 test("workspace plugins: authenticated configuration controls actual runtime and survives restart", async (t) => {
@@ -473,8 +474,7 @@ test("workspace plugins: authenticated configuration controls actual runtime and
       await owner(`api/identity/catalog?${new URLSearchParams(target)}`)
     ).data.models[0].id;
     await catalog({
-      type: "saveRouting",
-      routing: { revision: 0, modelId, services: [] },
+      ...routingCommand({ revision: 0, modelId, services: [] }),
     });
     const grant = (await owner("api/identity/mobile/pairing", target)).data;
     const paired = await fetch(`${origin}/v1/${workspaceId}/auth/pair`, {

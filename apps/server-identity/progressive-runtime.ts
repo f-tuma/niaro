@@ -13,7 +13,7 @@ import type { CatalogContext, CatalogController } from "./catalog-controller";
 import type { CatalogRuntime, ServiceAnswer } from "./catalog-runtime";
 import type { StoredInvocation } from "./service-catalog";
 import { complete, type ModelMessage } from "../server-integrations/models";
-import { decideRoute } from "../server-integrations/decisions";
+import { decideChoice } from "../server-integrations/decisions";
 import {
   createInternalPlugins,
   bindPluginResults,
@@ -706,10 +706,11 @@ export function createProgressiveRuntime(
         return store.resolveDecision(organizationId, scope.workspaceId);
       });
       if (!selected) throw new IdentityError(409, "catalog_model_required");
-      const minimum = inventory.routing.decision.minConfidence;
+      const minimum = store.routeOptions(organizationId, scope.workspaceId)
+        .selector.minConfidence;
       const ask = async (options: Candidate[], narrowed: boolean) => {
         if (turn.inference >= MAX_INFERENCE) throw new TaskBudgetExhausted();
-        const answer = await decideRoute(
+        const answer = await decideChoice(
           controller.transport,
           selected,
           {

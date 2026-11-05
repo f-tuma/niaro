@@ -15,7 +15,7 @@ Model choice was one chat model per workspace plus a few special models, with po
 - **Escalation** (off by default): when the write or answer checker rejects a step, that step is repeated once with escalation models, within the same run's caps.
 - **Checker as a role.** Any tool-capable chat model can check writes and answers through one forced tool call; a decision model is one option. Checks keep working without OpenRouter.
 - **Visibility.** Every model step in Runs names its model, role and reason.
-- **Budget.** In enforce mode every model a budgeted role can reach needs a price; budget and policy saves refuse otherwise. Model removal checks every list.
+- **Budget.** In enforce mode every model a budgeted role can reach needs a price; the Usage limits and Models pages name missing ones and refuse to save, and an unpriced call is refused at use. Model removal checks every list.
 - **Admin.** `/admin/routing` becomes **Models**: organization and workspace tabs, role rows with ordered model chips, tiers, fallback, escalation and settings.
 - **Removed.** `Routing.planner`; Jev identities and discovery additions; the built-in default voice model; the hardcoded reviewed voice list (now model metadata); the web plugin's search model setting (now the `web_search` role). The pre-Mastra drain runtime only finishes saved turns.
 

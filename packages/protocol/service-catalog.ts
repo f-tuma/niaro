@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { IdentityId, IdentityName, OrganizationRole } from "./identity";
+import {
+  ModelPolicyView,
+  OrganizationModelPolicy,
+  SpeechVoiceId,
+  WorkspaceModelPolicy,
+} from "./model-policy";
 
 export const ServiceUrl = z
   .string()
@@ -193,6 +199,23 @@ export const CatalogModelSettings = z.strictObject({
   kind: z
     .enum(["chat", "decision", "router", "transcription", "speech"])
     .default("chat"),
+  /**
+   * Voices an administrator reviewed for spoken replies with this model,
+   * offered to members in that order. Only speech models and chat models
+   * with audio output keep them.
+   */
+  voices: z
+    .array(
+      z.strictObject({
+        voice: SpeechVoiceId,
+        label: z.string().trim().min(1).max(40),
+      }),
+    )
+    .max(20)
+    .refine(
+      (voices) => new Set(voices.map((v) => v.voice)).size === voices.length,
+    )
+    .optional(),
 });
 export const CatalogModelSchema = CatalogModelSettings.extend({
   id: IdentityId,
@@ -221,52 +244,6 @@ export const ModelDiscoveryResponse = z.strictObject({
   models: z.array(DiscoveredModelSchema).max(5000),
 });
 export type DiscoveredModel = z.infer<typeof DiscoveredModelSchema>;
-export const Routing = z.strictObject({
-  revision: Revision,
-  modelId: IdentityId.nullable(),
-  voiceModelId: IdentityId.nullable().default(null),
-  voiceMode: z.enum(["legacy", "disabled", "catalog"]).default("legacy"),
-  voiceMethod: z.enum(["interpreter", "transcription"]).default("interpreter"),
-  /**
-   * A speech-to-text model for meetings when the voice model is not one
-   * (for example openai/gpt-4o-transcribe). Null: the voice model, if it is
-   * speech-to-text, else minute-by-minute recognition through voice.
-   */
-  meetingTranscriptionModelId: IdentityId.nullable().default(null),
-  speech: z
-    .strictObject({
-      modelId: IdentityId.nullable(),
-      method: z.enum(["reader", "speech"]),
-      zeroDataRetention: z.boolean().default(true),
-      voice: z
-        .string()
-        .trim()
-        .min(1)
-        .max(200)
-        .regex(/^[a-zA-Z0-9._:/-]+$/),
-    })
-    .default({
-      modelId: null,
-      method: "reader",
-      voice: "alloy",
-      zeroDataRetention: true,
-    }),
-  decision: z
-    .strictObject({
-      enabled: z.boolean(),
-      modelId: IdentityId.nullable(),
-      minConfidence: z.number().min(0.5).max(1),
-    })
-    .default({ enabled: false, modelId: null, minConfidence: 0.8 }),
-  /** Who leads a task: Jev steps through service → action → inputs, or the chat model
-   * plans and acts while Jev chooses services and actions and checks its work. */
-  planner: z.enum(["jev", "model"]).default("jev"),
-  services: z
-    .array(
-      z.strictObject({ serviceId: IdentityId, modelId: IdentityId.nullable() }),
-    )
-    .max(100),
-});
 export const CatalogSchema = z.strictObject({
   organizationId: IdentityId,
   workspaceId: IdentityId,
@@ -276,7 +253,8 @@ export const CatalogSchema = z.strictObject({
   services: z.array(ServiceSchema).max(100),
   providers: z.array(ProviderSchema).max(50),
   models: z.array(CatalogModelSchema).max(500),
-  routing: Routing,
+  /** For managers: the model policy of the organization and this workspace. */
+  policy: ModelPolicyView,
   /** For managers: the services people sign in to themselves, and how many
    * have a working sign-in. */
   signIn: z
@@ -431,10 +409,19 @@ export const CatalogCommand = z.discriminatedUnion("type", [
     id: IdentityId,
     revision: Revision,
   }),
+  /** The organization's default model policy, inherited by every workspace. */
   z.strictObject({
     ...target,
-    type: z.literal("saveRouting"),
-    routing: Routing,
+    type: z.literal("saveOrganizationModelPolicy"),
+    revision: Revision,
+    policy: OrganizationModelPolicy,
+  }),
+  /** This workspace's overrides of the organization's model policy. */
+  z.strictObject({
+    ...target,
+    type: z.literal("saveWorkspaceModelPolicy"),
+    revision: Revision,
+    policy: WorkspaceModelPolicy,
   }),
 ]);
 export const DiscoveryChoice = z.strictObject({
