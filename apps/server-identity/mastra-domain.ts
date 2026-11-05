@@ -397,9 +397,12 @@ function project(
   return visit(value, 0);
 }
 
+/** More used items than this leave a pin's items unknown (NIAR-263). */
+const MAX_PINNED_ITEMS = 500;
 const MemoryPin = z.strictObject({
   expiresAt: z.number().finite().optional(),
   sources: z.array(MemorySourceSchema).max(1000).optional(),
+  items: z.array(z.string().min(1).max(100)).max(MAX_PINNED_ITEMS).optional(),
 });
 const ThreadAuthority = z.strictObject({
   version: z.literal(1),
@@ -1019,7 +1022,7 @@ export type DomainSession = {
 function mergeMetadata(
   first?: AgentMemoryMetadata,
   second?: AgentMemoryMetadata,
-) {
+): AgentMemoryMetadata | undefined {
   if (!first && !second) return undefined;
   const expiries = [first?.expiresAt, second?.expiresAt].filter(
     (value): value is number => value !== undefined,
@@ -1030,10 +1033,46 @@ function mergeMetadata(
       source,
     ]),
   );
+  // Used items stay known only while every merged pin knows its own.
+  const parts = [first, second].filter(
+    (part): part is AgentMemoryMetadata => !!part,
+  );
+  const items = new Set(parts.flatMap((part) => part.items ?? []));
+  const known =
+    parts.every((part) => part.items !== undefined) &&
+    items.size <= MAX_PINNED_ITEMS;
   return {
     ...(expiries.length ? { expiresAt: Math.min(...expiries) } : {}),
     ...(sources.size ? { sources: [...sources.values()] } : {}),
+    ...(known ? { items: [...items] } : {}),
   };
+}
+/** A pin's metadata; a version pinned without any is unknown, never empty. */
+function pinMetadata(pin?: {
+  memoryVersion?: string | number;
+  memoryMetadata?: AgentMemoryMetadata;
+}): AgentMemoryMetadata | undefined {
+  return (
+    pin?.memoryMetadata ?? (pin?.memoryVersion !== undefined ? {} : undefined)
+  );
+}
+/**
+ * After the thread's own memory change: what it used stays pinned, minus the
+ * item the change itself retired, which the thread may keep (NIAR-263).
+ */
+function ownChangeMetadata(
+  state: DomainCommand,
+  args: unknown,
+): AgentMemoryMetadata {
+  const used = mergeMetadata(
+    pinMetadata(state.threadAuthority),
+    pinMetadata(state),
+  );
+  if (!used) return { items: [] };
+  if (!used.items) return {};
+  const target =
+    args && typeof args === "object" && "id" in args ? args.id : undefined;
+  return { items: used.items.filter((id) => id !== target) };
 }
 function definition(value: unknown): DomainDefinition {
   return z
@@ -1989,6 +2028,63 @@ export function createMastraDomain(
       await memory.validate(version, metadata);
     }
   }
+  /**
+   * Whether the next turn may continue this thread (NIAR-263). What the thread
+   * used must still be current: its service results under the same policy,
+   * and every saved item that reached the model still active and readable.
+   * Additions, learner observations, other people's memory and policy changes
+   * of a thread that used no service result do not matter. Resolves to the
+   * memory version the continued thread pins.
+   */
+  async function continueThreadLocked(
+    state: DomainCommand,
+    actor: Awaited<ReturnType<typeof actorLocked>>,
+  ): Promise<string | number | undefined> {
+    if (state.legacyQuestion) {
+      await validateThreadLocked(state, actor);
+      return state.memoryVersion ?? state.threadAuthority?.memoryVersion;
+    }
+    if (!attachmentThreadAllowed(state))
+      throw new IdentityError(403, "identity_forbidden");
+    if (!state.threadAuthority)
+      throw new IdentityError(409, "catalog_conflict");
+    const sources = sourceDependencies(state);
+    if (context.epoch(organizationId) !== state.epoch && sources.length)
+      throw new IdentityError(409, "catalog_conflict");
+    for (const id of sources) {
+      const receipt = store.contactSource(
+        id,
+        organizationId,
+        scope.workspaceId,
+        actor,
+        CONTACT_CONTEXT_TTL,
+      );
+      if (receipt.policyRevision !== state.epoch)
+        throw new IdentityError(409, "catalog_conflict");
+    }
+    const memoryPins = new Map<
+      string | number,
+      AgentMemoryMetadata | undefined
+    >();
+    for (const pin of [state.threadAuthority, state])
+      if (pin.memoryVersion !== undefined)
+        memoryPins.set(
+          pin.memoryVersion,
+          mergeMetadata(memoryPins.get(pin.memoryVersion), pinMetadata(pin)),
+        );
+    let pinned: string | number | undefined;
+    for (const [version, metadata] of memoryPins) {
+      if (!memory) throw new IdentityError(409, "memory_context_changed");
+      if (memory.continuation && metadata?.items)
+        pinned = await memory.continuation(version, metadata);
+      else {
+        // An older pin without its items keeps the exact version check.
+        await memory.validate(version, metadata);
+        pinned = version;
+      }
+    }
+    return pinned;
+  }
   function session(
     key: string,
     state: DomainCommand,
@@ -2078,8 +2174,8 @@ export function createMastraDomain(
         sources: sourceDependencies(value),
         memoryVersion: value.memoryVersion ?? inherited.memoryVersion,
         memoryMetadata: mergeMetadata(
-          inherited.memoryMetadata,
-          value.memoryMetadata,
+          pinMetadata(inherited),
+          pinMetadata(value),
         ),
       };
       value.taskTracked ||= !!value.pending;
@@ -4675,12 +4771,14 @@ export function createMastraDomain(
                       )
                         projected.memoryReceipts.push(receipt);
                     }
+                    const pinned = ownChangeMetadata(projected, args);
                     projected.memoryVersion = version;
-                    projected.memoryMetadata = undefined;
+                    projected.memoryMetadata = pinned;
                     projected.threadAuthority = {
                       version: 1,
                       sources: sourceDependencies(projected),
                       memoryVersion: version,
+                      memoryMetadata: pinned,
                     };
                     projected.memoryChanged = true;
                     projected.pending = undefined;
@@ -4730,12 +4828,14 @@ export function createMastraDomain(
             name,
             result: parsed.data,
           });
+        const pinned = ownChangeMetadata(state, args);
         state.memoryVersion = committedMemoryVersion;
-        state.memoryMetadata = undefined;
+        state.memoryMetadata = pinned;
         state.threadAuthority = {
           version: 1,
           sources: sourceDependencies(state),
           memoryVersion: committedMemoryVersion,
+          memoryMetadata: pinned,
         };
         state.memoryChanged = true;
         state.memoryReads = [];
@@ -5928,30 +6028,43 @@ export function createMastraDomain(
           ? prior.data.conversationId === messageContext.conversationId
           : !prior.data.conversationId && visible);
       let reuseThread = false;
-      if (
-        !legacy &&
-        !retryParent &&
-        sameSession &&
-        prior.success &&
-        !separateTasks.has(key) &&
-        prior.data.threadAuthority &&
-        attachmentThreadAllowed(
-          prior.data,
-          messageContext?.attachment?.generation ??
-            messageContext?.attachmentGeneration,
+      let memoryPin: string | number | undefined;
+      // Why a turn of the same chat starts a fresh thread, for operators only.
+      let fresh: string | undefined;
+      if (sameSession && prior.success) {
+        if (legacy) fresh = "legacy_question";
+        else if (separateTasks.has(key)) fresh = "separate_task";
+        else if (!prior.data.threadAuthority) fresh = "no_authority";
+        else if (
+          !attachmentThreadAllowed(
+            prior.data,
+            messageContext?.attachment?.generation ??
+              messageContext?.attachmentGeneration,
+          )
         )
-      ) {
-        try {
-          await validateThreadLocked(prior.data, actor);
-          // Reserve the full per-task operation budget. A dependency may never
-          // be silently dropped while any native message still refers to it.
-          reuseThread =
-            sourceDependencies(prior.data).length <= MAX_THREAD_SOURCES - 32;
-        } catch (error) {
-          if (!(error instanceof IdentityError)) throw error;
-          // A new task may start afresh; pending/cached runs retain exact pins.
-        }
+          fresh = "attachment";
+        else
+          try {
+            // A retry continues too: the failed attempt is an earlier turn
+            // whose calls collapse into a note and whose text is withheld.
+            memoryPin = await continueThreadLocked(prior.data, actor);
+            // Reserve the full per-task operation budget. A dependency may never
+            // be silently dropped while any native message still refers to it.
+            reuseThread =
+              sourceDependencies(prior.data).length <= MAX_THREAD_SOURCES - 32;
+            if (!reuseThread) fresh = "sources_full";
+          } catch (error) {
+            if (!(error instanceof IdentityError)) throw error;
+            // A new task may start afresh; pending/cached runs retain exact pins.
+            fresh =
+              error.code === "memory_context_changed"
+                ? "memory_changed"
+                : error.code === "identity_forbidden"
+                  ? "attachment"
+                  : "source_changed";
+          }
       }
+      if (fresh) operatorLog("native_thread_fresh", { reason: fresh });
       const candidates = new Set([
         ...(reuseThread &&
         prior.success &&
@@ -6051,6 +6164,17 @@ export function createMastraDomain(
                 ...prior.data.threadAuthority,
                 version: 1,
                 sources: sourceDependencies(prior.data),
+                // The items the thread used stay pinned; the version moves to
+                // the one they were just checked against.
+                ...(memoryPin !== undefined
+                  ? {
+                      memoryVersion: memoryPin,
+                      memoryMetadata: mergeMetadata(
+                        pinMetadata(prior.data.threadAuthority),
+                        pinMetadata(prior.data),
+                      ),
+                    }
+                  : {}),
               }
             : {
                 version: 1,

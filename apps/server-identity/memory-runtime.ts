@@ -64,12 +64,36 @@ export function createMemoryRuntime(
   const tools = plugin.modelTools;
   let expiry: string | null = null;
   let sources: MemoryItem[] = [];
-  const metadata = (): AgentMemoryMetadata => ({
-    ...(expiry ? { expiresAt: Date.parse(expiry) } : {}),
-    sources: sources.flatMap((item) =>
-      item.source?.type === "verified_operation" ? [item.source] : [],
-    ),
-  });
+  /** Observations projected into this turn's context. */
+  let observedItems: MemoryItem[] = [];
+  /** The chat this runtime serves, once a request names it. */
+  let conversation: string | undefined;
+  const metadata = (): AgentMemoryMetadata => {
+    // What reached the model, so a later turn can tell whether the thread
+    // still holds only current memory (NIAR-263). A fact saved from the
+    // person's own words in this chat is left out: those words stay in the
+    // chat, so deleting the saved copy takes nothing out of the thread.
+    const items = [
+      ...new Set(
+        [...sources, ...observedItems]
+          .filter(
+            (item) =>
+              !conversation ||
+              item.source?.type !== "user_message" ||
+              item.source.conversationId !== conversation,
+          )
+          .map((item) => item.id),
+      ),
+    ];
+    return {
+      ...(expiry ? { expiresAt: Date.parse(expiry) } : {}),
+      sources: sources.flatMap((item) =>
+        item.source?.type === "verified_operation" ? [item.source] : [],
+      ),
+      // Beyond the bound the list is left out: unknown, never empty.
+      ...(items.length <= 500 ? { items } : {}),
+    };
+  };
   const view = (items: MemoryItem[]) =>
     items.map(
       ({ id, revision, content, kind, scope, source, trust, expiresAt }) => ({
@@ -109,9 +133,11 @@ export function createMemoryRuntime(
     tools,
     metadata,
     has: (name) => tools.some((t) => t.function.name === name),
-    async context({ text }) {
+    async context({ text, conversationId }) {
+      conversation = conversationId;
       return options.read(async () => {
         sources = [];
+        observedItems = [];
         expiry = null;
         const result = await snapshot(text.slice(0, 500), options.check, true);
         const observed = await store.observationsForTurn(actor, {
@@ -120,6 +146,7 @@ export function createMemoryRuntime(
         options.check();
         if (result.version !== observed.version)
           throw new IdentityError(409, "memory_context_changed");
+        observedItems = observed.items;
         expiry =
           [expiry as string | null, observed.expiresAt]
             .filter((value): value is string => value !== null)
@@ -172,6 +199,27 @@ export function createMemoryRuntime(
       )
         throw new IdentityError(409, "memory_context_changed");
     },
+    async continuation(version, saved) {
+      // Called from the identity queue; never recursively acquire it.
+      options.check();
+      const expiresAt =
+        saved.expiresAt === undefined
+          ? null
+          : new Date(saved.expiresAt).toISOString();
+      if (
+        typeof version !== "number" ||
+        !saved.items ||
+        // Nothing changed since the pin, or nothing the thread used did:
+        // additions, other people's changes and unused items do not matter.
+        (!store.isCurrent(actor, version, expiresAt) &&
+          !store.itemsReadable(actor, saved.items, settings, expiresAt)) ||
+        (saved.sources ?? []).some(
+          (source) => !options.sourceAccess(source, actor),
+        )
+      )
+        throw new IdentityError(409, "memory_context_changed");
+      return store.version(actor);
+    },
     async invoke(name, raw, meta) {
       const check = () => {
         meta.signal?.throwIfAborted();
@@ -179,6 +227,7 @@ export function createMemoryRuntime(
         meta.validateRequest?.();
       };
       check();
+      conversation = meta.conversationId;
       const tool = plugin.tools.get(name);
       if (!tool) return { error: "unknown_tool" };
       const input = tool.input.parse(raw);

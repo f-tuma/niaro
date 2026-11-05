@@ -4,6 +4,11 @@ import type { MemorySource } from "../../packages/protocol/memory";
 export type AgentMemoryMetadata = {
   expiresAt?: number;
   sources?: MemorySource[];
+  /**
+   * Ids of the saved items that reached the model (NIAR-263). Absent means
+   * unknown (an older pin, or an overflow), never "none".
+   */
+  items?: string[];
 };
 
 /** Scoped facts and mutation receipts remain business authority, independent of the execution engine. */
@@ -23,6 +28,16 @@ export interface AgentMemory {
     version: string | number,
     metadata?: AgentMemoryMetadata,
   ): Promise<void>;
+  /**
+   * Whether a later turn may continue a thread pinned at `version`: every
+   * listed item must still be active, unchanged, unexpired and readable, while
+   * additions and changes to anything else do not matter. Resolves to the
+   * version the continued thread pins from now on (NIAR-263).
+   */
+  continuation?(
+    version: string | number,
+    metadata: AgentMemoryMetadata,
+  ): Promise<string | number>;
   metadata?(): AgentMemoryMetadata;
   tools?: unknown[];
   has?(name: string): boolean;

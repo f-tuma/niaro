@@ -10,6 +10,8 @@ const Id = MessageSchema.shape.id;
 const MemoryPin = z.strictObject({
   expiresAt: z.number().finite().optional(),
   sources: z.array(MemorySourceSchema).max(1000).optional(),
+  /** Used item ids from the memory runtime (NIAR-263); only native threads read them. */
+  items: z.array(z.string().min(1).max(100)).max(500).optional(),
 });
 /** Bounded origin/evidence metadata only. No legacy execution identity or transcript. */
 export const LegacyQuestionSchema = z.strictObject({

@@ -713,6 +713,44 @@ export class MemoryStore {
       (expiresAt == null || Date.parse(expiresAt) > this.now())
     );
   }
+  /**
+   * Whether every listed item is still active, published, unexpired and
+   * readable by this person (NIAR-263). Content only ever changes under a new
+   * id (a correction or a rewritten observation supersedes its row), so an
+   * active id still carries the words the model saw.
+   */
+  itemsReadable(
+    raw: MemoryActor,
+    ids: readonly string[],
+    settings: MemorySettings,
+    expiresAt?: string | null,
+  ) {
+    const actor = this.actor(raw);
+    const now = this.now();
+    if (expiresAt != null && Date.parse(expiresAt) <= now) return false;
+    if (!ids.length) return true;
+    if (this.readPreferences(actor).optOut) return false;
+    const allowShared = Number(
+      MemorySettingsSchema.parse(settings).allowShared,
+    );
+    const found = this.db.prepare(
+      `SELECT 1 FROM agent_memory WHERE id=? AND organization_id=? AND workspace_id=?
+      AND ((scope='private' AND user_id=?) OR (scope='workspace' AND ?=1))
+      AND status='active' AND publication='published' AND expires_at>?`,
+    );
+    const at = new Date(now).toISOString();
+    return ids.every(
+      (id) =>
+        !!found.get(
+          id,
+          actor.organizationId,
+          actor.workspaceId,
+          actor.userId,
+          allowShared,
+          at,
+        ),
+    );
+  }
   readPreferences(raw: MemoryActor) {
     const actor = this.actor(raw);
     const preference = this.db

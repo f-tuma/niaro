@@ -728,7 +728,9 @@ export const memoryScenarios: TrustScenario[] = [
                   interrupted.memoryVersion,
                   h.memoryStore.version(h.memoryActor),
                 );
-                assert.equal(interrupted.memoryMetadata, undefined);
+                // Only the used-item list survives the thread's own change,
+                // minus the item it revised (NIAR-263).
+                assert.deepEqual(interrupted.memoryMetadata, { items: [] });
                 assert.deepEqual(interrupted.memoryReads, []);
                 assert(
                   interrupted.trace?.steps.some(

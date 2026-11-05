@@ -382,7 +382,9 @@ export const loopScenarios: TrustScenario[] = [
               const completed = latestTurn(h);
               const parent = savedTurn(h, command.idempotencyKey);
               assert.notEqual(completed.runId, parent.runId);
-              assert.notEqual(completed.threadId, parent.threadId);
+              // A retry continues the chat's thread (NIAR-263); its own run
+              // never resumes the cancelled one.
+              assert.equal(completed.threadId, parent.threadId);
               assert.equal(completed.operations.length, 1);
               if (phase === "after")
                 assert.deepEqual(completed.operations, [recordedOperation]);
