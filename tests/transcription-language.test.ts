@@ -13,6 +13,7 @@ const provider: Provider = {
   revision: 1,
   name: "TEST provider",
   url: "https://openrouter.ai/api/v1",
+  dialect: "openrouter",
   enabled: true,
   dailyRequestLimit: 10,
   hasCredential: true,

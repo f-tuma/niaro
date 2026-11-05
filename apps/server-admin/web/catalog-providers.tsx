@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
   ChevronLeft,
@@ -13,12 +13,11 @@ import {
   X,
 } from "lucide-react";
 import {
-  ProviderSettings,
   CatalogModelSettings,
   type Provider,
   type CatalogModel,
-  type DiscoveredModel,
 } from "../../../packages/protocol/service-catalog";
+import { isOpenRouterProvider } from "../../../packages/protocol/providers";
 import { Button } from "@admin/components/ui/button";
 import { Input } from "@admin/components/ui/input";
 import { Switch } from "@admin/components/ui/switch";
@@ -97,6 +96,10 @@ import { ProviderModelPicker } from "./provider-model-picker";
 import { ModelChoicePicker, type ModelChoice } from "./model-choice-picker";
 import { useAdmin } from "./context";
 import { ApiError } from "./lib/api";
+import { ProviderForm } from "./provider-form";
+import { useProviderCopy } from "./provider-copy";
+import { ModelCapabilityTest } from "./model-capability-test";
+import { SearchBackendsSection } from "./search-backends";
 
 /** Short lists are scanned by eye; search appears past this many items. */
 const searchThreshold = 6;
@@ -203,6 +206,11 @@ export function ProvidersPage() {
             )}
           </>
         )}
+        {canManage && (
+          <div className="mt-8">
+            <SearchBackendsSection state={state} />
+          </div>
+        )}
       </CatalogBoundary>
       <ProviderSheet
         state={state}
@@ -228,6 +236,7 @@ function ProviderCard({
   provider: Provider;
 }) {
   const { copy } = state;
+  const text = useProviderCopy();
   const models =
     state.query.data?.models.filter((m) => m.providerId === provider.id) ?? [];
   return (
@@ -237,9 +246,14 @@ function ProviderCard({
           <EntityIcon>
             <Cpu aria-hidden="true" />
           </EntityIcon>
-          {!provider.enabled && (
-            <StatusBadge tone="neutral">{copy.paused}</StatusBadge>
-          )}
+          <div className="flex flex-wrap justify-end gap-1">
+            {provider.free && (
+              <Badge variant="secondary">{text.freeBadge}</Badge>
+            )}
+            {!provider.enabled && (
+              <StatusBadge tone="neutral">{copy.paused}</StatusBadge>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -256,6 +270,14 @@ function ProviderCard({
           <span className="truncate text-sm text-muted-foreground">
             {host(provider.url)}
           </span>
+          {provider.dataHandling && (
+            <p
+              className="line-clamp-2 text-xs text-muted-foreground"
+              title={provider.dataHandling}
+            >
+              {provider.dataHandling}
+            </p>
+          )}
         </div>
       </CardContent>
       <CardFooter className="mt-auto">
@@ -286,6 +308,7 @@ export function ProviderDetailPage() {
     forbidden || !state.query.data?.canManage ? undefined : provider;
   const [editing, setEditing] = useState(false);
   const { language } = useAdmin();
+  const providerText = useProviderCopy();
   return (
     <>
       <PageHeader
@@ -304,6 +327,9 @@ export function ProviderDetailPage() {
             <>
               {!visibleProvider.enabled && (
                 <StatusBadge tone="neutral">{state.copy.paused}</StatusBadge>
+              )}
+              {visibleProvider.free && (
+                <Badge variant="secondary">{providerText.freeBadge}</Badge>
               )}
               <Progress
                 className="w-16"
@@ -459,143 +485,11 @@ function ProviderSheet({
             provider={provider}
             close={() => onOpenChange(false)}
             saved={saved}
+            errors={<EditorError state={state} />}
           />
         )}
       </SheetContent>
     </Sheet>
-  );
-}
-
-function ProviderForm({
-  state,
-  provider,
-  close,
-  saved,
-}: {
-  state: CatalogState;
-  provider?: Provider;
-  close: () => void;
-  saved: (id: string) => void;
-}) {
-  const { copy } = state;
-  const [value, setValue] = useState(
-    provider
-      ? {
-          name: provider.name,
-          url: provider.url,
-          enabled: provider.enabled,
-          dailyRequestLimit: provider.dailyRequestLimit,
-        }
-      : {
-          name: "",
-          url: "https://openrouter.ai/api/v1",
-          enabled: true,
-          dailyRequestLimit: 1000,
-        },
-  );
-  const [revision] = useState(provider?.revision ?? 0),
-    [key, setKey] = useState("");
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    const settings = ProviderSettings.safeParse(value);
-    if (!settings.success) {
-      state.setError(copy.invalid);
-      return;
-    }
-    const result = await state.mutate("command", {
-      type: "saveProvider",
-      ...(provider ? { id: provider.id } : {}),
-      revision,
-      settings: settings.data,
-      ...(key ? { apiKey: key } : {}),
-    });
-    if (result && typeof result === "object" && "id" in result) {
-      setKey("");
-      saved(String(result.id));
-    }
-  }
-  return (
-    <form
-      className="flex min-h-0 flex-1 flex-col"
-      onSubmit={(e) => void submit(e)}
-    >
-      <fieldset disabled={state.busy} className="contents">
-        <div className="min-h-0 flex-1 overflow-y-auto px-4">
-          <EditorError state={state} />
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="provider-name">{copy.name}</FieldLabel>
-              <Input
-                id="provider-name"
-                value={value.name}
-                onChange={(e) => setValue({ ...value, name: e.target.value })}
-                required
-                maxLength={100}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="provider-url">{copy.providerUrl}</FieldLabel>
-              <Input
-                id="provider-url"
-                type="url"
-                value={value.url}
-                onChange={(e) => setValue({ ...value, url: e.target.value })}
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="provider-key">{copy.key}</FieldLabel>
-              <Input
-                id="provider-key"
-                type="password"
-                autoComplete="new-password"
-                placeholder={provider?.hasCredential ? "••••••••" : undefined}
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="provider-limit">{copy.budget}</FieldLabel>
-              <Input
-                id="provider-limit"
-                type="number"
-                min={1}
-                max={100000}
-                value={value.dailyRequestLimit}
-                onChange={(e) =>
-                  setValue({
-                    ...value,
-                    dailyRequestLimit: Number(e.target.value),
-                  })
-                }
-                required
-              />
-            </Field>
-            <Field orientation="horizontal">
-              <FieldContent>
-                <FieldLabel htmlFor="provider-enabled">
-                  {copy.enabled}
-                </FieldLabel>
-              </FieldContent>
-              <Switch
-                id="provider-enabled"
-                checked={value.enabled}
-                onCheckedChange={(v) => setValue({ ...value, enabled: v })}
-              />
-            </Field>
-          </FieldGroup>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t p-4">
-          <Button type="button" variant="ghost" onClick={close}>
-            {copy.cancel}
-          </Button>
-          <Button type="submit">
-            {state.busy && <Spinner data-icon="inline-start" />}
-            {provider ? copy.save : copy.addProvider}
-          </Button>
-        </div>
-      </fieldset>
-    </form>
   );
 }
 
@@ -607,9 +501,9 @@ function ProviderDetail({
   provider: Provider;
 }) {
   const { copy } = state;
+  const providerText = useProviderCopy();
   const [modelEditor, setModelEditor] = useState<string | null>(null),
-    [catalogOpen, setCatalogOpen] = useState(false),
-    [modelSeed, setModelSeed] = useState<DiscoveredModel | undefined>();
+    [catalogOpen, setCatalogOpen] = useState(false);
   const [deletingModel, setDeletingModel] = useState<CatalogModel | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
@@ -667,13 +561,20 @@ function ProviderDetail({
   function editModel(id: string, trigger: HTMLElement | null) {
     editorTrigger.current = trigger;
     state.setError(null);
-    setModelSeed(undefined);
     setCatalogOpen(false);
     setModelEditor(id);
   }
   const editedModel = models.find((model) => model.id === modelEditor);
   return (
     <div className="flex min-w-0 flex-col gap-8">
+      {provider.dataHandling && (
+        <Alert>
+          <AlertDescription>
+            <span className="font-medium">{providerText.dataHandling}: </span>
+            {provider.dataHandling}
+          </AlertDescription>
+        </Alert>
+      )}
       <Section
         title={copy.models}
         count={models.length}
@@ -911,13 +812,6 @@ function ProviderDetail({
               state={state}
               provider={provider}
               onClose={() => setCatalogOpen(false)}
-              onConfigure={(model) => {
-                editorTrigger.current = null;
-                state.setError(null);
-                setModelSeed(model);
-                setCatalogOpen(false);
-                setModelEditor("new");
-              }}
             />
           )}
         </SheetContent>
@@ -965,8 +859,7 @@ function ProviderDetail({
           </SheetHeader>
           {modelEditor && (
             <ModelForm
-              key={`${modelEditor}:${modelSeed?.model ?? ""}`}
-              seed={modelSeed}
+              key={modelEditor}
               state={state}
               provider={provider}
               model={editedModel}
@@ -1004,6 +897,7 @@ function Capabilities({
   model: CatalogModel;
   copy: CatalogState["copy"];
 }) {
+  const text = useProviderCopy();
   const labels = [
     m.kind === "router" && copy.routerModel,
     m.kind === "transcription" && copy.transcriptionModel,
@@ -1011,6 +905,9 @@ function Capabilities({
     (m.kind === "chat" || m.kind === "router") && m.tools && copy.tools,
     (m.audioOutput || m.kind === "speech") && copy.audioOutput,
     m.kind === "chat" && m.audioInput && copy.audioInput,
+    (m.kind === "chat" || m.kind === "router") &&
+      m.imageInput &&
+      text.imageInput,
   ].filter((label): label is string => !!label);
   return (
     <div className="flex flex-wrap gap-1">
@@ -1075,16 +972,15 @@ function ModelForm({
   state,
   provider,
   model,
-  seed,
   close,
 }: {
   state: CatalogState;
   provider: Provider;
   model?: CatalogModel;
-  seed?: DiscoveredModel;
   close: () => void;
 }) {
   const { copy } = state;
+  const text = useProviderCopy();
   const [value, setValue] = useState(
     model
       ? {
@@ -1095,18 +991,20 @@ function ModelForm({
           tools: model.tools,
           audioInput: model.audioInput,
           audioOutput: model.audioOutput,
+          imageInput: model.imageInput ?? false,
           kind: model.kind,
           voices: model.voices ?? [],
         }
       : {
           providerId: provider.id,
-          name: seed?.name ?? "",
-          model: seed?.model ?? "",
+          name: "",
+          model: "",
           enabled: true,
-          tools: seed?.tools === true,
-          audioInput: seed?.audioInput === true,
-          audioOutput: seed?.audioOutput === true,
-          kind: seed?.kind ?? ("chat" as CatalogModel["kind"]),
+          tools: false,
+          audioInput: false,
+          audioOutput: false,
+          imageInput: false,
+          kind: "chat" as CatalogModel["kind"],
           voices: [] as NonNullable<CatalogModel["voices"]>,
         },
   );
@@ -1130,6 +1028,7 @@ function ModelForm({
             tools: false,
             audioInput: false,
             audioOutput: kind === "speech",
+            imageInput: false,
           }
         : {}),
     });
@@ -1235,6 +1134,16 @@ function ModelForm({
                     />
                   </div>
                 )}
+                <div className="px-4 py-3">
+                  <SwitchField
+                    id="model-image"
+                    label={text.imageInput}
+                    checked={value.imageInput}
+                    onChange={(imageInput) =>
+                      setValue({ ...value, imageInput })
+                    }
+                  />
+                </div>
                 {value.kind === "chat" && (
                   <div className="px-4 py-3">
                     <SwitchField
@@ -1261,12 +1170,13 @@ function ModelForm({
                 <FieldDescription>{copy.voicesHint}</FieldDescription>
               </Field>
             )}
-            {(value.kind === "chat" || value.kind === "router") &&
-              seed?.tools === null && (
-                <Alert>
-                  <AlertDescription>{copy.toolUnknownHint}</AlertDescription>
-                </Alert>
-              )}
+            {model && (
+              <ModelCapabilityTest
+                state={state}
+                model={model}
+                onApply={(declared) => setValue({ ...value, ...declared })}
+              />
+            )}
             <SwitchField
               id="model-enabled"
               label={copy.enabled}
@@ -1338,8 +1248,9 @@ export function ModelSelect({
         (p) =>
           p.id === m.providerId &&
           p.enabled &&
-          (capability === "tools" ||
-            p.url.replace(/\/$/, "") === "https://openrouter.ai/api/v1"),
+          // Decision models need OpenRouter's decisions API; audio works
+          // through the standard endpoints of any provider.
+          (capability !== "decision" || isOpenRouterProvider(p)),
       ),
   );
   const missing =

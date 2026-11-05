@@ -13,6 +13,7 @@ export function normalizeModelCapabilities<
     tools: boolean | null;
     audioInput: boolean | null;
     audioOutput?: boolean | null;
+    imageInput?: boolean | null;
     voices?: { voice: string; label: string }[];
   },
 >(value: T): T {
@@ -20,6 +21,8 @@ export function normalizeModelCapabilities<
   const speaks = kind === "speech" || (kind === "chat" && !!value.audioOutput);
   const voiced =
     value.voices && !speaks ? { ...value, voices: [] } : { ...value };
+  // Image input is kept only where it was given, so stored models without it stay as they were.
+  const noImage = "imageInput" in voiced ? { imageInput: false } : {};
   if (kind === "speech")
     return {
       ...voiced,
@@ -27,6 +30,7 @@ export function normalizeModelCapabilities<
       tools: false,
       audioInput: false,
       audioOutput: true,
+      ...noImage,
     };
   if (kind === "decision" || kind === "transcription")
     return {
@@ -35,6 +39,7 @@ export function normalizeModelCapabilities<
       tools: false,
       audioInput: false,
       audioOutput: false,
+      ...noImage,
     };
   if (kind === "router")
     return { ...voiced, kind, audioInput: false, audioOutput: false };

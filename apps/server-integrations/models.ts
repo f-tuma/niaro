@@ -11,10 +11,12 @@ import {
   type IntegrationTransport,
   type DispatchGuard,
 } from "./transport";
+import { normalizeModelCapabilities } from "./model-capabilities";
 import {
-  normalizeModelCapabilities,
-  OPENROUTER_URL,
-} from "./model-capabilities";
+  isOpenRouterDialect,
+  providerEndpoint,
+  providerHeaders,
+} from "./provider-request";
 const Completion = z.object({
   choices: z
     .array(
@@ -61,9 +63,9 @@ export async function complete(
   beforeDispatch: DispatchGuard,
 ) {
   const response = await transport({
-    url: provider.url.replace(/\/$/, "") + "/chat/completions",
+    url: providerEndpoint(provider, "/chat/completions"),
     method: "POST",
-    headers: key ? { Authorization: `Bearer ${key}` } : {},
+    headers: providerHeaders(provider, key),
     body: {
       model: model.model,
       messages,
@@ -108,16 +110,17 @@ export async function listModels(
   signal: AbortSignal,
   beforeDispatch: DispatchGuard,
 ) {
-  const base = provider.url.replace(/\/$/, "");
+  // Plain `GET /models` is all an OpenAI-compatible server must offer;
+  // OpenRouter lists its transcription and speech models separately.
   const pages = await Promise.all(
-    (base === OPENROUTER_URL
+    (isOpenRouterDialect(provider)
       ? ["", "?output_modalities=transcription", "?output_modalities=speech"]
       : [""]
     ).map(async (query) =>
       jsonResponse(
         await transport({
-          url: base + "/models" + query,
-          headers: key ? { Authorization: `Bearer ${key}` } : {},
+          url: providerEndpoint(provider, "/models") + query,
+          headers: providerHeaders(provider, key),
           signal,
           beforeDispatch,
         }),
@@ -129,7 +132,9 @@ export async function listModels(
       .array(
         z.object({
           id: z.string().min(1).max(200),
-          name: z.string().max(200).optional(),
+          // Anthropic names a model `display_name`; most servers send none.
+          name: z.string().max(200).nullish().catch(undefined),
+          display_name: z.string().max(200).nullish().catch(undefined),
           supported_parameters: z.array(z.string().max(100)).max(200).nullish(),
           architecture: z
             .object({
@@ -139,6 +144,8 @@ export async function listModels(
             })
             .nullish(),
           context_length: z.number().int().nonnegative().nullish(),
+          // vLLM's name for the context length.
+          max_model_len: z.number().int().nonnegative().nullish().catch(null),
           pricing: z
             .object({
               prompt: z.string().max(40).nullish(),
@@ -170,11 +177,15 @@ export async function listModels(
                   ? "speech"
                   : "chat",
           model: model.id,
-          name: (model.name?.trim() || model.id).slice(0, 100),
+          name: (
+            model.name?.trim() ||
+            model.display_name?.trim() ||
+            model.id
+          ).slice(0, 100),
           tools: model.supported_parameters
             ? model.supported_parameters.includes("tools")
             : null,
-          contextLength: model.context_length || null,
+          contextLength: model.context_length || model.max_model_len || null,
           audioOutput: model.architecture?.output_modalities
             ? model.architecture.output_modalities.includes("speech") ||
               (model.architecture.output_modalities.includes("audio") &&
@@ -183,7 +194,12 @@ export async function listModels(
             : null,
           audioInput:
             model.architecture?.input_modalities?.includes("audio") ?? null,
-          pricing: listPrice(model.pricing),
+          imageInput:
+            model.architecture?.input_modalities?.includes("image") ?? null,
+          // A free provider's models cost nothing, whatever it publishes.
+          pricing: provider.free
+            ? { inputMicrosPerMillion: 0, outputMicrosPerMillion: 0 }
+            : listPrice(model.pricing),
         }),
       );
   }

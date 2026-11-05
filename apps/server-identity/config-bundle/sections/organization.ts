@@ -3,7 +3,9 @@ import { IdentityName } from "../../../../packages/protocol/identity";
 import { ServerSettingsSchema } from "../../../../packages/protocol/server-settings";
 import {
   CatalogModelSettings,
+  MAX_SEARCH_BACKENDS,
   ProviderSettings,
+  SearchBackendSettings,
 } from "../../../../packages/protocol/service-catalog";
 import {
   HostedBuiltinId,
@@ -58,11 +60,38 @@ export const serverSettingsSection = organizationSection({
   },
 });
 
-/** AI providers: address and limits; never the key, which stays required. */
+/**
+ * AI providers: address, limits, key handling, dialect, free choice and
+ * data-handling note; never the key, which is entered on the server it
+ * runs on. `keyRequired` is false only for a provider without authentication.
+ */
 const ProviderItem = ProviderSettings.extend({
-  /** Always true: a provider's key is entered on the server it runs on. */
-  keyRequired: z.literal(true),
-});
+  keyRequired: z.boolean(),
+}).refine((item) => item.keyRequired === (item.auth?.type !== "none"));
+/** The settings a provider was saved with, without what the server adds. */
+function providerSettings(provider: {
+  name: string;
+  url: string;
+  enabled: boolean;
+  dailyRequestLimit: number;
+  preset?: string;
+  auth?: unknown;
+  dialect?: string;
+  free?: boolean;
+  dataHandling?: string;
+}) {
+  return ProviderSettings.parse({
+    name: provider.name,
+    url: provider.url,
+    enabled: provider.enabled,
+    dailyRequestLimit: provider.dailyRequestLimit,
+    preset: provider.preset,
+    auth: provider.auth,
+    dialect: provider.dialect,
+    free: provider.free,
+    dataHandling: provider.dataHandling,
+  });
+}
 export const providersSection = organizationSection({
   key: "providers",
   schema: z.strictObject({
@@ -75,11 +104,8 @@ export const providersSection = organizationSection({
   export: (ctx) => ({
     version: 1 as const,
     items: modelRefs(ctx).providers.map((p) => ({
-      name: p.name,
-      url: p.url,
-      enabled: p.enabled,
-      dailyRequestLimit: p.dailyRequestLimit,
-      keyRequired: true as const,
+      ...providerSettings(p),
+      keyRequired: p.auth?.type !== "none",
     })),
   }),
   apply: (ctx, data, outcome) => {
@@ -98,13 +124,13 @@ export const providersSection = organizationSection({
           });
           return "added";
         }
-        const current = {
-          name: existing.name,
-          url: existing.url,
-          enabled: existing.enabled,
-          dailyRequestLimit: existing.dailyRequestLimit,
-        };
-        if (same(current, settings)) return "unchanged";
+        const current = providerSettings(existing);
+        // A field an older bundle does not carry keeps its value here.
+        const desired = providerSettings({
+          ...current,
+          ...stripUndefined(settings),
+        });
+        if (same(current, desired)) return "unchanged";
         // A stored key must never be sent to an address it was not given for.
         if (existing.hasCredential && existing.url !== settings.url)
           throw new ConfigConflict("address_changed");
@@ -113,14 +139,93 @@ export const providersSection = organizationSection({
           type: "saveProvider",
           id: existing.id,
           revision: existing.revision,
-          settings,
+          settings: desired,
         });
         return "changed";
       });
       const stored = modelRefs(ctx).providers.find(
         (p) => lower(p.name) === lower(item.name),
       );
-      if (done && stored && !stored.hasCredential)
+      if (
+        done &&
+        stored &&
+        !stored.hasCredential &&
+        stored.auth?.type !== "none"
+      )
+        outcome.needsKey.push(item.name);
+    }
+  },
+});
+const stripUndefined = <T extends object>(value: T) =>
+  Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined),
+  ) as Partial<T>;
+
+/**
+ * Web search backends: kind, address and state; never the key. Brave and
+ * Tavily always need one; SearXNG only when the exporting server stored one.
+ */
+const SearchBackendItem = SearchBackendSettings.extend({
+  keyRequired: z.boolean(),
+});
+export const searchBackendsSection = organizationSection({
+  key: "searchBackends",
+  schema: z.strictObject({
+    version: z.literal(1),
+    items: z
+      .array(SearchBackendItem)
+      .max(MAX_SEARCH_BACKENDS)
+      .refine(uniqueBy((b: { name: string }) => b.name)),
+  }),
+  export: (ctx) => ({
+    version: 1 as const,
+    items: ctx.catalog.searchBackends(ctx.organizationId).map((backend) => ({
+      name: backend.name,
+      kind: backend.kind,
+      url: backend.url,
+      enabled: backend.enabled,
+      keyRequired: backend.kind !== "searxng" || backend.hasCredential,
+    })),
+  }),
+  apply: (ctx, data, outcome) => {
+    for (const item of data.items) {
+      const { keyRequired, ...settings } = item;
+      const done = outcome.item(item.name, () => {
+        const existing = ctx.catalog
+          .searchBackends(ctx.organizationId)
+          .find((b) => lower(b.name) === lower(item.name));
+        if (!existing) {
+          ctx.catalog.command({
+            ...orgTarget(ctx),
+            type: "saveSearchBackend",
+            revision: 0,
+            settings,
+          });
+          return "added";
+        }
+        const current = {
+          name: existing.name,
+          kind: existing.kind,
+          url: existing.url,
+          enabled: existing.enabled,
+        };
+        if (same(current, settings)) return "unchanged";
+        // A stored key must never be sent to an address it was not given for.
+        if (existing.hasCredential && existing.url !== settings.url)
+          throw new ConfigConflict("address_changed");
+        ctx.catalog.command({
+          ...orgTarget(ctx),
+          type: "saveSearchBackend",
+          id: existing.id,
+          revision: existing.revision,
+          settings,
+        });
+        return "changed";
+      });
+      const stored = ctx.catalog
+        .searchBackends(ctx.organizationId)
+        .find((b) => lower(b.name) === lower(item.name));
+      if (keyRequired && done && stored && !stored.hasCredential)
         outcome.needsKey.push(item.name);
     }
   },

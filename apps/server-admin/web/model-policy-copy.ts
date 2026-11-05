@@ -31,7 +31,7 @@ const en = {
     selector: "Picks services and actions",
     background: "Widgets, memory, meetings, action names",
     designer: "Process proposals and the designer",
-    web_search: "OpenRouter chat models",
+    web_search: "OpenRouter-format chat models, unless a search backend is set",
     voice_input: "Audio input or transcription models",
     meeting_transcription: "Transcription models",
     speech: "Audio output or speech models",
@@ -80,6 +80,10 @@ const en = {
   speechVoice: "Voice",
   speechVoiceDefault: "The model's first voice",
   speechRetention: "Require zero data retention",
+  webSearch: "Web search",
+  webSearchMeta:
+    "A search backend, or the provider's own search with the web search models.",
+  webSearchProvider: "Provider's own search",
   speechRetentionMeta:
     "If no provider of the model keeps zero retention, replies are not read aloud and people see a privacy notice.",
   voiceSetup: "Voice assets not installed",
@@ -127,7 +131,8 @@ const cs: ModelPolicyCopy = {
     selector: "Vybírá služby a akce",
     background: "Widgety, paměť, schůzky, názvy akcí",
     designer: "Návrhy procesů a návrhář",
-    web_search: "Chatové modely OpenRouteru",
+    web_search:
+      "Chatové modely ve formátu OpenRouter, pokud není nastaven vyhledávač",
     voice_input: "Modely se zvukovým vstupem nebo přepisem",
     meeting_transcription: "Modely pro přepis",
     speech: "Modely se zvukovým výstupem nebo řečí",
@@ -177,6 +182,10 @@ const cs: ModelPolicyCopy = {
   speechVoice: "Hlas",
   speechVoiceDefault: "První hlas modelu",
   speechRetention: "Vyžadovat nulové uchovávání dat",
+  webSearch: "Hledání na webu",
+  webSearchMeta:
+    "Vyhledávač, nebo vlastní hledání poskytovatele s modely pro hledání na webu.",
+  webSearchProvider: "Vlastní hledání poskytovatele",
   speechRetentionMeta:
     "Když žádný poskytovatel modelu nulové uchovávání nenabízí, odpovědi se nečtou nahlas a lidé uvidí upozornění na soukromí.",
   voiceSetup: "Hlasová data nejsou nainstalovaná",

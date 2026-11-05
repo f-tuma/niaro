@@ -14,8 +14,10 @@ async function request(path: string, body?: unknown, signal?: AbortSignal) {
     credentials: "same-origin",
     signal: AbortSignal.any([
       AbortSignal.timeout(
-        pathname === "api/identity/catalog/processes/design/turns" &&
-          body !== undefined
+        (pathname === "api/identity/catalog/processes/design/turns" &&
+          body !== undefined) ||
+          // A capability test waits for a few model calls, local ones included.
+          pathname === "api/identity/catalog/models/test"
           ? 305_000
           : pathname === "api/identity/catalog/discover" ||
               (pathname === "api/identity/catalog/processes/tests/native" &&

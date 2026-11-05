@@ -5404,7 +5404,8 @@ export class IdentityService {
         AbortSignal.timeout(
           // A designer turn with a reasoning model can take several calls of
           // a minute or more; ending it early leaves a call of unknown cost.
-          design
+          // A capability test makes up to four calls of a minute at most.
+          design || url.pathname === "/admin/api/identity/catalog/models/test"
             ? 300_000
             : pinnedAccount ||
                 url.pathname === "/admin/api/identity/catalog/discover"

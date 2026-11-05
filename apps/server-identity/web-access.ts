@@ -10,13 +10,19 @@ import {
   type DispatchGuard,
   type IntegrationTransport,
 } from "../server-integrations/transport";
+import {
+  isOpenRouterDialect,
+  providerEndpoint,
+  providerHeaders,
+} from "../server-integrations/provider-request";
+import type { SearchBackend } from "../../packages/protocol/service-catalog";
 import { htmlToDoc } from "./hub-open";
 import type { HubDocNode } from "../../packages/protocol/hub";
 
 /**
  * The server side of the plugins' web capability (ctx.web): one public page
  * read through the integration transport, and a web search through the
- * workspace's OpenRouter model. Everything here is bounded and returns
+ * workspace's search backend or its provider's own search (OpenRouter). Everything here is bounded and returns
  * plain values; the agent domain counts the calls, takes the budget and
  * marks every result as untrusted. See openspec/specs/web-access/spec.md.
  */
@@ -436,17 +442,16 @@ export async function searchWeb(
   beforeDispatch: DispatchGuard,
 ): Promise<{ results: WebSearchResult[]; model: string }> {
   if (
-    selected.provider.url.replace(/\/$/, "") !==
-      "https://openrouter.ai/api/v1" ||
+    !isOpenRouterDialect(selected.provider) ||
     !["chat", "router"].includes(selected.model.kind)
   )
     throw new WebError("web_search_model_unavailable");
   const limit = Math.max(1, Math.min(input.limit, WEB_LIMITS.searchResults));
   const raw = jsonResponse(
     await transport({
-      url: "https://openrouter.ai/api/v1/chat/completions",
+      url: providerEndpoint(selected.provider, "/chat/completions"),
       method: "POST",
-      headers: { Authorization: `Bearer ${selected.key}` },
+      headers: providerHeaders(selected.provider, selected.key),
       body: {
         model: selected.model.model,
         messages: [
@@ -483,17 +488,42 @@ export async function searchWeb(
     if (match && !Number.isNaN(Date.parse(match[2]!)))
       dates.set(match[1]!.replace(/#.*$/, ""), match[2]!);
   }
+  const results = collectResults(
+    (message.annotations ?? []).flatMap((entry) => {
+      const citation = Citation.safeParse(entry);
+      if (!citation.success) return [];
+      const { url, title, content } = citation.data.url_citation;
+      return [{ url, title, snippet: content }];
+    }),
+    { ...input, limit },
+    (href) => dates.get(href),
+  );
+  return { results, model: selected.model.model };
+}
+
+type Found = { url: string; title?: string; snippet?: string; date?: string };
+/**
+ * Search hits as results: http(s) only, without fragments, deduplicated,
+ * clipped, and dropped when a known date is older than the asked window.
+ */
+function collectResults(
+  found: Found[],
+  input: {
+    limit: number;
+    freshness?: keyof typeof FRESHNESS_DAYS;
+    now: number;
+  },
+  knownDate: (href: string) => string | undefined = () => undefined,
+) {
   const oldest = input.freshness
     ? input.now - FRESHNESS_DAYS[input.freshness] * 86_400_000
     : undefined;
   const seen = new Set<string>();
   const results: WebSearchResult[] = [];
-  for (const entry of message.annotations ?? []) {
-    const citation = Citation.safeParse(entry);
-    if (!citation.success) continue;
+  for (const entry of found) {
     let url: URL;
     try {
-      url = new URL(citation.data.url_citation.url);
+      url = new URL(entry.url);
     } catch {
       continue;
     }
@@ -502,23 +532,170 @@ export async function searchWeb(
       continue;
     if (seen.has(url.href)) continue;
     seen.add(url.href);
-    const date = dates.get(url.href);
+    const date = dayOf(entry.date) ?? knownDate(url.href);
     // A known date outside the asked window drops the result; unknown stays.
     if (date && oldest !== undefined && Date.parse(date) < oldest) continue;
     results.push({
       title: clip(
-        (citation.data.url_citation.title ?? "").replace(/\s+/g, " ").trim() ||
-          url.hostname,
+        (entry.title ?? "").replace(/\s+/g, " ").trim() || url.hostname,
         200,
       ),
       url: url.href,
-      snippet: clip(
-        (citation.data.url_citation.content ?? "").replace(/\s+/g, " ").trim(),
-        400,
-      ),
+      snippet: clip((entry.snippet ?? "").replace(/\s+/g, " ").trim(), 400),
       ...(date ? { date } : {}),
     });
-    if (results.length >= limit) break;
+    if (results.length >= input.limit) break;
   }
-  return { results, model: selected.model.model };
+  return results;
+}
+/** A backend's date (ISO or similar) as YYYY-MM-DD, when it is one. */
+function dayOf(value: string | undefined) {
+  if (!value) return undefined;
+  const time = Date.parse(value);
+  return Number.isNaN(time)
+    ? undefined
+    : new Date(time).toISOString().slice(0, 10);
+}
+
+// ---------------------------------------------------------------------------
+// Web search through a search backend of the organization: SearXNG, Brave or
+// Tavily, each through its documented JSON API. No model takes part; the key
+// (when the backend has one) goes only to the backend's own address.
+
+const text = z.string().max(20000).nullish().catch(undefined);
+const SearxReply = z.object({
+  results: z
+    .array(
+      z.object({
+        url: z.string().max(4000),
+        title: text,
+        content: text,
+        publishedDate: text,
+      }),
+    )
+    .max(500),
+});
+const BraveReply = z.object({
+  web: z
+    .object({
+      results: z
+        .array(
+          z.object({
+            url: z.string().max(4000),
+            title: text,
+            description: text,
+            page_age: text,
+          }),
+        )
+        .max(100),
+    })
+    .optional(),
+});
+const TavilyReply = z.object({
+  results: z
+    .array(
+      z.object({
+        url: z.string().max(4000),
+        title: text,
+        content: text,
+        published_date: text,
+      }),
+    )
+    .max(100),
+});
+const BRAVE_FRESHNESS = { day: "pd", week: "pw", month: "pm", year: "py" };
+
+export async function searchBackend(
+  transport: IntegrationTransport,
+  backend: Pick<SearchBackend, "kind" | "url" | "name">,
+  key: string,
+  input: {
+    query: string;
+    limit: number;
+    freshness?: keyof typeof FRESHNESS_DAYS;
+    now: number;
+  },
+  signal: AbortSignal,
+  beforeDispatch: DispatchGuard,
+): Promise<{ results: WebSearchResult[]; model: string }> {
+  const limit = Math.max(1, Math.min(input.limit, WEB_LIMITS.searchResults));
+  const base = backend.url.replace(/\/$/, "");
+  const common = {
+    timeoutMs: 30_000,
+    maxResponseBytes: 2 * 1024 * 1024,
+    signal,
+    beforeDispatch,
+  };
+  let found: Found[];
+  if (backend.kind === "searxng") {
+    const query = new URLSearchParams({ q: input.query, format: "json" });
+    if (input.freshness) query.set("time_range", input.freshness);
+    const reply = SearxReply.safeParse(
+      jsonResponse(
+        await transport({
+          ...common,
+          url: `${base}/search?${query}`,
+          headers: key ? { Authorization: `Bearer ${key}` } : {},
+        }),
+        [key],
+      ),
+    );
+    if (!reply.success) throw new WebError("web_search_invalid");
+    found = reply.data.results.map((r) => ({
+      url: r.url,
+      title: r.title ?? undefined,
+      snippet: r.content ?? undefined,
+      date: r.publishedDate ?? undefined,
+    }));
+  } else if (backend.kind === "brave") {
+    const query = new URLSearchParams({ q: input.query, count: String(limit) });
+    if (input.freshness)
+      query.set("freshness", BRAVE_FRESHNESS[input.freshness]);
+    const reply = BraveReply.safeParse(
+      jsonResponse(
+        await transport({
+          ...common,
+          url: `${base}/web/search?${query}`,
+          headers: { "X-Subscription-Token": key },
+        }),
+        [key],
+      ),
+    );
+    if (!reply.success) throw new WebError("web_search_invalid");
+    found = (reply.data.web?.results ?? []).map((r) => ({
+      url: r.url,
+      title: r.title ?? undefined,
+      snippet: r.description ?? undefined,
+      date: r.page_age ?? undefined,
+    }));
+  } else {
+    const reply = TavilyReply.safeParse(
+      jsonResponse(
+        await transport({
+          ...common,
+          url: `${base}/search`,
+          method: "POST",
+          headers: { Authorization: `Bearer ${key}` },
+          body: {
+            query: input.query,
+            max_results: limit,
+            search_depth: "basic",
+            ...(input.freshness ? { time_range: input.freshness } : {}),
+          },
+        }),
+        [key],
+      ),
+    );
+    if (!reply.success) throw new WebError("web_search_invalid");
+    found = reply.data.results.map((r) => ({
+      url: r.url,
+      title: r.title ?? undefined,
+      snippet: r.content ?? undefined,
+      date: r.published_date ?? undefined,
+    }));
+  }
+  return {
+    results: collectResults(found, { ...input, limit }),
+    model: `${backend.kind}:${backend.name}`.slice(0, 120),
+  };
 }

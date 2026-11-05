@@ -13,8 +13,64 @@ import {
   type IntegrationTransport,
   type DispatchGuard,
 } from "./transport";
-import { OPENROUTER_URL } from "./model-capabilities";
 import { providerFailure } from "./failures";
+import {
+  isOpenRouterDialect,
+  providerEndpoint,
+  providerHeaders,
+} from "./provider-request";
+
+type AudioFormat = "flac" | "mp3" | "wav";
+const AUDIO_TYPES: Record<AudioFormat, string> = {
+  flac: "audio/flac",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+};
+/**
+ * One `POST /audio/transcriptions` in the provider's dialect: OpenRouter
+ * takes the audio as JSON (`input_audio`), the OpenAI API and the servers
+ * that follow it as a multipart upload (`file`). Extra fields go along as
+ * given; arrays become repeated `name[]` parts in a multipart body.
+ */
+export function transcriptionRequest(
+  selected: { provider: Provider; key: string; model: CatalogModel },
+  audio: { data: Buffer; format: AudioFormat },
+  fields: Record<string, string | string[] | Record<string, unknown>> = {},
+) {
+  const url = providerEndpoint(selected.provider, "/audio/transcriptions");
+  const headers = providerHeaders(selected.provider, selected.key);
+  if (isOpenRouterDialect(selected.provider))
+    return {
+      url,
+      headers,
+      body: {
+        model: selected.model.model,
+        input_audio: {
+          data: audio.data.toString("base64"),
+          format: audio.format,
+        },
+        ...fields,
+      },
+    };
+  const parts: Record<string, string | string[]> = {};
+  for (const [name, value] of Object.entries(fields))
+    if (typeof value === "string") parts[name] = value;
+    else if (Array.isArray(value)) parts[`${name}[]`] = value;
+  return {
+    url,
+    headers,
+    bodyEncoding: "multipart" as const,
+    body: {
+      model: selected.model.model,
+      ...parts,
+      file: {
+        filename: `audio.${audio.format}`,
+        contentType: AUDIO_TYPES[audio.format],
+        data: audio.data,
+      },
+    },
+  };
+}
 
 const Reply = z.object({
   choices: z
@@ -45,58 +101,65 @@ export async function transcribeAudio(
 ) {
   const direct = selected.method === "transcription";
   if (
-    selected.provider.url.replace(/\/$/, "") !== OPENROUTER_URL ||
-    (direct
+    direct
       ? selected.model.kind !== "transcription"
-      : !selected.model.audioInput || selected.model.kind !== "chat")
+      : !selected.model.audioInput || selected.model.kind !== "chat"
   )
     throw new VoiceError("voice_unavailable", 503);
   if (!wav.length || wav.length > VOICE_BYTES)
     throw new VoiceError("voice_duration");
   signal.throwIfAborted();
   const audio = { data: wav.toString("base64"), format: "wav" };
+  const limits = {
+    method: "POST",
+    maxRequestBytes: VOICE_BODY_BYTES,
+    timeoutMs: direct ? 60000 : 45000,
+    maxResponseBytes: 65536,
+    signal,
+    beforeDispatch,
+  };
   const raw = jsonResponse(
-    await transport({
-      url:
-        OPENROUTER_URL +
-        (direct ? "/audio/transcriptions" : "/chat/completions"),
-      method: "POST",
-      headers: { Authorization: `Bearer ${selected.key}` },
-      maxRequestBytes: VOICE_BODY_BYTES,
-      timeoutMs: direct ? 60000 : 45000,
-      maxResponseBytes: 65536,
-      body: direct
+    await transport(
+      direct
         ? {
-            model: selected.model.model,
-            input_audio: audio,
+            ...limits,
             // Omit the optional spoken-language hint: `language` is the UI
             // locale, so forcing it would corrupt speech in another language.
             // STT has a distinct API contract; chat provider/ZDR routing flags are not supported here.
+            ...transcriptionRequest(selected, { data: wav, format: "wav" }),
           }
         : {
-            model: selected.model.model,
-            stream: false,
-            messages: [
-              { role: "system", content: transcriptionPrompts[language] },
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "input_audio",
-                    input_audio: audio,
-                  },
-                ],
-              },
-            ],
-            provider: {
-              require_parameters: true,
-              data_collection: "deny",
-              zdr: true,
+            ...limits,
+            url: providerEndpoint(selected.provider, "/chat/completions"),
+            headers: providerHeaders(selected.provider, selected.key),
+            body: {
+              model: selected.model.model,
+              stream: false,
+              messages: [
+                { role: "system", content: transcriptionPrompts[language] },
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "input_audio",
+                      input_audio: audio,
+                    },
+                  ],
+                },
+              ],
+              // OpenRouter's routing flags; other dialects would refuse the field.
+              ...(isOpenRouterDialect(selected.provider)
+                ? {
+                    provider: {
+                      require_parameters: true,
+                      data_collection: "deny",
+                      zdr: true,
+                    },
+                  }
+                : {}),
             },
           },
-      signal,
-      beforeDispatch,
-    }),
+    ),
   );
   if (direct) {
     const reply = z.object({ text: z.string().max(4000) }).safeParse(raw);
@@ -159,10 +222,7 @@ export async function transcribeMeetingChunk(
   signal: AbortSignal,
   beforeDispatch: DispatchGuard,
 ): Promise<MeetingChunkTranscript> {
-  if (
-    selected.provider.url.replace(/\/$/, "") !== OPENROUTER_URL ||
-    selected.model.kind !== "transcription"
-  )
+  if (selected.model.kind !== "transcription")
     throw new VoiceError("voice_unavailable", 503);
   if (
     !audio.data.length ||
@@ -172,27 +232,22 @@ export async function transcribeMeetingChunk(
   // Richest first. A provider that refuses a field gets the next, plainer
   // request; the last one is the request chat voice already sends to the
   // same model (STT endpoints may not accept the routing privacy flags).
+  // The privacy flags are OpenRouter's; other dialects never get them.
+  const flagged = isOpenRouterDialect(selected.provider);
   const variants = [
-    { verbose: true, prompt: !!prompt, flags: true },
-    ...(prompt ? [{ verbose: true, prompt: false, flags: true }] : []),
-    { verbose: false, prompt: false, flags: true },
-    { verbose: false, prompt: false, flags: false },
+    { verbose: true, prompt: !!prompt, flags: flagged },
+    ...(prompt ? [{ verbose: true, prompt: false, flags: flagged }] : []),
+    { verbose: false, prompt: false, flags: flagged },
+    ...(flagged ? [{ verbose: false, prompt: false, flags: false }] : []),
   ];
   for (const [attempt, variant] of variants.entries()) {
     signal.throwIfAborted();
     const response = await transport({
-      url: OPENROUTER_URL + "/audio/transcriptions",
       method: "POST",
-      headers: { Authorization: `Bearer ${selected.key}` },
       maxRequestBytes: MEETING_STT_REQUEST_BYTES,
       timeoutMs: MEETING_STT_TIMEOUT_MS,
       maxResponseBytes: 4 * 1024 * 1024,
-      body: {
-        model: selected.model.model,
-        input_audio: {
-          data: audio.data.toString("base64"),
-          format: audio.format,
-        },
+      ...transcriptionRequest(selected, audio, {
         ...(variant.verbose
           ? {
               response_format: "verbose_json",
@@ -204,7 +259,7 @@ export async function transcribeMeetingChunk(
         ...(variant.flags
           ? { provider: { zdr: true, data_collection: "deny" } }
           : {}),
-      },
+      }),
       signal,
       beforeDispatch,
     });

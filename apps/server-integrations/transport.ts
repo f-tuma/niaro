@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -9,6 +10,58 @@ import { providerFailure } from "./failures";
 import { IntegrationError, RequestNotSent } from "./integration-error";
 export { IntegrationError, RequestNotSent } from "./integration-error";
 export type DispatchGuard = (start: () => void) => Promise<void>;
+/** A file part of a multipart body. */
+export type MultipartFile = {
+  filename: string;
+  contentType: string;
+  data: Buffer;
+};
+/** Field name to text, repeated text or one file, in this order on the wire. */
+export type MultipartBody = Record<string, string | string[] | MultipartFile>;
+const fieldName = /^[a-z0-9_[\]-]{1,64}$/i;
+/** `multipart/form-data` of plain fields and files; names and file names are checked, never escaped. */
+export function encodeMultipart(body: MultipartBody) {
+  const boundary = `niaro-${randomBytes(12).toString("hex")}`;
+  const parts: Buffer[] = [];
+  const head = (lines: string[]) =>
+    Buffer.from(`--${boundary}\r\n${lines.join("\r\n")}\r\n\r\n`);
+  for (const [name, value] of Object.entries(body)) {
+    if (!fieldName.test(name))
+      throw new IntegrationError("integration_input_invalid");
+    if (typeof value === "string" || Array.isArray(value)) {
+      for (const item of typeof value === "string" ? [value] : value) {
+        if (typeof item !== "string")
+          throw new IntegrationError("integration_input_invalid");
+        parts.push(
+          head([`Content-Disposition: form-data; name="${name}"`]),
+          Buffer.from(item),
+          Buffer.from("\r\n"),
+        );
+      }
+      continue;
+    }
+    if (
+      !value ||
+      !Buffer.isBuffer(value.data) ||
+      !/^[a-z0-9._-]{1,64}$/i.test(value.filename) ||
+      !/^[a-z]+\/[a-z0-9.+-]+$/i.test(value.contentType)
+    )
+      throw new IntegrationError("integration_input_invalid");
+    parts.push(
+      head([
+        `Content-Disposition: form-data; name="${name}"; filename="${value.filename}"`,
+        `Content-Type: ${value.contentType}`,
+      ]),
+      value.data,
+      Buffer.from("\r\n"),
+    );
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+  return {
+    bytes: Buffer.concat(parts),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+}
 /** One request may wait this long at most; meeting records take minutes. */
 export const MAX_TRANSPORT_TIMEOUT_MS = 15 * 60_000;
 export type TransportRequest = {
@@ -21,7 +74,8 @@ export type TransportRequest = {
   method?: string;
   headers?: Record<string, string>;
   body?: unknown;
-  bodyEncoding?: "json" | "form";
+  /** `multipart`: the body is a `MultipartBody` (OpenAI's audio uploads). */
+  bodyEncoding?: "json" | "form" | "multipart";
   signal?: AbortSignal;
   beforeDispatch?: DispatchGuard;
   /**
@@ -125,16 +179,22 @@ export function createTransport(
         Object.values(input.body).some((value) => typeof value !== "string"))
     )
       throw new IntegrationError("integration_input_invalid");
+    const multipart =
+      input.bodyEncoding === "multipart" && input.body !== undefined
+        ? encodeMultipart(input.body as MultipartBody)
+        : undefined;
     const bytes =
       input.body === undefined
         ? undefined
-        : Buffer.from(
-            input.bodyEncoding === "form"
-              ? new URLSearchParams(
-                  input.body as Record<string, string>,
-                ).toString()
-              : JSON.stringify(input.body),
-          );
+        : multipart
+          ? multipart.bytes
+          : Buffer.from(
+              input.bodyEncoding === "form"
+                ? new URLSearchParams(
+                    input.body as Record<string, string>,
+                  ).toString()
+                : JSON.stringify(input.body),
+            );
     if (
       bytes &&
       bytes.length > Math.min(input.maxRequestBytes ?? 262144, 12 * 1024 * 1024)
@@ -161,8 +221,9 @@ export function createTransport(
               "Accept-Encoding": "identity",
               ...(bytes
                 ? {
-                    "Content-Type":
-                      input.bodyEncoding === "form"
+                    "Content-Type": multipart
+                      ? multipart.contentType
+                      : input.bodyEncoding === "form"
                         ? "application/x-www-form-urlencoded"
                         : "application/json",
                     "Content-Length": String(bytes.length),

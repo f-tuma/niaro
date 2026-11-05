@@ -19,6 +19,7 @@ import {
 import { ModelRef, modelRefs, serviceRefs } from "../refs";
 import {
   ConfigConflict,
+  lower,
   organizationSection,
   same,
   workspaceSection,
@@ -46,6 +47,8 @@ const EscalationRef = z.strictObject({
   tier: TierId.nullable(),
 });
 const RolesRef = z.partialRecord(ModelRole, RouteRef);
+/** The search backend by name; null is the provider's own search. */
+const WebSearchRef = z.strictObject({ backend: IdentityName.nullable() });
 
 const OrganizationPolicySection = z.strictObject({
   version: z.literal(1),
@@ -65,6 +68,7 @@ const OrganizationPolicySection = z.strictObject({
     selector: SelectorOptions,
     escalation: EscalationRef,
     presets: PresetOptions.optional(),
+    webSearch: WebSearchRef.optional(),
   }),
 });
 type OrganizationPolicySection = z.infer<typeof OrganizationPolicySection>;
@@ -81,6 +85,7 @@ const WorkspacePolicySection = z.strictObject({
     selector: SelectorOptions.optional(),
     escalation: EscalationRef.optional(),
     presets: PresetOptions.optional(),
+    webSearch: WebSearchRef.optional(),
   }),
 });
 type WorkspacePolicySection = z.infer<typeof WorkspacePolicySection>;
@@ -136,6 +141,28 @@ const escalationIn = (
   models: toIds(refs, value.models),
   tier: value.tier,
 });
+const webSearchOut = (
+  ctx: OrganizationContext,
+  value: PolicyOptionsValue["webSearch"],
+) => {
+  const backend = value.backendId
+    ? ctx.catalog
+        .searchBackends(ctx.organizationId)
+        .find((b) => b.id === value.backendId)
+    : undefined;
+  return { backend: backend?.name ?? null };
+};
+const webSearchIn = (
+  ctx: OrganizationContext,
+  value: z.infer<typeof WebSearchRef>,
+): PolicyOptionsValue["webSearch"] => {
+  if (!value.backend) return { backendId: null };
+  const backend = ctx.catalog
+    .searchBackends(ctx.organizationId)
+    .find((b) => lower(b.name) === lower(value.backend!));
+  if (!backend) throw new ConfigConflict("reference_missing");
+  return { backendId: backend.id };
+};
 /** The organization's stored default; it does not depend on a workspace. */
 const organizationPolicy = (ctx: OrganizationContext) =>
   ctx.catalog.modelPolicies(ctx.organizationId, ctx.organizationId)
@@ -169,6 +196,7 @@ export const modelPolicySection =
           selector: policy.options.selector,
           escalation: escalationOut(refs, policy.options.escalation),
           presets: policy.options.presets,
+          webSearch: webSearchOut(ctx, policy.options.webSearch),
         },
       };
     },
@@ -194,6 +222,9 @@ export const modelPolicySection =
                 enabled: false,
                 items: [],
               },
+              webSearch: data.options.webSearch
+                ? webSearchIn(ctx, data.options.webSearch)
+                : { backendId: null },
             },
           },
         );
@@ -221,7 +252,7 @@ export const routingSection = workspaceSection<WorkspacePolicySection>({
       ctx.organizationId,
       ctx.workspaceId,
     ).workspace;
-    const { escalation, ...options } = policy.options;
+    const { escalation, webSearch, ...options } = policy.options;
     return {
       version: 2,
       roles: rolesOut(refs, policy.roles),
@@ -235,6 +266,7 @@ export const routingSection = workspaceSection<WorkspacePolicySection>({
       options: {
         ...options,
         ...(escalation ? { escalation: escalationOut(refs, escalation) } : {}),
+        ...(webSearch ? { webSearch: webSearchOut(ctx, webSearch) } : {}),
       },
     };
   },
@@ -246,7 +278,7 @@ export const routingSection = workspaceSection<WorkspacePolicySection>({
         ctx.organizationId,
         ctx.workspaceId,
       ).workspace;
-      const { escalation, ...options } = data.options;
+      const { escalation, webSearch, ...options } = data.options;
       const desired: WorkspaceModelPolicyValue = parsed(WorkspaceModelPolicy, {
         roles: rolesIn(refs, data.roles),
         services: data.services.map((entry) => ({
@@ -256,6 +288,7 @@ export const routingSection = workspaceSection<WorkspacePolicySection>({
         options: {
           ...options,
           ...(escalation ? { escalation: escalationIn(refs, escalation) } : {}),
+          ...(webSearch ? { webSearch: webSearchIn(ctx, webSearch) } : {}),
         },
       });
       if (same(current.policy, desired)) return "unchanged";

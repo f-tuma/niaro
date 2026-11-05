@@ -64,6 +64,7 @@ import { CONTACT_CONTEXT_TTL } from "./contact-context";
 import {
   readWebPage,
   searchWeb,
+  searchBackend,
   webFailure,
   WebError,
   WEB_DATA_NOTE,
@@ -3374,6 +3375,70 @@ export function createMastraDomain(
         async search(input) {
           await count("searches");
           const started = performance.now();
+          // A search backend answers without a model: no inference call,
+          // only the per-run search limit counted above.
+          const backend = await ctx.serial(async () => {
+            await checkLocked();
+            try {
+              return store.resolveSearchBackend(
+                organizationId,
+                scope.workspaceId,
+              );
+            } catch (error) {
+              if (error instanceof IdentityError && error.status !== 403)
+                throw new WebError("web_search_unavailable");
+              throw error;
+            }
+          });
+          if (backend) {
+            try {
+              const found = await searchBackend(
+                controller.transport,
+                backend.backend,
+                backend.key,
+                {
+                  query: input.query,
+                  limit: input.limit,
+                  freshness: input.freshness,
+                  now: Date.parse(state.clock.referenceNow),
+                },
+                signal,
+                (start) =>
+                  ctx.serial(async () => {
+                    await checkLocked();
+                    ctx.validateRequest?.();
+                    start();
+                  }),
+              );
+              // Counts only: the query and the results never reach the log.
+              operatorLog("web_search", {
+                plugin,
+                workspace: scope.workspaceId,
+                backend: backend.backend.kind,
+                results: found.results.length,
+                ms: Math.round(performance.now() - started),
+              });
+              return found;
+            } catch (error) {
+              operatorLog(
+                "web_search",
+                {
+                  plugin,
+                  workspace: scope.workspaceId,
+                  backend: backend.backend.kind,
+                  error:
+                    error instanceof WebError ||
+                    error instanceof IdentityError ||
+                    error instanceof IntegrationError
+                      ? error.code
+                      : "unknown",
+                  ms: Math.round(performance.now() - started),
+                },
+                "warn",
+              );
+              throw error;
+            }
+          }
           const selected = await ctx.serial(async () => {
             await checkLocked();
             try {

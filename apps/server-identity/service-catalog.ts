@@ -21,6 +21,9 @@ import {
   ActionSettings,
   ProviderSchema,
   ProviderSettings,
+  SearchBackendSchema,
+  SearchBackendSettings,
+  MAX_SEARCH_BACKENDS,
   CatalogModelSchema,
   CatalogModelSettings,
   type CatalogModel,
@@ -38,6 +41,8 @@ import {
   normalizeModelCapabilities,
   OPENROUTER_URL,
 } from "../server-integrations/model-capabilities";
+import { isOpenRouterDialect } from "../server-integrations/provider-request";
+import { providerPreset } from "../../packages/protocol/providers";
 import {
   budgetedReach,
   MODEL_ROLES,
@@ -260,6 +265,7 @@ export class ServiceCatalogStore {
     this.inferenceBudget = new InferenceBudgetStore(db);
     this.outputVoice = new OutputVoiceStore(db);
     this.migrateLegacyRouting();
+    this.migrateProviders();
     // A write interrupted after dispatch must never be retried automatically.
     for (const row of db
       .prepare("SELECT id,data FROM agent_service_invocation")
@@ -285,6 +291,55 @@ export class ServiceCatalogStore {
           );
       }
     }
+  }
+  /**
+   * Providers saved before dialects existed get one: OpenRouter's canonical
+   * address keeps the OpenRouter dialect (and preset) it was used with,
+   * every other address the plain OpenAI dialect. Runs once: a migrated row
+   * has `dialect`. The revision stays, so prices pinned to it stay current.
+   */
+  private migrateProviders() {
+    for (const row of this.db
+      .prepare("SELECT id,data FROM agent_catalog WHERE kind='provider'")
+      .all()) {
+      const data = JSON.parse(String(row.data)) as Record<string, unknown>;
+      if (data.dialect) continue;
+      const openRouter =
+        typeof data.url === "string" &&
+        data.url.replace(/\/$/, "") === OPENROUTER_URL;
+      this.db.prepare("UPDATE agent_catalog SET data=? WHERE id=?").run(
+        JSON.stringify({
+          ...data,
+          dialect: openRouter ? "openrouter" : "openai",
+          ...(openRouter && !data.preset ? { preset: "openrouter" } : {}),
+        }),
+        String(row.id),
+      );
+    }
+  }
+  /**
+   * A provider as stored: a save without a dialect keeps the stored one,
+   * else takes its preset's, else OpenRouter's for OpenRouter's canonical
+   * address and the plain OpenAI dialect for any other.
+   */
+  private providerSettings(
+    org: string,
+    id: string | undefined,
+    settings: z.infer<typeof ProviderSettings>,
+  ) {
+    const stored = id
+      ? ProviderSettings.parse(JSON.parse(this.row(org, "provider", id).data))
+      : undefined;
+    return {
+      ...settings,
+      dialect:
+        settings.dialect ??
+        stored?.dialect ??
+        providerPreset(settings.preset)?.dialect ??
+        (settings.url.replace(/\/$/, "") === OPENROUTER_URL
+          ? "openrouter"
+          : "openai"),
+    };
   }
   /**
    * Routing of the old single-choice shape becomes a workspace policy, and
@@ -429,7 +484,8 @@ export class ServiceCatalogStore {
     id: string | undefined,
     revision: number,
     data: unknown,
-    key?: string,
+    /** Undefined keeps the stored key; null removes it. */
+    key?: string | null,
   ) {
     const previous = id ? this.row(scope, kind, id) : undefined;
     this.check(previous, revision);
@@ -437,7 +493,9 @@ export class ServiceCatalogStore {
     const secret =
       key === undefined
         ? (previous?.secret ?? null)
-        : this.seal(key, nextId, scope);
+        : key === null
+          ? null
+          : this.seal(key, nextId, scope);
     this.db
       .prepare(
         "INSERT INTO agent_catalog VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,data=excluded.data,secret=excluded.secret",
@@ -531,7 +589,7 @@ export class ServiceCatalogStore {
     const settings = ProviderSettings.parse(JSON.parse(row.data));
     return (
       settings.enabled &&
-      !!row.secret &&
+      (!!row.secret || settings.auth?.type === "none") &&
       this.usage(id) < settings.dailyRequestLimit
     );
   }
@@ -550,15 +608,23 @@ export class ServiceCatalogStore {
             : capability === "chat"
               ? model.kind === "chat" || model.kind === "router"
               : model.kind === "chat" && model[capability];
-    const openRouter = value.provider.url.replace(/\/$/, "") === OPENROUTER_URL;
+    // Decision models answer through OpenRouter's decisions API, and the
+    // provider's own web search is OpenRouter's web plugin. Audio works
+    // through the standard endpoints of any provider.
     if (
       !model.enabled ||
       !supported ||
       !value.provider.enabled ||
-      (capability !== "tools" && capability !== "any" && !openRouter)
+      ((capability === "decision" || capability === "chat") &&
+        !isOpenRouterDialect(value.provider))
     )
       throw new IdentityError(409, "catalog_model_unavailable");
     return { model, ...value };
+  }
+  /** A model and its provider for an administrator's capability test, enabled or not. */
+  modelForTest(orgId: string, id: string) {
+    const model = this.readModel(orgId, this.row(orgId, "model", id));
+    return { model, ...this.provider(orgId, model.providerId) };
   }
   /** The stored policies a workspace runs on: the organization's default and the workspace's overrides. */
   modelPolicies(orgId: string, workspaceId: string): StoredModelPolicies {
@@ -866,8 +932,7 @@ export class ServiceCatalogStore {
         !voice ||
         !model.enabled ||
         !provider.enabled ||
-        !row.secret ||
-        provider.url.replace(/\/$/, "") !== OPENROUTER_URL ||
+        (!row.secret && provider.auth?.type !== "none") ||
         (method === "reader"
           ? model.kind !== "chat" || !model.audioOutput
           : model.kind !== "speech")
@@ -899,6 +964,35 @@ export class ServiceCatalogStore {
     const selected = this.selectRoute(orgId, workspaceId, "web_search");
     if (!selected) throw new IdentityError(409, "catalog_model_unavailable");
     return selected;
+  }
+  /**
+   * The search backend web searches go to in this workspace, with its key;
+   * undefined when searches use the provider's own search. A disabled or
+   * removed backend fails the search rather than falling back to a model.
+   */
+  resolveSearchBackend(orgId: string, workspaceId: string) {
+    const id = this.routeOptions(orgId, workspaceId).webSearch.backendId;
+    if (!id) return undefined;
+    let row: Row;
+    try {
+      row = this.row(orgId, "search", id);
+    } catch {
+      throw new IdentityError(409, "catalog_search_unavailable");
+    }
+    const backend = this.searchBackendDto(row);
+    if (!backend.enabled || (backend.kind !== "searxng" && !row.secret))
+      throw new IdentityError(409, "catalog_search_unavailable");
+    return { backend, key: this.unseal(row) };
+  }
+  private searchBackendDto(row: Row) {
+    return SearchBackendSchema.parse({
+      ...this.dto(row),
+      hasCredential: !!row.secret,
+    });
+  }
+  /** The organization's search backends; never unseals a key. */
+  searchBackends(orgId: string) {
+    return this.rows(orgId, "search").map((row) => this.searchBackendDto(row));
   }
   /** Passive access decision shared by execution inventory and action dispatch. */
   serviceAllowed(
@@ -1362,6 +1456,7 @@ export class ServiceCatalogStore {
       models: manage
         ? this.rows(orgId, "model").map((r) => this.readModel(orgId, r))
         : [],
+      searchBackends: manage ? this.searchBackends(orgId) : [],
       policy: manage
         ? this.readModelPolicy(orgId, workspaceId)
         : policyView(
@@ -1856,18 +1951,55 @@ export class ServiceCatalogStore {
         this.personalPolicy.removeAction(ws, input.serviceId, input.id);
         this.bump(input.serviceId);
         return input.id;
-      case "saveProvider":
+      case "saveProvider": {
         validateEndpoint(input.settings.url, this.trustedOrigins);
         if (!input.id && this.rows(org, "provider").length >= 50)
           throw new IdentityError(409, "identity_limit");
+        const settings = this.providerSettings(org, input.id, input.settings);
         return this.save(
           org,
           "provider",
           input.id,
           input.revision,
-          input.settings,
+          settings,
+          // A provider without authentication keeps no key.
+          settings.auth?.type === "none" ? null : input.apiKey,
+        );
+      }
+      case "saveSearchBackend": {
+        validateEndpoint(input.settings.url, this.trustedOrigins);
+        if (!input.id && this.rows(org, "search").length >= MAX_SEARCH_BACKENDS)
+          throw new IdentityError(409, "identity_limit");
+        // Like a provider, a backend may be saved before its key is entered;
+        // Brave and Tavily then refuse searches until it is.
+        return this.save(
+          org,
+          "search",
+          input.id,
+          input.revision,
+          SearchBackendSettings.parse(input.settings),
           input.apiKey,
         );
+      }
+      case "removeSearchBackend": {
+        const policies = [
+          this.organizationPolicy(org).options.webSearch,
+          ...this.db
+            .prepare(
+              "SELECT r.data FROM agent_catalog_routing r JOIN agent_workspace w ON w.id=r.workspace_id WHERE w.organization_id=?",
+            )
+            .all(org)
+            .map(
+              (row) =>
+                WorkspaceModelPolicy.parse(JSON.parse(String(row.data))).options
+                  .webSearch,
+            ),
+        ];
+        if (policies.some((options) => options?.backendId === input.id))
+          throw new IdentityError(409, "catalog_search_in_use");
+        this.remove(org, "search", input.id, input.revision);
+        return input.id;
+      }
       case "removeProvider": {
         const models = this.rows(org, "model").filter(
           (r) => this.dto(r).providerId === input.id,
@@ -1985,6 +2117,7 @@ export class ServiceCatalogStore {
       throw new IdentityError(409, "catalog_conflict");
     for (const tier of policy.tiers)
       for (const id of tier.models) this.row(org, "model", id);
+    this.checkSearchBackend(org, policy.options.webSearch.backendId);
     const workspaces = this.db
       .prepare("SELECT id FROM agent_workspace WHERE organization_id=?")
       .all(org)
@@ -2033,6 +2166,7 @@ export class ServiceCatalogStore {
       throw new IdentityError(409, "catalog_conflict");
     for (const service of policy.services)
       this.row(ws, "service", service.serviceId);
+    this.checkSearchBackend(org, policy.options.webSearch?.backendId);
     this.validatePolicies(
       org,
       ws,
@@ -2054,6 +2188,15 @@ export class ServiceCatalogStore {
       )
       .run(ws, revision + 1, JSON.stringify(policy));
     return ws;
+  }
+  /** The search backend a policy names must be one of the organization's. */
+  private checkSearchBackend(org: string, id: string | null | undefined) {
+    if (!id) return;
+    try {
+      this.row(org, "search", id);
+    } catch {
+      throw new IdentityError(409, "catalog_search_unavailable");
+    }
   }
   /**
    * A workspace's policies after a save: the routes that changed name only

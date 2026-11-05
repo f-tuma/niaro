@@ -359,6 +359,7 @@ const openRouter = (kind: "chat" | "decision" = "chat") =>
       id: "TEST-provider",
       revision: 1,
       url: "https://openrouter.ai/api/v1",
+      dialect: "openrouter",
       enabled: true,
     },
     model: { id: "TEST-model", model: "TEST/search", kind, enabled: true },

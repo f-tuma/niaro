@@ -49,6 +49,7 @@ const selected: SpeechSelection = {
     revision: 1,
     name: "OR",
     url: "https://openrouter.ai/api/v1",
+    dialect: "openrouter",
     enabled: true,
     dailyRequestLimit: 10,
     hasCredential: true,

@@ -22,7 +22,9 @@ import {
 import type {
   Catalog,
   CatalogModel,
+  Provider,
 } from "../../../packages/protocol/service-catalog";
+import { isOpenRouterProvider } from "../../../packages/protocol/providers";
 import { InferenceBudgetPolicySchema } from "../../../packages/protocol/inference-budget";
 import { Button } from "@admin/components/ui/button";
 import { Badge } from "@admin/components/ui/badge";
@@ -67,21 +69,21 @@ import {
 } from "./catalog-shared";
 import { useModelPolicyCopy, type ModelPolicyCopy } from "./model-policy-copy";
 
-const OPENROUTER = "https://openrouter.ai/api/v1";
 type RouteKey = ModelRoleValue | "service" | "escalation";
 
 /**
  * Whether a catalog model can serve a role, as the server checks it: tool
  * models for chat work, decision or tool models for the checker and the
- * selector, OpenRouter models for audio and web search. Reserved roles take
- * any enabled model.
+ * selector, audio models of any provider for voice, and models of an
+ * OpenRouter-format provider for decisions and the provider's own web
+ * search. Reserved roles take any enabled model.
  */
 export function modelFits(
   key: RouteKey,
   model: CatalogModel,
-  providerUrl: string,
+  provider: Pick<Provider, "dialect">,
 ) {
-  const openRouter = providerUrl.replace(/\/$/, "") === OPENROUTER;
+  const openRouter = isOpenRouterProvider(provider);
   const tools =
     (model.kind === "chat" || model.kind === "router") && model.tools;
   switch (key) {
@@ -92,17 +94,14 @@ export function modelFits(
       return openRouter && (model.kind === "chat" || model.kind === "router");
     case "voice_input":
       return (
-        openRouter &&
-        ((model.kind === "chat" && model.audioInput) ||
-          model.kind === "transcription")
+        (model.kind === "chat" && model.audioInput) ||
+        model.kind === "transcription"
       );
     case "meeting_transcription":
-      return openRouter && model.kind === "transcription";
+      return model.kind === "transcription";
     case "speech":
       return (
-        openRouter &&
-        ((model.kind === "chat" && model.audioOutput) ||
-          model.kind === "speech")
+        (model.kind === "chat" && model.audioOutput) || model.kind === "speech"
       );
     case "embedding":
     case "vision":
@@ -175,9 +174,17 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
     catalog.services.map((service) => service.id),
   );
   const enforce = budget.data?.settings.mode === "enforce";
-  const priced = new Set(
-    budget.data?.settings.prices.map((price) => price.modelId) ?? [],
-  );
+  // The server prices a free provider's models at zero (its policy view
+  // already lists them); the catalog says the same while it loads.
+  const priced = new Set([
+    ...(budget.data?.settings.prices.map((price) => price.modelId) ?? []),
+    ...catalog.models
+      .filter(
+        (model) =>
+          catalog.providers.find((p) => p.id === model.providerId)?.free,
+      )
+      .map((model) => model.id),
+  ]);
   const unpriced = enforce
     ? [...budgetedReach(view.effective).keys()].filter((id) => !priced.has(id))
     : [];
@@ -551,6 +558,50 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
             />
           </SettingRow>
           <SettingRow
+            label={copy.webSearch}
+            meta={copy.webSearchMeta}
+            htmlFor="web-search-backend"
+            wide
+          >
+            <Select
+              disabled={state.busy}
+              value={
+                (tab === "organization"
+                  ? orgPolicy.options.webSearch.backendId
+                  : effective.webSearch.backendId) ?? "provider"
+              }
+              onValueChange={(next) => {
+                const webSearch = {
+                  backendId: next === "provider" ? null : next,
+                };
+                if (tab === "organization")
+                  setOrganization({
+                    ...orgPolicy,
+                    options: { ...orgPolicy.options, webSearch },
+                  });
+                else
+                  setWorkspace({
+                    ...wsPolicy,
+                    options: { ...wsPolicy.options, webSearch },
+                  });
+              }}
+            >
+              <SelectTrigger id="web-search-backend" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="provider">
+                  {copy.webSearchProvider}
+                </SelectItem>
+                {(catalog.searchBackends ?? []).map((backend) => (
+                  <SelectItem key={backend.id} value={backend.id}>
+                    {backend.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+          <SettingRow
             label={copy.speechRetention}
             meta={copy.speechRetentionMeta}
             htmlFor="speech-retention"
@@ -722,7 +773,7 @@ function RouteEditor({
       !!provider &&
       provider.enabled &&
       model.enabled &&
-      modelFits(routeKey, model, provider.url)
+      modelFits(routeKey, model, provider)
     );
   };
   const choices: ModelChoice[] = catalog.providers.flatMap((provider) =>

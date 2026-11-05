@@ -21,11 +21,23 @@ says where to click and what to enter. Console structure:
 
 ## AI providers and models
 
-1. **AI providers → Add provider**: name, API base URL, API key, optionally a
-   daily request limit. OpenRouter or any OpenAI-compatible API.
+1. **AI providers → Add provider**: pick a **Preset** (OpenRouter, OpenAI,
+   Anthropic, Gemini, Azure OpenAI, Ollama, LM Studio, vLLM, llama.cpp,
+   LocalAI or Custom). It fills the API base URL, **Key handling** (bearer
+   token, a named header such as Azure's `api-key`, or no key), **Request
+   format** (OpenAI-compatible or OpenRouter) and a **Data handling** note;
+   change anything afterwards. A local server's address must first be added
+   to the trusted origins in Settings. Turn on **Free or local** only when the
+   provider really charges nothing: its models then cost nothing under usage
+   limits. Decision models and the provider's own web search need the
+   OpenRouter format; voice, meetings and spoken replies work with any
+   provider through its standard audio endpoints.
 2. Open the provider → **Choose from catalog** and add the models you want, or
-   **Add model** to enter a model ID by hand. A model whose tool support is
-   unknown needs **Verify support** before it can run chat.
+   **Add model** to enter a model ID by hand. A server that publishes only
+   model IDs shows them as unknown; add them, open each model and press
+   **Test capabilities**. The test sends a few small requests (they count
+   against usage limits and the provider's daily requests); **Use these
+   results** sets tool calling, image and audio switches, then save.
 3. **Models** (`/admin/routing`): the **Organization default** tab sets the
    models every workspace uses; the **This workspace** tab overrides single
    roles. Each role (Chat, Checker, Service picker, Background work, Process
@@ -55,6 +67,10 @@ Under every answer, members see one quiet line with what the answer read
 and changed, the memories, skills, meetings and files it used, and the
 model that wrote it by the name you gave it on the Models page.
 
+Below the providers, **Search backends** keeps SearXNG, Brave or Tavily for web
+search; their keys are write-only and never exported. **Models → Settings → Web
+search** chooses one, or the provider's own search with the Web search models.
+
 Behavior: [models-and-providers](../../openspec/specs/models-and-providers/spec.md).
 
 ## Usage limits
@@ -64,7 +80,8 @@ Behavior: [models-and-providers](../../openspec/specs/models-and-providers/spec.
 1. **Fill from providers** copies the list prices the provider publishes
    (OpenRouter publishes most). Type the rest under **Model prices**, in USD
    per million tokens for **Input** and **Output**. A free model is an
-   explicit `0`.
+   explicit `0`; models of a provider marked **Free or local** show `0`
+   already.
 2. **Max request** is the largest request the model may receive (it may be
    its whole context window); **Max reply** the largest answer. Niaro sets
    no smaller allowance of its own, so a reasoning model can think through a
@@ -314,17 +331,21 @@ OAuth access lasts at most an hour; link again after it expires.
 ### Web search and reading
 
 **Built-in tools → Web**: _Enabled_, **Save changes**, per workspace. Settings
-on that page: search model (empty uses the chat model; it must be on an
-OpenRouter provider), search engine (`exa`, `native`, `auto`), results per
-search, page text length, zero data retention providers only. Server-wide
-defaults go in the profile under `plugins.settings.web`.
+on that page: search engine (`exa`, `native`, `auto`), results per search,
+page text length, zero data retention providers only. Server-wide defaults go
+in the profile under `plugins.settings.web`. Where searches go is set on
+**Models**: a search backend (SearXNG, Brave, Tavily), or the provider's own
+search with the Web search role, which must be on an OpenRouter-format
+provider.
 
-- **Costs.** A search is a model call of the run on the workspace's provider
-  key and counts against usage limits. With Exa, OpenRouter charges $0.007
-  per search with up to 10 results; native search passes the model
-  provider's price through. Check OpenRouter's pricing page before enabling.
-  A page read costs no model call; its text becomes input of the next call.
-- **Privacy.** Queries go to OpenRouter and its search engine. Page reads go
+- **Costs.** A search through the provider is a model call of the run on the
+  workspace's provider key and counts against usage limits. With Exa,
+  OpenRouter charges $0.007 per search with up to 10 results; native search
+  passes the model provider's price through. A search backend costs no model
+  call; its own plan applies. A page read costs no model call; its text
+  becomes input of the next call.
+- **Privacy.** Queries go to the search backend, or to OpenRouter and its
+  search engine. Page reads go
   from the server straight to the website, without cookies or sign-in; the
   site sees the server's address. The operator log records counts, hosts and
   status, never queries or page content.

@@ -33,8 +33,9 @@ export function setupChecklist(input: {
   invitations: number;
 }): SetupStep[] {
   const { catalog, budget } = input;
+  // A provider without authentication (a local server) needs no key.
   const providers = catalog.providers.filter(
-    (p) => p.enabled && p.hasCredential,
+    (p) => p.enabled && (p.hasCredential || p.auth?.type === "none"),
   );
   const usable = catalog.models.filter(
     (m) => m.enabled && providers.some((p) => p.id === m.providerId),

@@ -33,29 +33,37 @@ import { Spinner } from "@admin/components/ui/spinner";
 import { api } from "./lib/api";
 import { useAdmin } from "./context";
 import { catalogIssue, type CatalogState } from "./catalog-shared";
+import { useProviderCopy } from "./provider-copy";
 
+/** A model whose capabilities the provider does not publish (a plain
+ * `/v1/models` list): imported without tool calling, then tested. */
+const isUnknown = (model: DiscoveredModel) =>
+  model.kind === "chat" &&
+  model.tools === null &&
+  model.audioInput !== true &&
+  model.audioOutput !== true;
 const isImportable = (model: DiscoveredModel) =>
   model.kind === "decision" ||
   model.kind === "transcription" ||
   model.kind === "speech" ||
   model.audioOutput === true ||
   model.tools === true ||
+  isUnknown(model) ||
   (model.kind === "chat" && model.audioInput === true);
 
 /** Body of the "Choose from catalog" sheet: browse and import provider models. */
 export function ProviderModelPicker({
   state,
   provider,
-  onConfigure,
   onClose,
 }: {
   state: CatalogState;
   provider: Provider;
-  onConfigure: (model: DiscoveredModel) => void;
   onClose?: () => void;
 }) {
   const { copy } = state,
     { data, language } = useAdmin();
+  const text = useProviderCopy();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("usable");
   const [page, setPage] = useState(0);
@@ -254,14 +262,7 @@ export function ProviderModelPicker({
             {visible.map((m) => {
               const added = existing.has(m.model),
                 checked = isImportable(m) && selected.includes(m.model);
-              const verify =
-                !added &&
-                m.kind !== "decision" &&
-                m.kind !== "transcription" &&
-                m.kind !== "speech" &&
-                m.audioOutput !== true &&
-                m.tools === null &&
-                !m.audioInput;
+              const unknown = !added && isUnknown(m);
               return (
                 <li key={m.model} className="flex items-center gap-3 py-3">
                   <Checkbox
@@ -307,15 +308,8 @@ export function ProviderModelPicker({
                   )}
                   {added ? (
                     <Badge variant="outline">{copy.added}</Badge>
-                  ) : verify ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={state.busy}
-                      onClick={() => onConfigure(m)}
-                    >
-                      {copy.verifyTools}
-                    </Button>
+                  ) : unknown ? (
+                    <Badge variant="outline">{text.unknownCapabilities}</Badge>
                   ) : m.kind === "chat" && m.tools && !m.audioInput ? null : (
                     <Badge variant="secondary">
                       {m.kind === "decision"
@@ -399,12 +393,21 @@ export function ProviderModelPicker({
                 providerId: provider.id,
                 providerRevision: provider.revision,
                 models: chosen.map(
-                  ({ model, name, tools, audioInput, audioOutput, kind }) => ({
+                  ({
+                    model,
+                    name,
+                    tools,
+                    audioInput,
+                    audioOutput,
+                    imageInput,
+                    kind,
+                  }) => ({
                     model,
                     name,
                     tools: tools === true,
                     audioInput: audioInput === true,
                     audioOutput: audioOutput === true,
+                    imageInput: imageInput === true,
                     kind,
                   }),
                 ),

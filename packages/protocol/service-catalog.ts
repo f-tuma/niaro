@@ -6,6 +6,12 @@ import {
   SpeechVoiceId,
   WorkspaceModelPolicy,
 } from "./model-policy";
+import {
+  ProviderAuth,
+  ProviderDialect,
+  ProviderPresetId,
+  SearchBackendKind,
+} from "./providers";
 
 export const ServiceUrl = z
   .string()
@@ -181,6 +187,23 @@ export const ProviderSettings = z.strictObject({
   url: ServiceUrl,
   enabled: z.boolean(),
   dailyRequestLimit: z.number().int().min(1).max(100000),
+  /** The preset the form started from; informational, routing never reads it. */
+  preset: ProviderPresetId.optional(),
+  /** How the key is sent; a bearer token when unset. */
+  auth: ProviderAuth.optional(),
+  /**
+   * How requests that differ between providers are shaped. A save without
+   * one takes its preset's; stored providers always have one.
+   */
+  dialect: ProviderDialect.optional(),
+  /**
+   * The administrator's choice that this provider's models cost nothing
+   * (a local server, a free plan): they get a zero price where the workspace
+   * has none. Never inferred from the address.
+   */
+  free: z.boolean().optional(),
+  /** What happens to data sent to this provider, in the administrator's words. */
+  dataHandling: z.string().trim().max(500).optional(),
 });
 export const ProviderSchema = ProviderSettings.extend({
   id: IdentityId,
@@ -196,6 +219,8 @@ export const CatalogModelSettings = z.strictObject({
   tools: z.boolean(),
   audioInput: z.boolean().default(false),
   audioOutput: z.boolean().default(false),
+  /** Declared image input; only chat and router models keep it. */
+  imageInput: z.boolean().optional(),
   kind: z
     .enum(["chat", "decision", "router", "transcription", "speech"])
     .default("chat"),
@@ -227,6 +252,7 @@ export const DiscoveredModelSchema = z.strictObject({
   tools: z.boolean().nullable(),
   audioInput: z.boolean().nullable().default(null),
   audioOutput: z.boolean().nullable().default(null),
+  imageInput: z.boolean().nullable().default(null),
   contextLength: z.number().int().positive().nullable(),
   kind: z
     .enum(["chat", "decision", "router", "transcription", "speech"])
@@ -244,6 +270,57 @@ export const ModelDiscoveryResponse = z.strictObject({
   models: z.array(DiscoveredModelSchema).max(5000),
 });
 export type DiscoveredModel = z.infer<typeof DiscoveredModelSchema>;
+/**
+ * A web search backend of the organization. Its key is write-only like a
+ * provider's; SearXNG usually needs none.
+ */
+export const SearchBackendSettings = z.strictObject({
+  name: IdentityName,
+  kind: SearchBackendKind,
+  url: ServiceUrl,
+  enabled: z.boolean(),
+});
+export const SearchBackendSchema = SearchBackendSettings.extend({
+  id: IdentityId,
+  revision: Revision,
+  hasCredential: z.boolean(),
+});
+export type SearchBackend = z.infer<typeof SearchBackendSchema>;
+export const MAX_SEARCH_BACKENDS = 10;
+/** What an administrator's capability test checks, by the model's kind. */
+export const ModelCapabilityProbe = z.enum([
+  "tools",
+  "imageInput",
+  "audioInput",
+  "audioOutput",
+  "transcription",
+  "speech",
+]);
+export type ModelCapabilityProbeValue = z.infer<typeof ModelCapabilityProbe>;
+export const ModelTestRequest = z.strictObject({
+  organizationId: IdentityId,
+  workspaceId: IdentityId,
+  modelId: IdentityId,
+  revision: Revision,
+});
+export const ModelTestResponse = z.strictObject({
+  results: z
+    .array(
+      z.strictObject({
+        capability: ModelCapabilityProbe,
+        /** supported or unsupported: the provider answered; failed: it could
+         * not tell (`error` says why); skipped: the test needs something the
+         * model lacks (a reviewed voice). */
+        status: z.enum(["supported", "unsupported", "failed", "skipped"]),
+        error: z
+          .string()
+          .regex(/^[a-z][a-z0-9_]{0,63}$/)
+          .optional(),
+      }),
+    )
+    .max(6),
+});
+export type ModelTestResult = z.infer<typeof ModelTestResponse>;
 export const CatalogSchema = z.strictObject({
   organizationId: IdentityId,
   workspaceId: IdentityId,
@@ -253,6 +330,8 @@ export const CatalogSchema = z.strictObject({
   services: z.array(ServiceSchema).max(100),
   providers: z.array(ProviderSchema).max(50),
   models: z.array(CatalogModelSchema).max(500),
+  /** For managers: the organization's web search backends. */
+  searchBackends: z.array(SearchBackendSchema).max(10).default([]),
   /** For managers: the model policy of the organization and this workspace. */
   policy: ModelPolicyView,
   /** For managers: the services people sign in to themselves, and how many
@@ -374,6 +453,20 @@ export const CatalogCommand = z.discriminatedUnion("type", [
   }),
   z.strictObject({
     ...target,
+    type: z.literal("saveSearchBackend"),
+    id: IdentityId.optional(),
+    revision: Revision,
+    settings: SearchBackendSettings,
+    apiKey: credential,
+  }),
+  z.strictObject({
+    ...target,
+    type: z.literal("removeSearchBackend"),
+    id: IdentityId,
+    revision: Revision,
+  }),
+  z.strictObject({
+    ...target,
     type: z.literal("saveModel"),
     id: IdentityId.optional(),
     revision: Revision,
@@ -392,6 +485,7 @@ export const CatalogCommand = z.discriminatedUnion("type", [
           tools: z.boolean(),
           audioInput: z.boolean().default(false),
           audioOutput: z.boolean().default(false),
+          imageInput: z.boolean().optional(),
           kind: z
             .enum(["chat", "decision", "router", "transcription", "speech"])
             .default("chat"),
