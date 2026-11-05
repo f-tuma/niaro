@@ -26,6 +26,7 @@ const SECTIONS = [
   ["skills", "receiptSkills"],
   ["meetings", "receiptMeetings"],
   ["files", "receiptFiles"],
+  ["sources", "receiptSources"],
 ] as const satisfies readonly (readonly [
   keyof AnswerReceipt,
   TranslationKey,
@@ -75,8 +76,14 @@ const itemText = (item: ReceiptItem) => {
   const title = item.kind === "service" ? actionTitle(item.title) : item.title;
   return item.detail ? `${title} (${item.detail})` : title;
 };
+/** One row of the expanded details; a knowledge source also quotes its passage. */
+export type ReceiptDetailItem = { id: string; text: string; passage?: string };
 
-/** The expanded details: one titled list per kind, in the line's order. */
+/**
+ * The expanded details: one titled list per kind, in the line's order.
+ * "Sources" (NIAR-298) names each file or service source with the passage
+ * the answer was given.
+ */
 export function receiptSections(receipt: AnswerReceipt, tr: Translate) {
   const sections = SECTIONS.flatMap(([key, label]) =>
     receipt[key].length
@@ -84,10 +91,21 @@ export function receiptSections(receipt: AnswerReceipt, tr: Translate) {
           {
             key: key as string,
             title: tr(label),
-            items: receipt[key].map((item) => ({
-              id: `${item.kind}:${item.id}`,
-              text: itemText(item),
-            })),
+            items:
+              key === "sources"
+                ? receipt.sources.map(
+                    (source): ReceiptDetailItem => ({
+                      id: `${source.kind}:${source.id}`,
+                      text: source.title,
+                      passage: source.passage,
+                    }),
+                  )
+                : receipt[key].map(
+                    (item): ReceiptDetailItem => ({
+                      id: `${item.kind}:${item.id}`,
+                      text: itemText(item),
+                    }),
+                  ),
           },
         ]
       : [],
@@ -99,7 +117,7 @@ export function receiptSections(receipt: AnswerReceipt, tr: Translate) {
         {
           key: "model",
           title: tr("receiptModel"),
-          items: [{ id: "model", text: model }],
+          items: [{ id: "model", text: model } as ReceiptDetailItem],
         },
       ]
     : sections;

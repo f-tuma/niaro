@@ -76,7 +76,8 @@ type RouteKey = ModelRoleValue | "service" | "escalation";
  * models for chat work, decision or tool models for the checker and the
  * selector, audio models of any provider for voice, and models of an
  * OpenRouter-format provider for decisions and the provider's own web
- * search. Reserved roles take any enabled model.
+ * search, embedding models for embeddings. The reserved role takes any
+ * enabled model.
  */
 export function modelFits(
   key: RouteKey,
@@ -104,6 +105,7 @@ export function modelFits(
         (model.kind === "chat" && model.audioOutput) || model.kind === "speech"
       );
     case "embedding":
+      return model.kind === "embedding";
     case "vision":
       return true;
     default:

@@ -25,7 +25,8 @@ import { processDigest } from "./process-validation";
 import { FREE_MODEL_LIMITS } from "../../packages/protocol/providers";
 
 type Target = z.infer<typeof CatalogTarget> & { userId: string };
-type Kind = "model" | "decision";
+/** `embedding`: an `/embeddings` call (NIAR-298), billed for its input only. */
+type Kind = "model" | "decision" | "embedding";
 /** Trusted frozen process caps, shared by all child agents under one root. */
 export type InferenceRunCaps = {
   maxTokens: number;
@@ -128,10 +129,19 @@ export function inferenceUsage(
       ? (usage as Record<string, unknown>)
       : {};
   let inputTokens = safeCount(
-    kind === "decision" ? fields.input_tokens : fields.prompt_tokens,
+    kind === "decision"
+      ? fields.input_tokens
+      : kind === "embedding"
+        ? (fields.prompt_tokens ?? fields.total_tokens)
+        : fields.prompt_tokens,
   );
+  // An embedding writes no tokens; providers report its input alone.
   let outputTokens = safeCount(
-    kind === "decision" ? fields.output_tokens : fields.completion_tokens,
+    kind === "decision"
+      ? fields.output_tokens
+      : kind === "embedding"
+        ? (fields.completion_tokens ?? 0)
+        : fields.completion_tokens,
   );
   if (
     inputTokens !== null &&
@@ -243,7 +253,9 @@ export class InferenceBudgetStore {
       const providerRevision = free.get(String(model.providerId));
       if (
         providerRevision === undefined ||
-        !["chat", "router", "decision"].includes(model.kind ?? "chat")
+        !["chat", "router", "decision", "embedding"].includes(
+          model.kind ?? "chat",
+        )
       )
         return [];
       return [

@@ -41,6 +41,7 @@ const page: AnswerReceiptPage = {
       skills: [{ kind: "skill", id: "offers", title: "Nabídky" }],
       meetings: [],
       files: [{ kind: "file", id: "file-1", title: "nabidka.pdf" }],
+      sources: [],
       model: { name: "Silný model", reason: "escalation" },
     },
   ],
@@ -125,6 +126,58 @@ test("an answer shows one quiet line from its receipt that opens to the details"
   expect(screen.getByText("Najdi kontakty (Acme CRM)")).toBeTruthy();
   expect(screen.getByText("Zavolat Janovi")).toBeTruthy();
   expect(screen.getByText("nabidka.pdf")).toBeTruthy();
+});
+
+test("knowledge sources show under the answer with the passages it was given", async () => {
+  const sources: AnswerReceiptPage = {
+    ...page,
+    receipts: [
+      {
+        commandId: "command-1",
+        read: [],
+        changed: [],
+        memories: [],
+        skills: [],
+        meetings: [],
+        files: [],
+        sources: [
+          {
+            kind: "file",
+            id: "a".repeat(32),
+            title: "cenik.pdf",
+            passage: "Instalace stojí 12 000 Kč.",
+          },
+          {
+            kind: "service",
+            id: "b".repeat(32),
+            title: "Wiki · Postupy",
+            passage: "Reklamace vyřizuje Petra.",
+          },
+        ],
+      },
+    ],
+  };
+  await show(
+    <Thread
+      session={
+        {
+          readAnswerReceipts: jest.fn(async () => sources),
+        } as unknown as ClientSession
+      }
+    />,
+  );
+  const line = screen.getByRole("button", { name: "Zdroje 2" });
+  await act(async () => {
+    fireEvent.press(line);
+  });
+  expect(screen.getByText("Zdroje")).toBeTruthy();
+  expect(screen.getByText("cenik.pdf")).toBeTruthy();
+  expect(screen.getByText("Wiki · Postupy")).toBeTruthy();
+  expect(
+    screen
+      .getAllByTestId("answer-receipt-passage")
+      .map((node) => node.props.children),
+  ).toEqual(["Instalace stojí 12 000 Kč.", "Reklamace vyřizuje Petra."]);
 });
 
 test("a failed read or a server without receipts shows no line", async () => {

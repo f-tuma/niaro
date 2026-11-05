@@ -143,6 +143,24 @@ export type CatalogContext = {
    * Synchronous; called with serial held. Results are bounded and framed
    * as untrusted data; nothing here changes a meeting. */
   meetings?: import("./meeting-agent").MeetingAgentAccess;
+  /**
+   * Workspace knowledge for the agent's search tool (NIAR-298), present
+   * only while the workspace has an embedding model. `model` is synchronous
+   * with serial held; `search` takes the queue itself for its checks and
+   * returns only passages the person may read now.
+   */
+  knowledge?: {
+    model: () =>
+      | import("../server-integrations/mastra-model").NiaroModelSelection
+      | undefined;
+    search: (
+      vector: Float32Array,
+      selected: import("../server-integrations/mastra-model").NiaroModelSelection,
+      limit: number,
+    ) => Promise<
+      { id: string; kind: "file" | "service"; name: string; text: string }[]
+    >;
+  };
   /** The person's skills for the agent. Synchronous; called with serial held.
    * Every call re-reads current access; nothing here grants an action. */
   skills?: {

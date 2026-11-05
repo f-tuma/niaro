@@ -64,14 +64,46 @@ says where to click and what to enter. Console structure:
    Runs show the preset on each model step.
 
 Under every answer, members see one quiet line with what the answer read
-and changed, the memories, skills, meetings and files it used, and the
-model that wrote it by the name you gave it on the Models page.
+and changed, the memories, skills, meetings and files it used, the
+knowledge passages it was given, and the model that wrote it by the name
+you gave it on the Models page.
 
 Below the providers, **Search backends** keeps SearXNG, Brave or Tavily for web
 search; their keys are write-only and never exported. **Models → Settings → Web
 search** chooses one, or the provider's own search with the Web search models.
 
 Behavior: [models-and-providers](../../openspec/specs/models-and-providers/spec.md).
+
+## Workspace knowledge
+
+Knowledge lets the assistant find passages of files people sent in their
+chats and of company sources you pick, and cite them under the answer. It is
+an index, not a document store: nothing is uploaded, filed or edited there.
+
+1. Add an embedding model: open a provider, **Add model** with its model ID
+   (for example `text-embedding-3-small`, or `nomic-embed-text` on Ollama)
+   and kind **Embeddings**. Any provider with an OpenAI-compatible
+   `/embeddings` works.
+2. **Models → Embeddings**: put that model in the role (organization default
+   or one workspace). Without it there is no index and no knowledge search.
+3. **Workspaces → ⋯ → Knowledge**: files sent in chats are indexed by
+   default, each found only by the person who sent it (attached files are
+   read only when the document converter runs). Tick **Sources**, read
+   actions of shared services that need no input, to index what they return;
+   members find a source's passages only while they may use that action.
+   **Passages** sets their length and overlap.
+4. The sheet shows the model, passages, documents, last sync, progress and
+   errors. Saving indexes what changed; **Rebuild index** drops the
+   workspace's index and builds it again, for example after you change the
+   embedding model.
+
+Embedding calls count against usage limits and the provider's daily
+requests; in **Stop at limit** the embedding model needs a price. Every
+passage is checked again against the person's current access before the
+assistant sees it. The configuration bundle carries these settings, never
+the index.
+
+Behavior: [knowledge](../../openspec/changes/niar-298-workspace-knowledge/specs/knowledge/spec.md).
 
 ## Usage limits
 

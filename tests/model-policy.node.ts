@@ -863,13 +863,31 @@ test("reserved roles and the speech voice follow catalog metadata", () => {
   const p = h.provider("TEST OpenRouter", "https://openrouter.ai/api/v1");
   const chat = h.model(p, "test/chat");
   const reader = h.model(p, "test/reader", { audioOutput: true });
+  const embed = h.model(p, "test/embed", { kind: "embedding", tools: false });
+  // Embeddings (NIAR-298) take an embedding model only; vision is reserved.
+  assert.throws(
+    () =>
+      h.saveOrganization({
+        roles: { chat: { models: [chat] }, embedding: { models: [chat] } },
+      }),
+    code("catalog_model_unavailable"),
+  );
+  assert.throws(
+    () => h.saveOrganization({ roles: { chat: { models: [embed] } } }),
+    code("catalog_model_unavailable"),
+  );
   h.saveOrganization({
     roles: {
       chat: { models: [chat] },
-      embedding: { models: [chat] },
-      vision: { models: [] },
+      embedding: { models: [embed] },
+      vision: { models: [chat] },
     },
   });
+  assert.equal(
+    h.store.resolveEmbedding(target.organizationId, target.workspaceId)?.model
+      .id,
+    embed,
+  );
   // A spoken-reply model needs a voice: from the policy or the model's list.
   assert.throws(
     () => h.saveWorkspace({ roles: { speech: { models: [reader] } } }),

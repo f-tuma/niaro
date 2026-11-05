@@ -22,10 +22,23 @@ export const ReceiptItemSchema = z.strictObject({
 export type ReceiptItem = z.infer<typeof ReceiptItemSchema>;
 
 /**
+ * A passage of workspace knowledge the answer was given (NIAR-298): the
+ * file or service source it comes from and its words, as the person may
+ * read them now.
+ */
+export const ReceiptSourceSchema = z.strictObject({
+  kind: z.enum(["file", "service"]),
+  id: z.string().min(1).max(200),
+  title: label,
+  passage: z.string().trim().min(1).max(400),
+});
+export type ReceiptSource = z.infer<typeof ReceiptSourceSchema>;
+
+/**
  * What one answer was built from (NIAR-296), only from what the server
  * recorded while it ran, never from the model's words: the service reads it
  * made, what it changed, the memories, skills, meetings and files in its
- * context, and the model that wrote it. The model shows by the
+ * context, the knowledge passages it was given, and the model that wrote it. The model shows by the
  * administrator's name for it; `reason` says when it was not the first
  * choice (a fallback before dispatch, or an escalation after a check). An
  * item the person can no longer open is left out.
@@ -39,6 +52,8 @@ export const AnswerReceiptSchema = z.strictObject({
   skills: z.array(ReceiptItemSchema).max(10),
   meetings: z.array(ReceiptItemSchema).max(10),
   files: z.array(ReceiptItemSchema).max(10),
+  /** Knowledge passages the answer was given, under their source. */
+  sources: z.array(ReceiptSourceSchema).max(10).default([]),
   model: z
     .strictObject({
       name: z.string().trim().min(1).max(160),

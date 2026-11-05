@@ -655,6 +655,56 @@ export class AttachmentStore {
   handle(c: AttachmentContent): ObjectHandle {
     return JSON.parse(c.handle) as ObjectHandle;
   }
+  /**
+   * The files people sent in a workspace's chats that are still available
+   * to their sender: what workspace knowledge may index (NIAR-298). A file
+   * of a deleted chat or a removed message is no longer listed.
+   */
+  knowledgeFiles(workspaceId: string) {
+    if (!this.available()) return [];
+    return (
+      this.db
+        .prepare(
+          `SELECT c.id,c.owner_key,c.filename,c.sha256 FROM attachment_contents c
+          WHERE c.lifecycle='available' AND c.transfer='complete' AND json_extract(c.owner_key,'$[1]')=?
+          AND EXISTS(SELECT 1 FROM attachment_bindings b WHERE b.content_id=c.id AND b.state='live')
+          ORDER BY c.created_at LIMIT 5000`,
+        )
+        .all(workspaceId) as {
+        id: string;
+        owner_key: string;
+        filename: string;
+        sha256: string;
+      }[]
+    ).map((row) => ({
+      contentId: row.id,
+      userId: String((JSON.parse(row.owner_key) as unknown[])[2]),
+      name: row.filename,
+      sha256: row.sha256,
+    }));
+  }
+  /** Whether one file is still its sender's and available in that workspace. */
+  knowledgeFileAvailable(workspaceId: string, userId: string, id: string) {
+    if (!this.available()) return false;
+    return !!this.db
+      .prepare(
+        `SELECT 1 FROM attachment_contents c
+        WHERE c.id=? AND c.lifecycle='available' AND c.transfer='complete'
+        AND json_extract(c.owner_key,'$[1]')=? AND json_extract(c.owner_key,'$[2]')=?
+        AND EXISTS(SELECT 1 FROM attachment_bindings b WHERE b.content_id=c.id AND b.state='live')`,
+      )
+      .get(id, workspaceId, userId);
+  }
+  /** Where an available file's bytes are, for reading it into the index. */
+  knowledgeFileHandle(id: string) {
+    const c = this.db
+      .prepare(
+        "SELECT * FROM attachment_contents WHERE id=? AND lifecycle='available' AND transfer='complete'",
+      )
+      .get(id) as AttachmentContent | undefined;
+    if (!c) throw new AttachmentError("attachment_unavailable", 404);
+    return this.handle(c);
+  }
   beginReceive(scope: Scope, id: string) {
     return this.write(() => {
       this.requireEnabled();
@@ -1154,7 +1204,12 @@ export class AttachmentStore {
       const files = (JSON.parse(String(a.content_ids)) as string[]).map(
         (id) => {
           const c = this.authorizeRead(scope, id);
-          return { name: c.filename, handle: this.handle(c) };
+          return {
+            id: c.id,
+            name: c.filename,
+            sha256: c.sha256,
+            handle: this.handle(c),
+          };
         },
       );
       this.setState(attemptId, String(a.ingestion_id), "preparing", null);

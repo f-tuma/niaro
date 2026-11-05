@@ -102,6 +102,14 @@ export function AnswerReceiptLine({ commandId }: { commandId?: string }) {
                   {section.items.map((item) => (
                     <li key={item.id} className="break-words">
                       {item.text}
+                      {item.passage && (
+                        <blockquote
+                          data-testid="answer-receipt-passage"
+                          className="mt-0.5 border-l pl-2 italic"
+                        >
+                          {item.passage}
+                        </blockquote>
+                      )}
                     </li>
                   ))}
                 </ul>

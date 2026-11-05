@@ -41,6 +41,7 @@ import {
   createNiaroMastraModel,
   MODEL_CALL_LIMITS,
   type ModelCallLimits,
+  type NiaroModelSelection,
 } from "../server-integrations/mastra-model";
 import { createProcessReadWindow } from "./process-read-window";
 import { readProcessOutput } from "./process-output";
@@ -185,6 +186,21 @@ import {
 import { HUB_DETAIL_TTL_MS, HubStore } from "./hub-store";
 import { SkillStore, type SkillActor } from "./skill-store";
 import { InstructionsStore } from "./instructions-store";
+import {
+  Knowledge,
+  KnowledgeStore,
+  knowledgeEmbedder,
+  resultText,
+  type KnowledgeFilePort,
+  type KnowledgeTarget,
+} from "./knowledge";
+import type { KnowledgeIndex } from "@niaro/server-agent/knowledge-index";
+import {
+  KnowledgeCommand,
+  type KnowledgeSourceValue,
+} from "../../packages/protocol/knowledge";
+import type { Service } from "../../packages/protocol/service-catalog";
+import { pathToFileURL } from "node:url";
 import { answerReceipts, RECEIPT_TURNS } from "./answer-receipts";
 import {
   ANSWER_RECEIPTS_PROFILE,
@@ -771,6 +787,11 @@ export class IdentityService {
   private hubLaunch?: HubLaunch;
   private skills: SkillStore;
   private instructions: InstructionsStore;
+  /** Workspace knowledge (NIAR-298): settings here, the index in its own libSQL file. */
+  private knowledgeStore: KnowledgeStore;
+  private knowledge: Knowledge;
+  private knowledgeIndexOpen?: Promise<KnowledgeIndex>;
+  private knowledgeFilePort?: KnowledgeFilePort & { readable: boolean };
   private hosted?: HostedServers;
   private pluginFiles?: PluginFiles;
   private pluginEditing = false;
@@ -829,6 +850,29 @@ export class IdentityService {
     );
     // Chat and process prompts read variables and instructions through it.
     catalog.promptContext = (target) => this.promptContext(target);
+    this.knowledgeStore = new KnowledgeStore(db);
+    this.knowledge = new Knowledge({
+      store: this.knowledgeStore,
+      index: () => this.knowledgeIndex(),
+      serial: (fn) => this.serial(async () => fn()),
+      files: () => this.knowledgeFilePort,
+      embedding: (org, workspace) =>
+        catalog.store.resolveEmbedding(org, workspace),
+      embed: knowledgeEmbedder({
+        transport: catalog.transport,
+        catalog: catalog.store,
+        serial: (run) => this.serial(run),
+      }),
+      readSource: (input) => this.knowledgeReadSource(input),
+      candidates: (org, workspace) => this.knowledgeCandidates(org, workspace),
+      sourceVisible: (target, source) =>
+        this.knowledgeSourceVisible(target, source),
+      member: (target) => {
+        if (this.closing) throw new IdentityError(503, "identity_unavailable");
+        this.hubMember(target);
+      },
+      filesReadable: () => !!this.knowledgeFilePort?.readable,
+    });
     this.hub = createHub({
       store: new HubStore(db),
       processes: {
@@ -2987,6 +3031,23 @@ export class IdentityService {
         return found;
       },
       ...(sentFiles ? { files: sentFiles } : {}),
+      passages: async (ids) => {
+        const found = await this.knowledge.passages(
+          {
+            organizationId: actor.organizationId,
+            workspaceId,
+            userId: actor.userId,
+          },
+          ids,
+        );
+        await run(() => {});
+        return new Map(
+          [...found].map(([id, hit]) => [
+            id,
+            { kind: hit.kind, name: hit.name, text: hit.text },
+          ]),
+        );
+      },
     });
     return AnswerReceiptPageSchema.parse({
       profile: ANSWER_RECEIPTS_PROFILE,
@@ -3418,6 +3479,233 @@ export class IdentityService {
       restoreId?: string,
     ) => boolean;
   };
+  /**
+   * The chat's attached files for workspace knowledge (NIAR-298): listed and
+   * checked in the attachment store, read with the document converter.
+   * `readable` is false without a converter: then no file is indexed.
+   */
+  attachKnowledgeFiles(port: KnowledgeFilePort & { readable: boolean }) {
+    this.knowledgeFilePort = port;
+  }
+  /**
+   * The files a person just sent, as the chat read them: indexed for that
+   * person in the background while the workspace indexes files and has an
+   * embedding model. Nothing is said in the chat either way.
+   */
+  knowledgeFilesRead(
+    scope: Scope,
+    files: { contentId: string; name: string; sha256: string; text: string }[],
+  ) {
+    if (this.closing || !isAccountScope(scope) || !files.length) return;
+    void this.serial(async () =>
+      this.catalog.store.workspaceOrganization(scope.workspaceId),
+    )
+      .then((organizationId) =>
+        this.knowledge.indexFiles(
+          {
+            organizationId,
+            workspaceId: scope.workspaceId,
+            userId: scope.userId,
+          },
+          files.filter((file) => file.text.trim()),
+        ),
+      )
+      .catch(() => {
+        // A workspace that is gone has nothing to index.
+      });
+  }
+  /** After an import: the index follows the imported settings, as the importer. */
+  private async knowledgeResync(
+    req: IncomingMessage,
+    organizationId: string,
+    workspaceId: string,
+  ) {
+    try {
+      const actor = await this.serial(() => this.actor(req, organizationId));
+      await this.knowledge.sync(
+        { organizationId, workspaceId, userId: actor.userId },
+        false,
+      );
+    } catch {
+      // The administrator's next rebuild brings it up to date.
+    }
+  }
+  /** Tests and shutdown: waits until queued knowledge passes have finished. */
+  knowledgeIdle() {
+    return this.knowledge.idle();
+  }
+  private knowledgeIndex() {
+    this.knowledgeIndexOpen ??= (async () => {
+      const { openKnowledgeIndex } = await import(
+        "@niaro/server-agent/knowledge-index"
+      );
+      const file = this.db
+        .prepare("PRAGMA database_list")
+        .all()
+        .find((row) => row.name === "main")?.file;
+      return openKnowledgeIndex(
+        typeof file === "string" && file
+          ? pathToFileURL(`${file}.knowledge.sqlite`).href
+          : ":memory:",
+      );
+    })();
+    return this.knowledgeIndexOpen;
+  }
+  /**
+   * Whether a read action may be a knowledge source: a shared, enabled
+   * service (never a member's own or one read under each person's own
+   * sign-in), an enabled read that runs without approval and needs no input.
+   */
+  private knowledgeEligible(workspaceId: string, service: Service) {
+    const store = this.catalog.store;
+    if (
+      !service.enabled ||
+      service.personal ||
+      store.personalAction(workspaceId, service.id, "read")
+    )
+      return [];
+    return service.actions.filter((action) => {
+      const required = (action.inputSchema as { required?: unknown }).required;
+      return (
+        action.enabled &&
+        action.effect === "read" &&
+        action.approval === "never" &&
+        (!Array.isArray(required) || required.length === 0)
+      );
+    });
+  }
+  private knowledgeCandidates(organizationId: string, workspaceId: string) {
+    if (
+      this.catalog.store.workspaceOrganization(workspaceId) !== organizationId
+    )
+      throw new IdentityError(403, "identity_forbidden");
+    return this.catalog.store
+      .workspaceServices(workspaceId)
+      .slice(0, 100)
+      .flatMap((service) => {
+        const actions = this.knowledgeEligible(workspaceId, service);
+        return actions.length
+          ? [
+              {
+                serviceId: service.id,
+                serviceName: service.name,
+                actions: actions.map((action) => ({
+                  id: action.id,
+                  name: action.name,
+                })),
+              },
+            ]
+          : [];
+      });
+  }
+  /** The service and the person's grant: may they read this source now? */
+  private knowledgeSourceVisible(
+    target: KnowledgeTarget,
+    source: KnowledgeSourceValue,
+  ) {
+    try {
+      const actor = this.hubMember(target);
+      const service = this.catalog.store.service(
+        target.workspaceId,
+        source.serviceId,
+      );
+      const action = this.knowledgeEligible(target.workspaceId, service).find(
+        (item) => item.id === source.actionId,
+      );
+      return (
+        !!action &&
+        this.catalog.store.allowed(action, {
+          userId: target.userId,
+          role: actor.role,
+        })
+      );
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Reads one source for the index as the administrator who asked for the
+   * pass, through the ordinary catalog with its durable receipt.
+   */
+  private async knowledgeReadSource(input: {
+    target: KnowledgeTarget;
+    source: KnowledgeSourceValue;
+    signal: AbortSignal;
+  }) {
+    const { target, source } = input;
+    const prepared = await this.serial(async () => {
+      if (!this.knowledgeSourceVisible(target, source))
+        throw new IdentityError(403, "catalog_action_denied");
+      const service = this.catalog.store.service(
+        target.workspaceId,
+        source.serviceId,
+      );
+      return {
+        service,
+        action: service.actions.find((item) => item.id === source.actionId)!,
+      };
+    });
+    const actor = () => {
+      if (this.closing) throw new IdentityError(503, "identity_unavailable");
+      return this.hubMember(target);
+    };
+    const context: CatalogContext = {
+      serial: (fn) => this.serial(fn),
+      actor: async (requested) => {
+        if (
+          requested.organizationId !== target.organizationId ||
+          requested.workspaceId !== target.workspaceId
+        )
+          throw new IdentityError(403, "identity_forbidden");
+        return { userId: target.userId, role: actor().role };
+      },
+      validateRequest: () => {
+        input.signal.throwIfAborted();
+        actor();
+      },
+      epoch: (org) => this.connections.policyVersion(org),
+      change: (org) => this.connections.changePolicy(org),
+      audit: (record) => this.audit.append(record),
+      finish: (id, outcome, details) => this.audit.finish(id, outcome, details),
+      transaction: (fn) => this.transaction(fn),
+    };
+    const receipt = await this.catalog.invoke(
+      {
+        organizationId: target.organizationId,
+        workspaceId: target.workspaceId,
+        serviceId: prepared.service.id,
+        serviceRevision: prepared.service.revision,
+        actionId: prepared.action.id,
+        revision: prepared.action.revision,
+        input: {},
+        requestId: randomUUID(),
+        approve: false,
+      },
+      context,
+      input.signal,
+      "console",
+    );
+    if (receipt.status === "awaiting_approval") {
+      // A policy changed in between: the read waits for nobody.
+      await this.serial(async () => {
+        receipt.status = "rejected";
+        this.catalog.store.saveInvocation(receipt);
+      });
+      throw new IdentityError(403, "catalog_action_denied");
+    }
+    if (receipt.status !== "succeeded")
+      throw new IdentityError(
+        502,
+        receipt.failure?.code &&
+        /^[a-z][a-z0-9_]{0,63}$/.test(receipt.failure.code)
+          ? receipt.failure.code
+          : "knowledge_source_failed",
+      );
+    return {
+      name: `${prepared.service.name} · ${prepared.action.name}`,
+      text: resultText(receipt.result),
+    };
+  }
   /** Processed meeting sound moves to the server's object storage. */
   attachObjectStorage(storage: () => StorageRuntime) {
     this.meetings.archive.attach(storage);
@@ -3887,6 +4175,16 @@ export class IdentityService {
         dynamicModel = this.catalog.store.resolveModel(orgId, workspaceId);
       } catch {
         /* Disabled catalog selection must not break authenticated snapshot reads. */
+      }
+      // Knowledge search exists only while the embedding role has a model.
+      let knowledgeModel: ReturnType<ServiceCatalogStore["resolveEmbedding"]>;
+      try {
+        knowledgeModel = this.catalog.store.resolveEmbedding(
+          orgId,
+          workspaceId,
+        );
+      } catch {
+        /* An unavailable embedding model only leaves knowledge unsearched. */
       }
       // Meeting analysis is background work, on the background role.
       let backgroundModel: ReturnType<ServiceCatalogStore["resolveBackground"]>;
@@ -4484,6 +4782,42 @@ export class IdentityService {
                 read: (args: unknown) => access().read(args),
               };
             })(),
+            ...(knowledgeModel
+              ? {
+                  knowledge: {
+                    model: () => {
+                      check();
+                      return this.catalog.store.resolveEmbedding(
+                        orgId,
+                        workspaceId,
+                      );
+                    },
+                    search: async (
+                      vector: Float32Array,
+                      selected: NiaroModelSelection,
+                      limit: number,
+                    ) => {
+                      const actor = await this.serial(async () => check());
+                      const hits = await this.knowledge.search({
+                        target: {
+                          organizationId: orgId,
+                          workspaceId,
+                          userId: actor.session.scope.userId,
+                        },
+                        selected,
+                        vector,
+                        limit,
+                      });
+                      return hits.map((hit) => ({
+                        id: hit.id,
+                        kind: hit.kind,
+                        name: hit.name,
+                        text: hit.text,
+                      }));
+                    },
+                  },
+                }
+              : {}),
             skills: (() => {
               const skillActor = (): SkillActor => {
                 const actor = check();
@@ -4774,7 +5108,9 @@ export class IdentityService {
     await Promise.allSettled(
       Array.from(this.nativeRequests.values(), (entry) => entry.promise),
     );
+    await this.knowledge.close();
     await this.pending;
+    await (await this.knowledgeIndexOpen?.catch(() => undefined))?.close();
     await closeNativeCatalogRuntime(this.catalog);
     await this.memory.close();
     this.audit.interrupt();
@@ -5626,6 +5962,59 @@ export class IdentityService {
             error: error.code,
           });
         return respond(502, { error: "tool_failed" });
+      }
+    }
+    // Workspace knowledge (NIAR-298): owners and administrators only.
+    if (url.pathname.startsWith("/admin/api/identity/knowledge/")) {
+      try {
+        if (req.method !== "POST")
+          return respond(405, { error: "method_not_allowed" });
+        if (isOperator())
+          throw new IdentityError(403, "identity_account_required");
+        const route = url.pathname.slice(
+          "/admin/api/identity/knowledge/".length,
+        );
+        if (route !== "get" && route !== "command")
+          return respond(404, { error: "not_found" });
+        if (this.closing) throw new IdentityError(503, "identity_unavailable");
+        const target = WorkspaceTarget.parse(
+          route === "get"
+            ? payload
+            : {
+                organizationId: (payload as { organizationId?: unknown })
+                  ?.organizationId,
+                workspaceId: (payload as { workspaceId?: unknown })
+                  ?.workspaceId,
+              },
+        );
+        const actor = await this.serial(async () => {
+          const member = await this.workspaceActor(req, target);
+          if (member.role === "member")
+            throw new IdentityError(403, "identity_forbidden");
+          return { ...target, userId: member.userId };
+        });
+        if (route === "get")
+          return respond(
+            200,
+            await this.knowledge.view(
+              target.organizationId,
+              target.workspaceId,
+            ),
+          );
+        const command = KnowledgeCommand.parse(payload);
+        if (command.type === "save")
+          await this.knowledge.save(actor, command.revision, command.settings);
+        else void this.knowledge.rebuild(actor);
+        return respond(
+          200,
+          await this.knowledge.view(target.organizationId, target.workspaceId),
+        );
+      } catch (error) {
+        if (error instanceof IdentityError)
+          return respond(error.status, { error: error.code });
+        if (error instanceof z.ZodError)
+          return respond(400, { error: "identity_invalid_input" });
+        return respond(500, { error: "knowledge_unavailable" });
       }
     }
     // Workspace instructions and starters: owners and administrators edit,
@@ -6902,6 +7291,14 @@ export class IdentityService {
                 applyServerSettings: (next, previous) =>
                   this.applyServerSettings(next, previous),
                 hosted: this.hosted,
+                knowledge: {
+                  store: this.knowledgeStore,
+                  candidates: (organizationId, workspaceId) =>
+                    this.knowledgeCandidates(organizationId, workspaceId),
+                  resync: (organizationId, workspaceId) => {
+                    void this.knowledgeResync(req, organizationId, workspaceId);
+                  },
+                },
                 audit: (record) => this.audit.append(record),
               },
               actor: (organizationId) => this.actor(req, organizationId),

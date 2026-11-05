@@ -155,6 +155,12 @@ the decision, then the reason.
   and erased with its record. Every indexed item carries its access labels,
   queries filter by them and each hit is re-checked against current identity
   before use (fail closed), and what reaches whom is recorded.
+- **Workspace knowledge is a derived libSQL index next to the identity
+  database** (NIAR-298). `node:sqlite` has no vector functions, so passages
+  and their float32 embeddings live in their own libSQL file ranked with
+  `vector_distance_cos`, filtered by the labels on every passage and
+  re-checked per hit. Never a document store; the embedding model is an
+  administrator's role choice.
 - **A public chat is separate from native threads** (one chat can span several
   native segments), with a continuation lock per chat. Opening history never
   invokes a model.

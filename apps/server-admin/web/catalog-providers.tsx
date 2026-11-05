@@ -901,6 +901,7 @@ function Capabilities({
   const labels = [
     m.kind === "router" && copy.routerModel,
     m.kind === "transcription" && copy.transcriptionModel,
+    m.kind === "embedding" && copy.embeddingModel,
     m.kind === "decision" && copy.decisionModel,
     (m.kind === "chat" || m.kind === "router") && m.tools && copy.tools,
     (m.audioOutput || m.kind === "speech") && copy.audioOutput,
@@ -1023,7 +1024,10 @@ function ModelForm({
     setValue({
       ...value,
       kind,
-      ...(kind === "decision" || kind === "transcription" || kind === "speech"
+      ...(kind === "decision" ||
+      kind === "transcription" ||
+      kind === "speech" ||
+      kind === "embedding"
         ? {
             tools: false,
             audioInput: false,
@@ -1109,6 +1113,9 @@ function ModelForm({
                     {copy.transcriptionModel}
                   </SelectItem>
                   <SelectItem value="decision">{copy.decisionModel}</SelectItem>
+                  <SelectItem value="embedding">
+                    {copy.embeddingModel}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </Field>

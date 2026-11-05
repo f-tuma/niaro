@@ -56,6 +56,7 @@ import type {
 import { operatorLog } from "./operator-log";
 import {
   attachmentEvidence,
+  conversionText,
   convertDocument,
   ConverterUnavailable,
   type Conversion,
@@ -125,6 +126,14 @@ type InFlightRequest = NativeTrackedRequest & {
 export class ModelService {
   /** Reads attached files for the model; without it they are only kept. */
   converter?: ConverterConfig;
+  /**
+   * Hands the text of the files a person just sent to workspace knowledge
+   * (NIAR-298), which indexes them for that person in the background.
+   */
+  knowledgeFilesRead?: (
+    scope: Scope,
+    files: { contentId: string; name: string; sha256: string; text: string }[],
+  ) => void;
   private tools: ToolRegistry;
   private requestTracker = new NativeCommandRequests();
   private get active() {
@@ -955,7 +964,12 @@ export class ModelService {
           this.storage.attachments.beginPreparing(scope, attemptId),
         ),
       );
-      const files: { name: string; conversion: Conversion }[] = [];
+      const files: {
+        id: string;
+        name: string;
+        sha256: string;
+        conversion: Conversion;
+      }[] = [];
       let conversationSession: string | undefined;
       try {
         conversationSession = await run(() =>
@@ -966,7 +980,9 @@ export class ModelService {
             .objectStore()
             .get(file.handle);
           files.push({
+            id: file.id,
             name: file.name,
+            sha256: file.sha256,
             conversion: await convertDocument(
               this.converter!,
               bytes,
@@ -1001,6 +1017,22 @@ export class ModelService {
         return { ...accepted, snapshot: failed.snapshot };
       }
       activity.advance("preparing");
+      this.knowledgeFilesRead?.(
+        scope,
+        files.flatMap((file) => {
+          const text = conversionText(file.conversion);
+          return text
+            ? [
+                {
+                  contentId: file.id,
+                  name: file.name,
+                  sha256: file.sha256,
+                  text,
+                },
+              ]
+            : [];
+        }),
+      );
       const evidence = attachmentEvidence(files);
       const text = [command.text.trim(), evidence.text]
         .filter(Boolean)

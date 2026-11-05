@@ -1,0 +1,33 @@
+# Design
+
+## D1 Vector storage: a separate libSQL file
+
+The identity database is `node:sqlite` (`DatabaseSync`, `apps/server-identity/service.ts` `openIdentity`), which has no vector functions. libSQL is already in the server through Mastra (`@mastra/libsql` → `@libsql/client` in `apps/server-agent`). `apps/server-agent/knowledge-index.ts` opens `<identity.sqlite>.knowledge.sqlite` (`:memory:` for an in-memory identity database) with `@libsql/client`, now a direct dependency of `@niaro/server-agent` at the version already locked. Tables: `knowledge_documents` (one row per source key per workspace, content hash, model key) and `knowledge_chunks` (text, `embedding` float32 blob, dimensions and the labels copied onto every passage). Search is one SQL query: filter by workspace, model key, dimensions and labels, `ORDER BY vector_distance_cos(embedding, ?)`. Brute-force ranking within one workspace's labelled rows is fast enough for a pilot and keeps label filtering exact.
+
+Alternatives rejected: an in-process cosine over blobs in the identity database (works, but libSQL does the ranking natively and keeps the index out of the transactional database and its backups); Mastra's `LibSQLVector` (its `vector_top_k` index over-fetches and post-filters metadata, so a person's own passages could fall out of the candidates); a vector service (architecture: no separate memory database).
+
+The identity database keeps only `agent_knowledge_settings` (per workspace, revisioned) and `agent_knowledge_status` (last sync, recent errors). Dropping the libSQL file loses nothing a rebuild cannot restore.
+
+## D2 Labels, search and re-check
+
+`apps/server-identity/knowledge.ts` (`Knowledge`). A passage is visible to a person only when: the workspace matches; they are still a member (`hubMember`); for a file, files are on, they sent it and the attachment store still lists it as available to them (`AttachmentStore.knowledgeFileAvailable`: available, complete, owner, a live message binding); for a source, it is still picked and eligible and `ServiceCatalogStore.allowed` grants them its action. The query filters by these labels; after the async query every hit is re-checked under the identity queue, failing closed. Passage ids are a hash of document, content hash, model and ordinal, so a rebuild of unchanged text keeps receipts' citations.
+
+## D3 Embedding role and calls
+
+`effectiveRole` already resolves `embedding`; `ServiceCatalogStore.fit` now requires `kind: "embedding"` and `resolveEmbedding` selects the route like other roles (fallback included). `apps/server-integrations/embeddings.ts` posts `{model, input[], encoding_format: "float"}` to `{provider}/embeddings` with the provider's key handling, at most 32 inputs and 8,000 characters per request, and validates the vectors. Calls go through `budgetedInferenceTransport` with kind `embedding`: `inferenceUsage` reads `prompt_tokens` (or `total_tokens`) as input and 0 as output. Indexing: `knowledgeEmbedder` opens one root run per document (`knowledge/<workspace>/<uuid>`, caps 2M tokens, $2, 200 calls, narrowed by the workspace policy) as the file's sender or the administrator, re-checks membership and counts `useProvider` before dispatch. Search: inside the chat run through `allowance`, so it counts as a model call of the request. `embedding` joins `BUDGETED_MODEL_ROLES` (prices in enforce mode) and free providers' zero prices.
+
+## D4 Indexing passes
+
+One queue per workspace (`Knowledge.enqueue`): a pass reads the settings and the embedding model, removes documents whose source is gone, and for each file (from `AttachmentStore.knowledgeFiles`, read with the converter) and picked source (read as the administrator through `CatalogController.invoke`, a durable receipt, text by `resultText`) skips it when the content hash, the passage settings and the model are unchanged. Passages are cut by `chunkText` (default 1,200 characters, 150 overlap, at paragraph, line or sentence ends) and embedded with the source name in front. Errors are kept as `{source, error code, at}`; a provider-limit, missing-price, unavailable-model or denied-key refusal stops the pass. Files are also indexed right after the chat reads them (`ModelService.knowledgeFilesRead` → `IdentityService.knowledgeFilesRead`), from the text already converted. Triggers: chat file reads, settings save, bundle import, Rebuild index (drops the workspace's index first). A model change leaves old passages as `stale` until a rebuild.
+
+## D5 Agent tool and receipt
+
+`mastra-domain.ts`: `knowledge_search {q, limit≤8}` is listed only when the catalog context has `knowledge` (service.ts sets it while `resolveEmbedding` returns a model). The result is `{untrusted, passages[{source, kind, text}]}`; the turn records `knowledge {searches, passages[ids]}`, never text. `answer-receipts.ts` resolves the ids through `Knowledge.passages` for the person reading, and `AnswerReceipt.sources[{kind, id, title, passage≤400}]` reaches clients; `packages/client-core/answer-receipts.ts` adds the "Sources" section and the web (`blockquote`) and phone (italic caption) show the passage under the name.
+
+## D6 Administration and bundle
+
+`POST /admin/api/identity/knowledge/get|command` (owners and administrators; members 403): the view (settings, revision, status, candidates, whether files are read) and commands `save` (revision-checked, sources must be candidates: shared enabled service, not personal or read under personal sign-in, enabled read action with approval never and no required input) and `rebuild`. `workspace-knowledge.tsx` is a sheet from the Workspaces page beside Instructions, reusing the console's field, switch, checkbox, progress and disclosure components; it polls while a pass runs. The Models page offers embedding models for the role; the model editor gets the kind Embeddings. `config-bundle/sections/knowledge.ts` exports `{files, chunking, sources[{service, action}]}` and re-checks eligibility on import, resyncing after commit.
+
+## Verification
+
+`tests/knowledge.node.ts` (local fake `/v1/embeddings` server, in-memory libSQL): chunking, role off, sender-only files, loss of membership or file, source grant, rebuild and skip, stale after a model change, ledger and daily limit, chat file indexing, receipt citations, bundle. `tests/knowledge-http.node.ts`: console API roles and validation. `tests/mastra-domain.node.ts`: the search tool, budget and receipt ids. `tests/model-policy.node.ts`: the role takes embedding models only. Jest: `web-workspace-knowledge.test.tsx`, `web-answer-receipt.dom.test.tsx`, `mobile-answer-receipt.test.tsx`.

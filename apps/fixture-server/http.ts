@@ -5,7 +5,11 @@ import {
   cleanupAttachmentSpools,
 } from "../server-attachments/admission";
 import { attachmentHttp, noDuplicateKeys } from "../server-attachments/http";
-import type { ConverterConfig } from "../server-attachments/converter";
+import {
+  conversionText,
+  convertDocument,
+  type ConverterConfig,
+} from "../server-attachments/converter";
 import {
   AttachmentError,
   type AttachmentConfiguration,
@@ -387,6 +391,8 @@ export type FixtureServerOptions = {
         | "hubFill"
         | "attachHubRunner"
         | "attachProfileSources"
+        | "attachKnowledgeFiles"
+        | "knowledgeFilesRead"
         | "hubOpen"
         | "mobilePet"
         | "mobilePetEvents"
@@ -491,6 +497,28 @@ export function createFixtureServer(
       },
     });
     options.identity?.attachProfileSources?.(storage);
+    // Workspace knowledge (NIAR-298) indexes the files people sent, read
+    // with the same converter as the chat; without one, files are not indexed.
+    const converter = options.converter;
+    options.identity?.attachKnowledgeFiles?.({
+      readable: !!converter && storage.attachments.config.enabled,
+      list: (workspaceId) => storage.attachments.knowledgeFiles(workspaceId),
+      available: (workspaceId, userId, contentId) =>
+        storage.attachments.knowledgeFileAvailable(
+          workspaceId,
+          userId,
+          contentId,
+        ),
+      read: async (file, signal) => {
+        if (!converter) return undefined;
+        const bytes = await storage.attachments
+          .objectStore()
+          .get(storage.attachments.knowledgeFileHandle(file.contentId));
+        return conversionText(
+          await convertDocument(converter, bytes, file.name, signal),
+        );
+      },
+    });
     worker = new CalendarWorker(
       storage,
       calendar,
@@ -509,6 +537,9 @@ export function createFixtureServer(
     : undefined;
   for (const service of [models, accountModels])
     if (service) service.converter = options.converter;
+  if (accountModels && options.identity?.knowledgeFilesRead)
+    accountModels.knowledgeFilesRead = (scope, files) =>
+      options.identity!.knowledgeFilesRead!(scope, files);
   cleanupAttachmentSpools(directory);
   const attachmentAdmission = new AttachmentAdmission();
   const attachmentCleanup = new AttachmentCleanup(

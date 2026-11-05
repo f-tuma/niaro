@@ -2,7 +2,9 @@ import {
   AnswerReceiptSchema,
   type AnswerReceipt,
   type ReceiptItem,
+  type ReceiptSource,
 } from "../../packages/protocol/answer-receipts";
+import { KNOWLEDGE_LIMITS } from "../../packages/protocol/knowledge";
 import { DomainCommandSchema, type DomainCommand } from "./mastra-domain";
 import type { StoredInvocation } from "./service-catalog";
 
@@ -37,6 +39,15 @@ export type ReceiptSources = {
   memories(ids: string[]): Promise<ReadonlyMap<string, string>>;
   /** The files the person sent with the request, still available to them. */
   files?(commandId: string): { id: string; name: string }[];
+  /** Knowledge passages among `ids` the person may read now (NIAR-298). */
+  passages?(
+    ids: string[],
+  ): Promise<
+    ReadonlyMap<
+      string,
+      { kind: "file" | "service"; name: string; text: string }
+    >
+  >;
 };
 
 const modelReason = (reason: string) =>
@@ -60,8 +71,8 @@ function unique(items: ReceiptItem[], max: number) {
  * The receipts of a chat's latest answers (NIAR-296), built only from what
  * the server recorded for each request: its service calls, memory and task
  * changes, the saved items that reached the model, skills it loaded,
- * meetings it read or was given, the person's files and the model of the
- * step that wrote the answer. Never from the model's own words.
+ * meetings it read or was given, the person's files, the knowledge
+ * passages it was given and the model of the step that wrote the answer. Never from the model's own words.
  */
 export async function answerReceipts(
   sources: ReceiptSources,
@@ -86,10 +97,20 @@ export async function answerReceipts(
   const memories = wanted.length
     ? await sources.memories([...new Set(wanted)])
     : new Map<string, string>();
+  const passageIds = [
+    ...new Set(turns.flatMap((turn) => turn.knowledge?.passages ?? [])),
+  ];
+  const passages =
+    passageIds.length && sources.passages
+      ? await sources.passages(passageIds)
+      : new Map<
+          string,
+          { kind: "file" | "service"; name: string; text: string }
+        >();
   return sources.run(() =>
     turns.map((turn) =>
       AnswerReceiptSchema.parse(
-        receipt(turn, sources, usable, skills, memories),
+        receipt(turn, sources, usable, skills, memories, passages),
       ),
     ),
   );
@@ -101,6 +122,10 @@ function receipt(
   usable: ReadonlySet<string>,
   skills: ReadonlyMap<string, string>,
   memories: ReadonlyMap<string, string>,
+  passages: ReadonlyMap<
+    string,
+    { kind: "file" | "service"; name: string; text: string }
+  >,
 ): AnswerReceipt {
   const read: ReceiptItem[] = [];
   const changed: ReceiptItem[] = [];
@@ -180,6 +205,21 @@ function receipt(
       title: clip(file.name),
     }),
   );
+  const sourceItems = (turn.knowledge?.passages ?? []).flatMap(
+    (id): ReceiptSource[] => {
+      const passage = passages.get(id);
+      return passage
+        ? [
+            {
+              kind: passage.kind,
+              id,
+              title: clip(passage.name),
+              passage: clip(passage.text, KNOWLEDGE_LIMITS.citation),
+            },
+          ]
+        : [];
+    },
+  );
   const name = turn.answerModel
     ? sources.modelName(turn.answerModel.modelId)
     : undefined;
@@ -194,6 +234,7 @@ function receipt(
     skills: unique(skillItems, 10),
     meetings: unique(meetingItems, 10),
     files: unique(fileItems, 10),
+    sources: sourceItems.slice(0, 10),
     ...(name
       ? { model: { name: clip(name), ...(reason ? { reason } : {}) } }
       : {}),
