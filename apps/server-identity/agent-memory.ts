@@ -38,6 +38,13 @@ export interface AgentMemory {
     version: string | number,
     metadata: AgentMemoryMetadata,
   ): Promise<string | number>;
+  /**
+   * Whether an earlier answer that drew on these items may stay in the
+   * model's history: every listed item still active, unchanged, unexpired
+   * and readable, and every verified source still accessible. Unknown items
+   * are never readable (NIAR-263).
+   */
+  readable?(metadata: AgentMemoryMetadata): Promise<boolean>;
   metadata?(): AgentMemoryMetadata;
   tools?: unknown[];
   has?(name: string): boolean;

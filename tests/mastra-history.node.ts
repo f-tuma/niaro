@@ -134,7 +134,7 @@ test("expired CRM authority rotates native history after read-derived write argu
   }
 });
 
-test("source-only assistant copies cannot reach native models or Jev and intervening turns retain authority", async () => {
+test("assistant copies reach the chat model only while their read stays accessible, never Jev, and intervening turns retain authority", async () => {
   const h = createTrustHarness();
   try {
     lookup(h);
@@ -176,15 +176,34 @@ test("source-only assistant copies cannot reach native models or Jev and interve
       payloads.some((body) => body.questions),
       "exercise actual Jev dispatch",
     );
+    // The decision model never sees assistant copies; the chat model keeps
+    // earlier answers while the read behind them stays accessible (NIAR-263).
     assert(
-      !JSON.stringify(payloads).includes(email),
-      "plain derived assistant history is excluded",
+      !JSON.stringify(payloads.filter((body) => body.questions)).includes(
+        email,
+      ),
+      "assistant copies are excluded from Jev",
+    );
+    assert(
+      JSON.stringify(payloads.filter((body) => !body.questions)).includes(
+        email,
+      ),
+      "an answer built on a still accessible read stays visible",
     );
     expire(h, read.sources[0]!);
     await h.send("Explain a square too.", {
       id: "TEST-history-after-intervening",
     });
     assert.notEqual(h.commandState().threadId, middle.threadId);
+    // Revoked access withholds the answers built on it, in a fresh thread's
+    // earlier messages too.
+    h.context.change(h.target.organizationId);
+    const revokedOffset = h.requests.length;
+    await h.send("And a circle?", { id: "TEST-history-after-revoke" });
+    assert(
+      !JSON.stringify(h.requests.slice(revokedOffset)).includes(email),
+      "answers built on a revoked read are withheld",
+    );
   } finally {
     await h.close();
   }

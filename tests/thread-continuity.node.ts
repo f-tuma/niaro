@@ -335,3 +335,193 @@ test("retrying a failed turn continues the chat's thread", async () => {
     await h.close();
   }
 });
+
+// NIAR-263: earlier answers of the same chat stay visible to the model unless
+// what they drew on was forgotten, revised, expired or became inaccessible.
+const WITHHELD = "[Prior private response withheld]";
+const assistantTexts = (body: {
+  messages?: { role: string; content?: unknown }[];
+}) =>
+  (body.messages ?? [])
+    .filter((message) => message.role === "assistant")
+    .map((message) => JSON.stringify(message.content ?? ""));
+
+test("an earlier answer stays visible next to unrelated saved memory", async () => {
+  const h = createTrustHarness();
+  try {
+    await remember(h, "TEST prefers tea in the morning");
+    await observe(h, "TEST works on the triangle project");
+    h.onChat(() => ({ content: "5837" }));
+    await h.send("Vymysli náhodné čtyřmístné číslo", {
+      id: "TEST-visible-number-1",
+      language: "cs",
+    });
+    const prior = h.commandState();
+    // The saved memory reached the model, and is recorded with the answer.
+    assert(prior.replyBasis?.items?.length);
+    let seen: string[] = [];
+    h.onChat((body) => {
+      seen = assistantTexts(body);
+      return { content: "Napsal jsem 5837." };
+    });
+    await h.send("Jaké číslo jsi napsal?", {
+      id: "TEST-visible-number-2",
+      language: "cs",
+    });
+    assert.equal(h.commandState().threadId, prior.threadId);
+    assert(
+      seen.some((text) => text.includes("5837")),
+      JSON.stringify(seen),
+    );
+    assert(!seen.some((text) => text.includes(WITHHELD)));
+  } finally {
+    await h.close();
+  }
+});
+
+test("an answer that drew on a memory the chat then forgot is withheld, later ones stay", async () => {
+  const h = createTrustHarness();
+  try {
+    const secret = "TEST quiet purple office";
+    const item = await remember(h, secret);
+    h.onChat(() => ({ content: "TEST you like a quiet purple office" }));
+    await h.send("What is my saved preference?", {
+      id: "TEST-visible-forget-1",
+    });
+    const prior = h.commandState();
+    assert(prior.replyBasis?.items?.includes(item.id));
+    let forgot = false;
+    h.onChat(() => {
+      if (forgot) return { content: "TEST forgotten as asked" };
+      forgot = true;
+      return h.call("memory_forget", {
+        id: item.id,
+        revision: item.revision,
+      });
+    });
+    await h.send(`Forget: ${secret}`, { id: "TEST-visible-forget-2" });
+    const forgetting = h.commandState();
+    assert.equal(forgetting.threadId, prior.threadId);
+    // The item the turn itself forgot is no dependency of its own answer.
+    assert(!forgetting.replyBasis?.items?.includes(item.id));
+    let seen: string[] = [];
+    h.onChat((body) => {
+      seen = assistantTexts(body);
+      return { content: "TEST next answer" };
+    });
+    await h.send("And now?", { id: "TEST-visible-forget-3" });
+    assert.equal(h.commandState().threadId, prior.threadId);
+    assert(
+      !seen.some((text) => text.includes("quiet purple office")),
+      JSON.stringify(seen),
+    );
+    assert(seen.some((text) => text.includes(WITHHELD)));
+    assert(seen.some((text) => text.includes("TEST forgotten as asked")));
+  } finally {
+    await h.close();
+  }
+});
+
+test("an answer built on a service read stays visible while access lasts and is withheld once revoked", async () => {
+  const h = createTrustHarness();
+  try {
+    const email = "jane@example.test";
+    h.onChat((body) =>
+      toolResults(body).some((r) => r.currentTurn === true && r.data?.contacts)
+        ? { content: `Jane Test email is ${email}.` }
+        : h.lookupScript(body),
+    );
+    await h.send("Find Jane Test.", { id: "TEST-visible-crm-1" });
+    const read = h.commandState();
+    assert(read.operations.length);
+    let seen: string[] = [];
+    // A new topic: the read's result does not travel into this turn.
+    h.onDecision(newTopic);
+    h.onChat((body) => {
+      seen = assistantTexts(body);
+      return { content: "TEST second answer" };
+    });
+    await h.send("Thanks, and what is a triangle?", {
+      id: "TEST-visible-crm-2",
+    });
+    assert.equal(h.commandState().threadId, read.threadId);
+    assert.deepEqual(h.commandState().sources, []);
+    assert(
+      seen.some((text) => text.includes(email)),
+      JSON.stringify(seen),
+    );
+    // A policy revision retires the read: its answer no longer reaches the
+    // model, neither in a fresh thread's earlier messages nor in its history.
+    h.context.change(h.target.organizationId);
+    const offset = h.requests.length;
+    h.onChat(() => ({ content: "TEST third answer" }));
+    await h.send("What did you find?", { id: "TEST-visible-crm-3" });
+    assert.notEqual(h.commandState().threadId, read.threadId);
+    const later = JSON.stringify(h.requests.slice(offset));
+    assert(!later.includes(email));
+    // The public answer in between is still there.
+    assert(later.includes("TEST second answer"));
+  } finally {
+    await h.close();
+  }
+});
+
+test("a fresh thread starts with the earlier replies that pass, generated UI included", async () => {
+  const h = createTrustHarness();
+  try {
+    const program =
+      'root = Stack([orders])\norders = Metric("TESTORDERS", 340)';
+    h.onChat(() => ({
+      content: "Orders are up.\n\n```openui-lang\n" + program + "\n```",
+    }));
+    await h.send("How are orders?", { id: "TEST-visible-fresh-1" });
+    const first = h.commandState();
+    assert(first.answer?.ui, "the program was admitted");
+    // Saved after the first answer, used by the second one only.
+    const item = await remember(h, "TEST quiet purple office");
+    h.onChat(() => ({
+      content:
+        "You like a quiet purple office.\n\n```openui-lang\n" +
+        'root = Stack([office])\noffice = Metric("TESTOFFICE", 1)' +
+        "\n```",
+    }));
+    await h.send("What is my saved preference?", {
+      id: "TEST-visible-fresh-2",
+    });
+    const second = h.commandState();
+    assert.equal(second.threadId, first.threadId);
+    assert(second.answer?.ui);
+    await h.memoryStore.forget(h.memoryActor, {
+      requestId: randomUUID(),
+      id: item.id,
+      revision: item.revision,
+    });
+    const offset = h.requests.length;
+    h.onDecision(newTopic);
+    h.onChat(() => ({ content: "TEST fresh answer" }));
+    await h.send("Explain a triangle.", { id: "TEST-visible-fresh-3" });
+    const fresh = h.commandState();
+    assert.notEqual(fresh.threadId, first.threadId);
+    assert.deepEqual(
+      fresh.earlier?.map((message) => message.role),
+      ["user", "assistant", "user", "assistant"],
+    );
+    const later = JSON.stringify(h.requests.slice(offset));
+    // The first answer and its program pass; the second drew on the forgotten
+    // memory and is withheld, program included.
+    assert(later.includes("Orders are up."));
+    assert(later.includes("TESTORDERS"));
+    assert(!later.includes("quiet purple office"));
+    assert(!later.includes("TESTOFFICE"));
+    assert(later.includes(WITHHELD));
+    // Each earlier reply is checked again on the next turn.
+    h.context.change(h.target.organizationId);
+    h.onChat(() => ({ content: "TEST next answer" }));
+    const nextOffset = h.requests.length;
+    await h.send("And a square?", { id: "TEST-visible-fresh-4" });
+    assert.equal(h.commandState().threadId, fresh.threadId);
+    assert(JSON.stringify(h.requests.slice(nextOffset)).includes("TESTORDERS"));
+  } finally {
+    await h.close();
+  }
+});
