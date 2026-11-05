@@ -67,8 +67,13 @@ the decision, then the reason.
 - **One execution engine.** Processes compile frozen definitions to native
   Mastra workflows and agents and share the chat runtime, catalog controller
   and receipts. No second trust implementation.
-- **The chat model plans; the decision model only makes narrow choices.** Its
-  checks are hints, not gates.
+- **Models are chosen by an administrator's policy, never by code.** Roles map
+  to ordered catalog models or tiers; workspaces inherit an organization
+  default. Fallback moves on only from a call that provably never reached its
+  provider, never after an unknown outcome; each attempt is budgeted.
+- **The chat model plans; the selector and the checker only make narrow
+  choices.** Their checks are hints, not gates. Any tool model can check, so
+  checks do not depend on one provider.
 - **The model sees a services listing and loads actions by name.** A full
   catalog in every prompt was too slow and costly.
 - **Mastra semantic recall and working memory stay off** until a retrieval and

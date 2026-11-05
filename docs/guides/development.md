@@ -85,6 +85,8 @@ and services for chat are configured in administration instead.
 
 - Paths resolve relative to the profile, not the launch directory.
 - Credentials live in separate owner-only files (`0600`), never inline.
+- The OpenRouter voice adapter's config file names its speech model as
+  `voiceModel`; there is no built-in one, and without it voice stays off.
 - A CRM adapter needs a non-fixture model adapter.
 - `servers/personal.json` and `servers/team.json` are two independent
   instances (ports 8794 and 8795) with their own data directories.

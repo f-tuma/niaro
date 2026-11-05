@@ -26,10 +26,24 @@ says where to click and what to enter. Console structure:
 2. Open the provider → **Choose from catalog** and add the models you want, or
    **Add model** to enter a model ID by hand. A model whose tool support is
    unknown needs **Verify support** before it can run chat.
-3. **Model choice** (`/admin/routing`), per workspace: **Chat model**
-   (Workspace default), **Voice input** (speech-to-text and the Meetings
-   transcription model), **Voice reply**, **Service picker**, and optional
-   models per service.
+3. **Models** (`/admin/routing`): the **Organization default** tab sets the
+   models every workspace uses; the **This workspace** tab overrides single
+   roles. Each role (Chat, Checker, Service picker, Background work, Process
+   design, Web search, Voice input, Meeting transcription, Spoken replies)
+   takes an ordered list of models, the first one used; **Override** and
+   **Use default** switch a workspace row between its own list and the
+   inherited one. Background work, process design and web search follow Chat
+   until set; the Checker follows the Service picker.
+4. Optional on the same page: **Tiers** (named model lists such as Fast or
+   Strong that roles can point to), **Fallback** per role (the next model is
+   used only when a call never reached its provider: the provider is off, at
+   its daily limit, or could not be connected to), **Escalation** (after the
+   checker rejects a write or an answer, that step is repeated once with the
+   escalation models), service models, and the voice, spoken-reply and
+   certainty settings. Any tool-capable chat model can be the Checker; a
+   decision model is entered by hand with kind **Decision**.
+5. Reviewed voices for spoken replies are listed on the speech model
+   (**Voices** in its model form, `id` or `id=Name`, comma-separated).
 
 Behavior: [models-and-providers](../../openspec/specs/models-and-providers/spec.md).
 
@@ -53,9 +67,11 @@ Behavior: [models-and-providers](../../openspec/specs/models-and-providers/spec.
 4. **Mode → Stop at limit**, **Save changes**. The process designer and
    agent steps run only with **Stop at limit** and a priced model.
 
-Each model you use needs its own price, including a separate Service picker
-model. Editing a model or its provider makes its price out of date; save the
-page again.
+Each model a role can reach needs its own price, including the Service
+picker, the Checker, fallback and escalation models: with **Stop at limit**
+the page names the missing ones and does not save until they are priced.
+Editing a model or its provider makes its price out of date; save the page
+again.
 
 Behavior: [inference-budget](../../openspec/specs/inference-budget/spec.md).
 
@@ -415,8 +431,7 @@ defaults):
 }
 ```
 
-The transcription model is chosen in **Model choice → Voice input →
-Meetings**.
+The transcription model is the **Meeting transcription** role in **Models**.
 
 ### Telling voices apart
 
@@ -475,7 +490,7 @@ administrator." instead of an admin link.
 | The person sees                               | Fix                                                                                 |
 | --------------------------------------------- | ----------------------------------------------------------------------------------- |
 | Your account isn't connected to the service.  | **Connect account** (the app's Connections)                                         |
-| The overview has no AI model.                 | **Model choice** (`/admin/routing`): set the workspace default                      |
+| The overview has no AI model.                 | **Models** (`/admin/routing`): set Chat or Background work                          |
 | No service the overview can read yet.         | **Services**: enable reads and grant them                                           |
 | The overview can't read the chosen service.   | **Open service**: check its actions and access                                      |
 | The service refused access: …                 | **Open service**: the checklist names missing sign-in permissions, or check the key |
