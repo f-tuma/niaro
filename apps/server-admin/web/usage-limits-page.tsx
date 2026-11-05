@@ -7,6 +7,7 @@ import {
   type InferencePrice,
 } from "../../../packages/protocol/inference-budget";
 import { ModelDiscoveryResponse } from "../../../packages/protocol/service-catalog";
+import { budgetedReach } from "../../../packages/protocol/model-policy";
 import { Button } from "@admin/components/ui/button";
 import { Card } from "@admin/components/ui/card";
 import { Input } from "@admin/components/ui/input";
@@ -217,11 +218,19 @@ function UsageLimits({ state }: { state: CatalogState }) {
       providerRevision(model.providerId) !== price.providerRevision
     );
   });
+  // Every model a role can reach (see Models) needs a price to stop at limit.
+  const routedUnpriced =
+    settings.mode === "enforce"
+      ? [...budgetedReach(catalog.policy.effective).keys()].filter(
+          (id) => !priceOf(id),
+        )
+      : [];
   const invalid =
     settings.prices.some(
       (p) => p.maxInputTokens < 2048 || p.maxOutputTokens < 1,
     ) ||
-    (settings.mode === "enforce" && settings.prices.some(tooLarge));
+    (settings.mode === "enforce" && settings.prices.some(tooLarge)) ||
+    routedUnpriced.length > 0;
   async function fill() {
     setFilling(true);
     setNotice(null);
@@ -386,10 +395,24 @@ function UsageLimits({ state }: { state: CatalogState }) {
             <AlertDescription>{notice}</AlertDescription>
           </Alert>
         )}
-        {unpricedInEnforce && (
-          <Alert>
-            <AlertDescription>{copy.enforceNeedsPrices}</AlertDescription>
+        {routedUnpriced.length > 0 ? (
+          <Alert variant="destructive">
+            <AlertDescription>
+              {copy.routedNeedPrices(
+                routedUnpriced
+                  .map(
+                    (id) => catalog.models.find((m) => m.id === id)?.name ?? id,
+                  )
+                  .join(", "),
+              )}
+            </AlertDescription>
           </Alert>
+        ) : (
+          unpricedInEnforce && (
+            <Alert>
+              <AlertDescription>{copy.enforceNeedsPrices}</AlertDescription>
+            </Alert>
+          )
         )}
         {models.length ? (
           <Card variant="flush">

@@ -166,7 +166,9 @@ export function ProcessDesignPage() {
           language={admin.language}
           refreshGeneration={admin.refreshGeneration}
           budgetReadable
-          preferredModelId={state.query.data?.routing.modelId ?? undefined}
+          preferredModelId={
+            state.query.data?.policy.effective.roles.designer?.models[0]
+          }
           initialView={view}
           autoStart={edit === "canvas"}
         />

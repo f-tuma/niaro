@@ -21,6 +21,8 @@ const en = {
   exceedsRun: "Even a short call exceeds the per-answer limit.",
   enforceNeedsPrices:
     "With Stop at limit, every model you use needs a price. Unpriced models cannot run.",
+  routedNeedPrices: (names: string) =>
+    `These models serve a role in Models and need a price to stop at limit: ${names}.`,
   designerNeedsEnforce:
     "The process designer and agent steps run only with Stop at limit and a priced model.",
   filled: (count: number) =>
@@ -59,6 +61,8 @@ const cs: UsageCopy = {
   exceedsRun: "I krátké volání překračuje limit na odpověď.",
   enforceNeedsPrices:
     "Při zastavení na limitu potřebuje každý používaný model cenu. Modely bez ceny nepoběží.",
+  routedNeedPrices: (names) =>
+    `Tyto modely mají roli v Modelech a pro zastavení na limitu potřebují cenu: ${names}.`,
   designerNeedsEnforce:
     "Návrhář procesů a kroky s agentem běží jen při zastavení na limitu a s oceněným modelem.",
   filled: (count: number) =>

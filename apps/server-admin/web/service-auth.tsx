@@ -342,7 +342,9 @@ export function ServiceAuthentication({
           copy={copy}
           busy={busy}
           run={run}
-          decision={!!state.query.data.routing.decision.enabled}
+          decision={
+            !!state.query.data.policy.effective.roles.selector?.models.length
+          }
           gate={gate}
         />
       ) : !value.config.hasClientId ? (
