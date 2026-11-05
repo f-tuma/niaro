@@ -445,7 +445,9 @@ for (const stage of ["before", "after"] as const) {
     } else {
       assert.equal(prior.state.memoryReceipts[0]!.toolCallId, originalCallId);
       assert.equal(prior.state.memoryVersion, 2);
-      assert.equal(prior.state.memoryMetadata, undefined);
+      // The thread keeps a pin of the saved items it used; the corrected
+      // item is the person's own change, so nothing remains pinned.
+      assert.deepEqual(prior.state.memoryMetadata, { items: [] });
       assert.equal(prior.state.memoryChanged, true);
       assert.deepEqual(prior.state.memoryReads, []);
     }
