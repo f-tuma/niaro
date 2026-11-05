@@ -2484,6 +2484,20 @@ export class ServiceCatalogStore {
       .get(id, workspaceId, userId);
     return row ? (JSON.parse(String(row.data)) as unknown) : undefined;
   }
+  /** This person's latest native turns of one chat, newest first (NIAR-263). */
+  conversationTurns(
+    workspaceId: string,
+    userId: string,
+    conversationId: string,
+    limit: number,
+  ) {
+    return this.db
+      .prepare(
+        "SELECT data FROM agent_service_turn WHERE workspace_id=? AND user_id=? AND json_extract(data,'$.kind')='mastra-1' AND json_extract(data,'$.runId')=id AND json_extract(data,'$.conversationId')=? ORDER BY rowid DESC LIMIT ?",
+      )
+      .all(workspaceId, userId, conversationId, limit)
+      .map((row) => JSON.parse(String(row.data)) as unknown);
+  }
   /** Typed erase/read-only view: no normal constructor, action recovery, budget recovery or key loading. */
   static forAttachmentRestore(
     db: DatabaseSync,

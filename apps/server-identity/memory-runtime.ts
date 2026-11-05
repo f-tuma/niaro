@@ -220,6 +220,17 @@ export function createMemoryRuntime(
         throw new IdentityError(409, "memory_context_changed");
       return store.version(actor);
     },
+    async readable(saved) {
+      // Called from the identity queue; never recursively acquire it.
+      options.check();
+      return (
+        !!saved.items &&
+        store.itemsReadable(actor, saved.items, settings) &&
+        (saved.sources ?? []).every((source) =>
+          options.sourceAccess(source, actor),
+        )
+      );
+    },
     async invoke(name, raw, meta) {
       const check = () => {
         meta.signal?.throwIfAborted();

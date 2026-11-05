@@ -514,6 +514,7 @@ export function createNativeCatalogRuntime(
           state.memoryChanged = saved.data.memoryChanged;
           state.memoryVersion = saved.data.memoryVersion;
           state.memoryMetadata = saved.data.memoryMetadata;
+          state.replyBasis = saved.data.replyBasis;
           state.threadAuthority = saved.data.threadAuthority;
           state.answeredQuestion = saved.data.answeredQuestion;
           state.memoryReads = saved.data.memoryReads;

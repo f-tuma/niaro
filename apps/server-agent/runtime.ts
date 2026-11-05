@@ -246,6 +246,13 @@ export type NativeAgentSession = {
     /** Explicit domain provenance; unmarked legacy context is treated as private. */
     privateContext?: boolean;
   }>;
+  /**
+   * Which earlier runs of this thread may keep their answers in the model's
+   * history, checked on every model call (NIAR-263): an answer whose run is
+   * left out is withheld. Without it, an earlier answer built on private
+   * context is withheld.
+   */
+  visibleRuns?(runIds: string[]): Promise<ReadonlySet<string>>;
   allowance(
     providerId: string,
     revision: number,
@@ -466,26 +473,53 @@ function promptInput(input: unknown) {
 const EARLIER_CALLS_NOTE = (calls: string[]) =>
   `[Earlier tool calls, not kept in history: ${[...new Set(calls)].join(", ")}. Their arguments and results are gone; call a tool again with complete arguments when you need its result.]`;
 
+/** The run an assistant message was written in, from its privacy stamp. */
+function stampedRun(message: { content: { metadata?: unknown } }) {
+  const metadata = message.content.metadata;
+  const stamp =
+    metadata && typeof metadata === "object" && "niaroNativePrivacy" in metadata
+      ? metadata.niaroNativePrivacy
+      : undefined;
+  return stamp &&
+    typeof stamp === "object" &&
+    "version" in stamp &&
+    stamp.version === 1 &&
+    "runId" in stamp &&
+    typeof stamp.runId === "string"
+    ? stamp.runId
+    : undefined;
+}
 /**
  * What the provider sees of the conversation. Calls of this run show the
  * arguments the model actually sent (`currentInputs`): stored history is
  * opaque, and a call replayed as `{}` teaches the model to send `{}`. Calls of
  * earlier turns become a short note, their results dropped with them, unless
- * a result belongs to the current turn (a resumed approval). On-read
- * projection also covers pre-migration memory rows and restored checkpoint
- * history.
+ * a result belongs to the current turn (a resumed approval). An earlier
+ * answer stays when its run is in `visibleRuns` (the domain checked what it
+ * drew on, NIAR-263); without that check, one built on private context is
+ * withheld. On-read projection also covers pre-migration memory rows and
+ * restored checkpoint history.
  */
 function projectProviderHistory(
   prompt: NativePrompt,
   messageList?: MessageList,
   currentInputs: ReadonlyMap<string, unknown> = new Map(),
+  visibleRuns?: ReadonlySet<string>,
 ): NativePrompt {
   const privateSegments = new Set<number>();
+  /** Segments with an answer whose sources the domain found still current. */
+  const checkedSegments = new Set<number>();
   let segment = -1;
   for (const message of messageList?.get.all.db() ?? []) {
     if (message.role === "user") segment++;
     if (message.role !== "assistant") continue;
     const stamp = message.content.metadata?.niaroNativePrivacy;
+    const run = visibleRuns ? stampedRun(message) : undefined;
+    if (run !== undefined) {
+      if (visibleRuns!.has(run)) checkedSegments.add(segment);
+      else privateSegments.add(segment);
+      continue;
+    }
     if (
       !stamp ||
       typeof stamp !== "object" ||
@@ -510,6 +544,7 @@ function projectProviderHistory(
   for (const [index, message] of prompt.entries()) {
     if (
       message.role === "assistant" &&
+      !checkedSegments.has(segments[index]!) &&
       message.content.some(
         (part) => part.type === "tool-call" && guardedTool(part.toolName),
       )
@@ -1518,6 +1553,26 @@ export function createNativeAgentRuntime(storageUrl: string) {
       ]),
     );
     let stepContext: string | undefined;
+    /** Earlier runs whose answers may stay, asked of the domain per call;
+     * a failed check withholds them all. */
+    const visibleRuns = async (messageList?: MessageList) => {
+      if (!session.visibleRuns || !messageList) return undefined;
+      const runs = [
+        ...new Set(
+          messageList.get.all
+            .db()
+            .flatMap((message) =>
+              message.role === "assistant" ? (stampedRun(message) ?? []) : [],
+            ),
+        ),
+      ];
+      if (!runs.length) return new Set<string>();
+      try {
+        return await session.visibleRuns(runs);
+      } catch {
+        return new Set<string>();
+      }
+    };
     const authority = {
       id: "niaro-step-authority",
       async processInputStep({ messages, stepNumber }) {
@@ -1554,11 +1609,12 @@ export function createNativeAgentRuntime(storageUrl: string) {
           throw fail(error);
         }
       },
-      processLLMRequest({ prompt, messageList }) {
+      async processLLMRequest({ prompt, messageList }) {
         const projected = projectProviderHistory(
           prompt,
           messageList,
           promptInputs,
+          await visibleRuns(messageList),
         );
         return {
           prompt: stepContext
@@ -1594,7 +1650,11 @@ export function createNativeAgentRuntime(storageUrl: string) {
                   ...message.content,
                   metadata: {
                     ...message.content.metadata,
-                    niaroNativePrivacy: { version: 1, privateContext },
+                    niaroNativePrivacy: {
+                      version: 1,
+                      privateContext,
+                      runId: input.runId,
+                    },
                   },
                 },
               }
