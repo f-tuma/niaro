@@ -25,6 +25,7 @@ import { copyText } from "../clipboard";
 import { ProcessProposalCard } from "../ProcessProposal";
 import type { ChatMessage, ThreadEntry, ThreadPart } from "./thread";
 import { MemorySaveLines, type ChatMemorySaves } from "./memory-saves";
+import { AnswerReceiptLine, type ChatAnswerReceipts } from "./answer-receipt";
 
 /**
  * What the parts need from the chat: the session, its state and the
@@ -74,6 +75,8 @@ export type MobileChat = {
   locateMessage: (id: string, y: number) => void;
   /** This chat's saves to memory, shown under the replies that made them. */
   memorySaves?: ChatMemorySaves;
+  /** What each answer read, changed and used, shown under it (NIAR-296). */
+  answerReceipts?: ChatAnswerReceipts;
 };
 const MobileChatContext = createContext<MobileChat | null>(null);
 export const MobileChatProvider = MobileChatContext.Provider;
@@ -117,6 +120,13 @@ export function AnswerBody({
           commandId={m.replyToCommandId}
           language={chat.language}
           disabled={chat.readOnly || !chat.online}
+        />
+      ) : null}
+      {m.role === "assistant" ? (
+        <AnswerReceiptLine
+          receipts={chat.answerReceipts}
+          commandId={m.replyToCommandId}
+          language={chat.language}
         />
       ) : null}
     </>

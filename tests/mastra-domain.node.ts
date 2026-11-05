@@ -3071,6 +3071,100 @@ test("a write the checker rejects is answered once by the escalation model, then
   }
 });
 
+test("a message sent with an offered preset answers with its tier and records it; any other uses the chat model", async () => {
+  const f = fixture();
+  try {
+    const provider = f.configureModels();
+    const strong = f.store.command(
+      CatalogCommand.parse({
+        ...target,
+        type: "saveModel",
+        revision: 0,
+        settings: {
+          providerId: provider.id,
+          model: "TEST-thorough",
+          name: "TEST thorough",
+          enabled: true,
+          tools: true,
+          kind: "chat",
+        },
+      }),
+    );
+    const org = f.store.modelPolicies(
+      target.organizationId,
+      target.workspaceId,
+    ).organization;
+    f.store.command(
+      CatalogCommand.parse({
+        ...target,
+        type: "saveOrganizationModelPolicy",
+        revision: org.revision,
+        policy: {
+          ...org.policy,
+          tiers: [{ id: "strong", name: "Strong", models: [strong] }],
+        },
+      }),
+    );
+    const current = f.store.modelPolicies(
+      target.organizationId,
+      target.workspaceId,
+    ).workspace;
+    f.store.command(
+      CatalogCommand.parse({
+        ...target,
+        type: "saveWorkspaceModelPolicy",
+        revision: current.revision,
+        policy: {
+          ...current.policy,
+          options: {
+            ...current.policy.options,
+            presets: {
+              enabled: true,
+              items: [{ id: "thorough", name: "Thorough", tier: "strong" }],
+            },
+          },
+        },
+      }),
+    );
+    const picked = await f
+      .domain()
+      .begin("TEST-preset", "Summarise my week", "en", [], "UTC", {
+        preset: "thorough",
+      });
+    assert.deepEqual(picked.state.preset, { id: "thorough", name: "Thorough" });
+    const step = await picked.prepareModel();
+    assert.equal(step.selected.model.model, "TEST-thorough");
+    assert.equal(step.selected.route?.role, "preset:thorough");
+    assert.deepEqual(step.selected.route?.preset, {
+      id: "thorough",
+      name: "Thorough",
+    });
+    // A preset the workspace does not offer is never used or recorded.
+    const unknown = await f
+      .domain()
+      .begin("TEST-preset-unknown", "Summarise my week", "en", [], "UTC", {
+        preset: "turbo",
+      });
+    assert.equal(unknown.state.preset, undefined);
+    assert.equal(
+      (await unknown.prepareModel()).selected.model.model,
+      "TEST-chat",
+    );
+    // The same request without a preset is a different request.
+    const plain = await f
+      .domain()
+      .begin("TEST-preset-plain", "Summarise my week", "en", []);
+    assert.notEqual(plain.state.hash, picked.state.hash);
+    assert.equal(
+      (await plain.prepareModel()).selected.model.model,
+      "TEST-chat",
+    );
+  } finally {
+    await f.memoryStore.close();
+    f.db.close();
+  }
+});
+
 test("without escalation a rejected write stays with the chat model", async () => {
   const f = fixture();
   try {

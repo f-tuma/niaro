@@ -110,6 +110,33 @@ export const EscalationOptions = z
     (value) => value.mode === "stop" || !!value.tier || value.models.length > 0,
     "Escalation needs a tier or models",
   );
+export const MAX_MODEL_PRESETS = 4;
+/**
+ * A choice members may make in the chat (NIAR-296): an administrator's name
+ * ("Fast", "Thorough") for one of the organization's tiers. A message sent
+ * with it answers with that tier's models instead of the chat role's.
+ */
+export const ModelPreset = z.strictObject({
+  id: TierId,
+  name: z.string().trim().min(1).max(40),
+  tier: TierId,
+});
+export type ModelPresetValue = z.infer<typeof ModelPreset>;
+/** Whether members pick a preset here, and which ones they see. Off by default. */
+export const PresetOptions = z
+  .strictObject({
+    enabled: z.boolean().default(false),
+    items: z.array(ModelPreset).max(MAX_MODEL_PRESETS).default([]),
+  })
+  .refine(
+    (value) => unique(value.items.map((item) => item.id)),
+    "A preset ID appears once",
+  )
+  .refine(
+    (value) => !value.enabled || value.items.length > 0,
+    "Offer at least one preset or turn presets off",
+  );
+export type PresetOptionsValue = z.infer<typeof PresetOptions>;
 export const PolicyOptions = z.strictObject({
   /** Use the server's own speech recognition when voice input has no models. */
   serverVoice: z.boolean().default(true),
@@ -120,6 +147,7 @@ export const PolicyOptions = z.strictObject({
     models: [],
     tier: null,
   }),
+  presets: PresetOptions.default({ enabled: false, items: [] }),
 });
 export type PolicyOptionsValue = z.infer<typeof PolicyOptions>;
 const roleRecord = z.partialRecord(ModelRole, RoleRoute).default({});
@@ -133,6 +161,7 @@ export const OrganizationModelPolicy = z
       speech: { voice: null, zeroDataRetention: true },
       selector: { minConfidence: 0.8 },
       escalation: { mode: "stop", models: [], tier: null },
+      presets: { enabled: false, items: [] },
     }),
   })
   .refine(
@@ -156,6 +185,7 @@ export const WorkspaceModelPolicy = z
         speech: SpeechOptions.optional(),
         selector: SelectorOptions.optional(),
         escalation: EscalationOptions.optional(),
+        presets: PresetOptions.optional(),
       })
       .default({}),
   })
@@ -197,6 +227,16 @@ export const ModelPolicyView = z.strictObject({
       .max(100),
     /** The models a checker rejection repeats its step with; none when escalation is off. */
     escalation: EffectiveRoute,
+    /** The presets members may pick here, with the models each reaches; none when off. */
+    presets: z
+      .array(
+        z.strictObject({
+          id: TierId,
+          name: z.string().max(40),
+          route: EffectiveRoute,
+        }),
+      )
+      .max(MAX_MODEL_PRESETS),
     options: PolicyOptions,
   }),
 });
@@ -204,8 +244,9 @@ export type ModelPolicyViewValue = z.infer<typeof ModelPolicyView>;
 /**
  * The models budgeted calls may reach in a workspace, with the routes that
  * reach each: the first model of every budgeted role and service route, the
- * others only where fallback is on, and the escalation models when
- * escalation is on. In enforce mode each of them needs a price.
+ * others only where fallback is on, the escalation models when escalation
+ * is on and the models of the presets members may pick. In enforce mode
+ * each of them needs a price.
  */
 export function budgetedReach(effective: ModelPolicyViewValue["effective"]) {
   const reach = new Map<string, string[]>();
@@ -218,6 +259,8 @@ export function budgetedReach(effective: ModelPolicyViewValue["effective"]) {
   for (const service of effective.services)
     add(`service:${service.serviceId}`, service.route);
   add("escalation", effective.escalation);
+  for (const preset of effective.presets)
+    add(`preset:${preset.id}`, preset.route);
   return reach;
 }
 
@@ -230,8 +273,12 @@ export type StoredModelPolicies = {
   organization: { revision: number; policy: OrganizationModelPolicyValue };
   workspace: { revision: number; policy: WorkspaceModelPolicyValue };
 };
-/** `service:<id>` and `escalation` are routes too, beside the roles. */
-export type RouteKey = ModelRoleValue | `service:${string}` | "escalation";
+/** `service:<id>`, `escalation` and `preset:<id>` are routes too, beside the roles. */
+export type RouteKey =
+  | ModelRoleValue
+  | `service:${string}`
+  | "escalation"
+  | `preset:${string}`;
 
 export const emptyOrganizationPolicy = () => OrganizationModelPolicy.parse({});
 export const emptyWorkspacePolicy = () => WorkspaceModelPolicy.parse({});
@@ -292,7 +339,13 @@ export function effectiveOptions(
     speech: local.speech ?? base.speech,
     selector: local.selector ?? base.selector,
     escalation: local.escalation ?? base.escalation,
+    presets: local.presets ?? base.presets,
   });
+}
+/** The presets members may pick in this workspace: none while presets are off. */
+export function offeredPresets(policies: StoredModelPolicies) {
+  const presets = effectiveOptions(policies).presets;
+  return presets.enabled ? presets.items : [];
 }
 export function effectiveRoute(
   policies: StoredModelPolicies,
@@ -307,6 +360,26 @@ export function effectiveRoute(
       fallback: effectiveRole(policies, "chat").fallback,
       tier: escalation.tier,
       source: policies.workspace.policy.options.escalation
+        ? "workspace"
+        : "organization",
+      via: null,
+    };
+  }
+  if (key.startsWith("preset:")) {
+    // A preset reaches only its tier, and only while members are offered it.
+    const preset = offeredPresets(policies).find(
+      (item) => item.id === key.slice("preset:".length),
+    );
+    if (!preset) return none();
+    return {
+      models: routeModels(
+        { models: [], tier: preset.tier },
+        policies.organization.policy.tiers,
+      ),
+      // The preset's models move on like the chat models do.
+      fallback: effectiveRole(policies, "chat").fallback,
+      tier: preset.tier,
+      source: policies.workspace.policy.options.presets
         ? "workspace"
         : "organization",
       via: null,
@@ -342,7 +415,29 @@ export function policyView(
         route: effectiveRoute(policies, `service:${serviceId}`),
       })),
       escalation: effectiveRoute(policies, "escalation"),
+      presets: offeredPresets(policies).map((preset) => ({
+        id: preset.id,
+        name: preset.name,
+        route: effectiveRoute(policies, `preset:${preset.id}`),
+      })),
       options: effectiveOptions(policies),
     },
   };
 }
+
+export const CHAT_PRESETS_PROFILE = "agent-chat-presets/1" as const;
+/**
+ * `GET /v1/:workspace/chat-presets`: the presets a member may pick for the
+ * next message, by the names the administrator gave them. Empty while the
+ * workspace offers none. Model names and tiers never reach the member.
+ */
+export const ChatPresetsSchema = z.strictObject({
+  profile: z.literal(CHAT_PRESETS_PROFILE),
+  workspaceId: IdentityId,
+  presets: z
+    .array(
+      z.strictObject({ id: TierId, name: z.string().trim().min(1).max(40) }),
+    )
+    .max(MAX_MODEL_PRESETS),
+});
+export type ChatPresets = z.infer<typeof ChatPresetsSchema>;

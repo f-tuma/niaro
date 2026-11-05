@@ -216,9 +216,13 @@ export type NativeAgentEvent =
   | {
       type: "model-start";
       model?: string;
+      /** The catalog model's id, for the answer's receipt (NIAR-296). */
+      modelId?: string;
       /** The model's role and why it serves this step. */
       role?: string;
       reason?: string;
+      /** The preset the person picked for this message, by name. */
+      preset?: string;
     }
   | { type: "model-end"; failed?: true }
   | { type: "tool-start"; name: string; toolCallId: string; args?: unknown }
@@ -1195,8 +1199,12 @@ export function createNativeAgentRuntime(storageUrl: string) {
             await input.onEvent?.({
               type: "model-start",
               model: selected.model.model,
+              modelId: selected.model.id,
               ...(selected.route
                 ? { role: selected.route.role, reason: selected.route.reason }
+                : {}),
+              ...(selected.route?.preset
+                ? { preset: selected.route.preset.name }
                 : {}),
             });
             const output = await operation(current);

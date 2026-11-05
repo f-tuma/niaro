@@ -314,7 +314,14 @@ test(
               route: { models: [modelId], tier: null, fallback: false },
             },
           ],
-          options: { selector: { minConfidence: 0.9 } },
+          options: {
+            selector: { minConfidence: 0.9 },
+            // Member presets name a tier, so they travel as they are.
+            presets: {
+              enabled: true,
+              items: [{ id: "quick", name: "Quick", tier: "fast" }],
+            },
+          },
         },
       });
       catalog = await a.catalog();
@@ -554,6 +561,7 @@ test(
         comparable(reexport).workspaces,
         comparable(bundle).workspaces,
       );
+      assert.match(JSON.stringify(reexport.workspaces), /"Quick"/);
       const imported_catalog = await b.catalog();
       assert.equal(imported_catalog.providers[0].hasCredential, false);
       assert.equal(imported_catalog.services[0].hasCredential, false);

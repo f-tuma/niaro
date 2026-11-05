@@ -202,6 +202,7 @@ import { answerAnnouncement } from "./chat/announce";
 import { ChatFooter } from "./chat/composer";
 import { MobileChatProvider, type MobileChat } from "./chat/parts";
 import { useChatMemorySaves } from "./chat/memory-saves";
+import { useAnswerReceipts, useMobileChatPresets } from "./chat/answer-receipt";
 import { projectThread, trailingWork, visibleMessages } from "./chat/thread";
 import {
   chrome as styles,
@@ -792,6 +793,12 @@ export function Workspace({
   );
   const busy = !!state.pending || !!state.answerRecoveryBlocked;
   const chatSetup = useMobileChatSetup(session, online);
+  // The model preset for the next messages, among those offered (NIAR-296).
+  const presets = useMobileChatPresets(session, online);
+  const [pickedPreset, setPickedPreset] = useState<string>();
+  const preset = presets.some((item) => item.id === pickedPreset)
+    ? pickedPreset
+    : undefined;
   const mentions = useMobileComposerMentions({
     session,
     online,
@@ -1271,6 +1278,7 @@ export function Workspace({
               ...(!replyContext && options.withoutProcess
                 ? { withoutProcess: true as const }
                 : {}),
+              ...(!replyContext && preset ? { preset } : {}),
             },
             continueConversation,
           );
@@ -1828,7 +1836,19 @@ export function Workspace({
     messages.filter((message) => message.role === "assistant").length,
     randomUUID,
   );
+  // Receipts are read again whenever another answer is stored (NIAR-296).
+  const answered = messages.filter(
+    (message) => message.role === "assistant" && message.replyToCommandId,
+  );
+  const answerReceipts = useAnswerReceipts(
+    session,
+    conversationId,
+    answered.length
+      ? `${answered.length}:${answered.at(-1)!.replyToCommandId}`
+      : "",
+  );
   const chat: MobileChat = {
+    answerReceipts,
     session,
     language,
     busy,
@@ -2992,6 +3012,9 @@ export function Workspace({
             }}
             onSend={() => submitMessage()}
             onVoice={openVoice}
+            presets={presets}
+            preset={preset}
+            onPreset={setPickedPreset}
             onAttach={() => {
               Keyboard.dismiss();
               setContextMenu(true);

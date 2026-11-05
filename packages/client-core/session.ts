@@ -121,6 +121,11 @@ import {
 } from "../protocol/mentions";
 import { MemberServiceList } from "../protocol/member-services";
 import {
+  AnswerReceiptPageSchema,
+  type AnswerReceiptPage,
+} from "../protocol/answer-receipts";
+import { ChatPresetsSchema, type ChatPresets } from "../protocol/model-policy";
+import {
   WorkspaceChatSetupSchema,
   type WorkspaceChatSetup,
 } from "../protocol/workspace-instructions";
@@ -1481,6 +1486,36 @@ export class ClientSession {
     if (setup.workspaceId !== this.credential.scope.workspaceId)
       throw new Error("invalid_payload");
     return setup;
+  }
+  /** What the chat's latest answers read, changed and had in context, and
+   * which model wrote each (NIAR-296). Null on a server without receipts. */
+  async readAnswerReceipts(
+    conversationId: string,
+    signal?: AbortSignal,
+  ): Promise<AnswerReceiptPage | null> {
+    if (!this.authorized) await this.authorize();
+    const { response, value } = await this.json(
+      `receipts?conversationId=${encodeURIComponent(conversationId)}`,
+      { signal },
+    );
+    if (response.status === 404 || response.status === 405) return null;
+    if (!response.ok) throw new Error("connection_failed");
+    const page = AnswerReceiptPageSchema.parse(value);
+    if (page.conversationId !== conversationId)
+      throw new Error("invalid_payload");
+    return page;
+  }
+  /** The model presets the workspace lets the person pick (NIAR-296); none
+   * when it offers none or the server has no presets. */
+  async readChatPresets(signal?: AbortSignal): Promise<ChatPresets["presets"]> {
+    if (!this.authorized) await this.authorize();
+    const { response, value } = await this.json("chat-presets", { signal });
+    if (response.status === 404 || response.status === 405) return [];
+    if (!response.ok) throw new Error("connection_failed");
+    const presets = ChatPresetsSchema.parse(value);
+    if (presets.workspaceId !== this.credential.scope.workspaceId)
+      throw new Error("invalid_payload");
+    return presets.presets;
   }
   /** The services the person may use, whose account each reads and changes
    * with, and their own last read and failure. Null on a server without it. */

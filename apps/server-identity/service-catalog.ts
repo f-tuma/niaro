@@ -63,6 +63,7 @@ import {
   emptyOrganizationPolicy,
   emptyWorkspacePolicy,
   notDispatchedCause,
+  offeredPresets,
   policyView,
   type RouteKey,
   type StoredModelPolicies,
@@ -99,6 +100,9 @@ import {
 import type { Scope } from "../../packages/protocol";
 import { OutputVoiceStore } from "./output-voice";
 import type { SpeechVoiceRoute } from "../server-integrations/speech-voices";
+/** The routes of the presets members are offered, checked like any route. */
+const presetKeys = (presets: readonly { id: string }[]) =>
+  presets.map((preset) => `preset:${preset.id}` as const);
 /** What a model must offer for a use; "any" only asks that it is enabled. */
 export type ModelCapability =
   | "tools"
@@ -604,7 +608,11 @@ export class ServiceCatalogStore {
   /** What a model must offer to serve a route. The method follows its kind. */
   private fit(key: RouteKey, model: { kind: string }): ModelCapability {
     const role =
-      key.startsWith("service:") || key === "escalation" ? "chat" : key;
+      key.startsWith("service:") ||
+      key.startsWith("preset:") ||
+      key === "escalation"
+        ? "chat"
+        : key;
     switch (role) {
       case "checker":
       case "selector":
@@ -656,6 +664,9 @@ export class ServiceCatalogStore {
           last = new IdentityError(429, "catalog_provider_limit");
           continue;
         }
+        const preset = key.startsWith("preset:")
+          ? this.preset(orgId, workspaceId, key.slice("preset:".length))
+          : undefined;
         return {
           ...selected,
           route: {
@@ -663,6 +674,7 @@ export class ServiceCatalogStore {
             index,
             fallback: route.fallback,
             reason: cause ? `fallback: ${cause}` : reason,
+            ...(preset ? { preset } : {}),
           } satisfies ModelRouteChoice,
         };
       } catch (error) {
@@ -725,6 +737,36 @@ export class ServiceCatalogStore {
     } catch (error) {
       if (error instanceof IdentityError && error.status !== 403) return false;
       throw error;
+    }
+  }
+  /** One preset members may pick here now, by its id; undefined when not offered. */
+  preset(orgId: string, workspaceId: string, id: string) {
+    const found = offeredPresets(this.modelPolicies(orgId, workspaceId)).find(
+      (item) => item.id === id,
+    );
+    return found ? { id: found.id, name: found.name } : undefined;
+  }
+  /** The presets members may pick in this workspace, by name; none while off. */
+  offeredPresets(orgId: string, workspaceId: string) {
+    return offeredPresets(this.modelPolicies(orgId, workspaceId)).map(
+      (item) => ({ id: item.id, name: item.name }),
+    );
+  }
+  /**
+   * The chat model for a message sent with a preset: the preset's tier, only
+   * while the workspace offers it. Undefined for a preset it does not offer;
+   * the caller then answers with the chat role.
+   */
+  resolvePreset(orgId: string, workspaceId: string, presetId: string) {
+    if (!this.preset(orgId, workspaceId, presetId)) return undefined;
+    return this.selectRoute(orgId, workspaceId, `preset:${presetId}`);
+  }
+  /** The administrator's name for a catalog model, or undefined once it is gone. */
+  modelName(orgId: string, id: string) {
+    try {
+      return this.readModel(orgId, this.row(orgId, "model", id)).name;
+    } catch {
+      return undefined;
     }
   }
   /** The chat model, or the service's own models for its actions. */
@@ -1964,6 +2006,12 @@ export class ServiceCatalogStore {
             service.route.tier ? [`service:${service.serviceId}` as const] : [],
           ),
           "escalation",
+          ...presetKeys(
+            offeredPresets({
+              organization: { revision, policy },
+              workspace: { revision: 0, policy: local },
+            }),
+          ),
         ],
       );
     }
@@ -1995,6 +2043,9 @@ export class ServiceCatalogStore {
           (service) => `service:${service.serviceId}` as const,
         ),
         ...(policy.options.escalation ? ["escalation" as const] : []),
+        ...presetKeys(
+          offeredPresets({ ...current, workspace: { revision, policy } }),
+        ),
       ],
     );
     this.db

@@ -36,6 +36,8 @@ export type ModelRouteChoice = {
   index: number;
   fallback: boolean;
   reason: string;
+  /** The preset a member picked for this message (NIAR-296), by its name. */
+  preset?: { id: string; name: string };
 };
 export type NiaroModelSelection = {
   provider: Provider;

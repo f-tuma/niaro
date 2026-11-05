@@ -145,6 +145,35 @@ test("Again sends the latest request once more and leaves what is typed", async 
   expect(composer().props.value).toBe("TEST typing");
 });
 
+test("a picked model preset goes with the phone's next message (NIAR-296)", async () => {
+  const f = chatFixture();
+  Object.assign(f.session, {
+    readChatPresets: jest.fn(async () => [
+      { id: "quick", name: "Quick" },
+      { id: "thorough", name: "Thorough" },
+    ]),
+  });
+  render(<f.Harness />);
+  await act(flush);
+  await openChat();
+  await act(async () => {
+    fireEvent.press(screen.getByRole("radio", { name: "Thorough" }));
+    await flush();
+  });
+  fireEvent.changeText(composer(), "TEST with a preset");
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Send" }));
+    await flush();
+  });
+  expect(f.session.send.mock.calls.at(-1)![0]).toMatchObject({
+    type: "message.send",
+    text: "TEST with a preset",
+    preset: "thorough",
+  });
+  // Sent text never comes back into the composer.
+  expect(composer().props.value).toBe("");
+});
+
 test("a search hit opens the chat at an older message and outlines it", async () => {
   const f = chatFixture(true);
   render(<f.Harness />);

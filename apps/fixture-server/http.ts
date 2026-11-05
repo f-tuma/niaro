@@ -393,6 +393,8 @@ export type FixtureServerOptions = {
         | "mobileSkills"
         | "mobileMentions"
         | "mobileInstructions"
+        | "mobileChatPresets"
+        | "mobileAnswerReceipts"
         | "mobileMemberServices"
         | "mobileProcessProposal"
         | "listMarks"
@@ -900,7 +902,7 @@ export function createFixtureServer(
       }
     }
     const match =
-      /^\/v1\/([A-Za-z0-9-]+)\/(server|snapshot|events|meetings(?:\/voice-profile|\/[A-Fa-f0-9-]{36}(?:\/(?:blocks|seal|process|record|audio|speakers))?)?|human-tasks(?:\/[A-Za-z0-9%:._-]{1,480})?|conversations(?:\/messages)?|commands(?:\/interrupt)?|activity|auth\/pair|auth\/session|auth\/refresh|services(?:\/(?:start|status|cancel))?|process-design(?:\/(?:capabilities|start|update|acknowledge|accept|turns(?:\/list)?|sessions\/list|drafts\/list))?|processes(?:\/(?:input|runs|output(?:\/capabilities)?|commands(?:\/interrupt)?))?|hub(?:\/open)?|pet(?:\/memory|\/events)?|skills|mentions|instructions|search|process-proposals|voice|voice\/transcriptions|voice\/speech|voice\/output-settings|attachments(?:\/(?:capabilities|[a-f0-9-]{36}\/original))?|attachment-drafts(?:\/[a-f0-9-]{36}(?:\/(?:uploads|references|remove|items\/[a-f0-9-]{36}\/remove))?)?|attachment-uploads\/[a-f0-9-]{36}(?:\/bytes)?|attachment-ingestions\/[a-f0-9-]{36}(?:\/retry-local)?)$/.exec(
+      /^\/v1\/([A-Za-z0-9-]+)\/(server|snapshot|events|meetings(?:\/voice-profile|\/[A-Fa-f0-9-]{36}(?:\/(?:blocks|seal|process|record|audio|speakers))?)?|human-tasks(?:\/[A-Za-z0-9%:._-]{1,480})?|conversations(?:\/messages)?|commands(?:\/interrupt)?|activity|auth\/pair|auth\/session|auth\/refresh|services(?:\/(?:start|status|cancel))?|process-design(?:\/(?:capabilities|start|update|acknowledge|accept|turns(?:\/list)?|sessions\/list|drafts\/list))?|processes(?:\/(?:input|runs|output(?:\/capabilities)?|commands(?:\/interrupt)?))?|hub(?:\/open)?|pet(?:\/memory|\/events)?|skills|mentions|instructions|chat-presets|receipts|search|process-proposals|voice|voice\/transcriptions|voice\/speech|voice\/output-settings|attachments(?:\/(?:capabilities|[a-f0-9-]{36}\/original))?|attachment-drafts(?:\/[a-f0-9-]{36}(?:\/(?:uploads|references|remove|items\/[a-f0-9-]{36}\/remove))?)?|attachment-uploads\/[a-f0-9-]{36}(?:\/bytes)?|attachment-ingestions\/[a-f0-9-]{36}(?:\/retry-local)?)$/.exec(
         url.pathname,
       );
     if (!match) return respond(404, { error: "not_found" });
@@ -1203,6 +1205,74 @@ export function createFixtureServer(
             req.headers.authorization,
             workspace,
             auth.serverId,
+          ),
+        );
+      }
+      // The model presets the person may pick for a message (NIAR-296).
+      if (route === "chat-presets") {
+        if (!accountWorkspace || !identity?.mobileChatPresets)
+          return respond(404, { error: "not_found" });
+        if ([...url.searchParams.keys()].length)
+          return respond(400, { error: "invalid_payload" });
+        if (req.method !== "GET")
+          return respond(405, { error: "method_not_allowed" });
+        return respond(
+          200,
+          await identity.mobileChatPresets(
+            req.headers.authorization,
+            workspace,
+            auth.serverId,
+          ),
+        );
+      }
+      // What each of the chat's latest answers was built from (NIAR-296).
+      if (route === "receipts") {
+        if (!accountWorkspace || !identity?.mobileAnswerReceipts)
+          return respond(404, { error: "not_found" });
+        if (req.method !== "GET")
+          return respond(405, { error: "method_not_allowed" });
+        const keys = [...url.searchParams.keys()];
+        const id = url.searchParams.get("conversationId");
+        if (keys.length !== 1 || !id || !/^[a-zA-Z0-9._:-]{1,160}$/.test(id))
+          return respond(400, { error: "invalid_payload" });
+        return respond(
+          200,
+          await identity.mobileAnswerReceipts(
+            req.headers.authorization,
+            workspace,
+            auth.serverId,
+            id,
+            // Read once the person is known: the files they sent with each
+            // request, as their own chat keeps them.
+            async (scope) => {
+              const files = new Map<string, { id: string; name: string }[]>();
+              let after: string | null = null;
+              for (let page = 0; page < 15; page++) {
+                const read = storage.conversationMessages(scope, id, after);
+                if (!read) break;
+                for (const message of read.messages) {
+                  const command = /^message-(.+)-[0-9]+$/.exec(message.id)?.[1];
+                  if (
+                    message.role !== "user" ||
+                    !command ||
+                    !message.attachments
+                  )
+                    continue;
+                  files.set(
+                    command,
+                    message.attachments
+                      .filter((file) => file.availability === "available")
+                      .map((file) => ({
+                        id: file.contentId,
+                        name: file.filename,
+                      })),
+                  );
+                }
+                after = read.nextAfter;
+                if (!after) break;
+              }
+              return (commandId: string) => files.get(commandId) ?? [];
+            },
           ),
         );
       }

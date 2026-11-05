@@ -44,6 +44,16 @@ says where to click and what to enter. Console structure:
    decision model is entered by hand with kind **Decision**.
 5. Reviewed voices for spoken replies are listed on the speech model
    (**Voices** in its model form, `id` or `id=Name`, comma-separated).
+6. Optional: **Member presets** let members pick a preset in the chat for
+   their next messages (off by default). Each preset is your name for a
+   tier, for example **Fast** or **Thorough**; members see only the names.
+   A preset never reaches a model outside its tier, the tier cannot be
+   removed while a preset uses it, and usage limits apply as to any answer.
+   Runs show the preset on each model step.
+
+Under every answer, members see one quiet line with what the answer read
+and changed, the memories, skills, meetings and files it used, and the
+model that wrote it by the name you gave it on the Models page.
 
 Behavior: [models-and-providers](../../openspec/specs/models-and-providers/spec.md).
 
@@ -68,7 +78,7 @@ Behavior: [models-and-providers](../../openspec/specs/models-and-providers/spec.
    agent steps run only with **Stop at limit** and a priced model.
 
 Each model a role can reach needs its own price, including the Service
-picker, the Checker, fallback and escalation models: with **Stop at limit**
+picker, the Checker, fallback, escalation and member preset models: with **Stop at limit**
 the page names the missing ones and does not save until they are priced.
 Editing a model or its provider makes its price out of date; save the page
 again.

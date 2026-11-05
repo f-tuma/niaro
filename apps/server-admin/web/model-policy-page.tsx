@@ -10,9 +10,11 @@ import {
   effectiveRoute,
   policyView,
   type EffectiveRouteValue,
+  MAX_MODEL_PRESETS,
   type ModelRoleValue,
   type ModelTierValue,
   type OrganizationModelPolicyValue,
+  type PresetOptionsValue,
   type RoleRouteValue,
   type StoredModelPolicies,
   type WorkspaceModelPolicyValue,
@@ -246,12 +248,39 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
       options: next ? { ...rest, escalation: next } : rest,
     });
   };
-  // Tiers need a name and a model; an escalation needs models to go to.
+  // Member presets (NIAR-296): the organization always has the setting; a
+  // workspace shows what it inherits until it sets its own.
+  const presets =
+    tab === "organization"
+      ? orgPolicy.options.presets
+      : (wsPolicy.options.presets ?? effective.presets);
+  const setPresets = (next: PresetOptionsValue | undefined) => {
+    if (tab === "organization") {
+      if (next)
+        setOrganization({
+          ...orgPolicy,
+          options: { ...orgPolicy.options, presets: next },
+        });
+      return;
+    }
+    const { presets: _inherited, ...rest } = wsPolicy.options;
+    setWorkspace({
+      ...wsPolicy,
+      options: next ? { ...rest, presets: next } : rest,
+    });
+  };
+  // Tiers need a name and a model; an escalation needs models to go to;
+  // offered presets need a name and an existing tier.
   const invalid =
     tiers.some((tier) => !tier.name.trim() || !tier.models.length) ||
     (escalation.mode === "escalate" &&
       !escalation.tier &&
-      !escalation.models.length);
+      !escalation.models.length) ||
+    (presets.enabled && !presets.items.length) ||
+    presets.items.some(
+      (item) =>
+        !item.name.trim() || !tiers.some((tier) => tier.id === item.tier),
+    );
   return (
     <>
       <Tabs
@@ -449,6 +478,19 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
           )}
         </SettingRows>
       </Section>
+      <PresetEditor
+        copy={copy}
+        tiers={tiers}
+        presets={presets}
+        disabled={state.busy}
+        inherited={tab === "workspace" && !wsPolicy.options.presets}
+        onChange={setPresets}
+        onUseDefault={
+          tab === "workspace" && wsPolicy.options.presets
+            ? () => setPresets(undefined)
+            : undefined
+        }
+      />
       <Section title={copy.options}>
         <SettingRows>
           <SettingRow
@@ -950,6 +992,161 @@ function TierEditor({
         <Empty variant="outline">
           <EmptyHeader>
             <EmptyTitle>{copy.noTiers}</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      )}
+    </Section>
+  );
+}
+
+/**
+ * Member presets (NIAR-296): whether members pick one in the chat and the
+ * presets they see, each an administrator's name for a tier. Off by default.
+ */
+function PresetEditor({
+  copy,
+  tiers,
+  presets,
+  disabled,
+  inherited,
+  onChange,
+  onUseDefault,
+}: {
+  copy: ModelPolicyCopy;
+  tiers: ModelTierValue[];
+  presets: PresetOptionsValue;
+  disabled: boolean;
+  /** A workspace that follows the organization's presets. */
+  inherited: boolean;
+  onChange: (next: PresetOptionsValue) => void;
+  onUseDefault?: () => void;
+}) {
+  const newId = () => {
+    for (let index = 1; ; index++) {
+      const id = `preset-${index}`;
+      if (!presets.items.some((item) => item.id === id)) return id;
+    }
+  };
+  const update = (
+    index: number,
+    change: Partial<PresetOptionsValue["items"][number]>,
+  ) =>
+    onChange({
+      ...presets,
+      items: presets.items.map((item, at) =>
+        at === index ? { ...item, ...change } : item,
+      ),
+    });
+  return (
+    <Section
+      title={copy.presets}
+      count={presets.items.length}
+      actions={
+        presets.items.length < MAX_MODEL_PRESETS &&
+        tiers.length > 0 && (
+          <Button
+            variant="outline"
+            disabled={disabled}
+            onClick={() =>
+              onChange({
+                ...presets,
+                items: [
+                  ...presets.items,
+                  {
+                    id: newId(),
+                    name: copy.newPreset,
+                    tier: tiers[presets.items.length % tiers.length]!.id,
+                  },
+                ],
+              })
+            }
+          >
+            <Plus data-icon="inline-start" aria-hidden="true" />
+            {copy.addPreset}
+          </Button>
+        )
+      }
+    >
+      <SettingRows>
+        <SettingRow
+          label={copy.presetsEnabled}
+          meta={inherited ? copy.presetsInherited : copy.presetsMeta}
+          htmlFor="presets-enabled"
+        >
+          <Switch
+            id="presets-enabled"
+            disabled={disabled || (!presets.enabled && !presets.items.length)}
+            checked={presets.enabled}
+            onCheckedChange={(enabled) => onChange({ ...presets, enabled })}
+          />
+          {onUseDefault && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={disabled}
+              onClick={onUseDefault}
+            >
+              {copy.useDefault}
+            </Button>
+          )}
+        </SettingRow>
+        {presets.items.map((item, index) => (
+          <SettingRow
+            key={item.id}
+            wide
+            label={
+              <Input
+                aria-label={copy.presetName}
+                disabled={disabled}
+                maxLength={40}
+                value={item.name}
+                onChange={(event) =>
+                  update(index, { name: event.target.value })
+                }
+              />
+            }
+          >
+            <Select
+              value={item.tier}
+              disabled={disabled}
+              onValueChange={(tier) => update(index, { tier })}
+            >
+              <SelectTrigger
+                aria-label={`${copy.presetTier}: ${item.name}`}
+                className="w-full"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {tiers.map((tier) => (
+                  <SelectItem key={tier.id} value={tier.id}>
+                    {tier.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={disabled}
+              aria-label={copy.removePreset(item.name)}
+              onClick={() => {
+                const items = presets.items.filter((_, at) => at !== index);
+                onChange({
+                  enabled: presets.enabled && items.length > 0,
+                  items,
+                });
+              }}
+            >
+              <Trash2 data-icon="inline-start" aria-hidden="true" />
+            </Button>
+          </SettingRow>
+        ))}
+      </SettingRows>
+      {!tiers.length && (
+        <Empty variant="outline">
+          <EmptyHeader>
+            <EmptyTitle>{copy.noPresetTiers}</EmptyTitle>
           </EmptyHeader>
         </Empty>
       )}

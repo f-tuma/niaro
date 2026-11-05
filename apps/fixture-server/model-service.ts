@@ -1509,6 +1509,9 @@ export class ModelService {
                       command.mentions?.length
                         ? { mentions: command.mentions }
                         : {}),
+                      ...(command.type === "message.send" && command.preset
+                        ? { preset: command.preset }
+                        : {}),
                       ...(command.type === "message.send" && command.retryOf
                         ? {
                             retryOf: command.retryOf,

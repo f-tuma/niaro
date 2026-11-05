@@ -104,17 +104,24 @@ export function toolOutcome(value: unknown): z.infer<typeof LoopStatus> {
  * service is named by the step itself.
  */
 export function routeDetails(selected: {
-  route?: { role: string; reason: string };
+  route?: { role: string; reason: string; preset?: { name: string } };
 }) {
-  return selected.route
+  const route = selected.route;
+  return route
     ? [
         {
           label: "Role",
-          value: selected.route.role.startsWith("service:")
+          value: route.role.startsWith("service:")
             ? "service"
-            : selected.route.role,
+            : // A preset serves the chat role with its own tier.
+              route.role.startsWith("preset:")
+              ? "chat"
+              : route.role,
         },
-        { label: "Reason", value: selected.route.reason },
+        { label: "Reason", value: route.reason },
+        ...(route.preset
+          ? [{ label: "Preset", value: route.preset.name }]
+          : []),
       ]
     : [];
 }
