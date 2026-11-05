@@ -234,6 +234,7 @@ export function ChatFooter({
           <MobileAttachmentDraft value={attachments} />
           <MobileMentionSuggestions
             items={mentions.items}
+            slash={mentions.slash}
             language={language}
             onPick={mentions.pick}
           />

@@ -1168,3 +1168,44 @@ test("actual SIGKILL preserves custom agent usage uncertainty and never repeats 
     }
   }
 });
+
+test("process prompts fill the running person's own variables and keep unknown ones", () =>
+  isolated(async (h) => {
+    const seen: unknown[] = [];
+    h.controller.promptContext = (asked) => {
+      seen.push(asked);
+      return {
+        variables: {
+          personName: "TEST Jana",
+          personRole: "TEST obchodnice",
+          workspaceName: "TEST Obchod",
+          companyName: "TEST Firma",
+        },
+        timeZone: "Europe/Prague",
+        instructions: { text: "TEST chat-only text", source: "workspace" },
+      };
+    };
+    const id = h.activate(
+      ProcessDefinitionSchema.parse({
+        ...processAgent(h),
+        instructions:
+          "TEST for {person.name} ({person.role}) at {company.name}/{workspace.name} on {today} in {language}; keep {person.email}.",
+      }),
+    );
+    h.onModel(() => ({ content: JSON.stringify({ result: "TEST-ok" }) }));
+    const done = await h.runtime.start(
+      id,
+      "TEST-variables",
+      { name: "TEST-input" },
+      signal(),
+    );
+    assert.equal(done.status, "succeeded", JSON.stringify(done));
+    const request = JSON.stringify(h.models()[0]);
+    assert.match(
+      request,
+      /TEST for TEST Jana \(TEST obchodnice\) at TEST Firma\/TEST Obchod on \d{4}-\d{2}-\d{2} in the person's language; keep \{person.email\}\./,
+    );
+    // Workspace instructions belong to chat, not to a configured process.
+    assert(!request.includes("TEST chat-only text"));
+    assert.deepEqual(seen[0], { ...target, userId: scope.userId });
+  }));

@@ -32,6 +32,8 @@ import {
 export {
   MAX_MESSAGE_LENGTH,
   mentionQuery,
+  composerQuery,
+  pickerMatches,
   filterMentions,
   isTagged,
   messageMentions,
@@ -103,17 +105,36 @@ export function sentMentions(
 export const mentionOptionId = (listId: string, index: number) =>
   `${listId}-${index}`;
 
-/** The "@" suggestions above the composer; the textarea keeps the focus. */
+/**
+ * The workspace's instructions and the empty chat's starters. A server
+ * without them (null), or one that fails, leaves the client's own copy.
+ */
+export function useChatSetup(session: ClientSession) {
+  const setup = useQuery({
+    queryKey: ["app", "chat-setup", session.identityKey],
+    queryFn: ({ signal }) => session.readChatSetup(signal),
+    retry: false,
+    staleTime: 60_000,
+  });
+  return setup.data ?? null;
+}
+
+/**
+ * The "@" suggestions above the composer, or with "/" the skills and
+ * processes to run; the textarea keeps the focus.
+ */
 export function MentionPicker({
   id,
   items,
   active,
+  slash = false,
   onPick,
   onHover,
 }: {
   id: string;
   items: readonly MentionItem[];
   active: number;
+  slash?: boolean;
   onPick: (item: MentionItem) => void;
   onHover: (index: number) => void;
 }) {
@@ -122,8 +143,8 @@ export function MentionPicker({
     <div
       id={id}
       role="listbox"
-      aria-label={copy.mentionPicker}
-      data-testid="mention-picker"
+      aria-label={slash ? copy.slashPicker : copy.mentionPicker}
+      data-testid={slash ? "slash-picker" : "mention-picker"}
       className="absolute inset-x-0 bottom-full z-20 mb-2 flex max-h-72 flex-col gap-0.5 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
     >
       {items.map((item, index) => {

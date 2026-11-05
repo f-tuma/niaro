@@ -117,6 +117,7 @@ export const auditActions: Record<AuditEntry["action"], keyof Copy> = {
   "password.changed": "auditPasswordChanged",
   "session.revoked": "auditSessionRevoked",
   "skill.changed": "auditSkillChanged",
+  "instructions.changed": "auditInstructionsChanged",
   "work.cancelled": "auditWorkCancelled",
 };
 export const auditOutcomes: Record<AuditEntry["outcome"], keyof Copy> = {
@@ -630,6 +631,24 @@ function AuditDetail({ entry }: { entry: AuditEntry }) {
             archived: "auditSkillArchived",
           } as const
         )[d.skillEvent]
+      ],
+    ]);
+  if (d.instructionsEvent)
+    items.push([
+      copy.auditInstructionsChanged,
+      copy[
+        d.instructionsEvent === "restored"
+          ? "auditInstructionsRestored"
+          : "auditInstructionsSaved"
+      ],
+    ]);
+  if (d.instructionsScope)
+    items.push([
+      copy.auditInstructionsScope,
+      copy[
+        d.instructionsScope === "organization"
+          ? "auditInstructionsOrganization"
+          : "auditInstructionsWorkspace"
       ],
     ]);
   if (d.pluginEvent)

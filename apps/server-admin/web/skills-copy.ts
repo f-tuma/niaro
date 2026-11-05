@@ -53,6 +53,7 @@ const en = {
   filesFull: "A skill has at most 5 files.",
   accountRequired: "Sign in with your account to manage skills.",
   size: "{used} of {limit} KB",
+  workspaceInstructions: "Workspace instructions",
 };
 export type SkillsCopy = typeof en;
 const cs: SkillsCopy = {
@@ -110,5 +111,6 @@ const cs: SkillsCopy = {
   filesFull: "Skill má nejvýš 5 souborů.",
   accountRequired: "Skilly spravuješ po přihlášení svým účtem.",
   size: "{used} z {limit} KB",
+  workspaceInstructions: "Pokyny prostoru",
 };
 export const skillsCopy = { en, cs };

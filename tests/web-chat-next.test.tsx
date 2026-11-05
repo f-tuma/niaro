@@ -1745,3 +1745,136 @@ test.each(["checking", "failed"] as const)(
     }
   },
 );
+
+// NIAR-295 workspace starters and "/".
+
+test("the workspace's starters replace the app's suggestions and send at once", async () => {
+  const { session, sent } = fakeSession(storeWith([]));
+  Object.assign(session, {
+    readChatSetup: jest.fn(async () => ({
+      profile: "workspace-instructions/1",
+      workspaceId: "ws-1",
+      instructions: null,
+      starters: ["Shrň moje schůzky za tento týden", "Co čeká na schválení?"],
+    })),
+  });
+  const root = (await render(session)).root;
+  // The setup is read once the page is up; under load it may take a moment.
+  for (
+    let i = 0;
+    i < 50 &&
+    !root.findAll((node) => node.props["data-testid"] === "chat-starters")
+      .length;
+    i++
+  )
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
+  const starters = byTestId(root, "chat-starters");
+  expect(text(starters)).toContain("Shrň moje schůzky za tento týden");
+  expect(text(root)).not.toContain("Najdi kontakt");
+  await act(async () =>
+    button(starters, "Co čeká na schválení?").props.onClick(),
+  );
+  await act(async () => {});
+  expect(sent.map((command) => command.type)).toEqual([
+    "conversation.create",
+    "message.send",
+  ]);
+  expect(sent[1]).toMatchObject({ text: "Co čeká na schválení?" });
+  expect(sent[1]).not.toHaveProperty("mentions");
+  // Sent at once: nothing waits in the composer.
+  expect(root.findByType("textarea").props.value).toBe("");
+});
+
+test("without workspace starters the app's suggestions only fill the composer", async () => {
+  const { session, sent } = fakeSession(storeWith([]));
+  Object.assign(session, {
+    readChatSetup: jest.fn(async () => null),
+  });
+  const root = (await render(session)).root;
+  await act(async () => {});
+  expect(() => byTestId(root, "chat-starters")).toThrow();
+  await act(async () => button(root, "Najdi kontakt").props.onClick());
+  await act(async () => {});
+  expect(sent).toEqual([]);
+  expect(root.findByType("textarea").props.value).toBe("Najdi kontakt");
+});
+
+test("'/' at the start offers the person's skills and processes; a pick tags it like '@'", async () => {
+  const conversation: Conversation = {
+    id: "conv-1",
+    revision: 1,
+    messages: [],
+  };
+  const { session, sent } = fakeSession(storeWith([conversation]), {
+    "conv-1": { conversation: summary("conv-1") },
+  });
+  Object.assign(session, {
+    readMentions: jest.fn(async () => ({
+      ...directory,
+      items: [
+        ...directory.items,
+        {
+          kind: "skill",
+          id: "skill-offer",
+          name: "Nabídky",
+          description: "Když píšeš nabídku",
+          personal: true,
+        },
+      ],
+    })),
+  });
+  const root = (await render(session, "conv-1")).root;
+  const input = () => root.findByType("textarea");
+  const key = (name: string) =>
+    act(async () =>
+      input().props.onKeyDown({
+        key: name,
+        shiftKey: false,
+        nativeEvent: { isComposing: false },
+        preventDefault: () => {},
+      }),
+    );
+  await act(async () =>
+    input().props.onChange({ target: { value: "/", selectionStart: 1 } }),
+  );
+  const picker = byTestId(root, "slash-picker");
+  expect(picker.props.role).toBe("listbox");
+  expect(picker.props["aria-label"]).toBe("Skilly a procesy");
+  expect(text(picker)).toContain("Onboarding klienta");
+  expect(text(picker)).toContain("Nabídky");
+  // Services are context for "@", not something to run.
+  expect(text(picker)).not.toContain("CRM");
+  // The textarea owns the list for screen readers and the keyboard.
+  expect(input().props.role).toBe("combobox");
+  expect(input().props["aria-expanded"]).toBe(true);
+  expect(input().props["aria-controls"]).toBe(picker.props.id);
+  await act(async () =>
+    input().props.onChange({ target: { value: "/nab", selectionStart: 4 } }),
+  );
+  expect(text(byTestId(root, "slash-picker"))).toContain("Nabídky");
+  expect(text(byTestId(root, "slash-picker"))).not.toContain("Onboarding");
+  await key("Enter");
+  expect(input().props.value).toBe("@Nabídky ");
+  await act(async () =>
+    input().props.onChange({
+      target: { value: "@Nabídky pro Acme", selectionStart: 17 },
+    }),
+  );
+  await key("Enter");
+  await act(async () => {});
+  expect(sent[0]).toMatchObject({
+    type: "message.send",
+    text: "@Nabídky pro Acme",
+    mentions: [{ kind: "skill", id: "skill-offer" }],
+  });
+  // "/" inside a sentence is just text; Escape closes the list.
+  await act(async () =>
+    input().props.onChange({ target: { value: "a /n", selectionStart: 4 } }),
+  );
+  expect(() => byTestId(root, "slash-picker")).toThrow();
+  await act(async () =>
+    input().props.onChange({ target: { value: "/", selectionStart: 1 } }),
+  );
+  await key("Escape");
+  expect(() => byTestId(root, "slash-picker")).toThrow();
+});

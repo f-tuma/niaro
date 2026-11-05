@@ -1,4 +1,5 @@
 import { WorkspaceRoles } from "./workspace-roles";
+import { WorkspaceInstructions } from "./workspace-instructions";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -8,6 +9,7 @@ import {
   Check,
   KeyRound,
   Mail,
+  MessageSquareText,
   Plus,
   ShieldCheck,
   UserMinus,
@@ -735,6 +737,8 @@ function WorkspaceList({
   const [membersFor, setMembersFor] = useState<string | null>(null);
   const [pairingFor, setPairingFor] = useState<string | null>(null);
   const [rolesFor, setRolesFor] = useState<string | null>(null);
+  /** A workspace id, or "organization" for the default instructions. */
+  const [instructionsFor, setInstructionsFor] = useState<string | null>(null);
   const shell = useShellCopy();
   const manage = detail.canManageWorkspaces;
   const searchable = detail.workspaces.length > 6;
@@ -750,6 +754,9 @@ function WorkspaceList({
   const editing = detail.workspaces.find((w) => w.id === membersFor);
   const pairing = detail.workspaces.find((w) => w.id === pairingFor);
   const rolesWorkspace = detail.workspaces.find((w) => w.id === rolesFor);
+  const instructionsWorkspace = detail.workspaces.find(
+    (w) => w.id === instructionsFor,
+  );
   return (
     <>
       <PageHeader
@@ -767,10 +774,20 @@ function WorkspaceList({
         actions={
           manage &&
           detail.workspaces.length > 0 && (
-            <Button onClick={() => setCreating(true)} disabled={pending}>
-              <Plus data-icon="inline-start" aria-hidden="true" />
-              {copy.addWorkspace}
-            </Button>
+            <>
+              <Button onClick={() => setCreating(true)} disabled={pending}>
+                <Plus data-icon="inline-start" aria-hidden="true" />
+                {copy.addWorkspace}
+              </Button>
+              <MoreActions label={copy.moreActions}>
+                <DropdownMenuItem
+                  onSelect={() => setInstructionsFor("organization")}
+                >
+                  <MessageSquareText aria-hidden="true" />
+                  {copy.defaultInstructions}
+                </DropdownMenuItem>
+              </MoreActions>
+            </>
           )
         }
       />
@@ -882,6 +899,12 @@ function WorkspaceList({
                           <ShieldCheck aria-hidden="true" />
                           {copy.workspaceRoles}
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => setInstructionsFor(workspace.id)}
+                        >
+                          <MessageSquareText aria-hidden="true" />
+                          {copy.workspaceInstructions}
+                        </DropdownMenuItem>
                       </MoreActions>
                     )}
                   </ItemActions>
@@ -942,6 +965,22 @@ function WorkspaceList({
           )}
         </SheetContent>
       </Sheet>
+      {manage && instructionsFor && (
+        <WorkspaceInstructions
+          key={instructionsFor}
+          organizationId={detail.organizationId}
+          scope={
+            instructionsWorkspace
+              ? { type: "workspace", workspaceId: instructionsWorkspace.id }
+              : { type: "organization" }
+          }
+          name={instructionsWorkspace?.name}
+          open
+          onOpenChange={(open) => {
+            if (!open) setInstructionsFor(null);
+          }}
+        />
+      )}
       {manage && rolesWorkspace && (
         <WorkspaceRoles
           workspace={rolesWorkspace}

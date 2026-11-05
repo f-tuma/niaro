@@ -60,6 +60,8 @@ export const AuditAction = z.enum([
   "password.changed",
   "session.revoked",
   "skill.changed",
+  /** An owner or administrator saved or restored workspace instructions and starters. */
+  "instructions.changed",
   /** The person stopped their own waiting work (question, approval, process). */
   "work.cancelled",
 ]);
@@ -109,6 +111,8 @@ export const AuditDetails = z.strictObject({
     .enum(["created", "updated", "enabled", "disabled", "archived"])
     .optional(),
   skillOwner: z.enum(["personal", "workspace"]).optional(),
+  instructionsEvent: z.enum(["saved", "restored"]).optional(),
+  instructionsScope: z.enum(["organization", "workspace"]).optional(),
   pluginEvent: z
     .enum(["saved", "reset", "deleted", "created", "refused"])
     .optional(),

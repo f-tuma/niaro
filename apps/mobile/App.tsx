@@ -18,6 +18,7 @@ import {
   useMobileComposerMentions,
   MobileMentionSheet,
 } from "./MobileMentions";
+import { useMobileChatSetup } from "./chat-setup";
 import type { MessageMention } from "../../packages/protocol/mentions";
 import {
   mentionsInText,
@@ -790,6 +791,7 @@ export function Workspace({
     () => new Set(),
   );
   const busy = !!state.pending || !!state.answerRecoveryBlocked;
+  const chatSetup = useMobileChatSetup(session, online);
   const mentions = useMobileComposerMentions({
     session,
     online,
@@ -2867,6 +2869,21 @@ export function Workspace({
                   meetingRecording={meetingRecording}
                   onTalk={openVoice}
                   onMeeting={() => startRequest(true)}
+                  // The workspace's starters send at once, like a follow-up.
+                  starters={chatSetup?.starters}
+                  onStarter={(text) => {
+                    nearBottom.current = true;
+                    submitMessage(text, null, -1, {
+                      detached: true,
+                      mentions: [],
+                    });
+                  }}
+                  startersDisabled={
+                    busy ||
+                    !online ||
+                    !!historySelection?.readOnly ||
+                    attachments.state.entries.length > 0
+                  }
                   onTasks={() => changeSection("tasks")}
                   onConnect={() => changeSection("more")}
                 />

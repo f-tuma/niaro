@@ -52,6 +52,7 @@ const en = {
   interrupted: "Interrupted",
   stillWriting: "…still writing",
   mentionPicker: "Tag",
+  slashPicker: "Skills and processes",
   mentionKinds: {
     service: "Service",
     process: "Process",
@@ -200,6 +201,7 @@ const cs: ChatCopy = {
   interrupted: "Přerušeno",
   stillWriting: "…ještě píšu",
   mentionPicker: "Označit",
+  slashPicker: "Skilly a procesy",
   mentionKinds: {
     service: "Služba",
     process: "Proces",

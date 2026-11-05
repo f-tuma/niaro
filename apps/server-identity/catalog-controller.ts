@@ -178,10 +178,28 @@ export type CatalogContext = {
   ) => void;
   transaction: <T>(run: () => Promise<T>) => Promise<T>;
 };
+/**
+ * The person's own prompt variables and the instructions that apply in their
+ * workspace, provided by the identity service. Synchronous; called with
+ * serial held after the caller rechecked its authority. Instructions are
+ * data for the chat's system context, never permission.
+ */
+export type PromptContextSource = (target: {
+  organizationId: string;
+  workspaceId: string;
+  userId: string;
+}) => {
+  variables: import("./prompt-variables").PromptVariableValues;
+  /** The workspace's time zone, for runs without the person's own. */
+  timeZone: string;
+  instructions: { text: string; source: "workspace" | "organization" } | null;
+};
 /** The largest service result kept and shown to the model, in characters of JSON. */
 const MAX_RESULT_CHARACTERS = 65536;
 
 export class CatalogController {
+  /** Set once by the identity service; absent in narrow tests. */
+  promptContext?: PromptContextSource;
   private turnLocks = new Set<string>();
   async withTurn<T>(id: string, run: () => Promise<T>): Promise<T> {
     if (this.turnLocks.has(id)) throw new IdentityError(429, "catalog_busy");

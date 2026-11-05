@@ -617,6 +617,9 @@ export function Home({
   petTyped = 0,
   onPetBounds,
   petState = busy ? "working" : meetingRecording ? "listening" : "idle",
+  starters = [],
+  onStarter,
+  startersDisabled = false,
 }: {
   language: Language;
   /** A server is configured; otherwise this is the introduction. */
@@ -646,6 +649,11 @@ export function Home({
   petTyped?: number;
   onPetBounds?: (bounds: HomePetBounds | null) => void;
   petState?: PetState;
+  /** The workspace's starter prompts; they replace "Plan a meeting". */
+  starters?: readonly string[];
+  /** Sends a starter at once as the person's message. */
+  onStarter?: (text: string) => void;
+  startersDisabled?: boolean;
 }) {
   const tr = translate(language);
   const homeY = useRef(0),
@@ -738,13 +746,23 @@ export function Home({
     disabled?: boolean;
     count?: number;
   }[] = [
-    {
-      id: "plan",
-      label: tr("quickMeeting"),
-      icon: "calendar",
-      onPress: onMeeting,
-      disabled: !connected || busy,
-    },
+    ...(starters.length && onStarter
+      ? starters.map((starter, index) => ({
+          id: `starter-${index}`,
+          label: starter,
+          icon: "sparkle" as const,
+          onPress: () => onStarter(starter),
+          disabled: !connected || busy || startersDisabled,
+        }))
+      : [
+          {
+            id: "plan",
+            label: tr("quickMeeting"),
+            icon: "calendar" as const,
+            onPress: onMeeting,
+            disabled: !connected || busy,
+          },
+        ]),
     // Tasks has its own tab; here it appears only when something waits.
     ...(count
       ? [

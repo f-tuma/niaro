@@ -25,6 +25,7 @@ import {
   type MentionDraftOwner,
   type MentionIntent,
   filterMentions,
+  pickerMatches,
   type MentionItem,
 } from "../../packages/client-core/mentions";
 import type { Language } from "../../packages/protocol";
@@ -36,6 +37,7 @@ const emptyMentions: MentionItem[] = [];
 const copy = {
   en: {
     title: "References",
+    slash: "Skills and processes",
     search: "Find a reference",
     empty: "No matches",
     remove: "Remove reference",
@@ -48,6 +50,7 @@ const copy = {
   },
   cs: {
     title: "Odkazy",
+    slash: "Skilly a procesy",
     search: "Najít odkaz",
     empty: "Nic nenalezeno",
     remove: "Odebrat odkaz",
@@ -129,18 +132,22 @@ export function useMobileMentionDirectory(
 export function MobileMentionSuggestions({
   items,
   language,
+  slash = false,
   onPick,
 }: {
   items: readonly MentionItem[];
   language: Language;
+  /** "/" at the start: skills and processes to run. */
+  slash?: boolean;
   onPick: (item: MentionItem) => void;
 }) {
   const words = copy[language];
   if (!items.length) return null;
   return (
     <ScrollView
+      testID={slash ? "slash-suggestions" : undefined}
       keyboardShouldPersistTaps="always"
-      accessibilityLabel={words.title}
+      accessibilityLabel={slash ? words.slash : words.title}
       style={{ maxHeight: 240 }}
     >
       {items.map((item) => (
@@ -617,7 +624,11 @@ export function useMobileComposerMentions(options: {
   return {
     available: options.enabled && directory.length > 0,
     items:
-      owned && !sheet ? filterMentions(directory, intent.at?.query ?? "") : [],
+      owned && !sheet
+        ? pickerMatches(directory, intent.at ?? { query: "" })
+        : [],
+    /** The inline rows answer a "/" at the start of the draft. */
+    slash: !!owned && !sheet && !!intent.at?.slash,
     sheet: !!owned && sheet,
     directory,
     selected,

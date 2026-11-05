@@ -17,6 +17,35 @@ export function mentionQuery(text: string, caret: number) {
   return { start: caret - match[1]!.length - 1, query: match[1]! };
 }
 
+/**
+ * "/query" at the very start of the composer: the person wants to run one of
+ * their skills or processes. A pick becomes the same "@Name" tag as "@".
+ */
+export function slashQuery(text: string, caret: number) {
+  const match = /^\/([^\s/@]{0,40})$/u.exec(text.slice(0, caret));
+  if (!match) return null;
+  return { start: 0, query: match[1]!, slash: true as const };
+}
+/** What the composer's picker answers at the caret: "/" first, then "@". */
+export function composerQuery(
+  text: string,
+  caret: number,
+): { start: number; query: string; slash?: true } | null {
+  return slashQuery(text, caret) ?? mentionQuery(text, caret);
+}
+/** "/" offers what runs (skills and processes); "@" everything taggable. */
+export function pickerMatches(
+  items: readonly MentionItem[],
+  at: { query: string; slash?: true },
+) {
+  return filterMentions(
+    at.slash
+      ? items.filter((item) => item.kind === "skill" || item.kind === "process")
+      : items,
+    at.query,
+  );
+}
+
 /** Best matches first: name prefix, then a word prefix, then anywhere. */
 export function filterMentions(items: readonly MentionItem[], query: string) {
   const wanted = fold(query);
@@ -99,7 +128,7 @@ export type MentionDraftOwner = {
 export type MentionIntent = MentionDraftOwner & {
   text: string;
   caret: number;
-  at: ReturnType<typeof mentionQuery>;
+  at: ReturnType<typeof composerQuery>;
 };
 /** Opening the explicit sheet is read-only until a person chooses a reference. */
 export function captureMentionIntent(
@@ -109,7 +138,8 @@ export function captureMentionIntent(
   explicit = false,
 ): MentionIntent | null {
   if (!Number.isInteger(caret) || caret < 0 || caret > text.length) return null;
-  const at = mentionQuery(text, caret);
+  // The explicit sheet tags context ("@"); "/" is typed only.
+  const at = explicit ? mentionQuery(text, caret) : composerQuery(text, caret);
   return at || explicit ? { ...owner, text, caret, at } : null;
 }
 /** Returns only an owned draft update. Sending and process execution are caller actions. */

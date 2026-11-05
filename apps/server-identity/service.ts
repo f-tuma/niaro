@@ -174,6 +174,13 @@ import {
 } from "../server-hosting/manager";
 import { HUB_DETAIL_TTL_MS, HubStore } from "./hub-store";
 import { SkillStore, type SkillActor } from "./skill-store";
+import { InstructionsStore } from "./instructions-store";
+import {
+  InstructionsScopeSchema,
+  type InstructionsContent,
+  type InstructionsScope,
+  type WorkspaceChatSetup,
+} from "../../packages/protocol/workspace-instructions";
 import {
   SKILL_LIMITS,
   SkillProposalAcceptSchema,
@@ -246,7 +253,11 @@ import {
   AuthProviderStartSchema,
   AuthProvidersSchema,
 } from "../../packages/protocol/auth-providers";
-import { CatalogController, type CatalogContext } from "./catalog-controller";
+import {
+  CatalogController,
+  type CatalogContext,
+  type PromptContextSource,
+} from "./catalog-controller";
 import { ServiceProcessStore, type ProcessActor } from "./service-processes";
 import { ProcessStartStore } from "./process-start-store";
 import { handleServiceProcesses } from "./process-controller";
@@ -318,7 +329,10 @@ async function body(req: IncomingMessage) {
             : req.url?.split("?")[0] === "/admin/api/identity/skills/command"
               ? 524288
               : req.url?.split("?")[0] === "/admin/auth/sign-in/email" ||
-                  req.url?.startsWith("/admin/api/identity/server-settings")
+                  req.url?.startsWith("/admin/api/identity/server-settings") ||
+                  // 8,000 characters of instructions and six starters.
+                  req.url?.split("?")[0] ===
+                    "/admin/api/identity/instructions/command"
                 ? 65536
                 : 8192)
       )
@@ -652,6 +666,10 @@ function logFailure(step: string, error: unknown) {
     : "";
   console.warn(`${step} failed: ${code}${detail}`);
 }
+const instructionsScope = (workspaceId: string | null): InstructionsScope =>
+  workspaceId === null
+    ? { type: "organization" }
+    : { type: "workspace", workspaceId };
 export class IdentityService {
   private mcpGrants: McpAccessStore;
   private mcpDataTools!: McpDataTools;
@@ -724,6 +742,7 @@ export class IdentityService {
   private hubScheduler: HubScheduler;
   private hubLaunch?: HubLaunch;
   private skills: SkillStore;
+  private instructions: InstructionsStore;
   private hosted?: HostedServers;
   private pluginFiles?: PluginFiles;
   private pluginEditing = false;
@@ -777,6 +796,11 @@ export class IdentityService {
     this.loops = new LoopsStore(db, catalog.store);
     this.plugins = new WorkspacePluginStore(db, pluginSettings);
     this.skills = new SkillStore(db, (record) => this.audit.append(record));
+    this.instructions = new InstructionsStore(db, (record) =>
+      this.audit.append(record),
+    );
+    // Chat and process prompts read variables and instructions through it.
+    catalog.promptContext = (target) => this.promptContext(target);
     this.hub = createHub({
       store: new HubStore(db),
       processes: {
@@ -2762,6 +2786,82 @@ export class IdentityService {
         workspace: list.workspace.filter((skill) => skill.enabled),
       };
     });
+  }
+  /**
+   * The person's own prompt variables and the instructions that apply in
+   * their workspace. Only their own name and confirmed job title (none while
+   * they opted out of memory), their workspace and their organization.
+   */
+  private promptContext(
+    target: Parameters<PromptContextSource>[0],
+  ): ReturnType<PromptContextSource> {
+    const names = this.db
+      .prepare(
+        `SELECT w.name AS workspace, o.name AS organization, u.name AS person
+        FROM agent_workspace w JOIN organization o ON o.id = w.organization_id
+        LEFT JOIN "user" u ON u.id = ?
+        WHERE w.id = ? AND w.organization_id = ?`,
+      )
+      .get(target.userId, target.workspaceId, target.organizationId);
+    if (!names) throw new IdentityError(403, "identity_forbidden");
+    const memoryActor: MemoryActor = { ...target, canManageShared: false };
+    const role = this.memory.readPreferences(memoryActor).optOut
+      ? ""
+      : this.pet.read(memoryActor).settings.jobTitle;
+    const text = (value: unknown) =>
+      typeof value === "string" ? value : undefined;
+    return {
+      variables: {
+        personName: text(names.person),
+        personRole: role,
+        workspaceName: text(names.workspace),
+        companyName: text(names.organization),
+      },
+      timeZone: this.plugins.read(target.workspaceId).settings.timeZone,
+      instructions: this.instructions.effective(
+        target.organizationId,
+        target.workspaceId,
+      ).instructions,
+    };
+  }
+  /** `GET /v1/:workspace/instructions`: what applies here, read-only. */
+  mobileInstructions(
+    header: string | undefined,
+    workspaceId: string,
+    serverId: string,
+  ): Promise<WorkspaceChatSetup> {
+    return this.serial(async () => {
+      const { actor } = this.appActor(header, workspaceId, serverId);
+      return this.instructions.effective(actor.organizationId, workspaceId);
+    });
+  }
+  /**
+   * Typed read and write of instructions and starters for the configuration
+   * bundle: the organization default (`workspaceId: null`) or one workspace.
+   * The write is revision-checked and audited like the editor's save.
+   */
+  readInstructions(organizationId: string, workspaceId: string | null) {
+    return this.instructions.readContent(
+      organizationId,
+      instructionsScope(workspaceId),
+    );
+  }
+  writeInstructions(
+    actor: {
+      organizationId: string;
+      userId: string;
+      role: "owner" | "admin" | "member";
+    },
+    workspaceId: string | null,
+    content: InstructionsContent,
+    revision: number,
+  ) {
+    return this.instructions.writeContent(
+      actor,
+      instructionsScope(workspaceId),
+      content,
+      revision,
+    );
   }
   /** What this person can tag with "@" right now: usable services, ready
    * processes and skills. For the hub: only the services overview widgets can
@@ -5342,6 +5442,68 @@ export class IdentityService {
             error: error.code,
           });
         return respond(502, { error: "tool_failed" });
+      }
+    }
+    // Workspace instructions and starters: owners and administrators edit,
+    // every workspace member reads what applies (`effective`).
+    if (url.pathname.startsWith("/admin/api/identity/instructions/")) {
+      try {
+        if (req.method !== "POST")
+          return respond(405, { error: "method_not_allowed" });
+        if (isOperator())
+          throw new IdentityError(403, "identity_account_required");
+        const route = url.pathname.slice(
+          "/admin/api/identity/instructions/".length,
+        );
+        if (!["get", "command", "effective"].includes(route))
+          return respond(404, { error: "not_found" });
+        return await this.serial(async () => {
+          if (this.closing)
+            throw new IdentityError(503, "identity_unavailable");
+          if (route === "effective") {
+            const input = z
+              .strictObject({
+                organizationId: IdentityId,
+                workspaceId: IdentityId,
+              })
+              .parse(payload);
+            await this.workspaceActor(req, input);
+            return respond(
+              200,
+              this.instructions.effective(
+                input.organizationId,
+                input.workspaceId,
+              ),
+            );
+          }
+          const input = z
+            .looseObject({ organizationId: IdentityId })
+            .parse(payload);
+          const member = await this.actor(req, input.organizationId);
+          const actor = {
+            organizationId: input.organizationId,
+            userId: member.userId,
+            role: member.role,
+          };
+          if (route === "get")
+            return respond(
+              200,
+              this.instructions.view(
+                actor,
+                InstructionsScopeSchema.parse(
+                  (payload as { scope?: unknown }).scope,
+                ),
+              ),
+            );
+          const { organizationId: _organization, ...command } = input;
+          return respond(200, this.instructions.command(actor, command));
+        });
+      } catch (error) {
+        if (error instanceof IdentityError)
+          return respond(error.status, { error: error.code });
+        if (error instanceof z.ZodError)
+          return respond(400, { error: "identity_invalid_input" });
+        return respond(500, { error: "instructions_unavailable" });
       }
     }
     // Skills for the editors: the person's own and, for administrators, the company's.
