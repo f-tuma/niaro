@@ -261,6 +261,7 @@ test("provider discovery preserves capabilities and catalogs beyond 500 models",
         kind: "chat",
         audioOutput: null,
         audioInput: true,
+        imageInput: false,
         pricing: {
           inputMicrosPerMillion: 2_500_000,
           outputMicrosPerMillion: 10_000_000,
@@ -274,6 +275,7 @@ test("provider discovery preserves capabilities and catalogs beyond 500 models",
         kind: "chat",
         audioOutput: null,
         audioInput: null,
+        imageInput: null,
         pricing: null,
       },
       {
@@ -284,6 +286,7 @@ test("provider discovery preserves capabilities and catalogs beyond 500 models",
         kind: "chat",
         audioOutput: null,
         audioInput: null,
+        imageInput: null,
         pricing: null,
       },
     ]);
@@ -2351,12 +2354,12 @@ test("Voice and decision routing validate capability, endpoint, role, scope and 
         url: "https://else.example.test/v1",
         enabled: true,
         dailyRequestLimit: 10,
+        dialect: "openai",
       },
     });
-    assert.throws(
-      () => h.store.resolveVoice("org", target.workspaceId),
-      /catalog_model_unavailable/,
-    );
+    // Audio goes through the standard endpoints of any provider; decision
+    // models need OpenRouter's decisions API.
+    assert.ok(h.store.resolveVoice("org", target.workspaceId));
     assert.throws(
       () => h.store.resolveDecision("org", target.workspaceId),
       /catalog_model_unavailable/,

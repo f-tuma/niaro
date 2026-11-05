@@ -454,6 +454,7 @@ test(
         "modelPolicy",
         "models",
         "providers",
+        "searchBackends",
         "serverSettings",
       ]);
       const providers = bundle.organization.providers as {

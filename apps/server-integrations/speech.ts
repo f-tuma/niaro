@@ -14,6 +14,11 @@ import {
   type DispatchGuard,
   type IntegrationTransport,
 } from "./transport";
+import {
+  isOpenRouterDialect,
+  providerEndpoint,
+  providerHeaders,
+} from "./provider-request";
 
 export class SpeechError extends IntegrationError {}
 export type SpeechSynthesizer = {
@@ -302,9 +307,10 @@ async function requestSpeech(
 ): Promise<SpeechAudio | ReturnType<typeof readerStream>> {
   const reader = selection.method === "reader";
   const response = await transport({
-    url:
-      selection.provider.url.replace(/\/$/, "") +
-      (reader ? "/chat/completions" : "/audio/speech"),
+    url: providerEndpoint(
+      selection.provider,
+      reader ? "/chat/completions" : "/audio/speech",
+    ),
     method: "POST",
     signal,
     beforeDispatch,
@@ -312,7 +318,7 @@ async function requestSpeech(
     maxResponseBytes: reader ? 12 * 1024 * 1024 : SPEECH_AUDIO_BYTES,
     ...(reader ? {} : { responseType: "bytes" as const }),
     headers: {
-      Authorization: `Bearer ${selection.key}`,
+      ...providerHeaders(selection.provider, selection.key),
       Accept: reader ? "text/event-stream" : "audio/mpeg",
     },
     body: reader
@@ -321,11 +327,16 @@ async function requestSpeech(
           stream: true,
           modalities: ["text", "audio"],
           audio: { voice: selection.voice, format: "pcm16" },
-          provider: {
-            require_parameters: true,
-            data_collection: "deny",
-            zdr: selection.zeroDataRetention !== false,
-          },
+          // OpenRouter's routing flags; other dialects would refuse the field.
+          ...(isOpenRouterDialect(selection.provider)
+            ? {
+                provider: {
+                  require_parameters: true,
+                  data_collection: "deny",
+                  zdr: selection.zeroDataRetention !== false,
+                },
+              }
+            : {}),
           messages: [
             {
               role: "system",
@@ -364,8 +375,9 @@ async function requestSpeech(
     return readerStream(response.text);
   }
   const bytes = response.bytes;
+  // Some OpenAI-compatible speech servers label MP3 as audio/mp3.
   if (
-    mime !== "audio/mpeg" ||
+    (mime !== "audio/mpeg" && mime !== "audio/mp3") ||
     !bytes ||
     bytes.length < 128 ||
     bytes.length > SPEECH_AUDIO_BYTES ||

@@ -287,7 +287,8 @@ export const usageSection = workspaceSection({
       .refine(uniqueBy((p: { model: ModelRef }) => modelLabel(p.model))),
   }),
   export: (ctx) => {
-    const { settings } = ctx.catalog.inferenceBudget.policy(
+    // Only the saved prices; a free provider's zero prices come with it.
+    const { settings } = ctx.catalog.inferenceBudget.storedPolicy(
       ctx.organizationId,
       ctx.workspaceId,
     );
@@ -328,7 +329,7 @@ export const usageSection = workspaceSection({
       }
     });
     outcome.item("Usage limits", () => {
-      const current = ctx.catalog.inferenceBudget.policy(
+      const current = ctx.catalog.inferenceBudget.storedPolicy(
         ctx.organizationId,
         ctx.workspaceId,
       );

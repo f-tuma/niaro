@@ -1,3 +1,4 @@
+import { providerHeaders } from "./provider-request";
 import { randomUUID } from "node:crypto";
 import type {
   LanguageModelV4,
@@ -421,7 +422,7 @@ export function createNiaroMastraModel(
     const response = await transport({
       url,
       method: "POST",
-      headers: key ? { Authorization: `Bearer ${key}` } : {},
+      headers: providerHeaders(provider, key),
       body: stream
         ? { ...body, stream: true, stream_options: { include_usage: true } }
         : body,

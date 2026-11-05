@@ -7,6 +7,8 @@ import {
   DiscoveryIssue,
   DiscoveryRequest,
   ModelDiscoveryRequest,
+  ModelTestRequest,
+  ModelTestResponse,
   ServiceIconRequest,
   ServiceProbeRequest,
   PersonalServiceCommand,
@@ -34,6 +36,10 @@ import {
   type IntegrationTransport,
 } from "../server-integrations/transport";
 import { listModels } from "../server-integrations/models";
+import {
+  capabilityProbes,
+  testModelCapabilities,
+} from "../server-integrations/model-test";
 import { createNiaroMastraModel } from "../server-integrations/mastra-model";
 import {
   ACTION_LABEL_BATCH,
@@ -69,6 +75,12 @@ const ENRICHMENT_CAPS: InferenceRunCaps = {
   maxTokens: 10_000_000,
   maxCostMicros: 1_000_000_000,
   maxModelCalls: Math.ceil(1000 / ACTION_LABEL_BATCH),
+};
+/** A capability test: at most one small call per probe of a chat model. */
+const MODEL_TEST_CAPS: InferenceRunCaps = {
+  maxTokens: 200_000,
+  maxCostMicros: 1_000_000_000,
+  maxModelCalls: 4,
 };
 export type CatalogContext = {
   session?: () => Promise<{ userId: string; sessionId: string }>;
@@ -923,11 +935,19 @@ export class CatalogController {
           );
         });
       }
-      const input = InferenceBudgetCommandSchema.parse(payload);
+      const parsed = InferenceBudgetCommandSchema.parse(payload);
       return context.serial(async () => {
-        const actor = await context.actor(input);
+        const actor = await context.actor(parsed);
         if (actor.role === "member")
           throw new IdentityError(403, "identity_forbidden");
+        // A free provider's zero prices are implied, never saved or checked.
+        const input = {
+          ...parsed,
+          settings: this.store.inferenceBudget.withoutFreePrices(
+            parsed.organizationId,
+            parsed.settings,
+          ),
+        };
         const inventory = this.store.inventory(
           input.organizationId,
           input.workspaceId,
@@ -1016,7 +1036,8 @@ export class CatalogController {
               input.type === "saveWorkspaceModelPolicy"
                 ? "catalog.routing_changed"
                 : input.type.includes("Provider") ||
-                    input.type.includes("Model")
+                    input.type.includes("Model") ||
+                    input.type.includes("SearchBackend")
                   ? "catalog.ai_changed"
                   : input.type === "reviewPersonalService"
                     ? "catalog.personal_service_reviewed"
@@ -1464,6 +1485,67 @@ export class CatalogController {
         );
         await check();
         return { models };
+      }
+      if (path === "/models/test") {
+        const input = ModelTestRequest.parse(payload),
+          prepared = await this.prepare(input, context);
+        const selected = await context.serial(async () =>
+          this.store.modelForTest(input.organizationId, input.modelId),
+        );
+        if (selected.model.revision !== input.revision)
+          throw new IdentityError(409, "catalog_conflict");
+        if (!selected.provider.enabled)
+          throw new IdentityError(409, "catalog_model_unavailable");
+        if (!capabilityProbes(selected.model).length)
+          return ModelTestResponse.parse({ results: [] });
+        // Every request re-checks the administrator and the model, and
+        // counts against the provider's daily request limit.
+        const dispatch = (start: () => void) =>
+          this.check(
+            input,
+            prepared,
+            context,
+            () => {
+              const current = this.store.modelForTest(
+                input.organizationId,
+                input.modelId,
+              );
+              if (current.model.revision !== input.revision)
+                throw new IdentityError(409, "catalog_conflict");
+              this.store.useProvider(
+                input.organizationId,
+                selected.provider.id,
+                selected.provider.revision,
+              );
+            },
+            start,
+          );
+        // Chat probes are model calls under the inference ledger, in one
+        // admin run per test, like any other model call.
+        const chatTransport = budgetedInferenceTransport(
+          this.transport,
+          this.store.inferenceBudget,
+          `catalog-test/${input.modelId}/${input.revision}/${randomUUID()}`,
+          {
+            organizationId: input.organizationId,
+            workspaceId: input.workspaceId,
+            userId: prepared.actor.userId,
+          },
+          selected,
+          "model",
+          (run) => context.serial(run),
+          () => this.validate(input, prepared, context),
+          () => 0,
+          MODEL_TEST_CAPS,
+        );
+        const results = await testModelCapabilities(
+          chatTransport,
+          this.transport,
+          selected,
+          signal,
+          dispatch,
+        );
+        return ModelTestResponse.parse({ results });
       }
       throw new IdentityError(404, "not_found");
     } finally {

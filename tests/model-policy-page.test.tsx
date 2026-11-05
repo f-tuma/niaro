@@ -242,20 +242,18 @@ afterEach(() => {
 });
 
 test("only models that fit a role are offered for it", () => {
-  const url = provider.url;
-  expect(modelFits("chat", models[0]!, url)).toBe(true);
-  expect(modelFits("chat", models[2]!, url)).toBe(false);
+  const plain = { dialect: "openai" as const };
+  const openRouter = { dialect: "openrouter" as const };
+  expect(modelFits("chat", models[0]!, plain)).toBe(true);
+  expect(modelFits("chat", models[2]!, plain)).toBe(false);
   // A checker or selector may be any tool model, on any provider.
-  expect(modelFits("checker", models[1]!, url)).toBe(true);
-  // Audio roles and web search stay on OpenRouter for now.
-  expect(modelFits("meeting_transcription", models[2]!, url)).toBe(false);
-  expect(
-    modelFits(
-      "meeting_transcription",
-      models[2]!,
-      "https://openrouter.ai/api/v1",
-    ),
-  ).toBe(true);
+  expect(modelFits("checker", models[1]!, plain)).toBe(true);
+  // Audio goes through the standard endpoints of any provider.
+  expect(modelFits("meeting_transcription", models[2]!, plain)).toBe(true);
+  expect(modelFits("meeting_transcription", models[2]!, openRouter)).toBe(true);
+  // The provider's own web search is OpenRouter's web plugin.
+  expect(modelFits("web_search", models[0]!, plain)).toBe(false);
+  expect(modelFits("web_search", models[0]!, openRouter)).toBe(true);
 });
 
 test("an administrator builds the organization default with ordered models and fallback", async () => {

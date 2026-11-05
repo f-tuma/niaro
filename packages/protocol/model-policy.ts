@@ -110,6 +110,13 @@ export const EscalationOptions = z
     (value) => value.mode === "stop" || !!value.tier || value.models.length > 0,
     "Escalation needs a tier or models",
   );
+/**
+ * Where web searches go: a search backend of the organization, or (null)
+ * the provider's own search with the web search role's models.
+ */
+export const WebSearchOptions = z.strictObject({
+  backendId: IdentityId.nullable().default(null),
+});
 export const PolicyOptions = z.strictObject({
   /** Use the server's own speech recognition when voice input has no models. */
   serverVoice: z.boolean().default(true),
@@ -120,6 +127,7 @@ export const PolicyOptions = z.strictObject({
     models: [],
     tier: null,
   }),
+  webSearch: WebSearchOptions.default({ backendId: null }),
 });
 export type PolicyOptionsValue = z.infer<typeof PolicyOptions>;
 const roleRecord = z.partialRecord(ModelRole, RoleRoute).default({});
@@ -133,6 +141,7 @@ export const OrganizationModelPolicy = z
       speech: { voice: null, zeroDataRetention: true },
       selector: { minConfidence: 0.8 },
       escalation: { mode: "stop", models: [], tier: null },
+      webSearch: { backendId: null },
     }),
   })
   .refine(
@@ -156,6 +165,7 @@ export const WorkspaceModelPolicy = z
         speech: SpeechOptions.optional(),
         selector: SelectorOptions.optional(),
         escalation: EscalationOptions.optional(),
+        webSearch: WebSearchOptions.optional(),
       })
       .default({}),
   })
@@ -214,7 +224,10 @@ export function budgetedReach(effective: ModelPolicyViewValue["effective"]) {
     for (const id of route.fallback ? route.models : route.models.slice(0, 1))
       reach.set(id, [...(reach.get(id) ?? []), key]);
   };
-  for (const role of BUDGETED_MODEL_ROLES) add(role, effective.roles[role]);
+  // Searches sent to a search backend use no model.
+  for (const role of BUDGETED_MODEL_ROLES)
+    if (role !== "web_search" || !effective.options.webSearch.backendId)
+      add(role, effective.roles[role]);
   for (const service of effective.services)
     add(`service:${service.serviceId}`, service.route);
   add("escalation", effective.escalation);
@@ -292,6 +305,7 @@ export function effectiveOptions(
     speech: local.speech ?? base.speech,
     selector: local.selector ?? base.selector,
     escalation: local.escalation ?? base.escalation,
+    webSearch: local.webSearch ?? base.webSearch,
   });
 }
 export function effectiveRoute(

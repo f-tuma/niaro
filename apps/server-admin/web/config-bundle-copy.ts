@@ -35,6 +35,7 @@ const en = {
   sections: {
     serverSettings: "Server settings",
     providers: "AI providers",
+    searchBackends: "Search backends",
     models: "Models",
     hosted: "Installed connectors",
     roles: "Workspace roles",
@@ -90,6 +91,7 @@ const cs: ConfigBundleCopy = {
   sections: {
     serverSettings: "Nastavení serveru",
     providers: "Poskytovatelé AI",
+    searchBackends: "Vyhledávače",
     models: "Modely",
     hosted: "Nainstalované konektory",
     roles: "Role v prostoru",

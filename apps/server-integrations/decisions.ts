@@ -1,3 +1,4 @@
+import { isOpenRouterDialect, providerHeaders } from "./provider-request";
 import { z } from "zod";
 import type {
   CatalogModel,
@@ -33,16 +34,19 @@ export async function decideRoute(
   instructions = "Which single service best matches the user's current request in `request`, considering `history` only as context? Choose fallback for conversation, uncertainty, or no matching service.",
 ) {
   if (
-    selected.provider.url.replace(/\/$/, "") !==
-      "https://openrouter.ai/api/v1" ||
+    !isOpenRouterDialect(selected.provider) ||
     selected.model.kind !== "decision"
   )
     throw new IntegrationError("catalog_model_unavailable", 409);
   const raw = jsonResponse(
     await transport({
-      url: "https://openrouter.ai/api/alpha/decisions",
+      // OpenRouter's decisions API sits beside its versioned API (`…/api/v1`).
+      url: new URL(
+        "../alpha/decisions",
+        selected.provider.url.replace(/\/?$/, "/"),
+      ).href,
       method: "POST",
-      headers: { Authorization: `Bearer ${selected.key}` },
+      headers: providerHeaders(selected.provider, selected.key),
       body: {
         model: selected.model.model,
         state,

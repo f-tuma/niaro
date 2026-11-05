@@ -22,6 +22,7 @@ import {
   hostedSection,
   modelsSection,
   providersSection,
+  searchBackendsSection,
   serverSettingsSection,
 } from "./sections/organization";
 import {
@@ -47,6 +48,7 @@ export const ORGANIZATION_SECTIONS: readonly OrganizationSection<never>[] = [
   serverSettingsSection,
   providersSection,
   modelsSection,
+  searchBackendsSection,
   modelPolicySection,
   hostedSection,
   organizationInstructionsSection,

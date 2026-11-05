@@ -956,6 +956,7 @@ test("OpenRouter chunk request: verbose_json with privacy flags; an unsupported 
       revision: 1,
       name: "OpenRouter",
       url: "https://openrouter.ai/api/v1",
+      dialect: "openrouter" as const,
       enabled: true,
       dailyRequestLimit: 100,
       hasCredential: true,

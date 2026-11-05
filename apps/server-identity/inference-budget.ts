@@ -22,6 +22,7 @@ import { IdentityError } from "./error";
 import { isInferenceBudgetFailureCode } from "./inference-budget-failure";
 import { operatorLog } from "../fixture-server/operator-log";
 import { processDigest } from "./process-validation";
+import { FREE_MODEL_LIMITS } from "../../packages/protocol/providers";
 
 type Target = z.infer<typeof CatalogTarget> & { userId: string };
 type Kind = "model" | "decision";
@@ -200,7 +201,103 @@ export class InferenceBudgetStore {
       "UPDATE agent_inference_attempt SET status='unknown' WHERE status='dispatched'; UPDATE agent_inference_attempt SET status='cancelled' WHERE status='reserved';",
     );
   }
+  /**
+   * The workspace's usage policy as it applies: its stored prices plus a
+   * zero price for each chat, router or decision model of a provider the
+   * administrator marked free, where the workspace has no price for it.
+   */
   policy(organizationId: string, workspaceId: string) {
+    const stored = this.storedPolicy(organizationId, workspaceId);
+    return {
+      ...stored,
+      settings: this.withFreePrices(organizationId, stored.settings),
+    };
+  }
+  /**
+   * Zero prices for the models of the organization's free providers, pinned
+   * to their current revisions, with FREE_MODEL_LIMITS as token ceilings.
+   */
+  freePrices(organizationId: string): InferencePrice[] {
+    let rows: Record<string, unknown>[];
+    try {
+      rows = this.db
+        .prepare(
+          "SELECT id,kind,revision,data FROM agent_catalog WHERE scope_id=? AND kind IN ('provider','model')",
+        )
+        .all(organizationId);
+    } catch {
+      // A database without a catalog has no free providers.
+      return [];
+    }
+    const free = new Map<string, number>();
+    for (const row of rows)
+      if (row.kind === "provider" && JSON.parse(String(row.data)).free === true)
+        free.set(String(row.id), Number(row.revision));
+    if (!free.size) return [];
+    return rows.flatMap((row) => {
+      if (row.kind !== "model") return [];
+      const model = JSON.parse(String(row.data)) as {
+        providerId?: string;
+        kind?: string;
+      };
+      const providerRevision = free.get(String(model.providerId));
+      if (
+        providerRevision === undefined ||
+        !["chat", "router", "decision"].includes(model.kind ?? "chat")
+      )
+        return [];
+      return [
+        {
+          modelId: String(row.id),
+          modelRevision: Number(row.revision),
+          providerRevision,
+          ...FREE_MODEL_LIMITS,
+          inputMicrosPerMillion: 0,
+          outputMicrosPerMillion: 0,
+        },
+      ];
+    });
+  }
+  private withFreePrices(
+    organizationId: string,
+    settings: InferenceBudgetSettings,
+  ): InferenceBudgetSettings {
+    const priced = new Set(settings.prices.map((price) => price.modelId));
+    const free = this.freePrices(organizationId).filter(
+      (price) => !priced.has(price.modelId),
+    );
+    return free.length
+      ? { ...settings, prices: [...settings.prices, ...free] }
+      : settings;
+  }
+  /** Settings without the prices a free provider gives anyway, so they are never stored. */
+  withoutFreePrices(
+    organizationId: string,
+    settings: InferenceBudgetSettings,
+  ): InferenceBudgetSettings {
+    const free = this.freePrices(organizationId);
+    return {
+      ...settings,
+      prices: settings.prices.filter(
+        (price) =>
+          !free.some(
+            (implicit) =>
+              JSON.stringify(implicit) ===
+              JSON.stringify({
+                modelId: price.modelId,
+                modelRevision: price.modelRevision,
+                providerRevision: price.providerRevision,
+                maxInputTokens: price.maxInputTokens,
+                maxOutputTokens: price.maxOutputTokens,
+                inputMicrosPerMillion: price.inputMicrosPerMillion,
+                outputMicrosPerMillion: price.outputMicrosPerMillion,
+              }),
+          ),
+      ),
+    };
+  }
+  /** The policy as the administrator saved it, without implicit free prices. */
+  storedPolicy(organizationId: string, workspaceId: string) {
     if (
       !this.db
         .prepare(
@@ -258,8 +355,11 @@ export class InferenceBudgetStore {
     revision: number,
     raw: InferenceBudgetSettings,
   ) {
-    const settings = InferenceBudgetSettingsSchema.parse(raw);
-    if (this.policy(organizationId, workspaceId).revision !== revision)
+    const settings = this.withoutFreePrices(
+      organizationId,
+      InferenceBudgetSettingsSchema.parse(raw),
+    );
+    if (this.storedPolicy(organizationId, workspaceId).revision !== revision)
       throw new IdentityError(409, "catalog_conflict");
     const saved = this.db
       .prepare(
@@ -283,17 +383,24 @@ export class InferenceBudgetStore {
   ) {
     if (safeCount(priorInference) === null)
       throw new IdentityError(409, "catalog_conflict");
-    const current = this.policy(target.organizationId, target.workspaceId);
+    // The run pins the prices as they apply now (free providers' included);
+    // the digest covers what the administrator saved, so editing a catalog
+    // model does not stop other running work.
+    const current = this.storedPolicy(
+      target.organizationId,
+      target.workspaceId,
+    );
+    const applied = this.withFreePrices(
+      target.organizationId,
+      current.settings,
+    );
     const settings = caps
       ? InferenceBudgetSettingsSchema.parse({
-          ...current.settings,
-          maxTokens: Math.min(current.settings.maxTokens, caps.maxTokens),
-          maxCostMicros: Math.min(
-            current.settings.maxCostMicros,
-            caps.maxCostMicros,
-          ),
+          ...applied,
+          maxTokens: Math.min(applied.maxTokens, caps.maxTokens),
+          maxCostMicros: Math.min(applied.maxCostMicros, caps.maxCostMicros),
         })
-      : current.settings;
+      : applied;
     if (caps && safeCount(caps.maxModelCalls) === null)
       throw new IdentityError(409, "catalog_conflict");
     const digest = processDigest(
