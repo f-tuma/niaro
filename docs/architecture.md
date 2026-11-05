@@ -78,6 +78,10 @@ the decision, then the reason.
   catalog in every prompt was too slow and costly.
 - **Mastra semantic recall and working memory stay off** until a retrieval and
   deletion policy exists.
+- **Workspace instructions are data, like skills.** Administrators shape tone
+  and conventions; the text is framed as never permission and every authority
+  check stays in the server. Prompt variables are filled by the server from
+  the person the turn runs for only, so no prompt can name someone else.
 
 ## Identity and credentials
 

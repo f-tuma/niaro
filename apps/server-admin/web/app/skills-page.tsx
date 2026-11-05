@@ -1,9 +1,12 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
 import { Skeleton } from "@admin/components/ui/skeleton";
+import { Markdown } from "@admin/components/ui/markdown";
 import { PageHeader, Section } from "@admin/components/console/page";
+import { WorkspaceChatSetupSchema } from "../../../../packages/protocol/workspace-instructions";
+import { api } from "../lib/api";
 import {
   SkillEditor,
   SkillRows,
@@ -29,6 +32,21 @@ function useTarget() {
   };
 }
 
+/**
+ * What the workspace's instructions say, read-only for everyone here; owners
+ * and administrators edit them in the administration's workspace settings.
+ */
+function useWorkspaceInstructions(target: ReturnType<typeof useTarget>) {
+  return useQuery({
+    queryKey: [...skillsKey(target), "instructions"],
+    queryFn: async ({ signal }) =>
+      WorkspaceChatSetupSchema.parse(
+        await api("identity/instructions/effective", target, signal),
+      ),
+    retry: false,
+  });
+}
+
 /** "Mine" (the person's own) and "Company" skills. */
 export function SkillsPage() {
   const { language, isAdmin } = useApp();
@@ -37,6 +55,7 @@ export function SkillsPage() {
   const target = useTarget();
   const navigate = useNavigate();
   const list = useSkillList(target);
+  const instructions = useWorkspaceInstructions(target).data?.instructions;
   const open = (id: string) =>
     void navigate({ to: "/skills/$skillId", params: { skillId: id } });
   const create = (owner: "personal" | "workspace") => (
@@ -112,6 +131,14 @@ export function SkillsPage() {
                   }
                 />
               )}
+            </Section>
+          )}
+          {instructions && (
+            <Section
+              id="workspace-instructions"
+              title={copy.workspaceInstructions}
+            >
+              <Markdown text={instructions.text} />
             </Section>
           )}
         </>

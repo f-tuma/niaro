@@ -392,6 +392,7 @@ export type FixtureServerOptions = {
         | "mobilePetEvents"
         | "mobileSkills"
         | "mobileMentions"
+        | "mobileInstructions"
         | "mobileMemberServices"
         | "mobileProcessProposal"
         | "listMarks"
@@ -899,7 +900,7 @@ export function createFixtureServer(
       }
     }
     const match =
-      /^\/v1\/([A-Za-z0-9-]+)\/(server|snapshot|events|meetings(?:\/voice-profile|\/[A-Fa-f0-9-]{36}(?:\/(?:blocks|seal|process|record|audio|speakers))?)?|human-tasks(?:\/[A-Za-z0-9%:._-]{1,480})?|conversations(?:\/messages)?|commands(?:\/interrupt)?|activity|auth\/pair|auth\/session|auth\/refresh|services(?:\/(?:start|status|cancel))?|process-design(?:\/(?:capabilities|start|update|acknowledge|accept|turns(?:\/list)?|sessions\/list|drafts\/list))?|processes(?:\/(?:input|runs|output(?:\/capabilities)?|commands(?:\/interrupt)?))?|hub(?:\/open)?|pet(?:\/memory|\/events)?|skills|mentions|search|process-proposals|voice|voice\/transcriptions|voice\/speech|voice\/output-settings|attachments(?:\/(?:capabilities|[a-f0-9-]{36}\/original))?|attachment-drafts(?:\/[a-f0-9-]{36}(?:\/(?:uploads|references|remove|items\/[a-f0-9-]{36}\/remove))?)?|attachment-uploads\/[a-f0-9-]{36}(?:\/bytes)?|attachment-ingestions\/[a-f0-9-]{36}(?:\/retry-local)?)$/.exec(
+      /^\/v1\/([A-Za-z0-9-]+)\/(server|snapshot|events|meetings(?:\/voice-profile|\/[A-Fa-f0-9-]{36}(?:\/(?:blocks|seal|process|record|audio|speakers))?)?|human-tasks(?:\/[A-Za-z0-9%:._-]{1,480})?|conversations(?:\/messages)?|commands(?:\/interrupt)?|activity|auth\/pair|auth\/session|auth\/refresh|services(?:\/(?:start|status|cancel))?|process-design(?:\/(?:capabilities|start|update|acknowledge|accept|turns(?:\/list)?|sessions\/list|drafts\/list))?|processes(?:\/(?:input|runs|output(?:\/capabilities)?|commands(?:\/interrupt)?))?|hub(?:\/open)?|pet(?:\/memory|\/events)?|skills|mentions|instructions|search|process-proposals|voice|voice\/transcriptions|voice\/speech|voice\/output-settings|attachments(?:\/(?:capabilities|[a-f0-9-]{36}\/original))?|attachment-drafts(?:\/[a-f0-9-]{36}(?:\/(?:uploads|references|remove|items\/[a-f0-9-]{36}\/remove))?)?|attachment-uploads\/[a-f0-9-]{36}(?:\/bytes)?|attachment-ingestions\/[a-f0-9-]{36}(?:\/retry-local)?)$/.exec(
         url.pathname,
       );
     if (!match) return respond(404, { error: "not_found" });
@@ -1185,6 +1186,23 @@ export function createFixtureServer(
               language: url.searchParams.get("language") ?? undefined,
             },
             payload,
+          ),
+        );
+      }
+      // The workspace's instructions (read-only) and the empty chat's starters.
+      if (route === "instructions") {
+        if (!accountWorkspace || !identity?.mobileInstructions)
+          return respond(404, { error: "not_found" });
+        if ([...url.searchParams.keys()].length)
+          return respond(400, { error: "invalid_payload" });
+        if (req.method !== "GET")
+          return respond(405, { error: "method_not_allowed" });
+        return respond(
+          200,
+          await identity.mobileInstructions(
+            req.headers.authorization,
+            workspace,
+            auth.serverId,
           ),
         );
       }

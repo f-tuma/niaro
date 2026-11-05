@@ -121,6 +121,10 @@ import {
 } from "../protocol/mentions";
 import { MemberServiceList } from "../protocol/member-services";
 import {
+  WorkspaceChatSetupSchema,
+  type WorkspaceChatSetup,
+} from "../protocol/workspace-instructions";
+import {
   PROCESS_OUTPUT_PROFILE,
   PROCESS_OUTPUT_WORK_PROFILE,
   PROCESS_OUTPUT_MAX_PAGE_BYTES,
@@ -1463,6 +1467,20 @@ export class ClientSession {
     )
       throw new Error("invalid_payload");
     return directory;
+  }
+  /** The workspace's instructions (read-only) and the empty chat's starter
+   * prompts. Null on a server without them; the client keeps its own copy. */
+  async readChatSetup(
+    signal?: AbortSignal,
+  ): Promise<WorkspaceChatSetup | null> {
+    if (!this.authorized) await this.authorize();
+    const { response, value } = await this.json("instructions", { signal });
+    if (response.status === 404 || response.status === 405) return null;
+    if (!response.ok) throw new Error("connection_failed");
+    const setup = WorkspaceChatSetupSchema.parse(value);
+    if (setup.workspaceId !== this.credential.scope.workspaceId)
+      throw new Error("invalid_payload");
+    return setup;
   }
   /** The services the person may use, whose account each reads and changes
    * with, and their own last read and failure. Null on a server without it. */

@@ -152,15 +152,16 @@ import {
   MentionChips,
   MentionPicker,
   MessageTags,
-  filterMentions,
+  composerQuery,
   insertMention,
   isTagged,
   mentionOptionId,
-  mentionQuery,
+  pickerMatches,
   rememberMentions,
   sentMentions,
   messageMentions,
   removeMention,
+  useChatSetup,
   useMentionDirectory,
   type MentionItem,
 } from "../chat-composer";
@@ -369,6 +370,7 @@ export function ChatNextConversation({
     attachedTaskRef.current = attachedTask;
   }, [attachedTask]);
   const directory = useMentionDirectory(session);
+  const chatSetup = useChatSetup(session);
   const [picked, setPicked] = useState<MentionItem[]>(initial.mentions);
   const pickedRef = useRef(picked);
   useLayoutEffect(() => {
@@ -1359,6 +1361,8 @@ export function ChatNextConversation({
                 </div>
               ) : showHome ? (
                 <Welcome
+                  starters={chatSetup?.starters ?? []}
+                  onStarter={followUp}
                   onSuggestion={(text) => {
                     setComposerText(text);
                     requestAnimationFrame(() => composerRef.current?.focus());
@@ -1656,23 +1660,52 @@ function JumpToEnd() {
   );
 }
 
-function Welcome({ onSuggestion }: { onSuggestion: (text: string) => void }) {
+/**
+ * The empty chat. The workspace's starters (written by its administrators)
+ * send at once, like a generated follow-up; without any, the app's own
+ * suggestions only fill the composer.
+ */
+function Welcome({
+  starters,
+  onStarter,
+  onSuggestion,
+}: {
+  starters: readonly string[];
+  onStarter: (text: string) => void;
+  onSuggestion: (text: string) => void;
+}) {
   const { copy } = useChatCopy();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 py-12 text-center">
       <ChatPet />
       <p className="text-2xl font-semibold tracking-tight">{copy.greeting}</p>
-      <div className="flex flex-wrap justify-center gap-2">
-        {copy.suggestions.map((suggestion) => (
-          <Button
-            key={suggestion}
-            variant="outline"
-            size="sm"
-            onClick={() => onSuggestion(suggestion)}
-          >
-            {suggestion}
-          </Button>
-        ))}
+      <div
+        className="flex max-w-full flex-wrap justify-center gap-2"
+        data-testid={starters.length ? "chat-starters" : undefined}
+      >
+        {starters.length
+          ? starters.map((starter) => (
+              <Button
+                key={starter}
+                variant="outline"
+                size="sm"
+                className="max-w-full"
+                title={starter}
+                onClick={() => onStarter(starter)}
+              >
+                <span className="truncate">{starter}</span>
+              </Button>
+            ))
+          : copy.suggestions.map((suggestion) => (
+              <Button
+                key={suggestion}
+                variant="outline"
+                size="sm"
+                onClick={() => onSuggestion(suggestion)}
+              >
+                {suggestion}
+              </Button>
+            ))}
       </div>
     </div>
   );
@@ -2059,16 +2092,18 @@ function Composer({
   const [picker, setPicker] = useState<{
     start: number;
     query: string;
+    /** "/" at the start: skills and processes to run. */
+    slash?: true;
     active: number;
   } | null>(null);
   const pickerId = useId();
-  const pickerItems = picker ? filterMentions(directory, picker.query) : [];
+  const pickerItems = picker ? pickerMatches(directory, picker) : [];
   const pickerOpen = pickerItems.length > 0;
   const pickerActive = picker
     ? Math.min(picker.active, pickerItems.length - 1)
     : 0;
   const trackMention = (text: string, caret: number) => {
-    const found = directory.length ? mentionQuery(text, caret) : null;
+    const found = directory.length ? composerQuery(text, caret) : null;
     setPicker((current) =>
       found
         ? {
@@ -2164,6 +2199,7 @@ function Composer({
           id={pickerId}
           items={pickerItems}
           active={pickerActive}
+          slash={!!picker?.slash}
           onPick={pickMention}
           onHover={(index) =>
             setPicker((current) =>
@@ -2271,7 +2307,11 @@ function Composer({
           }}
           onSelect={(event) => {
             const target = event.currentTarget;
-            if (picker || target.value.includes("@"))
+            if (
+              picker ||
+              target.value.includes("@") ||
+              target.value.startsWith("/")
+            )
               trackMention(
                 target.value,
                 target.selectionStart ?? target.value.length,

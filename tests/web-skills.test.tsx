@@ -387,3 +387,55 @@ test("the skills page lists mine and company skills; only admins add company one
   client.clear();
   mockAdmin = false;
 });
+
+test("members read the workspace's instructions on the skills page, read-only (NIAR-295)", async () => {
+  const list: SkillList = {
+    profile: SKILLS_PROFILE,
+    canManageWorkspace: false,
+    personal: [],
+    workspace: [],
+  };
+  mockApi.mockReset();
+  mockApi.mockImplementation(async (path: string) =>
+    path === "identity/instructions/effective"
+      ? {
+          profile: "workspace-instructions/1",
+          workspaceId: "ws-1",
+          instructions: {
+            text: "# Tón\n\nTykej a piš stručně.",
+            source: "organization",
+          },
+          starters: [],
+        }
+      : list,
+  );
+  mockAdmin = false;
+  const client = new QueryClient({
+    defaultOptions: { queries: { gcTime: 0, retry: false } },
+  });
+  const renderer = await render(
+    <QueryClientProvider client={client}>
+      <SkillsPage />
+    </QueryClientProvider>,
+  );
+  const root = renderer.root;
+  for (let i = 0; i < 20 && !text(root).includes("Tykej"); i++)
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
+  expect(mockApi).toHaveBeenCalledWith(
+    "identity/instructions/effective",
+    { organizationId: "org-1", workspaceId: "ws-1" },
+    expect.anything(),
+  );
+  const section = root.find(
+    (node) =>
+      node.props["data-host"] === "Section" &&
+      node.props.id === "workspace-instructions",
+  );
+  expect(section.props.title).toBe("Pokyny prostoru");
+  expect(text(section)).toContain("Tykej a piš stručně.");
+  // Read-only: nothing to edit or save there.
+  expect(section.findAll((node) => node.type === "button")).toHaveLength(0);
+  expect(section.findAll((node) => node.type === "textarea")).toHaveLength(0);
+  renderer.unmount();
+  client.clear();
+});
