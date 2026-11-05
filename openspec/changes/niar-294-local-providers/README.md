@@ -1,0 +1,3 @@
+# niar-294-local-providers
+
+Local and custom AI providers are first-class: the provider form starts from a preset (cloud vendors through their OpenAI-compatible endpoints, Azure OpenAI, Ollama, LM Studio, vLLM, llama.cpp, LocalAI, custom), keys go as a bearer token, a named header or not at all, OpenRouter's additions follow an administrator-chosen request format, discovery reads plain `/v1/models`, an administrator-started capability test declares what a model supports, free providers' models cost nothing under usage limits, audio uses the standard endpoints of any provider, web search can go to SearXNG, Brave or Tavily, and each provider shows a data-handling note (NIAR-294).
