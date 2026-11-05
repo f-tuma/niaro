@@ -15,7 +15,7 @@ import { ChatMenuItems, chatNameField, useChatActions } from "../chat-history";
 
 /**
  * The chat page's one line: the chat's name and, on the right, the compact
- * pet and the chat's `…` menu (Rename, Pin, Archive, Delete), the same items
+ * pet and the chat's `…` menu (Rename, Pin, Archive, Export, Delete), the same items
  * as its sidebar row. It belongs to the page, so it stays when the sidebar is
  * collapsed or closed. On phones it also opens the sidebar.
  */
@@ -102,6 +102,7 @@ export function ChatHeader({
                 }}
               >
                 <ChatMenuItems
+                  chatId={chatId}
                   pinned={pinned}
                   pinsReady={actions.pinsReady}
                   onRename={() => {

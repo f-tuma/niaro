@@ -90,6 +90,16 @@ import {
 } from "../../packages/protocol/identity";
 import type { ServerConfig } from "../reference-server/config";
 import { IdentityError } from "./error";
+import {
+  CHAT_EXPORT_PATH,
+  ChatExportQuery,
+  MEMORY_EXPORT_PATH,
+  MemoryExportQuery,
+  chatExportFile,
+  memoryExportFile,
+  readWholeChat,
+  sendMemberExport,
+} from "./member-export";
 import { WorkspaceConnectionStore } from "./connections";
 import { AuditStore } from "./audit";
 import { WorkspaceAIStore, type AIProfiles } from "./workspace-ai";
@@ -226,6 +236,8 @@ import { exchangeOAuthCode } from "../server-integrations/service-oauth";
 
 import { AuthProviderStore, type AuthProviderSnapshot } from "./auth-providers";
 import { ServerSettingsStore, serverSettingsDefaults } from "./server-settings";
+import { handleConfigBundle } from "./config-bundle/http";
+import { CONFIG_BUNDLE_MAX_BYTES } from "../../packages/protocol/config-bundle";
 import {
   ImportServerSettingsSchema,
   SERVER_SETTINGS_PROFILE,
@@ -310,17 +322,19 @@ async function body(req: IncomingMessage) {
       size += chunk.length;
       if (
         size >
-        (req.url?.split("?")[0] === "/admin/api/identity/catalog/discover" ||
-        req.url?.split("?")[0] === "/admin/api/identity/plugin-files"
-          ? 1_048_576
-          : req.url?.startsWith("/admin/api/identity/catalog/")
-            ? 131072
-            : req.url?.split("?")[0] === "/admin/api/identity/skills/command"
-              ? 524288
-              : req.url?.split("?")[0] === "/admin/auth/sign-in/email" ||
-                  req.url?.startsWith("/admin/api/identity/server-settings")
-                ? 65536
-                : 8192)
+        (req.url?.startsWith("/admin/api/identity/config-bundle/")
+          ? CONFIG_BUNDLE_MAX_BYTES
+          : req.url?.split("?")[0] === "/admin/api/identity/catalog/discover" ||
+              req.url?.split("?")[0] === "/admin/api/identity/plugin-files"
+            ? 1_048_576
+            : req.url?.startsWith("/admin/api/identity/catalog/")
+              ? 131072
+              : req.url?.split("?")[0] === "/admin/api/identity/skills/command"
+                ? 524288
+                : req.url?.split("?")[0] === "/admin/auth/sign-in/email" ||
+                    req.url?.startsWith("/admin/api/identity/server-settings")
+                  ? 65536
+                  : 8192)
       )
         throw new IdentityError(413, "identity_invalid_input");
       chunks.push(Buffer.from(chunk));
@@ -669,6 +683,7 @@ export class IdentityService {
     | "profileChat"
     | "profileSource"
     | "attachProfileNotification"
+    | "conversationMessages"
   >;
   private processes: ServiceProcessStore;
   private processStarts?: ProcessStartStore;
@@ -5486,6 +5501,60 @@ export class IdentityService {
     }
     // Native payload I/O must allow independent identity revocation to run.
     try {
+      // The person's own copy of one chat or of their memory (NIAR-297).
+      if (
+        url.pathname === CHAT_EXPORT_PATH ||
+        url.pathname === MEMORY_EXPORT_PATH
+      ) {
+        if (req.method !== "GET")
+          return respond(405, { error: "method_not_allowed" });
+        if (isOperator())
+          throw new IdentityError(403, "identity_account_required");
+        const query = Object.fromEntries(url.searchParams);
+        const chat =
+          url.pathname === CHAT_EXPORT_PATH
+            ? ChatExportQuery.parse(query)
+            : undefined;
+        const target = chat ?? MemoryExportQuery.parse(query);
+        const actor = await this.serial(() => this.workspaceActor(req, target));
+        const memoryActor: MemoryActor = {
+          organizationId: target.organizationId,
+          workspaceId: target.workspaceId,
+          userId: actor.userId,
+          canManageShared: actor.role !== "member",
+        };
+        if (chat) {
+          const sources = this.profileSources;
+          if (!sources) throw new IdentityError(404, "not_found");
+          const scope = this.profileScope(memoryActor);
+          const { conversation, messages } = readWholeChat((after, revision) =>
+            sources.conversationMessages(
+              scope,
+              chat.conversationId,
+              after,
+              revision,
+            ),
+          );
+          return sendMemberExport(
+            res,
+            chatExportFile(conversation, messages, target.format, target.lang),
+          );
+        }
+        const config = this.plugins.read(target.workspaceId).settings;
+        const { items } = await this.memory.privateSnapshot(memoryActor, {
+          run: (fn) => this.serial(async () => fn()),
+          privateOnly: true,
+          settings: MemorySettingsSchema.parse(config.memory ?? {}),
+          observationSourceView: (source, a) =>
+            this.observationSourceView(source, a),
+          sourceAccess: (source, a) =>
+            this.memorySourceAccess(source, a, actor.role),
+        });
+        return sendMemberExport(
+          res,
+          memoryExportFile(items, target.format, target.lang),
+        );
+      }
       if (url.pathname === "/admin/api/identity/memory" && isOperator())
         throw new IdentityError(403, "identity_account_required");
       if (url.pathname === "/admin/api/identity/memory") {
@@ -6483,6 +6552,42 @@ export class IdentityService {
           return respond(200, { ok: true });
         }
 
+        if (url.pathname.startsWith("/admin/api/identity/config-bundle/")) {
+          // The organization's configuration without secrets: owners and
+          // administrators, from an account.
+          const reply = await handleConfigBundle(
+            req.method ?? "GET",
+            url,
+            payload,
+            {
+              stores: {
+                db: this.db,
+                catalog: this.catalog.store,
+                skills: this.skills,
+                processes: this.processes,
+                plugins: this.plugins,
+                serverSettings: this.serverSettingsStore,
+                applyServerSettings: (next, previous) =>
+                  this.applyServerSettings(next, previous),
+                hosted: this.hosted,
+                audit: (record) => this.audit.append(record),
+              },
+              actor: (organizationId) => this.actor(req, organizationId),
+              transaction: (run) => this.transaction(run),
+              changePolicy: (organizationId) =>
+                this.connections.changePolicy(organizationId),
+              forget: () => this.serverSettingsStore?.forget(),
+              serverName: () => this.serverSettings()?.name ?? "Niaro",
+            },
+          );
+          res.writeHead(reply.status, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+            ...reply.headers,
+          });
+          res.end(JSON.stringify(reply.body));
+          return true;
+        }
         if (url.pathname.startsWith("/admin/api/identity/server-settings")) {
           // Server-wide settings: owners and administrators, from an account.
           const store = this.serverSettingsStore;

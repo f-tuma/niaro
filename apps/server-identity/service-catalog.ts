@@ -18,6 +18,7 @@ import {
   ServiceSchema,
   ServiceSettings,
   ServiceActionSchema,
+  ActionSettings,
   ProviderSchema,
   ProviderSettings,
   CatalogModelSchema,
@@ -1009,6 +1010,100 @@ export class ServiceCatalogStore {
         ? this.routing(workspaceId)
         : { revision: 0, modelId: null, services: [] },
     });
+  }
+  /** An organization's providers and models for the configuration bundle;
+   * never unseals a key, only says whether one is stored. */
+  organizationModels(orgId: string) {
+    return {
+      providers: this.rows(orgId, "provider").map((row) =>
+        ProviderSchema.parse({
+          ...this.dto(row),
+          hasCredential: !!row.secret,
+          requestsToday: this.usage(row.id),
+        }),
+      ),
+      models: this.rows(orgId, "model").map((row) =>
+        this.readModel(orgId, row),
+      ),
+    };
+  }
+  /** A workspace's services with their actions, for the configuration bundle. */
+  workspaceServices(workspaceId: string) {
+    return this.rows(workspaceId, "service").map((row) =>
+      this.service(workspaceId, row.id),
+    );
+  }
+  /**
+   * Saves a service from a configuration bundle with the console's checks,
+   * except that a service with an authentication but no key yet is accepted
+   * (it then needs its key before it works). A stored key is never changed or
+   * removed, and a member's own service is never touched.
+   */
+  saveImportedService(
+    workspaceId: string,
+    id: string | undefined,
+    revision: number,
+    settings: z.infer<typeof ServiceSettings>,
+  ) {
+    validateEndpoint(settings.url, this.trustedOrigins);
+    this.workspaceRoles.validate(workspaceId, settings.access?.workspaceRoles);
+    if (settings.personal) throw new IdentityError(409, "catalog_conflict");
+    if (!id && this.rows(workspaceId, "service").length >= 100)
+      throw new IdentityError(409, "identity_limit");
+    if (id) {
+      const previous = this.service(workspaceId, id);
+      if (previous.personal) throw new IdentityError(409, "catalog_conflict");
+      if (previous.protocol !== settings.protocol && previous.actions.length)
+        throw new IdentityError(409, "catalog_protocol_locked");
+    }
+    return this.save(workspaceId, "service", id, revision, settings);
+  }
+  /**
+   * Saves an action from a configuration bundle with the console's checks
+   * ("saveAction"); a new action keeps the bundle's discovery source so a
+   * later discovery does not add it twice.
+   */
+  saveImportedAction(
+    orgId: string,
+    workspaceId: string,
+    input: {
+      serviceId: string;
+      serviceRevision: number;
+      id?: string;
+      revision: number;
+      settings: z.infer<typeof ActionSettings>;
+      sourceKey: string | null;
+    },
+  ) {
+    const service = this.service(workspaceId, input.serviceId);
+    if (service.personal) throw new IdentityError(409, "catalog_conflict");
+    this.check(
+      this.row(workspaceId, "service", service.id),
+      input.serviceRevision,
+    );
+    if (!input.id && service.actions.length >= 1000)
+      throw new IdentityError(409, "identity_limit");
+    const previous = input.id
+      ? ServiceActionSchema.parse(
+          this.dto(this.row(service.id, "action", input.id)),
+        )
+      : undefined;
+    const sourceKey = previous ? previous.sourceKey : input.sourceKey;
+    const action = {
+      ...input.settings,
+      id: input.id ?? "new",
+      revision: input.revision,
+      sourceKey,
+    };
+    this.validateBinding(service, action);
+    this.members(orgId, action);
+    this.workspaceRoles.validate(workspaceId, action.policy.workspaceRoles);
+    const id = this.save(service.id, "action", input.id, input.revision, {
+      ...input.settings,
+      sourceKey,
+    });
+    this.bump(service.id);
+    return id;
   }
   /** Model IDs in the organization, for the process designer's own safe
    * projection. Never returns provider or credential data. */

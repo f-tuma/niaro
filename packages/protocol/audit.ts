@@ -13,6 +13,8 @@ export const AuditAction = z.enum([
   "hosted.server_changed",
   "server.settings_changed",
   "server.settings_imported",
+  /** A configuration bundle was imported (counts only, never its content). */
+  "config.bundle_imported",
   /** An owner saved, reset, deleted or created a plugin's files. */
   "server.plugin_changed",
   "catalog.ai_changed",
@@ -150,6 +152,8 @@ export const AuditDetails = z.strictObject({
     .optional(),
   /** Actions a person's own service gained when its tools were read. */
   added: z.number().int().nonnegative().optional(),
+  /** Items an imported configuration bundle changed. */
+  changed: z.number().int().nonnegative().optional(),
 });
 export const AuditRecordSchema = z.strictObject({
   organizationId: IdentityId,
