@@ -380,13 +380,16 @@ test("member projection: every usable service with the account it reads with, ow
       "TEST provider message",
       "TEST_failure",
       "/authorize",
-      "9000",
-      "9500",
-      "9900",
       "TEST-bob",
       "policy",
     ])
       assert(!wire.includes(secret), `leaked ${secret}`);
+    // Configured numbers as whole values: random ids and times may contain the digits.
+    for (const secret of ["9000", "9500", "9900"])
+      assert(
+        !new RegExp(`(^|[^\\w.-])${secret}([^\\w.-]|$)`).test(wire),
+        `leaked ${secret}`,
+      );
 
     // Bob sees his own outcomes and his own service, not Alice's.
     h.as("TEST-bob");

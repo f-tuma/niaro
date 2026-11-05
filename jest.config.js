@@ -23,6 +23,7 @@ module.exports = {
       displayName: "core",
       preset: "jest-expo",
       testEnvironment: "node",
+      setupFiles: ["<rootDir>/tests/helpers/query-timers.ts"],
       transformIgnorePatterns,
       moduleNameMapper,
       testMatch: ["<rootDir>/tests/**/*.test.ts"],
@@ -30,7 +31,10 @@ module.exports = {
     {
       displayName: "ui",
       preset: "jest-expo",
-      setupFiles: ["<rootDir>/tests/meeting-device-mock.ts"],
+      setupFiles: [
+        "<rootDir>/tests/meeting-device-mock.ts",
+        "<rootDir>/tests/helpers/query-timers.ts",
+      ],
       transformIgnorePatterns,
       moduleNameMapper,
       testMatch: ["<rootDir>/tests/**/*.test.tsx"],
@@ -43,6 +47,7 @@ module.exports = {
       displayName: "dom",
       preset: "jest-expo",
       testEnvironment: "<rootDir>/tests/helpers/jsdom-environment.js",
+      setupFiles: ["<rootDir>/tests/helpers/query-timers.ts"],
       transformIgnorePatterns,
       moduleNameMapper,
       testMatch: ["<rootDir>/tests/**/*.dom.test.tsx"],
