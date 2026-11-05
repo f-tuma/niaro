@@ -117,7 +117,7 @@ const receipts: AnswerReceiptPage = {
         {
           kind: "service",
           id: "find",
-          title: "Find contacts",
+          title: "find_contacts",
           detail: "Acme CRM",
         },
       ],

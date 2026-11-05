@@ -66,8 +66,15 @@ export function receiptLine(receipt: AnswerReceipt, tr: Translate) {
   );
 }
 
-const itemText = (item: ReceiptItem) =>
-  item.detail ? `${item.title} (${item.detail})` : item.title;
+/** A service action is named like `search_companies`; people read "Search companies". */
+const actionTitle = (name: string) => {
+  const words = name.replace(/[_-]+/g, " ").trim();
+  return words ? words[0]!.toLocaleUpperCase() + words.slice(1) : name;
+};
+const itemText = (item: ReceiptItem) => {
+  const title = item.kind === "service" ? actionTitle(item.title) : item.title;
+  return item.detail ? `${title} (${item.detail})` : title;
+};
 
 /** The expanded details: one titled list per kind, in the line's order. */
 export function receiptSections(receipt: AnswerReceipt, tr: Translate) {
