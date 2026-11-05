@@ -520,3 +520,31 @@ test("a late committed memory response cannot refresh or replace another owner",
   expect(mockPet.mock.lastCall![0].appearance.shape).toBe("cookie");
   act(() => current.unmount());
 });
+
+test("About you and /me/memory export the person's memory as Markdown or JSON with plain links (NIAR-297)", async () => {
+  for (const manager of [false, true]) {
+    const view = await mount(manager);
+    const links = view.root.findAll(
+      (node) => node.type === "a" && node.props.download === true,
+    );
+    expect(
+      links.map((link) =>
+        link.children.map((c) => (typeof c === "string" ? c : "")).join(""),
+      ),
+    ).toEqual(["Export as Markdown", "Export as JSON"]);
+    expect(links.map((link) => link.props.href)).toEqual([
+      "/admin/api/identity/memory/export?organizationId=org&workspaceId=ws&format=md&lang=en",
+      "/admin/api/identity/memory/export?organizationId=org&workspaceId=ws&format=json&lang=en",
+    ]);
+    // Both sit in the page's … menu, nowhere else.
+    for (const link of links)
+      expect(
+        (() => {
+          for (let node = link.parent; node; node = node.parent)
+            if (node.props["data-menu"]) return true;
+          return false;
+        })(),
+      ).toBe(true);
+    act(() => view.unmount());
+  }
+});

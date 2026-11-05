@@ -24,6 +24,7 @@ import { HostedPage } from "./hosted-page";
 import { OverviewPage } from "./overview-page";
 import { App } from "./App";
 import { Settings } from "./pages";
+import { ConfigBundlePage } from "./config-bundle-page";
 import { ProcessDesignPage, designSearchSchema } from "./process-design-page";
 import { WorkspaceProcessesPage } from "./workspace-processes-page";
 import { ProcessConsolePage } from "./process-console-page";
@@ -129,6 +130,7 @@ export const router = createRouter({
     }),
     page("/loops", LoopsPage),
     settings,
+    page("/settings/configuration", ConfigBundlePage),
     moved("/access", "/settings"),
     moved("/accounts", "/people"),
     moved("/ai", "/routing"),

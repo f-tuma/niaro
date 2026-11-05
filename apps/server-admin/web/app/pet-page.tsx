@@ -13,6 +13,7 @@ import {
   Bookmark,
   BriefcaseBusiness,
   Clock3,
+  Download,
   ExternalLink,
   History,
   MessageSquare,
@@ -119,6 +120,30 @@ function subscribeNarrow(callback: () => void) {
 }
 const readNarrow = () => canMatch() && window.matchMedia(narrowQuery).matches;
 const serverNarrow = () => false;
+
+/** The person's own saved memories and observations as a file: a plain GET
+ * with the session cookie, answered as an attachment. */
+function MemoryExportItems() {
+  const { workspace, language } = useApp(),
+    copy = petCopy(language);
+  if (!workspace) return null;
+  return (["md", "json"] as const).map((format) => (
+    <DropdownMenuItem key={format} asChild>
+      <a
+        href={`/admin/api/identity/memory/export?${new URLSearchParams({
+          organizationId: workspace.organizationId,
+          workspaceId: workspace.workspaceId,
+          format,
+          lang: language,
+        })}`}
+        download
+      >
+        <Download aria-hidden="true" />
+        {format === "md" ? copy.exportMarkdown : copy.exportJson}
+      </a>
+    </DropdownMenuItem>
+  ));
+}
 
 /** Whole days between a timestamp and today, in local time. */
 function daysAgo(value: string, now = new Date()) {
@@ -1063,6 +1088,11 @@ function PetPageOwner({ manager }: { manager: boolean }) {
         <PageHeader
           title={copy.manager}
           back={{ to: "/pet", label: copy.title }}
+          actions={
+            <MoreActions label={copy.more}>
+              <MemoryExportItems />
+            </MoreActions>
+          }
         />
         <div data-still={!animate} className="pet-page flex flex-col gap-8">
           <div className="flex flex-col gap-3">
@@ -1128,6 +1158,8 @@ function PetPageOwner({ manager }: { manager: boolean }) {
               <DropdownMenuItem asChild>
                 <Link to="/me/memory">{copy.manager}</Link>
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <MemoryExportItems />
             </MoreActions>
           </>
         }

@@ -23,7 +23,9 @@ async function request(path: string, body?: unknown, signal?: AbortSignal) {
             ? 125_000
             : path.includes("catalog/")
               ? 50_000
-              : 10_000,
+              : path.includes("config-bundle/")
+                ? 120_000
+                : 10_000,
       ),
       ...(signal ? [signal] : []),
     ]),

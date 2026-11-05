@@ -48,6 +48,13 @@ jest.mock("../apps/server-admin/web/console-scope", () => ({
     organization: { id: "org_TEST", name: "TEST", role: mockRole },
   }),
 }));
+jest.mock("@tanstack/react-router", () => {
+  const React = jest.requireActual<typeof import("react")>("react");
+  return {
+    Link: ({ to, children }: { to: string; children: React.ReactNode }) =>
+      React.createElement("a", { href: to }, children),
+  };
+});
 jest.mock("../apps/server-admin/web/account-providers", () => ({
   AccountProviders: () => null,
 }));
@@ -205,6 +212,16 @@ test("a member's console shows the server read-only", async () => {
   expect(mockApi).not.toHaveBeenCalled();
   expect(root.findAll((node) => node.type === "input")).toHaveLength(0);
   expect(text(root)).toContain("TEST Server");
+  // Moving the configuration is for owners and administrators.
+  expect(root.findAll((node) => node.type === "a")).toHaveLength(0);
+});
+
+test("owners reach the configuration export and import from Settings", async () => {
+  mockApi.mockImplementation(async () => view(3, settings));
+  const root = await render();
+  const link = root.find((node) => node.type === "a");
+  expect(link.props.href).toBe("/settings/configuration");
+  expect(text(link)).toBe("Configuration");
 });
 
 test("export downloads the settings file", async () => {

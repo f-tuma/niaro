@@ -18,6 +18,7 @@ import {
 } from "@tanstack/react-query";
 import {
   Archive,
+  Download,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -386,8 +387,26 @@ export function chatNameField(
   };
 }
 
+/** Where the person's own copy of a chat downloads from: a plain GET with
+ * the session cookie, answered as an attachment. */
+export function chatExportHref(
+  target: { organizationId: string; workspaceId: string },
+  conversationId: string,
+  format: "md" | "json",
+  language: "en" | "cs",
+) {
+  return `/admin/api/identity/conversations/export?${new URLSearchParams({
+    organizationId: target.organizationId,
+    workspaceId: target.workspaceId,
+    conversationId,
+    format,
+    lang: language,
+  })}`;
+}
+
 /** The items of a chat's `…` menu, the same in the sidebar and the header. */
 export function ChatMenuItems({
+  chatId,
   pinned,
   pinsReady,
   onRename,
@@ -395,6 +414,8 @@ export function ChatMenuItems({
   onArchive,
   onDelete,
 }: {
+  /** The saved chat; with it the menu offers its export. */
+  chatId?: string;
   pinned: boolean;
   pinsReady: boolean;
   onRename: () => void;
@@ -403,7 +424,8 @@ export function ChatMenuItems({
   onArchive?: () => void;
   onDelete: () => void;
 }) {
-  const { copy, tr } = useChatCopy();
+  const { copy, tr, language } = useChatCopy();
+  const { workspace } = useApp();
   return (
     <>
       <DropdownMenuItem onSelect={onRename}>
@@ -419,6 +441,22 @@ export function ChatMenuItems({
           <Archive aria-hidden="true" />
           {tr("archiveChat")}
         </DropdownMenuItem>
+      )}
+      {chatId && workspace && (
+        <>
+          <DropdownMenuSeparator />
+          {(["md", "json"] as const).map((format) => (
+            <DropdownMenuItem key={format} asChild>
+              <a
+                href={chatExportHref(workspace, chatId, format, language)}
+                download
+              >
+                <Download aria-hidden="true" />
+                {format === "md" ? copy.exportMarkdown : copy.exportJson}
+              </a>
+            </DropdownMenuItem>
+          ))}
+        </>
       )}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onSelect={onDelete}>
@@ -677,6 +715,7 @@ function ChatRow({
           }}
         >
           <ChatMenuItems
+            chatId={conversation.id}
             pinned={pinned}
             pinsReady={pinsReady}
             onRename={() => {

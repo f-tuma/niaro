@@ -10,10 +10,15 @@ import { useAdmin } from "./context";
 import { useConsoleScope } from "./console-scope";
 import { ServerSettingsSections } from "./server-settings";
 import { useShellCopy } from "./shell-copy";
+import { Link } from "@tanstack/react-router";
+import { FileJson } from "lucide-react";
+import { Button } from "@admin/components/ui/button";
+import { useConfigBundleCopy } from "./config-bundle-copy";
 
 /** Theme and language live in the account menu in the sidebar footer. */
 export function Settings() {
   const copy = useShellCopy();
+  const bundleCopy = useConfigBundleCopy();
   const { data } = useAdmin();
   const scope = useConsoleScope();
   const account = data.authentication.current === "better-auth";
@@ -45,7 +50,19 @@ export function Settings() {
   );
   return (
     <>
-      <PageHeader title={copy.settings} />
+      <PageHeader
+        title={copy.settings}
+        actions={
+          manager && (
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/settings/configuration">
+                <FileJson data-icon="inline-start" aria-hidden="true" />
+                {bundleCopy.open}
+              </Link>
+            </Button>
+          )
+        }
+      />
       <div className="grid items-start gap-8 lg:grid-cols-2 2xl:grid-cols-3">
         {account && <AccountProviders />}
         <Section title={copy.session}>

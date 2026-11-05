@@ -73,6 +73,7 @@ export const auditActions: Record<AuditEntry["action"], keyof Copy> = {
   "hosted.server_changed": "auditHostedServer",
   "server.settings_changed": "auditServerSettings",
   "server.settings_imported": "auditServerSettingsImported",
+  "config.bundle_imported": "auditConfigBundleImported",
   "server.plugin_changed": "auditPluginFiles",
   "catalog.ai_changed": "auditCatalogAi",
   "catalog.routing_changed": "auditCatalogRouting",

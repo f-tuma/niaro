@@ -18,7 +18,13 @@ jest.mock("@tanstack/react-router", () => {
       options.select({ location: { pathname: mockPath.current } }),
   };
 });
-const mockApp = { language: "cs", session: null as ClientSession | null };
+const mockApp = {
+  language: "cs",
+  session: null as ClientSession | null,
+  workspace: undefined as
+    | { organizationId: string; workspaceId: string }
+    | undefined,
+};
 jest.mock("../apps/server-admin/web/app/context", () => ({
   useApp: () => mockApp,
 }));
@@ -257,4 +263,36 @@ test("a failed archive says so under the header, never in a toast", async () => 
   expect(mockToast.undo).not.toHaveBeenCalled();
   expect(mockNavigate).not.toHaveBeenCalled();
   expect(root.findAllByProps({ role: "alert" })).toHaveLength(1);
+});
+
+test("Export downloads the chat as Markdown or JSON with a plain link, before Delete", async () => {
+  mockApp.workspace = { organizationId: "org-1", workspaceId: "ws-1" };
+  try {
+    const { root } = await render();
+    const isLink = (node: ReactTestInstance) =>
+      node.type === "a" && node.props.download === true;
+    const links = root.findAll(isLink);
+    expect(links.map(text)).toEqual([
+      "Exportovat jako Markdown",
+      "Exportovat jako JSON",
+    ]);
+    expect(links.map((link) => link.props.href)).toEqual([
+      "/admin/api/identity/conversations/export?organizationId=org-1&workspaceId=ws-1&conversationId=conv-1&format=md&lang=cs",
+      "/admin/api/identity/conversations/export?organizationId=org-1&workspaceId=ws-1&conversationId=conv-1&format=json&lang=cs",
+    ]);
+    // The destructive item stays last, right after the export.
+    const menu = root
+      .findAll(
+        (node) =>
+          isLink(node) || node.props["data-host"] === "DropdownMenuItem",
+      )
+      .map(text);
+    expect(menu.slice(-3)).toEqual([
+      "Exportovat jako Markdown",
+      "Exportovat jako JSON",
+      "Smazat",
+    ]);
+  } finally {
+    mockApp.workspace = undefined;
+  }
 });

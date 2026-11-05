@@ -65,6 +65,8 @@ const en = {
   searchOlder: "Search older",
   renameChat: "Rename",
   chatName: "Chat name",
+  exportMarkdown: "Export as Markdown",
+  exportJson: "Export as JSON",
   // NIAR-266 chat reading
   /** Said by the screen reader when an answer is stored, before its gist. */
   answerReady: "Answer ready",
@@ -214,6 +216,8 @@ const cs: ChatCopy = {
   searchOlder: "Hledat ve starších",
   renameChat: "Přejmenovat",
   chatName: "Název chatu",
+  exportMarkdown: "Exportovat jako Markdown",
+  exportJson: "Exportovat jako JSON",
   // NIAR-266 chat reading
   answerReady: "Odpověď je hotová",
   copyCode: "Kopírovat kód",
