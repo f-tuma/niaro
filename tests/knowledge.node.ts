@@ -372,10 +372,17 @@ test("files are found only by their sender, and only while they may still open t
     h.files.get("file-a")!.available = false;
     assert.deepEqual(await h.search("alice", "price"), []);
     h.files.get("file-a")!.available = true;
-    // Someone who left the workspace gets nothing at all.
+    // Someone who left the workspace gets nothing at all, and the next pass
+    // drops their files from the index.
     h.members.delete("alice");
     assert.deepEqual(await h.search("alice", "price"), []);
+    await h.knowledge.sync(at("admin"), false);
+    assert.deepEqual(
+      (await h.index.documents(workspaceId)).map((document) => document.name),
+      ["bob-prices.pdf"],
+    );
     h.members.add("alice");
+    await h.knowledge.sync(at("admin"), false);
     // Files turned off: none are searched.
     const { revision, settings } = h.store.read(organizationId, workspaceId);
     await h.knowledge.save(at("admin"), revision, {

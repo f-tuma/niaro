@@ -544,7 +544,17 @@ export class Knowledge {
         return {
           selected,
           settings,
-          files: settings.files && port ? port.list(workspaceId) : [],
+          // A file of someone who left the workspace is no longer indexed.
+          files: (settings.files && port ? port.list(workspaceId) : []).filter(
+            (file) => {
+              try {
+                this.deps.member({ ...actor, userId: file.userId });
+                return true;
+              } catch {
+                return false;
+              }
+            },
+          ),
           sources: settings.sources.filter((source) =>
             this.deps.sourceVisible(actor, source),
           ),
