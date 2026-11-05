@@ -475,6 +475,7 @@ test(
       assert.equal(workspace.name, "TEST Workspace");
       assert.deepEqual(Object.keys(workspace.sections).sort(), [
         "instructions",
+        "knowledge",
         "plugins",
         "processes",
         "roles",

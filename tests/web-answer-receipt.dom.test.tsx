@@ -126,6 +126,7 @@ const receipts: AnswerReceiptPage = {
       skills: [],
       meetings: [],
       files: [],
+      sources: [],
       model: { name: "Thorough model", reason: "fallback" },
       preset: { id: "thorough", name: "Thorough" },
     },
@@ -271,6 +272,53 @@ test("an answer shows one quiet, named line that opens to what it used and which
   );
 });
 
+test("knowledge sources open under the answer with the passage it was given", async () => {
+  const page = await renderChat(
+    fakeSession({
+      receipts: {
+        ...receipts,
+        receipts: [
+          {
+            commandId: "command-1",
+            read: [],
+            changed: [],
+            memories: [],
+            skills: [],
+            meetings: [],
+            files: [],
+            sources: [
+              {
+                kind: "file",
+                id: "a".repeat(32),
+                title: "price-list.pdf",
+                passage: "Installation costs 12,000 CZK.",
+              },
+              {
+                kind: "service",
+                id: "b".repeat(32),
+                title: "Wiki · Procedures",
+                passage: "Petra handles complaints.",
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  const line = page.getByRole("button", { name: /What this answer used/ });
+  expect(line.textContent).toContain("Sources 2");
+  await act(async () => line.click());
+  const details = page.getByTestId("answer-receipt-details");
+  expect(within(details).getByText("Sources")).toBeTruthy();
+  expect(within(details).getByText("price-list.pdf")).toBeTruthy();
+  expect(within(details).getByText("Wiki · Procedures")).toBeTruthy();
+  expect(
+    within(details)
+      .getAllByTestId("answer-receipt-passage")
+      .map((node) => node.textContent),
+  ).toEqual(["Installation costs 12,000 CZK.", "Petra handles complaints."]);
+});
+
 test("without a receipt, or with an empty one, the answer has no line", async () => {
   await renderChat(fakeSession({ receipts: null }));
   expect(
@@ -291,6 +339,7 @@ test("without a receipt, or with an empty one, the answer has no line", async ()
             skills: [],
             meetings: [],
             files: [],
+            sources: [],
           },
         ],
       },

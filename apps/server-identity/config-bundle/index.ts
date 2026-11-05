@@ -30,6 +30,7 @@ import {
   workspaceInstructionsSection,
 } from "./sections/instructions";
 import { processesSection } from "./sections/processes";
+import { knowledgeSection } from "./sections/knowledge";
 import { modelPolicySection, routingSection } from "./sections/routing";
 import {
   pluginsSection,
@@ -61,6 +62,7 @@ export const WORKSPACE_SECTIONS: readonly WorkspaceSection<never>[] = [
   pluginsSection,
   skillsSection,
   workspaceInstructionsSection,
+  knowledgeSection,
   processesSection,
 ] as unknown as WorkspaceSection<never>[];
 

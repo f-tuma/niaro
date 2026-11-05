@@ -4,8 +4,9 @@ import { IdentityId } from "./identity";
 /**
  * The jobs Niaro does with models. Each maps to an ordered list of catalog
  * models (the first is the primary) or to a named tier. `service:<id>`
- * overrides live in a workspace's `services` list. `embedding` and `vision`
- * are reserved: they can be configured but nothing uses them yet.
+ * overrides live in a workspace's `services` list. `embedding` embeds
+ * workspace knowledge (NIAR-298); without it there is no index. `vision` is
+ * reserved: it can be configured but nothing uses it yet.
  */
 export const MODEL_ROLES = [
   "chat",
@@ -22,10 +23,7 @@ export const MODEL_ROLES = [
 ] as const;
 export const ModelRole = z.enum(MODEL_ROLES);
 export type ModelRoleValue = z.infer<typeof ModelRole>;
-export const RESERVED_MODEL_ROLES: readonly ModelRoleValue[] = [
-  "embedding",
-  "vision",
-];
+export const RESERVED_MODEL_ROLES: readonly ModelRoleValue[] = ["vision"];
 /** Roles whose calls go through the inference ledger and need prices in enforce mode. */
 export const BUDGETED_MODEL_ROLES: readonly ModelRoleValue[] = [
   "chat",
@@ -34,6 +32,7 @@ export const BUDGETED_MODEL_ROLES: readonly ModelRoleValue[] = [
   "background",
   "designer",
   "web_search",
+  "embedding",
 ];
 /**
  * A role nobody configured follows another one: background work, process

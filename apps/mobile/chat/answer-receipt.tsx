@@ -91,11 +91,27 @@ export function AnswerReceiptLine({
               <Text role="caption" style={{ fontWeight: "600" }}>
                 {section.title}
               </Text>
-              {section.items.map((item) => (
-                <Text key={item.id} role="caption" tone="secondary">
-                  {item.text}
-                </Text>
-              ))}
+              {section.items.map((item) =>
+                item.passage ? (
+                  <View key={item.id} style={{ gap: 2 }}>
+                    <Text role="caption" tone="secondary">
+                      {item.text}
+                    </Text>
+                    <Text
+                      testID="answer-receipt-passage"
+                      role="caption"
+                      tone="secondary"
+                      style={{ fontStyle: "italic", paddingLeft: 8 }}
+                    >
+                      {item.passage}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text key={item.id} role="caption" tone="secondary">
+                    {item.text}
+                  </Text>
+                ),
+              )}
             </View>
           ))}
         </View>

@@ -116,6 +116,20 @@ export async function convertDocument(
   }
 }
 
+/** A conversion's text alone, for the knowledge index; nothing when it failed. */
+export function conversionText(conversion: Conversion) {
+  if (conversion.status === "failed") return undefined;
+  const text = conversion.blocks
+    .map((block) =>
+      conversion.blocks.length > 1
+        ? `## ${block.source}\n${block.text.trim()}`
+        : block.text.trim(),
+    )
+    .filter(Boolean)
+    .join("\n\n");
+  return text || undefined;
+}
+
 const READING = {
   ocr: "read by OCR, so letters and digits may be wrong",
   truncated: "too long, only the beginning is included",

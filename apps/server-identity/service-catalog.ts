@@ -117,6 +117,7 @@ export type ModelCapability =
   | "decision"
   | "transcription"
   | "speech"
+  | "embedding"
   | "any";
 type Row = {
   id: string;
@@ -601,7 +602,8 @@ export class ServiceCatalogStore {
         ? true
         : capability === "decision" ||
             capability === "transcription" ||
-            capability === "speech"
+            capability === "speech" ||
+            capability === "embedding"
           ? model.kind === capability
           : capability === "tools"
             ? (model.kind === "chat" || model.kind === "router") && model.tools
@@ -692,6 +694,7 @@ export class ServiceCatalogStore {
       case "speech":
         return model.kind === "speech" ? "speech" : "audioOutput";
       case "embedding":
+        return "embedding";
       case "vision":
         return "any";
       default:
@@ -842,6 +845,14 @@ export class ServiceCatalogStore {
       workspaceId,
       serviceId ? `service:${serviceId}` : "chat",
     );
+  }
+  /**
+   * The embedding model of workspace knowledge (NIAR-298): any provider's
+   * embedding model behind an OpenAI-compatible `/embeddings`. Undefined
+   * while the role is off, which means no index and no knowledge search.
+   */
+  resolveEmbedding(orgId: string, workspaceId: string) {
+    return this.selectRoute(orgId, workspaceId, "embedding");
   }
   /** Background work: widget fills and opens, memory and profile extraction, meeting analysis, action naming. */
   resolveBackground(orgId: string, workspaceId: string) {

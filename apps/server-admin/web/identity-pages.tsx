@@ -1,9 +1,11 @@
 import { WorkspaceRoles } from "./workspace-roles";
 import { WorkspaceInstructions } from "./workspace-instructions";
+import { WorkspaceKnowledge } from "./workspace-knowledge";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRightLeft,
+  BookOpen,
   Boxes,
   Building2,
   Check,
@@ -739,6 +741,7 @@ function WorkspaceList({
   const [rolesFor, setRolesFor] = useState<string | null>(null);
   /** A workspace id, or "organization" for the default instructions. */
   const [instructionsFor, setInstructionsFor] = useState<string | null>(null);
+  const [knowledgeFor, setKnowledgeFor] = useState<string | null>(null);
   const shell = useShellCopy();
   const manage = detail.canManageWorkspaces;
   const searchable = detail.workspaces.length > 6;
@@ -756,6 +759,9 @@ function WorkspaceList({
   const rolesWorkspace = detail.workspaces.find((w) => w.id === rolesFor);
   const instructionsWorkspace = detail.workspaces.find(
     (w) => w.id === instructionsFor,
+  );
+  const knowledgeWorkspace = detail.workspaces.find(
+    (w) => w.id === knowledgeFor,
   );
   return (
     <>
@@ -905,6 +911,12 @@ function WorkspaceList({
                           <MessageSquareText aria-hidden="true" />
                           {copy.workspaceInstructions}
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => setKnowledgeFor(workspace.id)}
+                        >
+                          <BookOpen aria-hidden="true" />
+                          {copy.workspaceKnowledge}
+                        </DropdownMenuItem>
                       </MoreActions>
                     )}
                   </ItemActions>
@@ -978,6 +990,18 @@ function WorkspaceList({
           open
           onOpenChange={(open) => {
             if (!open) setInstructionsFor(null);
+          }}
+        />
+      )}
+      {manage && knowledgeWorkspace && (
+        <WorkspaceKnowledge
+          key={knowledgeWorkspace.id}
+          organizationId={detail.organizationId}
+          workspaceId={knowledgeWorkspace.id}
+          name={knowledgeWorkspace.name}
+          open
+          onOpenChange={(open) => {
+            if (!open) setKnowledgeFor(null);
           }}
         />
       )}

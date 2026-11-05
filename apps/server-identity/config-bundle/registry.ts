@@ -15,6 +15,8 @@ import type { ServiceProcessStore } from "../service-processes";
 import type { InstructionsStore } from "../instructions-store";
 import type { SkillStore } from "../skill-store";
 import type { WorkspacePluginStore } from "../workspace-plugins";
+import type { KnowledgeStore } from "../knowledge";
+import type { KnowledgeAdminViewValue } from "../../../packages/protocol/knowledge";
 
 /** The stores the sections read and write; all synchronous, in one transaction. */
 export type ConfigStores = {
@@ -31,6 +33,17 @@ export type ConfigStores = {
     previous: ServerSettings,
   ) => void;
   hosted?: HostedServers;
+  /** Workspace knowledge settings (NIAR-298); the index never travels. */
+  knowledge?: {
+    store: KnowledgeStore;
+    /** The read actions that may be sources here. */
+    candidates: (
+      organizationId: string,
+      workspaceId: string,
+    ) => KnowledgeAdminViewValue["candidates"];
+    /** Brings the index up to date with imported settings, after the commit. */
+    resync: (organizationId: string, workspaceId: string) => void;
+  };
   audit: (record: AuditRecord) => number;
 };
 export type ConfigActor = {

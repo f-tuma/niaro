@@ -222,7 +222,14 @@ export const CatalogModelSettings = z.strictObject({
   /** Declared image input; only chat and router models keep it. */
   imageInput: z.boolean().optional(),
   kind: z
-    .enum(["chat", "decision", "router", "transcription", "speech"])
+    .enum([
+      "chat",
+      "decision",
+      "router",
+      "transcription",
+      "speech",
+      "embedding",
+    ])
     .default("chat"),
   /**
    * Voices an administrator reviewed for spoken replies with this model,
@@ -255,7 +262,14 @@ export const DiscoveredModelSchema = z.strictObject({
   imageInput: z.boolean().nullable().default(null),
   contextLength: z.number().int().positive().nullable(),
   kind: z
-    .enum(["chat", "decision", "router", "transcription", "speech"])
+    .enum([
+      "chat",
+      "decision",
+      "router",
+      "transcription",
+      "speech",
+      "embedding",
+    ])
     .default("chat"),
   /** Provider-published list price in USD millionths per million tokens. */
   pricing: z
@@ -487,7 +501,14 @@ export const CatalogCommand = z.discriminatedUnion("type", [
           audioOutput: z.boolean().default(false),
           imageInput: z.boolean().optional(),
           kind: z
-            .enum(["chat", "decision", "router", "transcription", "speech"])
+            .enum([
+              "chat",
+              "decision",
+              "router",
+              "transcription",
+              "speech",
+              "embedding",
+            ])
             .default("chat"),
         }),
       )
