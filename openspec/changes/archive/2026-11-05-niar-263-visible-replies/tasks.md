@@ -21,4 +21,4 @@
 - [x] 4.1 `tests/thread-continuity.node.ts`: number follow-up with unrelated memory, forgotten memory, revoked and valid CRM read, fresh thread with generated UI.
 - [x] 4.2 Updated `mastra-history` and `native-tool-validation` expectations to the decision.
 - [x] 4.3 mastra-domain, history, continuity, memory and trust suites; types, lint, boundaries.
-- [ ] 4.4 Dev server: the number follow-up answers with the same number.
+- [x] 4.4 Dev server: the number follow-up answers with the same number.

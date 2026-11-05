@@ -84,15 +84,6 @@ Discovery SHALL report tool support as `true` only when the model's `supported_p
 - **WHEN** a provider lists a model without `supported_parameters`
 - **THEN** it cannot be selected for import and offers Verify support
 
-### Requirement: OpenRouter catalog additions
-
-For the canonical OpenRouter base URL `https://openrouter.ai/api/v1`, discovery SHALL also read the transcription and speech catalogs (`?output_modalities=transcription`, `?output_modalities=speech`) and SHALL add the decision model `typesafe/jev-1.13` ("TypeSafe: Jev 1.13"), which the provider's model list does not contain.
-
-#### Scenario: Jev offered
-
-- **WHEN** an administrator opens Choose from catalog for an OpenRouter provider
-- **THEN** TypeSafe: Jev 1.13 is listed as a decision model
-
 ### Requirement: Model kinds
 
 Every catalog model SHALL have a kind: `chat` (default), `router`, `decision`, `transcription` or `speech`. Discovery SHALL classify a model as `router` when its tokenizer is `Router`, as `transcription` or `speech` from its output modalities, and otherwise as `chat`. `decision` and `transcription` models SHALL have no tools and no audio flags, `speech` models only audio output, and routers no audio flags.
@@ -101,15 +92,6 @@ Every catalog model SHALL have a kind: `chat` (default), `router`, `decision`, `
 
 - **WHEN** discovery reads a model whose output modalities include `transcription`
 - **THEN** it is imported with kind `transcription`, no tool calling and no audio flags
-
-### Requirement: Jev identities on OpenRouter
-
-On the canonical OpenRouter provider, `typesafe/jev-router` SHALL always read as a `router` and `typesafe/jev-1.13` and `~typesafe/jev-latest` as `decision`, whatever kind was stored, keeping their IDs and revisions.
-
-#### Scenario: Jev 1.13 entered manually as chat
-
-- **WHEN** an administrator enters `typesafe/jev-1.13` manually as a chat model on OpenRouter
-- **THEN** the catalog stores and shows it as a decision model
 
 ### Requirement: Model import
 
@@ -127,118 +109,202 @@ The system SHALL import 1–50 unique models per request from a provider's catal
 
 ### Requirement: Manual model entry
 
-The system SHALL let an administrator add or edit a model by its provider model ID, name, kind, enabled state and declared capabilities (tool calling, audio input, audio output); a second model with the same ID for the same provider SHALL be refused with 409 `catalog_model_exists`. The server SHALL not infer capabilities from a model's name.
+The system SHALL let an administrator add or edit a model by its provider model ID, name, kind, enabled state, declared capabilities (tool calling, audio input, audio output) and, for speaking models, up to 20 reviewed voices with labels; a second model with the same ID for the same provider SHALL be refused with 409 `catalog_model_exists`. The server SHALL not infer capabilities or kind from a model's name or ID.
 
 #### Scenario: Duplicate model ID
 
 - **WHEN** an administrator adds `openai/gpt-4o-mini` to a provider that already has it
 - **THEN** the server answers 409 `catalog_model_exists`
 
+#### Scenario: Decision model by kind
+
+- **WHEN** an administrator enters a model with kind decision
+- **THEN** it is stored as a decision model whatever its ID
+
 ### Requirement: Model removal
 
-The system SHALL refuse to remove a model that any workspace of the organization uses as its chat model, a service override, the speech recognition model, the meeting transcription model, the spoken-reply model or the decision model, with 409 `catalog_model_in_use`.
+The system SHALL refuse to remove a model that any role, service route, tier or escalation of the organization's default or of any workspace names, with 409 `catalog_model_in_use`.
 
 #### Scenario: Remove the decision model
 
-- **WHEN** an administrator removes the model another workspace of the organization uses as its decision model
+- **WHEN** an administrator removes the model another workspace of the organization uses as its selector
 - **THEN** the server answers 409 `catalog_model_in_use`
 
-### Requirement: Workspace model choice
+#### Scenario: Model in a tier
 
-The system SHALL keep one model choice ("routing") per workspace with a revision, and SHALL apply a saved choice to new requests without a restart. A save with a stale revision SHALL fail with 409 `catalog_conflict`. Provider and model changes SHALL be audited as `catalog.ai_changed` and model choice changes as `catalog.routing_changed`.
-
-#### Scenario: Two administrators edit the model choice
-
-- **WHEN** two administrators save the model choice of a workspace from the same revision
-- **THEN** the first save succeeds and the second fails with `catalog_conflict` without overwriting it
+- **WHEN** an administrator removes a model that only the tier Strong lists
+- **THEN** the server answers 409 `catalog_model_in_use`
 
 ### Requirement: Chat and service models
 
-The workspace default model SHALL serve chat turns and service actions, and an optional per-service model SHALL override it for that service's actions. Both SHALL be enabled `chat` or `router` models with tool calling on an enabled provider; a service MAY appear at most once in the overrides. Removing a service SHALL drop only its override. Turn behavior is specified in `agent-runtime`.
+The chat role SHALL serve chat turns and service actions, and a workspace's route for a service SHALL override it for that service's actions. A service MAY appear at most once in the overrides; removing a service SHALL drop only its route. Turn behavior is specified in `agent-runtime`.
 
 #### Scenario: Service override
 
-- **WHEN** the workspace default is model A and the CRM service has override B
+- **WHEN** chat is model A and the CRM service has route B
 - **THEN** CRM actions use B and every other request uses A
 
 #### Scenario: Model without tool calling
 
-- **WHEN** an administrator chooses a model without tool support as the workspace default
+- **WHEN** an administrator puts a model without tool support in the chat role
 - **THEN** the save fails with 409 `catalog_model_unavailable`
 
 ### Requirement: Speech recognition choice
 
-The workspace SHALL choose speech recognition as off, the existing server profile (offered only when the server has one) or a catalog model in a mode: **AI interpreter** with an enabled `chat` model that has audio input, or **Direct transcription** with a `transcription` model. A catalog choice without a model SHALL fail with 409 `catalog_model_required`, a model unfit for the mode with 409 `catalog_model_unavailable`. There SHALL be no fallback between modes or models (behavior in `voice`).
+Voice input SHALL use the voice input role: a chat model with audio input interprets, a transcription model transcribes; the method follows the model's kind. Without models, the server's own profile SHALL serve when it exists and the server-voice setting is on, else voice input is off. There SHALL be no fallback between methods (behavior in `voice`).
 
 #### Scenario: Direct transcription with a chat model
 
-- **WHEN** an administrator selects Direct transcription with a chat model
-- **THEN** the save fails with `catalog_model_unavailable`
+- **WHEN** an administrator puts a chat model without audio input in the voice input role
+- **THEN** the save fails with `catalog_model_unavailable`; a transcription model there transcribes directly
 
 #### Scenario: Speech recognition off
 
-- **WHEN** an administrator chooses Off
-- **THEN** voice input is unavailable in that workspace, including any legacy server profile
+- **WHEN** the role has no models and server voice is off
+- **THEN** voice input is unavailable in that workspace, including any server profile
 
 ### Requirement: Meeting transcription choice
 
-The workspace MAY choose a separate `transcription` model for meetings. Without one, meetings SHALL use the speech recognition model when it is a transcription model, and otherwise recognize the recording minute by minute through speech recognition (see `meetings`).
+Meetings SHALL use the meeting transcription role. Without one, meetings SHALL use the voice input model when it is a transcription model, and otherwise recognize the recording minute by minute through voice input (see `meetings`).
 
 #### Scenario: Meeting model set
 
-- **WHEN** a workspace chooses `openai/gpt-4o-transcribe` for meetings
-- **THEN** meeting recordings are transcribed with that model regardless of the voice-input choice
+- **WHEN** a workspace's meeting transcription role has a transcription model
+- **THEN** meeting recordings are transcribed with it regardless of voice input
 
 ### Requirement: Spoken reply choice
 
-The workspace SHALL allow an optional spoken-reply model: method **Reader** with a `chat` model that has audio output, or method **Text-to-speech** with a `speech` model, plus a voice ID (letters, digits and `._:/-`, default `alloy`) and a zero-data-retention requirement that defaults to on. Without a model spoken replies SHALL be off, which is the default. Reply behavior is specified in `voice`.
+Spoken replies SHALL use the speech role: a chat model with audio output reads, a speech model speaks. A voice setting SHALL name the voice, or follow the model's first reviewed voice; a model without either SHALL be refused with 409 `catalog_voice_required`. Zero data retention SHALL default to on. Without models spoken replies SHALL be off. Reply behavior is in `voice`.
 
 #### Scenario: Reader without audio output
 
-- **WHEN** an administrator chooses Reader with a chat model lacking audio output
+- **WHEN** an administrator puts a chat model lacking audio output in the speech role
 - **THEN** the save fails with `catalog_model_unavailable`
 
-### Requirement: Decision model choice
+#### Scenario: Reader without a voice
 
-The workspace MAY turn on the decision model ("Service picker") with a `decision` model and a required certainty between 0.5 and 1 (default 0.8). Turning it on SHALL require both a decision model and a workspace default model, else 409 `catalog_model_required`. The decision model SHALL never approve an action or grant access; its use in a turn is specified in `agent-runtime`.
-
-#### Scenario: Decision model without a chat model
-
-- **WHEN** an administrator enables the Service picker with Jev but no workspace default model
-- **THEN** the save fails with `catalog_model_required`
+- **WHEN** an administrator puts a reader model without reviewed voices in the speech role and leaves the voice empty
+- **THEN** the save fails with `catalog_voice_required`
 
 ### Requirement: OpenRouter-only functions
 
-Speech recognition, meeting transcription, spoken replies, the decision model and web search models SHALL be usable only on a provider whose base URL is the canonical `https://openrouter.ai/api/v1`; chat and service models MAY use any OpenAI-compatible provider.
+Voice input, meeting transcription, spoken replies, decision models and web search models SHALL be usable only on a provider whose base URL is the canonical `https://openrouter.ai/api/v1`; chat, service, background, designer, checker and selector chat models MAY use any OpenAI-compatible provider.
 
 #### Scenario: Transcription model on another provider
 
-- **WHEN** an administrator chooses a transcription model of a provider at `https://api.example.com/v1`
+- **WHEN** an administrator puts a transcription model of a provider at `https://api.example.com/v1` in the meeting role
 - **THEN** the save fails with `catalog_model_unavailable`
 
 ### Requirement: Availability at use
 
-The system SHALL check at each use that the chosen model and its provider are enabled and fit the function, and SHALL fail with `catalog_model_unavailable` instead of falling back to another model when they are not.
+The system SHALL check at each use that the chosen model and its provider are enabled and fit the role. Without fallback, an unavailable model SHALL fail with `catalog_model_unavailable` and no other model SHALL be used; with fallback, only as `Role fallback` allows.
 
 #### Scenario: Assigned model disabled
 
-- **WHEN** an administrator disables the workspace default model
-- **THEN** new chat turns in that workspace report that the model is unavailable and no other model is used
+- **WHEN** an administrator disables the chat model of a workspace without fallback
+- **THEN** new chat turns report that the model is unavailable and no other model is used
 
 ### Requirement: Provider and model pages
 
-The administration SHALL show providers as cards at `/admin/providers`, each provider's models and bulk controls at `/admin/providers/:providerId`, and the model choice at `/admin/routing`. **Choose from catalog** SHALL offer search by name or ID, a tool-calling filter and selection of up to 50 models, marking models already added. Viewing these pages SHALL make no model request.
+The administration SHALL show providers as cards at `/admin/providers`, each provider's models and bulk controls at `/admin/providers/:providerId`, and the model policy at `/admin/routing`. **Choose from catalog** SHALL offer search by name or ID, a tool-calling filter and selection of up to 50 models, marking models already added. Viewing these pages SHALL make no model request.
 
 #### Scenario: Selection cap
 
 - **WHEN** an administrator has selected 50 models in Choose from catalog
 - **THEN** further models cannot be selected until one is deselected
 
-### Requirement: Model choice page
+### Requirement: Model roles
 
-The model choice page SHALL offer for each function only enabled models that fit it, grouped by provider, and SHALL keep an assigned model that became unavailable visible as unavailable until it is replaced or cleared. **Workspace default** on a service SHALL remove its override and show the inherited model.
+The model policy SHALL map each role to an ordered list of up to 8 catalog models, the first being the primary, or to a tier: `chat`, per-service `service:<id>`, `checker`, `selector`, `background`, `designer`, `web_search`, `voice_input`, `meeting_transcription`, `speech`, and reserved `embedding` and `vision` that nothing uses yet. An empty list SHALL turn a role off. A role nobody set SHALL follow another: background, designer and web search follow chat, the checker the selector.
 
-#### Scenario: Disabled assignment
+#### Scenario: Background follows chat
 
-- **WHEN** the model assigned to a service was disabled
-- **THEN** the model choice page shows it as an unavailable model for that service
+- **WHEN** only the chat role has models
+- **THEN** widget fills use the chat model and the policy shows background work as inherited from chat
+
+#### Scenario: Role turned off
+
+- **WHEN** a workspace sets the selector to an empty list
+- **THEN** service search lists candidates without a selector
+
+### Requirement: Model tiers
+
+The organization MAY define up to 8 tiers, each with an ID, an editable name and 1–8 models. A role, service or escalation that points to a tier SHALL use its current models. Saving the organization policy SHALL fail with 409 `catalog_tier_not_found` while any route of the organization or a workspace points to a missing tier.
+
+#### Scenario: Strong tier edited
+
+- **WHEN** chat points to the tier Strong and an administrator replaces Strong's model
+- **THEN** the next chat turn uses the new model
+
+### Requirement: Organization default and workspace overrides
+
+The organization SHALL have one default policy and each workspace one set of overrides, each with its own revision. A workspace SHALL inherit every role, service route and setting it does not set; a new workspace SHALL work with the default. A stale revision SHALL fail with 409 `catalog_conflict`. Saves SHALL apply to new requests at once and be audited as `catalog.routing_changed` with the scope.
+
+#### Scenario: New workspace
+
+- **WHEN** an owner creates a workspace in an organization whose default chat role has model A
+- **THEN** chat in the new workspace uses model A without any workspace setting
+
+#### Scenario: Two administrators edit the default
+
+- **WHEN** two administrators save the organization default from the same revision
+- **THEN** the first save succeeds and the second fails with `catalog_conflict`
+
+### Requirement: Role fit
+
+A saved route SHALL name only enabled models on enabled providers that fit its role, else 409 `catalog_model_unavailable`: tool-capable chat or router models for chat, services, background, designer and escalation; those or a decision model for the checker and selector; chat or router models for web search; audio-input chat or transcription models for voice input; transcription models for meetings; audio-output chat or speech models for spoken replies.
+
+#### Scenario: Transcription model as chat
+
+- **WHEN** an administrator puts a transcription model in the chat role
+- **THEN** the save fails with `catalog_model_unavailable`
+
+### Requirement: Role fallback
+
+Each route SHALL have a fallback flag, off by default. With it on, selection SHALL skip models that are disabled, unfit, removed, on a disabled provider or at the provider's daily limit, and a call SHALL move to the next model only when it provably never reached its provider: the daily limit refused it before dispatch, or the connection failed before the request was sent. Each attempt SHALL be its own budgeted call.
+
+#### Scenario: Provider limit reached
+
+- **WHEN** chat has models A and B with fallback on and A's provider is at its daily limit
+- **THEN** the turn uses B and its run step says `fallback: provider_limit`
+
+#### Scenario: Timeout after dispatch
+
+- **WHEN** the call to A times out after it was sent
+- **THEN** the call is not repeated on B and its usage stays unknown
+
+### Requirement: Background work
+
+Widget fills, opens and prefetches, memory and profile extraction, meeting record extraction and naming imported actions SHALL use the background role, and at dispatch SHALL check that the selected model still serves it unchanged.
+
+#### Scenario: Cheap background model
+
+- **WHEN** the background role has a small model and chat a large one
+- **THEN** widget fills and meeting records use the small model and chat the large one
+
+### Requirement: Stored routing migration
+
+On start, routing stored in the old single-choice shape SHALL become a workspace policy that sets each role it decided; an organization without a default SHALL get one from its first migrated workspace, and each workspace SHALL keep only what differs. A web plugin search model naming a catalog model SHALL become that workspace's web search role. The migration SHALL run once.
+
+#### Scenario: Two workspaces
+
+- **WHEN** workspace W1 used model A and W2 model B before the upgrade
+- **THEN** the default chat role is A, W1 has no override and W2 overrides chat with B
+
+### Requirement: Models page
+
+`/admin/routing` SHALL be the **Models** page with tabs for the organization default and this workspace: role rows with ordered model chips to add, reorder and remove, the source when inherited, a fallback switch per role, service routes, tiers, escalation and settings. Unavailable models and, in enforce mode, unpriced ones SHALL be marked. Viewing SHALL make no model request.
+
+#### Scenario: Inherited role
+
+- **WHEN** an administrator opens the workspace tab where background work is not set
+- **THEN** the row says it is the same as chat and offers Override
+
+### Requirement: OpenRouter audio catalogs
+
+For the canonical OpenRouter base URL `https://openrouter.ai/api/v1`, discovery SHALL also read the transcription and speech catalogs (`?output_modalities=transcription`, `?output_modalities=speech`). Discovery SHALL add no model the provider does not list; a decision model is entered manually.
+
+#### Scenario: No built-in decision model
+
+- **WHEN** an administrator opens Choose from catalog for an OpenRouter provider
+- **THEN** only models the provider lists are offered

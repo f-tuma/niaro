@@ -20,5 +20,5 @@
 
 - [x] 4.1 `tests/thread-continuity.node.ts`: learner, refresh, save and own save deleted, forget, revise, another member, policy with and without a source, retry.
 - [x] 4.2 Memory, mastra-domain, history, continuity and profile learner suites; types, lint, boundaries.
-- [ ] 4.3 Dev server: a multi-turn chat with the learner on keeps one thread (log shows no `native_thread_fresh`).
-- [ ] 4.4 Decide on the projection rule (design D5).
+- [x] 4.3 Dev server: a multi-turn chat with the learner on keeps one thread (log shows no `native_thread_fresh`).
+- [x] 4.4 Decide on the projection rule (design D5).

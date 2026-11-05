@@ -46,7 +46,7 @@ The web app's account menu SHALL show an **Administration** entry only to owners
 
 ### Requirement: Console navigation
 
-The console sidebar SHALL show the workspace switcher at the top, **Overview** first, then the groups **Services** (Services, Installed connectors, Built-in tools, External AI apps), **AI** (AI providers, Model choice, Usage limits, Skills), **Processes** (Processes, Runs), **People** (People, Workspaces, Sign-in methods) and **Settings** (Activity log, Settings), and the account menu (theme, language, sign out) at the bottom.
+The console sidebar SHALL show the workspace switcher at the top, **Overview** first, then the groups **Services** (Services, Installed connectors, Built-in tools, External AI apps), **AI** (AI providers, Models, Usage limits, Skills), **Processes** (Processes, Runs), **People** (People, Workspaces, Sign-in methods) and **Settings** (Activity log, Settings), and the account menu (theme, language, sign out) at the bottom.
 
 #### Scenario: Administrator opens the console
 
@@ -56,20 +56,20 @@ The console sidebar SHALL show the workspace switcher at the top, **Overview** f
 #### Scenario: Switching workspace
 
 - **WHEN** an administrator chooses another workspace in the switcher
-- **THEN** workspace-scoped pages show that workspace's services, model choice, processes and runs
+- **THEN** workspace-scoped pages show that workspace's services, models, processes and runs
 
 ### Requirement: Console pages and owners
 
-Each console item SHALL open its page, specified by the named capability: Services `/admin/services` (`service-catalog`), Installed connectors `/admin/hosted` (`hosted-mcp-servers`), Built-in tools `/admin/plugins` (`plugins`), External AI apps `/admin/mcp` (`mcp-server`), AI providers and Model choice (`models-and-providers`), Usage limits (`inference-budget`), Skills (`skills`), Processes (`process-definitions`), People, Workspaces, Sign-in methods and Activity log (`identity-access`).
+Each console item SHALL open its page, specified by the named capability: Services `/admin/services` (`service-catalog`), Installed connectors `/admin/hosted` (`hosted-mcp-servers`), Built-in tools `/admin/plugins` (`plugins`), External AI apps `/admin/mcp` (`mcp-server`), AI providers and Models (`models-and-providers`), Usage limits (`inference-budget`), Skills (`skills`), Processes (`process-definitions`), People, Workspaces, Sign-in methods and Activity log (`identity-access`).
 
 #### Scenario: Open Model choice
 
-- **WHEN** an administrator selects Model choice in the sidebar
-- **THEN** the address becomes `/admin/routing` and the selected workspace's model choice is shown
+- **WHEN** an administrator selects Models, the former Model choice, in the sidebar
+- **THEN** the address becomes `/admin/routing` and the model policy of the organization and the selected workspace is shown
 
 ### Requirement: Console addresses
 
-The console pages SHALL have these addresses: AI providers `/admin/providers`, Model choice `/admin/routing`, Usage limits `/admin/usage`, Skills `/admin/skills`, Processes `/admin/processes`, Runs `/admin/loops`, People `/admin/people`, Workspaces `/admin/workspaces`, Sign-in methods `/admin/auth-providers`, Activity log `/admin/audit` and Settings `/admin/settings`.
+The console pages SHALL have these addresses: AI providers `/admin/providers`, Models `/admin/routing`, Usage limits `/admin/usage`, Skills `/admin/skills`, Processes `/admin/processes`, Runs `/admin/loops`, People `/admin/people`, Workspaces `/admin/workspaces`, Sign-in methods `/admin/auth-providers`, Activity log `/admin/audit` and Settings `/admin/settings`.
 
 #### Scenario: Direct link to Runs
 
@@ -138,7 +138,7 @@ Opening or refreshing any console page SHALL not call a model, execute a service
 
 ### Requirement: Overview checklist
 
-For owners and administrators the Overview SHALL show a first-run checklist with progress, each step linking to its page: (1) an enabled provider with a key; (2) an enabled model of such a provider; (3) a workspace default model; (4) usage limits in enforce mode with a current price for that model (see `inference-budget`); (5) an enabled service with an enabled action granted to a role or person; (6) another member or a pending invitation. It SHALL disappear once all steps are done.
+For owners and administrators the Overview SHALL show a first-run checklist with progress, each step linking to its page: (1) an enabled provider with a key; (2) an enabled model of such a provider; (3) a chat model, the workspace's own or inherited; (4) usage limits in enforce mode with a current price for that model (see `inference-budget`); (5) an enabled service with an action granted to a role or person; (6) another member or a pending invitation. It SHALL disappear once all steps are done.
 
 #### Scenario: New installation
 
@@ -154,6 +154,11 @@ For owners and administrators the Overview SHALL show a first-run checklist with
 
 - **WHEN** all six steps are done
 - **THEN** the Overview shows no checklist
+
+#### Scenario: Inherited chat model
+
+- **WHEN** a workspace sets no chat model and the organization default has one
+- **THEN** the chat model step is done
 
 ### Requirement: Needs attention
 
@@ -274,7 +279,7 @@ A run filter SHALL match a run only by the value its listed summary shows after 
 
 ### Requirement: Run detail
 
-The run detail (`GET /admin/api/identity/loops/<64-hex id>?organizationId=…`) SHALL show the run's request, reply, status, provenance and its steps as a timeline in recorded order (model calls, checks, internal tools, service reads and writes), marked as recorded or reconstructed. A trace SHALL hold at most 160 nodes and 320 edges with explicit truncation. Opening a run SHALL never repeat any of its actions.
+The run detail (`GET /admin/api/identity/loops/<64-hex id>?organizationId=…`) SHALL show the run's request, reply, status, provenance and its steps as a timeline in recorded order (model calls with their model, role and reason, checks, internal tools, service reads and writes), marked as recorded or reconstructed. A trace SHALL hold at most 160 nodes and 320 edges with explicit truncation. Opening a run SHALL never repeat any of its actions.
 
 #### Scenario: Inspect a failed write
 
@@ -285,6 +290,11 @@ The run detail (`GET /admin/api/identity/loops/<64-hex id>?organizationId=…`) 
 
 - **WHEN** the server restarted while a run was running
 - **THEN** the run is shown as `interrupted` and none of its actions is executed again
+
+#### Scenario: Escalated step
+
+- **WHEN** an administrator opens a run whose write was rejected and escalated
+- **THEN** the next model step names the escalation model, role Escalation and reason "Escalated after a rejected write"
 
 ### Requirement: Run previews
 
@@ -349,3 +359,89 @@ The console SHALL be complete in English and Czech, offer light and dark themes,
 
 - **WHEN** a member requests the filter choices
 - **THEN** the server answers 403
+
+### Requirement: Workspace instructions editor
+
+Owners and administrators SHALL edit Markdown instructions (at most 8,000 characters) and up to 6 distinct one-line starters (at most 200 characters each) per workspace and as an organization default, from the Workspaces page. Each save SHALL be a new revision bound to the revision it started from; a stale save SHALL be `409 instructions_conflict` and a member SHALL get `403 instructions_forbidden`.
+
+#### Scenario: Two administrators save
+
+- **WHEN** two administrators save the same workspace's instructions from revision 3
+- **THEN** the first becomes revision 4 and the second fails with `409 instructions_conflict`
+
+#### Scenario: Member opens the editor
+
+- **WHEN** a member requests the instructions editor of their workspace
+- **THEN** the server answers `403 instructions_forbidden`
+
+### Requirement: Instructions history
+
+Every saved version SHALL be kept with its author and time and listed newest first (at most 50 shown). Restoring a version SHALL save its text and starters as a new revision marked as restored from it. Each save and restore SHALL be audited as `instructions.changed` with the event, the scope and the revisions, never with the text or starters.
+
+#### Scenario: Restore
+
+- **WHEN** an owner restores revision 1 while revision 2 is current
+- **THEN** revision 3 holds revision 1's text and starters and the audit names the restore without the text
+
+### Requirement: Organization default instructions
+
+A workspace's own instructions SHALL replace the organization default, not add to it; while a workspace's text is empty the default text SHALL apply, and while its starters are empty the default starters SHALL apply. Deleting a workspace SHALL delete its instructions and their history.
+
+#### Scenario: Workspace without its own text
+
+- **WHEN** a workspace has starters but no text and the organization default has text
+- **THEN** the chat uses the default text and the workspace's own starters
+
+### Requirement: Configuration bundle export
+
+Owners and administrators SHALL export the organization or one workspace as JSON `niaro-config-bundle` v1 (`GET …/config-bundle/export`), one typed section per part: providers, models, the model policy, connectors, server settings, instructions, roles, services, routing, usage, plugins, skills, processes. It SHALL hold no keys, tokens, sign-ins or per-person grants.
+
+#### Scenario: Provider with a key
+
+- **WHEN** an administrator exports a provider with a stored key
+- **THEN** the file has its address with `keyRequired: true` and no key
+
+### Requirement: Bundle references by name
+
+A bundle SHALL name models by provider and model, services and actions by name and workspace roles by name, never by this server's ids. A section from a newer server SHALL be reported as `section_unknown` and skipped.
+
+#### Scenario: Unknown section
+
+- **WHEN** a bundle has a section this server does not know
+- **THEN** the preview lists it as not imported and the rest still applies
+
+### Requirement: Configuration import preview
+
+`POST …/config-bundle/preview` SHALL apply the bundle in a rolled back transaction and return per section the added, changed, unchanged, not imported (with reason) and needs-key items and a `revision` digest of the current configuration. A preview SHALL change nothing.
+
+#### Scenario: Fresh server
+
+- **WHEN** an administrator previews a bundle on a server without providers
+- **THEN** the providers are listed as added and as needing a key
+
+### Requirement: Confirmed configuration import
+
+`POST …/config-bundle/import` SHALL require the preview's `revision` (else 409 `config_bundle_conflict`), apply sections in one transaction, writing only what differs, and audit `config.bundle_imported` with counts. It SHALL never remove, overwrite a key, or send a stored key to a new address.
+
+#### Scenario: Same bundle twice
+
+- **WHEN** an administrator imports a bundle that was already imported
+- **THEN** every item is unchanged and nothing is written
+
+### Requirement: What an import creates
+
+An import SHALL add missing roles without members, save processes only as drafts, add missing installed connectors after the commit and leave members' own services, personal skills and personal processes untouched. A one-workspace bundle SHALL go into the selected workspace; otherwise workspaces match by name.
+
+#### Scenario: Process from a bundle
+
+- **WHEN** a bundle with an active process is imported
+- **THEN** the process arrives as a draft that must be tested and activated here
+
+### Requirement: Configuration page
+
+The console SHALL offer Configuration at `/admin/settings/configuration`, linked from Settings, with Export (organization or workspace), Import of a file, the preview per section and an import confirmation, in English and Czech.
+
+#### Scenario: Import from the page
+
+- **WHEN** an administrator chooses a bundle file
+- **THEN** the page shows what changes and imports only after confirmation

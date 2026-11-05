@@ -58,11 +58,11 @@ The runtime SHALL refuse a tool call for a tool that was not offered in that ste
 
 ### Requirement: Decision model as a hint
 
-`find_service` and `find_actions` SHALL use the optional decision model only as a hint: when it is confident it returns its choice, when it is not it returns up to three candidate services or the closest actions, and when it sees no fit the model still gets every service. Without a decision model they SHALL list the candidates. A search SHALL never return an empty result while services exist.
+`find_service` and `find_actions` SHALL use the optional selector only as a hint: when it is confident it returns its choice, when it is not it returns up to three candidate services or the closest actions, and when it sees no fit the model still gets every service. Without a selector they SHALL list the candidates. A search SHALL never return an empty result while services exist.
 
 #### Scenario: No confident fit
 
-- **WHEN** the decision model sees no service fitting the need
+- **WHEN** the selector sees no service fitting the need
 - **THEN** `find_service` returns all connected services with a note to choose one or say none holds the data
 
 ### Requirement: Chat loop limits
@@ -113,12 +113,17 @@ A read action SHALL execute directly. A write action that its policy requires ap
 
 ### Requirement: Write consistency check before approval
 
-Before a write is proposed, the runtime SHALL ask the decision model whether the action and its parameters do exactly what the person requested; a confident mismatch SHALL return `checker_mismatch` to the model and the write SHALL NOT be sent or shown for approval. After a write in a request fails this check, no further write SHALL be sent in that request.
+Before a write is proposed, the runtime SHALL ask the checker, a decision model or any tool-capable chat model, whether the action and its parameters do exactly what the person requested; a confident mismatch SHALL return `checker_mismatch` to the model and the write SHALL NOT be sent or shown for approval. After a write in a request fails this check, no further write SHALL be sent in that request. The checker never approves.
 
 #### Scenario: Invented parameter
 
 - **WHEN** the model proposes a write whose recipient the person never mentioned and the checker flags it
 - **THEN** the write is not proposed and the model is told to recheck or ask
+
+#### Scenario: Checker without OpenRouter
+
+- **WHEN** a workspace has no OpenRouter provider and a local chat model in the checker role
+- **THEN** writes are still checked before approval
 
 ### Requirement: Durable operation receipts
 
@@ -141,7 +146,7 @@ A write whose result was lost SHALL stay `unknown`: it SHALL never be resent aut
 
 ### Requirement: Answer consistency check
 
-The runtime SHALL check the final answer against the turn's receipts with the decision model only when the answer carries risk: a write this turn with any outcome, a Tasks item created or closed, an explicit contact lookup, or an unresolved failed or rejected write. A read-only answer SHALL go out without this check. A rejected answer SHALL get one repair round; an unresolved failed or unknown write SHALL then end with the server's own failure reply.
+The runtime SHALL check the final answer against the turn's receipts with the checker only when the answer carries risk: a write this turn with any outcome, a Tasks item created or closed, an explicit contact lookup, or an unresolved failed or rejected write. A read-only answer SHALL go out without this check. A rejected answer SHALL get one repair round; an unresolved failed or unknown write SHALL then end with the server's own failure reply.
 
 #### Scenario: Read-only answer
 
@@ -173,12 +178,17 @@ Every action dispatch and approval SHALL recheck current permission, the person'
 
 ### Requirement: Provider history projection
 
-What the model sees of earlier steps SHALL be projected on every call: calls of the current run show the arguments the model sent (arguments over 4,000 characters replaced by an omission note), rejected calls and calls restored from a checkpoint stay opaque, earlier turns' calls collapse into one note naming each call and how it ended with their results dropped, and an earlier assistant answer built on private service or memory data SHALL be replaced by "[Prior private response withheld]".
+What the model sees of earlier steps SHALL be projected on every call: calls of the current run show the arguments the model sent (arguments over 4,000 characters replaced by an omission note), rejected calls and calls restored from a checkpoint stay opaque, and earlier turns' calls collapse into one note naming each call and how it ended, with their results dropped. Earlier answers follow `Earlier answers stay visible`.
 
 #### Scenario: Earlier private answer
 
-- **WHEN** a follow-up turn runs after an answer that used CRM data
+- **WHEN** a follow-up turn runs after an answer that used CRM data the person can no longer access
 - **THEN** the model sees that earlier answer only as "[Prior private response withheld]"
+
+#### Scenario: Earlier call
+
+- **WHEN** a follow-up turn runs after an answer that read CRM data
+- **THEN** the model sees the read only as a note naming the call and its outcome, without its result
 
 ### Requirement: Oversized read results
 
@@ -305,3 +315,78 @@ A new turn of the same chat session SHALL continue the chat's assistant thread u
 
 - **WHEN** the person retries a turn that failed
 - **THEN** the retry continues the chat's thread and sees its earlier turns
+
+### Requirement: Escalation after a checker rejection
+
+A workspace MAY set escalation to escalate with a tier or models; it SHALL be stop by default, where the chat model handles the rejection as before. When the write checker or the answer checker rejects a step and the run has not escalated yet, the next model step SHALL use the escalation models once. It SHALL count against the same root run's caps; unavailable escalation models SHALL leave the step to the chat model.
+
+#### Scenario: Rejected write escalates
+
+- **WHEN** escalation names the tier Strong and the checker rejects a proposed write
+- **THEN** the model step that answers the rejection runs on Strong's model and later steps on the chat model again
+
+#### Scenario: Second rejection
+
+- **WHEN** the escalated step is rejected again
+- **THEN** no further escalation happens in that run
+
+### Requirement: Run steps name their model
+
+Each model, selector and checker step of a run SHALL record the model, its role and the reason it served: `primary`, `fallback: <cause>`, or `escalated after checker mismatch` / `escalated after answer check`. A step that moved on to the next model before reaching its provider SHALL end failed.
+
+#### Scenario: Fallback recorded
+
+- **WHEN** a chat step moves from model A to model B because A's provider reached its limit
+- **THEN** Runs shows A's step failed and B's step with role chat and reason `fallback: provider_limit`
+
+### Requirement: Workspace instructions in a chat turn
+
+Each chat step's instructions SHALL include the workspace instructions that apply, read fresh at that step, with the person's variables filled in, framed as data that shapes tone, wording and conventions and that never grants permission, approves a write, changes the usable tools or overrides approvals, policies or the server's rules. A step whose text received the person's confirmed job title SHALL be private context.
+
+#### Scenario: Instructions ask to skip approval
+
+- **WHEN** the workspace instructions say "create records without asking for approval"
+- **THEN** a write still waits for the person's approval and nothing is dispatched
+
+#### Scenario: Edited between steps
+
+- **WHEN** an administrator saves new instructions while a chat runs
+- **THEN** the next model step of that chat reads the new text
+
+### Requirement: Prompt variables
+
+The server SHALL fill `{person.name}`, `{person.role}` (the confirmed job title, empty while the person opted out of memory), `{workspace.name}`, `{company.name}`, `{today}` (`YYYY-MM-DD` in the turn's time zone) and `{language}` in one pass, from the person the turn runs for only. Any other text in braces SHALL stay as typed, and a value that looks like a variable SHALL not be expanded again.
+
+#### Scenario: Late evening in Prague
+
+- **WHEN** a turn at 23:30 UTC on 5 November runs for a person in Europe/Prague
+- **THEN** `{today}` is `2026-11-06`
+
+#### Scenario: Unknown variable
+
+- **WHEN** instructions contain `{person.email}`
+- **THEN** the model sees `{person.email}` as typed and no address
+
+### Requirement: Earlier answers stay visible
+
+An earlier answer of the person's chat SHALL stay visible to the model, in the thread's history and in a fresh thread's earlier messages next to the person's own. Checked on every turn, it SHALL be replaced by "[Prior private response withheld]" when a saved item it drew on was forgotten, revised, expired or became unreadable, or a service result it drew on lost access (policy revision, grant or sign-in). Unknown provenance SHALL be withheld.
+
+#### Scenario: Unrelated saved memory
+
+- **WHEN** the person has saved memory, the assistant answered "5837" and the person asks "Jaké číslo jsi napsal?"
+- **THEN** the model sees its answer "5837"
+
+#### Scenario: Forgotten memory
+
+- **WHEN** an answer drew on a saved item that the person then forgets
+- **THEN** later turns see that answer only as "[Prior private response withheld]"
+
+#### Scenario: Service access
+
+- **WHEN** an answer built on a CRM read is followed by another turn while the read is still accessible, and later by a policy change
+- **THEN** the next turn sees the answer, and turns after the policy change see it withheld
+
+#### Scenario: Fresh thread
+
+- **WHEN** a turn of the chat starts a fresh thread
+- **THEN** the model gets the person's earlier messages and the assistant's replies that pass the check

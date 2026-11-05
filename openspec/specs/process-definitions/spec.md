@@ -326,3 +326,12 @@ The layout MUST NOT be part of the definition, the immutable version artifact, t
 
 - **WHEN** an owner moves a step of an active process's draft and saves only that arrangement
 - **THEN** the draft's definition still equals the active version, freezing returns the same version with the same digest, and the process does not need a new test
+
+### Requirement: Variables in process prompts
+
+An agent step's configured instructions SHALL have the prompt variables (see `agent-runtime`) filled in for the person running the process each time its model is prepared, with `{today}` in the workspace's time zone. Frozen definitions, their digests and the editors SHALL keep the text as typed. Workspace instructions SHALL NOT be added to process runs.
+
+#### Scenario: Personal report
+
+- **WHEN** a process step says "write a summary for {person.name} dated {today}"
+- **THEN** the model reads the running person's name and the workspace's current date, and the definition's digest is unchanged

@@ -45,12 +45,17 @@ Owners and administrators SHALL read the policy at `GET /admin/api/identity/cata
 
 ### Requirement: Usage limits page
 
-The administration's Usage limits page SHALL list the workspace's tool-capable chat, router and decision models, fill prices from the providers' published list prices on request, accept typed prices, and offer observe and Stop at limit (enforce). In enforce mode it SHALL warn while a listed model has no price and SHALL refuse to save while a price's smallest call does not fit the caps.
+The administration's Usage limits page SHALL list the workspace's tool-capable chat, router and decision models, fill prices from the providers' published list prices on request, accept typed prices, and offer observe and Stop at limit (enforce). In enforce mode it SHALL warn while a listed model has no price, and SHALL refuse to save while a model a role can reach has no price or a price's smallest call does not fit the caps.
 
 #### Scenario: Enforce without prices
 
 - **WHEN** an administrator chooses Stop at limit while a listed model has no price
 - **THEN** the page warns that unpriced models cannot run under the limit
+
+#### Scenario: Routed model without a price
+
+- **WHEN** an administrator chooses Stop at limit while the background role's model has no price
+- **THEN** the page names that model and does not save
 
 #### Scenario: Caps below the smallest call
 
@@ -77,12 +82,17 @@ Every budgeted model call SHALL reserve, under the identity queue and before net
 
 ### Requirement: Dispatch marking
 
-An attempt SHALL be marked dispatched immediately before network I/O, and a call cancelled before dispatch SHALL release its hold. Every actual attempt, including a retry, SHALL require its own reservation.
+An attempt SHALL be marked dispatched immediately before network I/O, and a call cancelled before dispatch SHALL release its hold. Every actual attempt, including a retry or a fallback to another model, SHALL require its own reservation. An attempt whose connection failed before the request was sent SHALL settle as zero.
 
 #### Scenario: Cancelled before dispatch
 
 - **WHEN** a call is cancelled after reserving but before dispatch
 - **THEN** its reservation is released and nothing is charged
+
+#### Scenario: Connection refused
+
+- **WHEN** the provider's address refuses the connection
+- **THEN** the attempt settles as zero and, with fallback on, the next model reserves its own call
 
 ### Requirement: Enforce mode
 
@@ -182,7 +192,7 @@ Features that must run under a cap (the process designer and custom agent steps,
 
 ### Requirement: Budgeted callers
 
-Chat and its decision and checker calls, process agents, the process designer, hub fills, opens and prefetches (see `hub`), meeting record extraction (see `meetings`), and administrative model calls (naming imported service actions, OAuth adapter recommendations) SHALL use the ledger, each under its own root run. Voice transcription, spoken replies and meeting speech-to-text SHALL NOT use the ledger and SHALL count only against the provider's request allowance.
+Chat with its selector, checker, fallback and escalated calls, process agents, the process designer, hub fills, opens and prefetches (see `hub`), meeting record extraction (see `meetings`), and administrative model calls (naming imported service actions, OAuth adapter recommendations) SHALL use the ledger, each under its own root run. Voice transcription, spoken replies and meeting speech-to-text SHALL NOT use the ledger and SHALL count only against the provider's request allowance.
 
 #### Scenario: Hub fill root
 
@@ -197,3 +207,12 @@ The provider's daily request limit SHALL be counted separately from the ledger, 
 
 - **WHEN** the provider's daily request count is exhausted
 - **THEN** the call is refused with `catalog_provider_limit`, not a budget code
+
+### Requirement: Prices for routed models
+
+In enforce mode every model a budgeted role (chat, service routes, checker, selector, background, designer, web search) can reach SHALL have a price: the first model of each route, the others only with fallback on, and the escalation models when escalation is on. The Usage limits and Models pages SHALL name such a model while it has no price and refuse to save; at use a call to it SHALL be refused before dispatch with `catalog_budget_price_required`.
+
+#### Scenario: Fallback model without a price
+
+- **WHEN** a workspace stops at limit and an administrator turns on fallback for chat to an unpriced second model
+- **THEN** the Models page names that model and does not save

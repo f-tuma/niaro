@@ -165,12 +165,17 @@ While the model writes, both clients SHALL render the draft's program as it arri
 
 ### Requirement: UI in later turns
 
-The program SHALL stay in the model's history as the assistant's own text, so a follow-up can change it ("make it a pie chart"), except that an earlier answer that used private service or memory data SHALL be withheld from later turns, program included (see `agent-runtime`).
+The program SHALL stay in the model's history as the assistant's own text, so a follow-up can change it ("make it a pie chart"). It SHALL be withheld exactly when its answer is (see `agent-runtime`), and a fresh thread's earlier replies SHALL carry it with its answer when both fit.
 
 #### Scenario: Change the chart
 
-- **WHEN** the person asks to show the previous answer's bar chart as a pie chart and that answer used no private data
+- **WHEN** the person asks to show the previous answer's bar chart as a pie chart and what that answer drew on is still current
 - **THEN** the model sees its earlier program and writes a new complete program
+
+#### Scenario: Withheld with its answer
+
+- **WHEN** an answer with a program drew on a saved item the person then forgets
+- **THEN** later turns see neither the answer nor its program
 
 ### Requirement: Legacy composed cards
 

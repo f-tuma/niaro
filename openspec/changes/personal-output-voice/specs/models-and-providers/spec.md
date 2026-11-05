@@ -4,17 +4,22 @@
 
 ### Requirement: Spoken reply choice
 
-The workspace SHALL allow an optional spoken-reply model: method **Reader** with a `chat` model that has audio output, or method **Text-to-speech** with a `speech` model, plus a Server default voice ID (letters, digits and `._:/-`, default `alloy`) and a zero-data-retention requirement that defaults to on. Without a model spoken replies SHALL be off, which is the default. Reply behavior is specified in `voice`.
+Spoken replies SHALL use the speech role: a chat model with audio output reads, a speech model speaks. A voice setting SHALL name the voice, or follow the model's first reviewed voice; a model without either SHALL be refused with 409 `catalog_voice_required`. Zero data retention SHALL default to on. Without models spoken replies SHALL be off. A member's personal voice SHALL change only their own timbre preference. Reply behavior is in `voice`.
 
 #### Scenario: Reader without audio output
 
-- **WHEN** an administrator chooses Reader with a chat model lacking audio output
+- **WHEN** an administrator puts a chat model lacking audio output in the speech role
 - **THEN** the save fails with `catalog_model_unavailable`
+
+#### Scenario: Reader without a voice
+
+- **WHEN** an administrator puts a reader model without reviewed voices in the speech role and leaves the voice empty
+- **THEN** the save fails with `catalog_voice_required`
 
 #### Scenario: Personal voice does not edit routing
 
 - **WHEN** a member saves an advertised personal output voice
-- **THEN** only that person's timbre preference changes and the workspace's model, method, privacy requirement and Server default remain unchanged
+- **THEN** only that person's timbre preference changes and the workspace's speech role, voice and privacy setting remain unchanged
 
 ## ADDED Requirements
 
