@@ -283,13 +283,14 @@ test("cloud capabilities preserve identity when temporarily unavailable", async 
   let enabled = true;
   const app = await setup({
     engine: "openrouter",
+    model: "test/asr-model",
     available: () => enabled,
     transcribe: async () => ({ text: "Hello", reviewReasons: [] }),
   });
   try {
     expect((await app.call("voice")).value).toMatchObject({
       engine: "openrouter",
-      model: "google/gemini-3.1-flash-lite",
+      model: "test/asr-model",
       processing: "cloud",
       enabled: true,
     });

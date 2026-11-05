@@ -19,6 +19,7 @@ import {
   voiceDigest,
   type OutputVoiceActor,
 } from "../apps/server-integrations/speech-voices";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 const org = randomUUID(),
   otherOrg = randomUUID(),
@@ -107,8 +108,8 @@ function harness(file = ":memory:") {
   const choose = (s = read(), index = 0) =>
     body(s, { kind: "catalogue", optionId: s.options[index]!.optionId });
   const route = (patch: object = {}) => {
-    const before = catalog.routing(ws);
-    return command({ type: "saveRouting", routing: { ...before, ...patch } });
+    const before = currentRouting(catalog.readModelPolicy(org, ws));
+    return command({ ...routingCommand({ ...before, ...patch }) });
   };
   const setup = () => {
     const provider = command({
@@ -129,6 +130,12 @@ function harness(file = ":memory:") {
       enabled: true,
       tools: false,
       audioOutput: true,
+      // The voices an administrator reviewed for this model.
+      voices: [
+        { voice: "alloy", label: "Alloy" },
+        { voice: "echo", label: "Echo" },
+        { voice: "shimmer", label: "Shimmer" },
+      ],
     };
     const model = command({ type: "saveModel", revision: 0, settings })!;
     const secondModel = command({
@@ -138,6 +145,7 @@ function harness(file = ":memory:") {
         ...settings,
         model: "openai/gpt-audio",
         name: "TEST alternate",
+        voices: [],
       },
     })!;
     route({
@@ -288,7 +296,12 @@ test("CAS, exact last committed replay, collision and delayed old mutations pres
     assert.equal(second.revision, 2);
     error("output_voice_conflict", () => h.save(first));
     assert.equal(h.read().saved?.label, "Echo");
-    h.route({ speech: { ...h.catalog.routing(ws).speech, voice: "shimmer" } });
+    h.route({
+      speech: {
+        ...currentRouting(h.catalog.readModelPolicy(org, ws)).speech,
+        voice: "shimmer",
+      },
+    });
     const replay = h.save(secondRequest);
     assert.equal(replay.revision, 2);
     assert.equal(replay.serverDefault?.label, "Shimmer");
@@ -304,7 +317,12 @@ test("same saved intent is a no-op but Reset clears a stale custom intent alread
     h.setup();
     const first = h.choose();
     h.save(first);
-    h.route({ speech: { ...h.catalog.routing(ws).speech, modelId: null } });
+    h.route({
+      speech: {
+        ...currentRouting(h.catalog.readModelPolicy(org, ws)).speech,
+        modelId: null,
+      },
+    });
     const stale = h.read();
     assert.equal(stale.effective.choice.kind, "server-default");
     assert.equal(stale.saved?.choice.kind, "catalogue");
@@ -313,7 +331,12 @@ test("same saved intent is a no-op but Reset clears a stale custom intent alread
     assert.equal(reset.revision, 2);
     assert.deepEqual(reset.saved, { choice: defaultChoice, label: "" });
     assert.equal(h.save(h.body(reset, defaultChoice)).revision, 2);
-    h.route({ speech: { ...h.catalog.routing(ws).speech, voice: "echo" } });
+    h.route({
+      speech: {
+        ...currentRouting(h.catalog.readModelPolicy(org, ws)).speech,
+        voice: "echo",
+      },
+    });
     assert.equal(h.read().effective.reason, "speech-unavailable");
   } finally {
     h.db.close();
@@ -326,7 +349,12 @@ test("default-only and unrelated routing edits change tokens without invalidatin
     h.setup();
     const before = h.save(h.choose());
     const identity = before.route!.identity;
-    h.route({ speech: { ...h.catalog.routing(ws).speech, voice: "echo" } });
+    h.route({
+      speech: {
+        ...currentRouting(h.catalog.readModelPolicy(org, ws)).speech,
+        voice: "echo",
+      },
+    });
     let next = h.read();
     assert.equal(next.route!.identity, identity);
     assert.notEqual(next.catalogueRevision, before.catalogueRevision);
@@ -341,7 +369,12 @@ test("default-only and unrelated routing edits change tokens without invalidatin
     assert.equal(next.effective.label, "Alloy");
     const reset = h.save(h.body(next, defaultChoice));
     assert.equal(reset.effective.label, "Echo");
-    h.route({ speech: { ...h.catalog.routing(ws).speech, voice: "shimmer" } });
+    h.route({
+      speech: {
+        ...currentRouting(h.catalog.readModelPolicy(org, ws)).speech,
+        voice: "shimmer",
+      },
+    });
     assert.equal(h.read().effective.label, "Shimmer");
   } finally {
     h.db.close();
@@ -353,7 +386,7 @@ test("catalogue command hook observes model A to B to A between reads and disabl
   try {
     const { model, secondModel } = h.setup();
     const selected = h.save(h.choose());
-    const original = h.catalog.routing(ws).speech;
+    const original = currentRouting(h.catalog.readModelPolicy(org, ws)).speech;
     h.route({ speech: { ...original, modelId: secondModel } });
     h.route({ speech: { ...original, modelId: model } });
     let s = h.read();
@@ -374,7 +407,7 @@ test("provider A to B to A between reads cannot resurrect a saved option", () =>
   try {
     const { settings } = h.setup();
     const selected = h.save(h.choose());
-    const original = h.catalog.routing(ws).speech;
+    const original = currentRouting(h.catalog.readModelPolicy(org, ws)).speech;
     const provider = h.command({
       type: "saveProvider",
       revision: 0,
@@ -415,14 +448,19 @@ test("privacy, provider/model revisions invalidate but failed commands roll back
     const originalEpoch = epoch();
     error("catalog_conflict", () =>
       h.command({
-        type: "saveRouting",
-        routing: { ...h.catalog.routing(ws), revision: 0 },
+        ...routingCommand({
+          ...currentRouting(h.catalog.readModelPolicy(org, ws)),
+          revision: 0,
+        }),
       }),
     );
     assert.equal(epoch(), originalEpoch);
     assert.equal(h.read().effective.reason, "selected");
     h.route({
-      speech: { ...h.catalog.routing(ws).speech, zeroDataRetention: true },
+      speech: {
+        ...currentRouting(h.catalog.readModelPolicy(org, ws)).speech,
+        zeroDataRetention: true,
+      },
     });
     assert.equal(h.read().effective.reason, "saved-choice-unavailable");
     h.save(h.choose());
@@ -515,11 +553,9 @@ test("a registry revision change is reconciled lazily without reviving the earli
     const compatibility = speechVoiceCompatibility(
       h.catalog.speechVoiceRoute(org, ws),
     );
-    assert.equal(
-      compatibility.at(-1),
-      "openrouter-gpt-audio-mini-reader-20261030-1",
-    );
-    // Persisted metadata from a prior binary: only its registry policy differs.
+    // The reviewed list's revision is a digest of the model's voices.
+    assert.match(String(compatibility.at(-1)), /^[0-9a-f]{64}$/);
+    // Persisted metadata from an earlier list: only its reviewed policy differs.
     const previousDigest = voiceDigest([
       ...compatibility.slice(0, -1),
       "previous-reviewed-policy",
@@ -559,7 +595,7 @@ test("passive metadata never decrypts keys; missing credentials and unreviewed s
     h.catalog.provider = originalProvider;
     h.db
       .prepare(
-        "UPDATE agent_catalog_routing SET data=json_set(data,'$.speech.modelId',?) WHERE workspace_id=?",
+        "UPDATE agent_catalog_routing SET data=json_set(data,'$.roles.speech.models[0]',?) WHERE workspace_id=?",
       )
       .run(secondModel, ws);
     assert.equal(h.read().availability, "server-default-only");
@@ -684,7 +720,7 @@ for (const availability of [
         if (availability !== "selectable")
           h.route({
             speech: {
-              ...h.catalog.routing(ws).speech,
+              ...currentRouting(h.catalog.readModelPolicy(org, ws)).speech,
               modelId:
                 availability === "speech-unavailable" ? null : secondModel,
             },
@@ -749,7 +785,12 @@ for (const availability of [
         error("output_voice_conflict", () =>
           h.save({ ...request, expectedRevision: 2 }),
         );
-        h.route({ speech: { ...h.catalog.routing(ws).speech, voice: "echo" } });
+        h.route({
+          speech: {
+            ...currentRouting(h.catalog.readModelPolicy(org, ws)).speech,
+            voice: "echo",
+          },
+        });
         assert.equal(
           h.save(request).revision,
           2,

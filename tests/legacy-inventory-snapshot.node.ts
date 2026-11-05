@@ -38,6 +38,7 @@ import {
 } from "../apps/server-identity/legacy-run-inventory";
 import { processDigest } from "../apps/server-identity/process-validation";
 import { JournalSchema } from "../apps/server-identity/service-process-journal";
+import { routingCommand } from "./helpers/model-policy";
 
 type HistoricalMode = "agent" | "progressive" | "legacy";
 type Requested =
@@ -136,8 +137,7 @@ async function produceStoppedInventory(
       assert.equal(budget.status, 200, JSON.stringify(budget.data));
     }
     await h.catalog({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 0,
         planner: mode === "agent" ? "model" : "jev",
         modelId: h.modelId,
@@ -147,7 +147,7 @@ async function produceStoppedInventory(
           minConfidence: 0.8,
         },
         services: [{ serviceId: h.serviceId, modelId: h.modelId }],
-      },
+      }),
     });
     h.beforeDispatch(() => {
       serviceAttempts++;
@@ -325,6 +325,11 @@ async function produceStoppedInventory(
           scope,
           h.target.organizationId,
           true,
+          false,
+          undefined,
+          undefined,
+          // These fixtures seed a historical turn of this loop.
+          mode,
         ),
       };
     };

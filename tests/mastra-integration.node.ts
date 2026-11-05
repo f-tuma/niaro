@@ -4,6 +4,7 @@ import { IdentityError } from "../apps/server-identity/error";
 import type { CatalogRuntime } from "../apps/server-identity/catalog-runtime";
 import type { IntegrationTransport } from "../apps/server-integrations/transport";
 import { createTrustHarness, toolResults } from "./agent-trust/harness";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 const isCode = (code: string) => (error: unknown) =>
   error instanceof IdentityError && error.code === code;
@@ -11,21 +12,18 @@ const isCode = (code: string) => (error: unknown) =>
 test("new commands use native Mastra even when historical planner selection remains configured", async () => {
   const h = createTrustHarness();
   try {
-    const routing = h.catalog.inventory(
-      h.target.organizationId,
-      h.target.workspaceId,
-      {
+    const routing = currentRouting(
+      h.catalog.inventory(h.target.organizationId, h.target.workspaceId, {
         userId: h.scope.userId,
         role: "owner",
-      },
-    ).routing;
+      }).policy,
+    );
     h.command({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         ...routing,
         planner: "jev",
         decision: { ...routing.decision, enabled: false },
-      },
+      }),
     });
     h.onChat(() => ({ content: "TEST native reply" }));
     const result = await h.send("TEST new native command", {

@@ -7,13 +7,14 @@ import { join, resolve } from "node:path";
 import {
   GeminiTranscriber,
   OpenRouterAsrClient,
-  GEMINI_ASR_MODEL,
 } from "../apps/fixture-server/voice-openrouter";
 import {
   VOICE_PROFILE,
   type VoiceRequest,
   type VoiceAudio,
 } from "../packages/protocol/voice";
+/** The legacy profile's configured speech model; none is built in. */
+const GEMINI_ASR_MODEL = "test/asr-model";
 async function main() {
   const before = readdirSync(tmpdir())
     .filter((f) => f.startsWith("agent-voice-"))
@@ -42,6 +43,7 @@ async function main() {
   const config = {
     apiKey: "synthetic-not-used",
     model: "unused-text-model",
+    voiceModel: GEMINI_ASR_MODEL,
     expiresAt: new Date(Date.now() + 60000).toISOString(),
     maxRequests: 100,
     timeZone: "Europe/Prague",

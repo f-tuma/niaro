@@ -84,7 +84,6 @@ test("the web plugin page shows its settings and saves them for the workspace", 
   const rows = () => hosts(root, "SettingRow");
   expect(rows().map((row) => row.props.label)).toEqual([
     "Enabled",
-    "Search model (model ID from AI models; empty: the chat model)",
     "Search engine",
     "Results per search",
     "Page text (characters)",
@@ -102,16 +101,13 @@ test("the web plugin page shows its settings and saves them for the workspace", 
   );
   const input = (index: number) =>
     rows()[index]!.findAll((node) => node.type === "input")[0]!;
-  expect(input(3).props.max).toBe(8);
-  expect(input(4).props.max).toBe(40000);
+  expect(input(2).props.max).toBe(8);
+  expect(input(3).props.max).toBe(40000);
   await act(async () => {
     enabled.props.onCheckedChange(true);
   });
   await act(async () => {
-    input(1).props.onChange({ target: { value: "openai/gpt-4o-mini" } });
-  });
-  await act(async () => {
-    input(3).props.onChange({ target: { value: "3" } });
+    input(2).props.onChange({ target: { value: "3" } });
   });
   await act(async () => {
     root
@@ -124,7 +120,6 @@ test("the web plugin page shows its settings and saves them for the workspace", 
   expect(body.revision).toBe(4);
   expect(body.settings.enabled).toEqual(["datetime", "web"]);
   expect(body.settings.settings.web).toEqual({
-    searchModel: "openai/gpt-4o-mini",
     engine: "exa",
     results: 3,
     readChars: 12000,

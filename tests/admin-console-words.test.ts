@@ -37,9 +37,7 @@ describe("admin navigation", () => {
       expect(copy.audit).toBe(
         language === "en" ? "Activity log" : "Historie změn",
       );
-      expect(copy.routing).toBe(
-        language === "en" ? "Model choice" : "Výběr modelů",
-      );
+      expect(copy.routing).toBe(language === "en" ? "Models" : "Modely");
       expect(copy.loops).toBe(language === "en" ? "Runs" : "Běhy");
       expect(copy.stageDecision).toBe(
         language === "en" ? "Service picker" : "Výběr služby",
@@ -78,9 +76,11 @@ describe("admin navigation", () => {
     expect(fill(shellCopy.cs.allowedOf)).toBe("povoleno 3 z 12");
   });
 
-  test("hints name models, not raw model ids", () => {
+  test("model copy names no model", () => {
     for (const language of ["en", "cs"] as const)
-      expect(catalogCopy[language].decisionModelHint).not.toMatch(/\//);
+      expect(JSON.stringify(catalogCopy[language])).not.toMatch(
+        /jev|gpt|gemini/i,
+      );
   });
 
   test("external AI app permissions say what they allow", () => {

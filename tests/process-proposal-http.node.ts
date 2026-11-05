@@ -26,6 +26,7 @@ import type { ModelRequest } from "./agent-trust/harness";
 import { coordinatorHttpFixture } from "./helpers/process-coordinator-http";
 import { processObject } from "./helpers/service-process";
 import { seedSyntheticQualification } from "./helpers/process-qualified-fixture";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 type Fixture = Awaited<ReturnType<typeof coordinatorHttpFixture>>;
@@ -154,10 +155,14 @@ async function chat(h: Fixture, credential: Credential, text: string) {
 }
 /** Chat uses the fixture's priced tool model, with a 40 000-token max input. */
 async function routeChat(h: Fixture) {
-  const routing = h.identity["catalog"].store.routing(h.target.workspaceId);
+  const routing = currentRouting(
+    h.identity["catalog"].store.readModelPolicy(
+      h.target.organizationId,
+      h.target.workspaceId,
+    ),
+  );
   await h.catalog({
-    type: "saveRouting",
-    routing: { ...routing, modelId: h.modelId },
+    ...routingCommand({ ...routing, modelId: h.modelId }),
   });
   const budget = h.identity["catalog"].store.inferenceBudget;
   const policy = budget.policy(h.target.organizationId, h.target.workspaceId);

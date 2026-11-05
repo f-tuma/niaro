@@ -184,7 +184,8 @@ function Dashboard({ state }: { state: CatalogState }) {
   });
   const models = new Map(catalog.models.map((model) => [model.id, model]));
   const model = (id: string | null) => (id ? models.get(id) : undefined);
-  const routing = catalog.routing;
+  const roles = catalog.policy.effective.roles;
+  const first = (role: keyof typeof roles) => roles[role]?.models[0] ?? null;
   const enabledServices = catalog.services.filter((s) => s.enabled);
   const granted = (service: Service) =>
     service.actions.filter(
@@ -199,20 +200,19 @@ function Dashboard({ state }: { state: CatalogState }) {
   const requests = catalog.providers.reduce((n, p) => n + p.requestsToday, 0);
   const limit = catalog.providers.reduce((n, p) => n + p.dailyRequestLimit, 0);
 
-  const voiceIn: StageValue =
-    routing.voiceMode === "disabled"
-      ? { off: true }
-      : routing.voiceMode === "legacy"
-        ? { primary: copy.serverDefault }
-        : {
-            primary: modelName(model(routing.voiceModelId)),
-            secondary:
-              routing.voiceMethod === "transcription"
-                ? copy.direct
-                : copy.interpreter,
-            missing: !model(routing.voiceModelId),
-          };
-  const speechModel = model(routing.speech.modelId);
+  const voiceModel = model(first("voice_input"));
+  const voiceIn: StageValue = first("voice_input")
+    ? {
+        primary: modelName(voiceModel),
+        secondary:
+          voiceModel?.kind === "transcription" ? copy.direct : copy.interpreter,
+        missing: !voiceModel,
+      }
+    : catalog.policy.effective.options.serverVoice
+      ? { primary: copy.serverDefault }
+      : { off: true };
+  const speechModel = model(first("speech"));
+  const selectorModel = model(first("selector"));
   // Same rows, order and terms as the Routing page: model first, mode second.
   const stages: Stage[] = [
     {
@@ -221,8 +221,8 @@ function Dashboard({ state }: { state: CatalogState }) {
       icon: BrainCircuit,
       to: "/routing",
       value: {
-        primary: modelName(model(routing.modelId)),
-        missing: !model(routing.modelId),
+        primary: modelName(model(first("chat"))),
+        missing: !model(first("chat")),
       },
     },
     {
@@ -240,14 +240,18 @@ function Dashboard({ state }: { state: CatalogState }) {
       label: copy.stageDecision,
       icon: Scale,
       to: "/routing",
-      value: routing.decision.enabled
+      value: first("selector")
         ? {
-            primary: modelName(model(routing.decision.modelId)),
+            primary: modelName(selectorModel),
             secondary: copy.certainty.replace(
               "{p}",
-              String(Math.round(routing.decision.minConfidence * 100)),
+              String(
+                Math.round(
+                  catalog.policy.effective.options.selector.minConfidence * 100,
+                ),
+              ),
             ),
-            missing: !model(routing.decision.modelId),
+            missing: !selectorModel,
           }
         : { off: true },
     },
@@ -263,14 +267,13 @@ function Dashboard({ state }: { state: CatalogState }) {
       label: copy.stageVoiceOut,
       icon: Volume2,
       to: "/routing",
-      value:
-        routing.speech.method === "reader"
-          ? speechModel
-            ? { primary: speechModel.name, secondary: copy.reader }
-            : { primary: copy.reader }
+      value: !first("speech")
+        ? { off: true }
+        : speechModel?.kind === "speech"
+          ? { primary: speechModel.name, secondary: copy.speech }
           : {
               primary: modelName(speechModel),
-              secondary: copy.speech,
+              secondary: copy.reader,
               missing: !speechModel,
             },
     },

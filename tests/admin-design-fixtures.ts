@@ -6,6 +6,7 @@ import {
 } from "../packages/protocol/process-design";
 import { CatalogSchema } from "../packages/protocol/service-catalog";
 import { ProcessDefinitionSchema } from "../packages/protocol/service-processes";
+import { emptyModelPolicyView } from "./helpers/model-policy-view";
 
 /** Synthetic DOM fixtures, also used by client recovery tests; never a live model. */
 export const designUiTarget = {
@@ -226,5 +227,5 @@ export const designUiCatalog = CatalogSchema.parse({
   ],
   providers: [],
   models: [],
-  routing: { revision: 0, modelId: null, services: [] },
+  policy: emptyModelPolicyView(),
 });

@@ -3,6 +3,7 @@ import TestRenderer, { act, type ReactTestInstance } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HostedDefinition } from "../packages/protocol/hosted";
 import { HostedPage } from "../apps/server-admin/web/hosted-page";
+import { emptyModelPolicyView } from "./helpers/model-policy-view";
 
 const mockApi = jest.fn();
 const mockNavigate = jest.fn();
@@ -197,7 +198,7 @@ async function render(
         services: options.services ?? [],
         providers: [],
         models: [],
-        routing: { revision: 0, modelId: null, services: [] },
+        policy: emptyModelPolicyView(),
       };
     if (path === "identity/catalog/command") return { id: "svc_NEW" };
     if (path === "identity/auth-providers/list")

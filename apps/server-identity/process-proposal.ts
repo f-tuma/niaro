@@ -513,21 +513,17 @@ export function createProcessProposals(deps: ProcessProposalDependencies) {
           throw new IdentityError(409, "process_proposal_saved");
         return { actor, review, modelId: stored.modelId, catalog };
       }
-      if (!catalog.budgetReady || !catalog.priced.length)
-        return { actor, catalog };
-      // The workspace's chat model when the budget prices it, else the first priced one.
-      let chat: string | undefined;
-      try {
-        chat = deps.catalog.resolveModel(
-          actor.organizationId,
-          actor.workspaceId,
-        )?.model.id;
-      } catch {
-        chat = undefined;
-      }
-      const modelId = (
-        catalog.priced.find((model) => model.id === chat) ?? catalog.priced[0]!
-      ).id;
+      // The designer role's first model the budget prices; without one
+      // the person hears that the budget is not set up for designing.
+      const designer = deps.catalog.route(
+        actor.organizationId,
+        actor.workspaceId,
+        "designer",
+      ).models;
+      const modelId = designer.find((id) =>
+        catalog.priced.some((model) => model.id === id),
+      );
+      if (!catalog.budgetReady || !modelId) return { actor, catalog };
       const receipt = deps.proposals.start(actor, {
         ...target,
         profile: WORKSPACE_DESIGN_PROFILE,

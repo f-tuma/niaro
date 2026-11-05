@@ -213,7 +213,14 @@ function unwrapNativeBusinessInput(value: unknown) {
 }
 
 export type NativeAgentEvent =
-  | { type: "model-start" | "model-end"; model?: string }
+  | {
+      type: "model-start";
+      model?: string;
+      /** The model's role and why it serves this step. */
+      role?: string;
+      reason?: string;
+    }
+  | { type: "model-end"; failed?: true }
   | { type: "tool-start"; name: string; toolCallId: string; args?: unknown }
   | {
       type: "tool-end";
@@ -244,6 +251,14 @@ export type NativeAgentSession = {
     revision: number,
     start: () => void,
   ): Promise<void>;
+  /**
+   * The role's next model after a call that provably never reached its
+   * provider, when the role allows fallback; undefined otherwise.
+   */
+  fallback?(
+    selected: NiaroModelSelection,
+    error: unknown,
+  ): Promise<NiaroModelSelection | undefined>;
   invoke(
     name: string,
     args: unknown,
@@ -1112,34 +1127,57 @@ export function createNativeAgentRuntime(storageUrl: string) {
         ),
       };
     };
-    const model = (selected: NiaroModelSelection): LanguageModelV4 => {
-      const native = input.createModel(
-        selected,
-        (start) =>
-          session.allowance(
-            selected.provider.id,
-            selected.provider.revision,
-            start,
-          ),
-        textObserver,
-      );
-      const invoke = async <T>(operation: () => PromiseLike<T>) => {
+    const model = (first: NiaroModelSelection): LanguageModelV4 => {
+      const nativeFor = (selected: NiaroModelSelection) =>
+        input.createModel(
+          selected,
+          (start) =>
+            session.allowance(
+              selected.provider.id,
+              selected.provider.revision,
+              start,
+            ),
+          textObserver,
+        );
+      const native = nativeFor(first);
+      /**
+       * One model step. When the call provably never reached its provider
+       * and the role allows fallback, the step moves to the role's next
+       * model as a new budgeted call; never after an unknown outcome.
+       */
+      const invoke = async <T>(
+        operation: (model: LanguageModelV4) => PromiseLike<T>,
+      ) => {
         if (fatal) throw fatal;
-        try {
-          input.signal.throwIfAborted();
-          await observeCheckpoint();
-          // Every step starts without a draft; only its own text shows.
-          showDraft(null);
-          await input.onEvent?.({
-            type: "model-start",
-            model: selected.model.model,
-          });
-          const output = await operation();
-          input.signal.throwIfAborted();
-          await input.onEvent?.({ type: "model-end" });
-          return output;
-        } catch (error) {
-          throw fail(error);
+        let selected = first;
+        let current = native;
+        for (;;) {
+          try {
+            input.signal.throwIfAborted();
+            await observeCheckpoint();
+            // Every step starts without a draft; only its own text shows.
+            showDraft(null);
+            await input.onEvent?.({
+              type: "model-start",
+              model: selected.model.model,
+              ...(selected.route
+                ? { role: selected.route.role, reason: selected.route.reason }
+                : {}),
+            });
+            const output = await operation(current);
+            input.signal.throwIfAborted();
+            await input.onEvent?.({ type: "model-end" });
+            return output;
+          } catch (error) {
+            const next =
+              !input.signal.aborted && selected.route?.fallback
+                ? await session.fallback?.(selected, error)
+                : undefined;
+            if (!next) throw fail(error);
+            await input.onEvent?.({ type: "model-end", failed: true });
+            selected = next;
+            current = nativeFor(next);
+          }
         }
       };
       const signal = (sdkSignal?: AbortSignal) =>
@@ -1150,7 +1188,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
         modelId: native.modelId,
         supportedUrls: native.supportedUrls,
         doGenerate: (options) =>
-          invoke(async () => {
+          invoke(async (native) => {
             const result = await native.doGenerate({
               ...toProvider(options),
               abortSignal: signal(options.abortSignal),
@@ -1167,7 +1205,7 @@ export function createNativeAgentRuntime(storageUrl: string) {
             };
           }),
         doStream: (options) =>
-          invoke(async () => {
+          invoke(async (native) => {
             const result = await native.doStream({
               ...toProvider(options),
               abortSignal: signal(options.abortSignal),

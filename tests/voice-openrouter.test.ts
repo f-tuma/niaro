@@ -1,7 +1,6 @@
 import { ModelError } from "../apps/fixture-server/decision";
 import {
   OpenRouterAsrClient,
-  GEMINI_ASR_MODEL,
   assessGeminiTranscript,
   speechDuration,
 } from "../apps/fixture-server/voice-openrouter";
@@ -11,9 +10,12 @@ import {
   voiceCapabilities,
 } from "../packages/protocol/voice";
 const now = Date.parse("2026-09-25T12:00:00Z");
+/** The legacy profile's configured speech model; none is built in. */
+const GEMINI_ASR_MODEL = "test/asr-model";
 const config: OpenRouterConfig = {
   apiKey: "synthetic-key-never-used",
   model: "openai/gpt-4.1-mini",
+  voiceModel: GEMINI_ASR_MODEL,
   expiresAt: "2026-09-25T22:00:00Z",
   maxRequests: 100,
   timeZone: "Europe/Prague",
@@ -46,7 +48,7 @@ function response(value: unknown = payload()) {
 }
 const signal = () => new AbortController().signal;
 test("cloud capabilities identify the actual provider and reject false local disclosure or old profile", () => {
-  const capabilities = voiceCapabilities(true, "openrouter");
+  const capabilities = voiceCapabilities(true, "openrouter", GEMINI_ASR_MODEL);
   expect(capabilities).toMatchObject({
     model: GEMINI_ASR_MODEL,
     processing: "cloud",

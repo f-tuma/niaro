@@ -29,10 +29,19 @@ import {
 import { providerFailure } from "./failures";
 import type { ModelMessage } from "./models";
 
+/** Why this model serves the call: its role, its place in the role's list
+ * and the reason (primary, fallback: <cause>, escalated after …). */
+export type ModelRouteChoice = {
+  role: string;
+  index: number;
+  fallback: boolean;
+  reason: string;
+};
 export type NiaroModelSelection = {
   provider: Provider;
   key: string;
   model: CatalogModel;
+  route?: ModelRouteChoice;
 };
 
 const tokens = z.number().int().nonnegative().optional();

@@ -14,7 +14,6 @@ import {
 import {
   normalizeModelCapabilities,
   OPENROUTER_URL,
-  JEV_DECISION_MODEL,
 } from "./model-capabilities";
 const Completion = z.object({
   choices: z
@@ -157,23 +156,11 @@ export async function listModels(
     return parsed.data.data;
   });
   const models = new Map<string, DiscoveredModel>();
-  // The Decisions API has no model-list endpoint; expose its documented pinned model explicitly.
-  if (provider.url.replace(/\/$/, "") === OPENROUTER_URL)
-    models.set(JEV_DECISION_MODEL, {
-      model: JEV_DECISION_MODEL,
-      name: "TypeSafe: Jev 1.13",
-      kind: "decision",
-      tools: false,
-      pricing: null,
-      audioInput: false,
-      audioOutput: false,
-      contextLength: null,
-    });
   for (const model of catalogs.flat()) {
     if (!models.has(model.id))
       models.set(
         model.id,
-        normalizeModelCapabilities(provider.url, {
+        normalizeModelCapabilities({
           kind:
             model.architecture?.tokenizer === "Router"
               ? "router"

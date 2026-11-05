@@ -9,11 +9,8 @@ import {
   AddServicePage,
   ServiceDetailPage,
 } from "./catalog-services";
-import {
-  ProvidersPage,
-  ProviderDetailPage,
-  RoutingPage,
-} from "./catalog-providers";
+import { ProvidersPage, ProviderDetailPage } from "./catalog-providers";
+import { ModelPolicyPage } from "./model-policy-page";
 import { PluginsPage } from "./plugins-page";
 import { PluginFilesPage } from "./plugin-files-page";
 import { AuthProvidersPage } from "./auth-providers";
@@ -109,7 +106,7 @@ export const router = createRouter({
     page("/plugins", PluginsPage),
     page("/plugins/$pluginId", PluginsPage),
     page("/plugins/$pluginId/files", PluginFilesPage),
-    page("/routing", RoutingPage),
+    page("/routing", ModelPolicyPage),
     page("/usage", UsageLimitsPage),
     page("/providers", ProvidersPage),
     page("/providers/$providerId", ProviderDetailPage),

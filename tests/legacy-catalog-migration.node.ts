@@ -30,6 +30,11 @@ for (const outcome of ["succeeded", "rejected", "unknown"] as const) {
         h.scope,
         h.target.organizationId,
         true,
+        false,
+        undefined,
+        undefined,
+        // This fixture seeds a historical turn of the agent loop.
+        "agent",
       );
       const pending = await historical.message(
         commandId,

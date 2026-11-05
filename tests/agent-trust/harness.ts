@@ -43,6 +43,7 @@ import type {
   IntegrationTransport,
   TransportResponse,
 } from "../../apps/server-integrations/transport";
+import { routingCommand } from "../helpers/model-policy";
 
 export type ModelRequest = {
   model: string;
@@ -537,14 +538,13 @@ export function createTrustHarness(
     const modelId = addModel("chat"),
       decisionId = addModel("decision");
     command({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 0,
         planner: "model",
         modelId,
         decision: { enabled: true, modelId: decisionId, minConfidence: 0.8 },
         services: [{ serviceId, modelId }],
-      },
+      }),
     });
   }
   const sourceAccess = (source: MemorySource, actor: MemoryActor) => {

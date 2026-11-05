@@ -6,30 +6,33 @@ export type OutputVoiceActor = {
 };
 export type SpeechVoiceRoute = {
   provider: { id: string; revision: number; url: string };
-  model: { id: string; revision: number; model: string };
+  model: {
+    id: string;
+    revision: number;
+    model: string;
+    /** The voices an administrator reviewed for this model, in order. */
+    voices: readonly { voice: string; label: string }[];
+  };
   method: "reader" | "speech";
   format: "pcm16" | "mp3";
   zeroDataRetention: boolean;
   voice: string;
 };
-const MINI_READER = {
-  revision: "openrouter-gpt-audio-mini-reader-20261030-1",
-  // Accepted upstream-contract inference, not per-model metadata or a live adapter test.
-  provenance:
-    "upstream-contract inference; OpenAI Chat Completions and OpenRouter audio forwarding (2026-10-30)",
-  voices: [
-    { voice: "alloy", label: "Alloy" },
-    { voice: "echo", label: "Echo" },
-    { voice: "shimmer", label: "Shimmer" },
-  ],
-} as const;
+/**
+ * The voices members may choose for spoken replies: the ones an
+ * administrator listed on the speech model in the catalog. Their revision
+ * follows the list, so editing it retires earlier choices.
+ */
 export function reviewedSpeechVoices(route: SpeechVoiceRoute | null) {
-  return route &&
-    route.provider.url.replace(/\/$/, "") === "https://openrouter.ai/api/v1" &&
-    route.model.model === "openai/gpt-audio-mini" &&
-    route.method === "reader" &&
-    route.format === "pcm16"
-    ? MINI_READER
+  return route?.model.voices.length
+    ? {
+        revision: voiceDigest([
+          "agent-output-voice-reviewed/1",
+          route.model.id,
+          route.model.voices,
+        ]),
+        voices: route.model.voices,
+      }
     : null;
 }
 export const voiceDigest = (value: unknown) =>
@@ -74,7 +77,8 @@ export function outputVoiceCatalogue(
     }),
   );
   const defaultLabel = route
-    ? route.voice[0]!.toUpperCase() + route.voice.slice(1)
+    ? (route.model.voices.find((item) => item.voice === route.voice)?.label ??
+      route.voice[0]!.toUpperCase() + route.voice.slice(1))
     : "";
   return {
     identity,

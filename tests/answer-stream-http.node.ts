@@ -32,6 +32,7 @@ import {
 } from "../packages/protocol/identity";
 import { CatalogSchema } from "../packages/protocol/service-catalog";
 import type { ModelRequest } from "./agent-trust/harness";
+import { routingCommand } from "./helpers/model-policy";
 
 function textProperty(value: unknown, key: string): string {
   assert(value && typeof value === "object" && key in value);
@@ -318,8 +319,7 @@ test("a message.send that accepts an event stream gets the draft, the steps and 
     );
     writeActionName = "action_" + writeActionId.replaceAll("-", "_");
     await catalog({
-      type: "saveRouting",
-      routing: { revision: 0, planner: "jev", modelId, services: [] },
+      ...routingCommand({ revision: 0, planner: "jev", modelId, services: [] }),
     });
     const code = textProperty(
       await admin("api/identity/mobile/pairing", {

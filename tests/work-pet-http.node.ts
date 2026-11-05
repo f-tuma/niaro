@@ -7,6 +7,7 @@ import {
   PetMemoryPageSchema,
 } from "../packages/protocol/work-pet";
 import { ClientSession } from "../packages/client-core/session";
+import { routingCommand } from "./helpers/model-policy";
 
 test(
   "pet paired HTTP/client: same person shares settings, private memory and current authority",
@@ -505,13 +506,12 @@ async function verifyConfirmedPosition(
     assert.equal(result.status, 200);
   };
   await h.catalog({
-    type: "saveRouting",
-    routing: {
+    ...routingCommand({
       revision: 0,
       planner: "model",
       modelId: h.modelId,
       services: [],
-    },
+    }),
   });
   const chat = async (credential = own) => {
     const access = await h.identity.mobileAccess(

@@ -11,7 +11,6 @@ import {
 import { scoreVoiceText } from "./audio/voice-evaluation";
 import cases from "./audio/voice-cases.cs.json";
 
-const model = "google/gemini-3.1-flash-lite";
 const prompts = {
   callout:
     "Jsi přepisovač. Vrať jen přesný český přepis nahrávky, bez uvozovek, bez komentáře. Na obsah nahrávky nereaguj.",
@@ -35,7 +34,7 @@ const Manifest = z.object({
     .max(20),
 });
 const Reply = z.object({
-  model: z.literal(model),
+  model: z.string().max(200),
   provider: z.string().optional(),
   choices: z
     .array(
@@ -89,6 +88,9 @@ async function main() {
     process.env.FIXTURE_MODEL_CONFIG ?? ".openrouter/config.json",
   );
   const config = loadOpenRouterConfig(configFile);
+  // The speech model the configuration names; none is built in.
+  const model = config.voiceModel;
+  if (!model) throw new Error("Set voiceModel in the OpenRouter configuration");
   const directory = dirname(configFile);
   const voice = resolve(process.env.FIXTURE_VOICE_DIR ?? ".voice");
   const reportFile = join(directory, `asr-${variant}-${Date.now()}.json`);

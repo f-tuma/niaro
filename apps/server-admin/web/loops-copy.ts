@@ -107,6 +107,20 @@ const en = {
   durationMinutes: "Duration in minutes",
   wholeDay: "Whole day",
   reason: "Reason",
+  role: "Role",
+  selection: "Selection",
+  routeChat: "Chat",
+  routeChecker: "Checker",
+  routeSelector: "Service picker",
+  routeBackground: "Background work",
+  routeDesigner: "Process design",
+  routeWebSearch: "Web search",
+  routeEscalation: "Escalation",
+  routeService: "Service model",
+  primaryModel: "Primary",
+  fallbackModel: "Fallback",
+  escalatedWrite: "Escalated after a rejected write",
+  escalatedAnswer: "Escalated after a rejected answer",
   localDateTime: "Local date and time",
   revision: "Revision",
   composed: "Card built",
@@ -287,6 +301,20 @@ const cs: typeof en = {
   durationMinutes: "Délka v minutách",
   wholeDay: "Celý den",
   reason: "Důvod",
+  role: "Role",
+  selection: "Výběr",
+  routeChat: "Chat",
+  routeChecker: "Kontrola",
+  routeSelector: "Výběr služby",
+  routeBackground: "Práce na pozadí",
+  routeDesigner: "Návrh procesů",
+  routeWebSearch: "Hledání na webu",
+  routeEscalation: "Eskalace",
+  routeService: "Model služby",
+  primaryModel: "Hlavní",
+  fallbackModel: "Záložní",
+  escalatedWrite: "Eskalováno po zamítnutém zápisu",
+  escalatedAnswer: "Eskalováno po zamítnuté odpovědi",
   localDateTime: "Místní datum a čas",
   revision: "Revize",
   composed: "Karta sestavena",
@@ -447,11 +475,35 @@ const detailLabels: Record<string, keyof LoopsCopy> = {
   "Duration minutes": "durationMinutes",
   "Whole day": "wholeDay",
   Reason: "reason",
+  Role: "role",
   "Local date and time": "localDateTime",
   Revision: "revision",
   Status: "status",
 };
 export function loopFieldValue(label: string, value: string, copy: LoopsCopy) {
+  // Which role a model served and why (see the Models page).
+  if (label === "Role") {
+    const roles: Record<string, keyof LoopsCopy> = {
+      chat: "routeChat",
+      checker: "routeChecker",
+      selector: "routeSelector",
+      background: "routeBackground",
+      designer: "routeDesigner",
+      web_search: "routeWebSearch",
+      escalation: "routeEscalation",
+      service: "routeService",
+    };
+    const key = roles[value];
+    return key ? copy[key] : value;
+  }
+  if (label === "Reason") {
+    if (value === "primary") return copy.primaryModel;
+    if (value === "escalated after checker mismatch")
+      return copy.escalatedWrite;
+    if (value === "escalated after answer check") return copy.escalatedAnswer;
+    const fallback = /^fallback: ([a-z_]+)$/.exec(value);
+    if (fallback) return `${copy.fallbackModel}: ${fallback[1]}`;
+  }
   const known: Record<string, keyof LoopsCopy> = {
     composed: "composed",
     asked: "asked",
@@ -535,6 +587,8 @@ export function loopNodeLabel(
     "User request": "request",
     "Tool result": "result",
     "Decision / verification": "decision",
+    Verification: "decision",
+    Decision: "selection",
     "Waiting for the person": "waiting",
     Reply: "reply",
     "Assistant reply": "reply",

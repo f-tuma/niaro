@@ -6,7 +6,10 @@ import { VoiceServiceCard } from "./VoiceServiceCard";
 const meta = {
   title: "Voice/Transcription service",
   component: VoiceServiceCard,
-  args: { language: "en", capabilities: voiceCapabilities(true, "openrouter") },
+  args: {
+    language: "en",
+    capabilities: voiceCapabilities(true, "openrouter", "example/speech-model"),
+  },
 } satisfies Meta<typeof VoiceServiceCard>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -15,7 +18,13 @@ export const Local: Story = { args: { capabilities: voiceCapabilities(true) } };
 export const Checking: Story = { args: { capabilities: undefined } };
 export const Unavailable: Story = { args: { capabilities: null } };
 export const Expired: Story = {
-  args: { capabilities: voiceCapabilities(false, "openrouter") },
+  args: {
+    capabilities: voiceCapabilities(
+      false,
+      "openrouter",
+      "example/speech-model",
+    ),
+  },
 };
 export const CzechNarrow: Story = {
   args: { language: "cs" },

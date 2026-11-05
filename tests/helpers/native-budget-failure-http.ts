@@ -22,6 +22,7 @@ import type { CatalogContext } from "../../apps/server-identity/catalog-controll
 import type { StoredInvocation } from "../../apps/server-identity/service-catalog";
 import type { ServiceResult } from "../../packages/protocol/service-result";
 import { coordinatorHttpFixture } from "./process-coordinator-http";
+import { routingCommand } from "./model-policy";
 
 export const budgetFailureScenarios = [
   "tools-unpriced",
@@ -86,14 +87,13 @@ export async function runNativeBudgetFailureCase(
       },
     });
     await h.catalog({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 0,
         planner: "model",
         modelId: h.modelId,
         decision: { enabled: true, modelId: decisionId, minConfidence: 0.8 },
         services: [{ serviceId: h.serviceId, modelId: h.modelId }],
-      },
+      }),
     });
     const policy = await h.request(
       "owner",

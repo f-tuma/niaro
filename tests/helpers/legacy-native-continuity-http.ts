@@ -29,6 +29,7 @@ import {
 import { createMemoryRuntime } from "../../apps/server-identity/memory-runtime";
 import { copyProofTuple, proofManifest } from "./process-restore-proof-matrix";
 import type { StoppedCopyProof } from "./process-design-http";
+import { routingCommand } from "./model-policy";
 
 export const historicalModes = ["agent", "progressive"] as const;
 export type HistoricalMode = (typeof historicalModes)[number];
@@ -138,14 +139,13 @@ export async function runLegacyContinuityHttpCase(
     const fact = MemoryViewSchema.parse(remembered.data).items[0]!;
     assert(fact);
     await h.catalog({
-      type: "saveRouting",
-      routing: {
+      ...routingCommand({
         revision: 0,
         planner: mode === "agent" ? "model" : "jev",
         modelId: h.modelId,
         decision: { enabled: true, modelId: decisionId, minConfidence: 0.8 },
         services: [{ serviceId: h.serviceId, modelId: h.modelId }],
-      },
+      }),
     });
     const writeService = h.identity["catalog"].store.service(
       scope.workspaceId,
@@ -392,6 +392,8 @@ export async function runLegacyContinuityHttpCase(
           false,
           h.identity["plugins"].read(scope.workspaceId).settings,
           memory,
+          // These fixtures seed a historical turn of this loop.
+          mode,
         ),
       };
     };

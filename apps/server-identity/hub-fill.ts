@@ -258,16 +258,13 @@ export function createHubFillAccess(input: {
             input.check();
             if (++calls > HUB_FILL_LIMITS.modelCalls)
               throw new IdentityError(429, "hub_fill_limit");
-            const current = store.resolveModel(
-              target.organizationId,
-              target.workspaceId,
-            );
+            // The model must still serve its role, unchanged.
             if (
-              !current ||
-              current.model.id !== selected.model.id ||
-              current.model.revision !== selected.model.revision ||
-              current.provider.id !== selected.provider.id ||
-              current.provider.revision !== selected.provider.revision
+              !store.stillRouted(
+                target.organizationId,
+                target.workspaceId,
+                selected,
+              )
             )
               throw new IdentityError(409, "model_unavailable");
             store.useProvider(

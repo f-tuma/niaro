@@ -18,17 +18,12 @@ import {
   type Provider,
   type CatalogModel,
   type DiscoveredModel,
-  type Catalog,
 } from "../../../packages/protocol/service-catalog";
 import { Button } from "@admin/components/ui/button";
 import { Input } from "@admin/components/ui/input";
 import { Switch } from "@admin/components/ui/switch";
 import { Checkbox } from "@admin/components/ui/checkbox";
 import { Progress } from "@admin/components/ui/progress";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@admin/components/ui/toggle-group";
 import {
   Select,
   SelectContent,
@@ -43,12 +38,6 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@admin/components/ui/field";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-  InputGroupText,
-} from "@admin/components/ui/input-group";
 import {
   Card,
   CardContent,
@@ -97,7 +86,6 @@ import {
   DropdownMenuSeparator,
 } from "@admin/components/ui/dropdown-menu";
 import { StatusBadge } from "@admin/components/console/status";
-import { SettingRow, SettingRows } from "@admin/components/console/setting-row";
 import { EntityIcon } from "@admin/components/console/entity-icon";
 import { Spinner } from "@admin/components/ui/spinner";
 import {
@@ -105,11 +93,9 @@ import {
   CatalogBoundary,
   type CatalogState,
 } from "./catalog-shared";
-import { ServiceAvatar } from "./service-avatar";
 import { ProviderModelPicker } from "./provider-model-picker";
 import { ModelChoicePicker, type ModelChoice } from "./model-choice-picker";
 import { useAdmin } from "./context";
-import { useShellCopy } from "./shell-copy";
 import { ApiError } from "./lib/api";
 
 /** Short lists are scanned by eye; search appears past this many items. */
@@ -1110,6 +1096,7 @@ function ModelForm({
           audioInput: model.audioInput,
           audioOutput: model.audioOutput,
           kind: model.kind,
+          voices: model.voices ?? [],
         }
       : {
           providerId: provider.id,
@@ -1120,8 +1107,19 @@ function ModelForm({
           audioInput: seed?.audioInput === true,
           audioOutput: seed?.audioOutput === true,
           kind: seed?.kind ?? ("chat" as CatalogModel["kind"]),
+          voices: [] as NonNullable<CatalogModel["voices"]>,
         },
   );
+  // Reviewed voices as typed: "id" or "id=Name", comma-separated.
+  const [voiceText, setVoiceText] = useState(
+    (model?.voices ?? [])
+      .map(({ voice, label }) =>
+        label === voice ? voice : `${voice}=${label}`,
+      )
+      .join(", "),
+  );
+  const speaks =
+    value.kind === "speech" || (value.kind === "chat" && value.audioOutput);
   const [revision] = useState(model?.revision ?? 0);
   function setKind(kind: CatalogModel["kind"]) {
     setValue({
@@ -1132,9 +1130,6 @@ function ModelForm({
             tools: false,
             audioInput: false,
             audioOutput: kind === "speech",
-            model:
-              value.model || (kind === "decision" ? "typesafe/jev-1.13" : ""),
-            name: value.name || (kind === "decision" ? "Jev 1.13" : ""),
           }
         : {}),
     });
@@ -1144,7 +1139,20 @@ function ModelForm({
       className="flex min-h-0 flex-1 flex-col"
       onSubmit={(e) => {
         e.preventDefault();
-        const settings = CatalogModelSettings.safeParse(value);
+        const voices = speaks
+          ? voiceText
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean)
+              .map((item) => {
+                const [voice = "", label] = item.split("=");
+                return {
+                  voice: voice.trim(),
+                  label: (label ?? voice).trim().slice(0, 40),
+                };
+              })
+          : [];
+        const settings = CatalogModelSettings.safeParse({ ...value, voices });
         if (!settings.success) {
           state.setError(copy.invalid);
           return;
@@ -1204,9 +1212,6 @@ function ModelForm({
                   <SelectItem value="decision">{copy.decisionModel}</SelectItem>
                 </SelectContent>
               </Select>
-              {value.kind === "decision" && (
-                <FieldDescription>{copy.decisionModelHint}</FieldDescription>
-              )}
             </Field>
             {(value.kind === "chat" || value.kind === "router") && (
               <Card variant="list">
@@ -1243,6 +1248,18 @@ function ModelForm({
                   </div>
                 )}
               </Card>
+            )}
+            {speaks && (
+              <Field>
+                <FieldLabel htmlFor="model-voices">{copy.voices}</FieldLabel>
+                <Input
+                  id="model-voices"
+                  value={voiceText}
+                  maxLength={2000}
+                  onChange={(e) => setVoiceText(e.target.value)}
+                />
+                <FieldDescription>{copy.voicesHint}</FieldDescription>
+              </Field>
             )}
             {(value.kind === "chat" || value.kind === "router") &&
               seed?.tools === null && (
@@ -1394,387 +1411,5 @@ export function ModelSelect({
         </FieldDescription>
       )}
     </Field>
-  );
-}
-
-export function RoutingPage() {
-  const state = useCatalog();
-  return (
-    <>
-      <PageHeader title={state.copy.routing} />
-      <CatalogBoundary state={state}>
-        {state.query.data?.canManage ? (
-          <RoutingForm key={state.target.workspaceId} state={state} />
-        ) : (
-          <NotManager state={state} />
-        )}
-      </CatalogBoundary>
-    </>
-  );
-}
-
-function RoutingForm({ state }: { state: CatalogState }) {
-  const { copy } = state;
-  const stage = useShellCopy();
-  const [draft, setRouting] = useState<Catalog["routing"] | null>(null);
-  const routing = draft ?? state.query.data!.routing;
-  const catalog = state.query.data!;
-  const invalid =
-    (routing.decision.enabled &&
-      (!routing.decision.modelId || !routing.modelId)) ||
-    routing.decision.minConfidence < 0.5 ||
-    routing.decision.minConfidence > 1;
-  const voiceIn = (
-    <Section
-      title={stage.stageVoiceIn}
-      actions={
-        !catalog.voiceAvailable && (
-          <StatusBadge tone="warning">{copy.voiceSetup}</StatusBadge>
-        )
-      }
-    >
-      <SettingRows>
-        <SettingRow label={copy.voiceMethod} labelId="voice-method-label" wide>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            className="w-full"
-            aria-labelledby="voice-method-label"
-            value={routing.voiceMethod}
-            disabled={state.busy}
-            onValueChange={(method) => {
-              if (method !== "interpreter" && method !== "transcription")
-                return;
-              if (method === routing.voiceMethod) return;
-              setRouting({
-                ...routing,
-                voiceMethod: method,
-                voiceModelId: null,
-                voiceMode: "disabled",
-              });
-            }}
-          >
-            <ToggleGroupItem value="transcription" className="flex-1">
-              {copy.directTranscription}
-            </ToggleGroupItem>
-            <ToggleGroupItem value="interpreter" className="flex-1">
-              {copy.voiceInterpreter}
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </SettingRow>
-        <SettingRow label={copy.model} wide>
-          <ModelSelect
-            state={state}
-            hideLabel
-            value={
-              routing.voiceMode === "legacy"
-                ? catalog.legacyVoiceAvailable
-                  ? "legacy"
-                  : ""
-                : (routing.voiceModelId ?? "")
-            }
-            onChange={(id) =>
-              setRouting({
-                ...routing,
-                voiceModelId: id === "legacy" ? null : id || null,
-                voiceMode:
-                  id === "legacy" ? "legacy" : id ? "catalog" : "disabled",
-              })
-            }
-            id="routing-voice"
-            label={`${stage.stageVoiceIn}: ${copy.model}`}
-            fallback={copy.voiceOff}
-            capability={
-              routing.voiceMethod === "transcription"
-                ? "transcription"
-                : "audioInput"
-            }
-            legacy={catalog.legacyVoiceAvailable}
-          />
-        </SettingRow>
-        {routing.voiceMethod !== "transcription" && (
-          <SettingRow label={copy.meetingTranscription} wide>
-            <ModelSelect
-              state={state}
-              hideLabel
-              value={routing.meetingTranscriptionModelId ?? ""}
-              onChange={(id) =>
-                setRouting({
-                  ...routing,
-                  meetingTranscriptionModelId: id || null,
-                })
-              }
-              id="routing-meeting-transcription"
-              label={`${copy.meetingTranscription}: ${copy.model}`}
-              fallback={copy.meetingTranscriptionFallback}
-              capability="transcription"
-            />
-          </SettingRow>
-        )}
-      </SettingRows>
-    </Section>
-  );
-  const voiceOut = (
-    <Section title={stage.stageVoiceOut}>
-      <SettingRows>
-        <SettingRow label={copy.voiceMethod} labelId="speech-method-label" wide>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            className="w-full"
-            aria-labelledby="speech-method-label"
-            value={routing.speech.method}
-            disabled={state.busy}
-            onValueChange={(method) => {
-              if (method !== "reader" && method !== "speech") return;
-              if (method !== routing.speech.method)
-                setRouting({
-                  ...routing,
-                  speech: { ...routing.speech, method, modelId: null },
-                });
-            }}
-          >
-            <ToggleGroupItem value="reader" className="flex-1">
-              {copy.speechReader}
-            </ToggleGroupItem>
-            <ToggleGroupItem value="speech" className="flex-1">
-              {copy.speechDirect}
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </SettingRow>
-        <SettingRow label={copy.model} wide>
-          <ModelSelect
-            state={state}
-            hideLabel
-            value={routing.speech.modelId ?? ""}
-            onChange={(id) =>
-              setRouting({
-                ...routing,
-                speech: { ...routing.speech, modelId: id || null },
-              })
-            }
-            id="routing-speech"
-            label={`${stage.stageVoiceOut}: ${copy.model}`}
-            fallback={copy.voiceOff}
-            capability={
-              routing.speech.method === "reader" ? "audioOutput" : "speech"
-            }
-          />
-        </SettingRow>
-        <SettingRow label={copy.speechVoice} htmlFor="speech-voice" wide>
-          <Input
-            id="speech-voice"
-            disabled={state.busy}
-            value={routing.speech.voice}
-            maxLength={200}
-            onChange={(e) =>
-              setRouting({
-                ...routing,
-                speech: { ...routing.speech, voice: e.target.value },
-              })
-            }
-          />
-        </SettingRow>
-        {routing.speech.method === "reader" && (
-          <SettingRow
-            label={copy.speechRetention}
-            meta={copy.speechRetentionMeta}
-            htmlFor="speech-retention"
-            disabled={state.busy}
-          >
-            <Switch
-              id="speech-retention"
-              disabled={state.busy}
-              checked={routing.speech.zeroDataRetention}
-              onCheckedChange={(zeroDataRetention) =>
-                setRouting({
-                  ...routing,
-                  speech: { ...routing.speech, zeroDataRetention },
-                })
-              }
-            />
-          </SettingRow>
-        )}
-      </SettingRows>
-    </Section>
-  );
-  const decision = (
-    <Section title={stage.stageDecision}>
-      <SettingRows>
-        <SettingRow label={copy.enableDecision} htmlFor="decision-enabled">
-          <Switch
-            id="decision-enabled"
-            checked={routing.decision.enabled}
-            onCheckedChange={(enabled) =>
-              setRouting({
-                ...routing,
-                decision: { ...routing.decision, enabled },
-              })
-            }
-          />
-        </SettingRow>
-        {routing.decision.enabled && (
-          <>
-            <SettingRow label={copy.model} wide>
-              <ModelSelect
-                state={state}
-                hideLabel
-                value={routing.decision.modelId ?? ""}
-                onChange={(id) =>
-                  setRouting({
-                    ...routing,
-                    decision: { ...routing.decision, modelId: id || null },
-                  })
-                }
-                id="routing-decision"
-                label={copy.decisionModel}
-                fallback={copy.selectModel}
-                capability="decision"
-              />
-            </SettingRow>
-            <SettingRow
-              label={copy.minConfidence}
-              htmlFor="decision-confidence"
-            >
-              <InputGroup className="w-28">
-                <InputGroupInput
-                  id="decision-confidence"
-                  type="number"
-                  min={50}
-                  max={100}
-                  step={1}
-                  disabled={state.busy}
-                  value={Math.round(routing.decision.minConfidence * 100)}
-                  onChange={(e) =>
-                    setRouting({
-                      ...routing,
-                      decision: {
-                        ...routing.decision,
-                        minConfidence: Number(e.target.value) / 100,
-                      },
-                    })
-                  }
-                />
-                <InputGroupAddon align="inline-end">
-                  <InputGroupText>%</InputGroupText>
-                </InputGroupAddon>
-              </InputGroup>
-            </SettingRow>
-          </>
-        )}
-      </SettingRows>
-    </Section>
-  );
-  return (
-    <>
-      <div className="@container/routing">
-        <div className="grid items-start gap-8 @4xl/routing:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-8">
-            <Section title={stage.stageModel}>
-              <SettingRows>
-                <SettingRow label={copy.defaultModel} wide>
-                  <ModelSelect
-                    state={state}
-                    hideLabel
-                    value={routing.modelId ?? ""}
-                    onChange={(id) =>
-                      setRouting({ ...routing, modelId: id || null })
-                    }
-                    id="routing-default"
-                    label={copy.defaultModel}
-                    fallback={copy.voiceOff}
-                  />
-                </SettingRow>
-              </SettingRows>
-            </Section>
-            <Section title={copy.serviceModels} count={catalog.services.length}>
-              {catalog.services.length ? (
-                <SettingRows>
-                  {catalog.services.map((s) => (
-                    <SettingRow
-                      key={s.id}
-                      wide
-                      label={
-                        <>
-                          <ServiceAvatar service={s} state={state} />
-                          <span className="truncate">{s.name}</span>
-                        </>
-                      }
-                    >
-                      <ModelSelect
-                        state={state}
-                        id={`route-${s.id}`}
-                        hideLabel
-                        value={
-                          routing.services.find((x) => x.serviceId === s.id)
-                            ?.modelId ?? ""
-                        }
-                        onChange={(id) =>
-                          setRouting({
-                            ...routing,
-                            services: [
-                              ...routing.services.filter(
-                                (x) => x.serviceId !== s.id,
-                              ),
-                              { serviceId: s.id, modelId: id || null },
-                            ],
-                          })
-                        }
-                        label={`${copy.model}: ${s.name}`}
-                        fallback={copy.useDefault}
-                        inheritedModelId={routing.modelId}
-                      />
-                    </SettingRow>
-                  ))}
-                </SettingRows>
-              ) : (
-                <Empty variant="outline">
-                  <EmptyHeader>
-                    <EmptyTitle>{copy.noServices}</EmptyTitle>
-                  </EmptyHeader>
-                  <EmptyContent>
-                    <Button asChild variant="outline">
-                      <Link to="/services">{copy.addService}</Link>
-                    </Button>
-                  </EmptyContent>
-                </Empty>
-              )}
-            </Section>
-            {decision}
-          </div>
-          <div className="flex min-w-0 flex-col gap-8">
-            {voiceIn}
-            {voiceOut}
-          </div>
-        </div>
-      </div>
-      {(draft !== null || state.busy) && (
-        <SaveBar status={copy.unsavedChanges}>
-          <Button
-            variant="ghost"
-            disabled={state.busy || draft === null}
-            onClick={() => setRouting(null)}
-          >
-            {copy.discardChanges}
-          </Button>
-          <Button
-            disabled={state.busy || draft === null || invalid}
-            onClick={() =>
-              void state
-                .mutate("command", {
-                  type: "saveRouting",
-                  routing: { ...routing, planner: "model" },
-                })
-                .then((result) => {
-                  if (result) setRouting(null);
-                })
-            }
-          >
-            {state.busy && <Spinner data-icon="inline-start" />}
-            {copy.save}
-          </Button>
-        </SaveBar>
-      )}
-    </>
   );
 }

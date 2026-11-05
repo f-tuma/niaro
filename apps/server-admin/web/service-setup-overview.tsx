@@ -386,7 +386,8 @@ function ServiceModel({
   service: Service;
 }) {
   const { copy } = state;
-  const routing = state.query.data!.routing;
+  const policy = state.query.data!.policy;
+  const workspace = policy.workspace.policy;
   return (
     <ModelSelect
       state={state}
@@ -395,16 +396,25 @@ function ServiceModel({
       label={copy.model}
       fallback={copy.useDefault}
       value={service.modelId ?? ""}
-      inheritedModelId={routing.modelId}
+      inheritedModelId={policy.effective.roles.chat?.models[0] ?? null}
       showDefaultWarning
       onChange={(modelId) =>
+        // One model here; the Models page edits the whole list.
         void state.mutate("command", {
-          type: "saveRouting",
-          routing: {
-            ...routing,
+          type: "saveWorkspaceModelPolicy",
+          revision: policy.workspace.revision,
+          policy: {
+            ...workspace,
             services: [
-              ...routing.services.filter((s) => s.serviceId !== service.id),
-              { serviceId: service.id, modelId: modelId || null },
+              ...workspace.services.filter((s) => s.serviceId !== service.id),
+              ...(modelId
+                ? [
+                    {
+                      serviceId: service.id,
+                      route: { models: [modelId], tier: null, fallback: false },
+                    },
+                  ]
+                : []),
             ],
           },
         })

@@ -7,7 +7,7 @@ import type { CatalogContext, CatalogController } from "./catalog-controller";
 import type { CatalogRuntime, ServiceAnswer } from "./catalog-runtime";
 import type { AgentMemory, AgentMemoryMetadata } from "./agent-memory";
 import { complete, type ModelMessage } from "../server-integrations/models";
-import { decideRoute } from "../server-integrations/decisions";
+import { decideChoice } from "../server-integrations/decisions";
 import {
   createInternalPlugins,
   PluginReceiptSchema,
@@ -705,13 +705,16 @@ export function createAgentRuntime(
       question: string,
       criteria: Record<string, string>,
       state: Record<string, unknown> = {},
+      role: "selector" | "checker" = "selector",
     ) {
       await validateSources();
       await refreshMemory();
       const selected = await context.serial(async () => {
         await check();
         context.validateRequest?.();
-        return store.resolveDecision(organizationId, scope.workspaceId);
+        return role === "checker"
+          ? store.resolveChecker(organizationId, scope.workspaceId)
+          : store.resolveDecision(organizationId, scope.workspaceId);
       });
       if (!selected) return null;
       const traceStep = startLoopStep(
@@ -723,7 +726,7 @@ export function createAgentRuntime(
           { label: "Model", value: selected.model.model },
         ],
       );
-      const answer = await decideRoute(
+      const answer = await decideChoice(
         controller.transport,
         selected,
         {
@@ -753,7 +756,8 @@ Latest message: ${turn.text}`,
       ]);
       return answer;
     }
-    const minimum = inventory.routing.decision.minConfidence;
+    const minimum = store.routeOptions(organizationId, scope.workspaceId)
+      .selector.minConfidence;
     const describe = (s: (typeof services)[number]) =>
       `${s.description ? s.description + " " : ""}Actions: ${s.actions
         .map((a) => a.name)
@@ -881,6 +885,7 @@ Latest message: ${turn.text}`,
             "No: the action or a parameter contradicts, invents or goes beyond the request.",
         },
         { action: name, description, input },
+        "checker",
       );
       return !(
         answer &&
@@ -945,6 +950,7 @@ Latest message: ${turn.text}`,
               .map((m) => (m.content ?? "").slice(0, 1500))
               .slice(-6),
           },
+          "checker",
         );
       } catch (error) {
         // An unavailable decision model cannot certify an uncertain write.

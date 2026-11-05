@@ -22,6 +22,7 @@ import {
   type OutputVoiceSnapshot,
 } from "../packages/protocol/output-voice";
 import { CatalogSchema } from "../packages/protocol/service-catalog";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 test(
   "actual ClientSession shares own mobile/browser voice through reference HTTP without provider or workflow calls",
@@ -194,6 +195,12 @@ test(
         audioOutput: true,
         tools: false,
         enabled: true,
+        // The voices an administrator reviewed for this model.
+        voices: [
+          { voice: "alloy", label: "Alloy" },
+          { voice: "echo", label: "Echo" },
+          { voice: "shimmer", label: "Shimmer" },
+        ],
       },
     })) as { id: string };
     const inventory = async () =>
@@ -201,16 +208,15 @@ test(
         await admin(`api/identity/catalog?${new URLSearchParams(target)}`),
       );
     await command({
-      type: "saveRouting",
-      routing: {
-        ...(await inventory()).routing,
+      ...routingCommand({
+        ...currentRouting((await inventory()).policy),
         speech: {
           modelId: model.id,
           method: "reader",
           voice: "cedar",
           zeroDataRetention: false,
         },
-      },
+      }),
     });
     const issue = async (ws = workspaceId) => {
       const issued = (await admin("api/identity/app/session", {

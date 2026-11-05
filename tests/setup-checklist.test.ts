@@ -56,7 +56,7 @@ const catalog = (patch: Partial<Catalog> = {}) =>
     providers: [provider],
     models: [model],
     services: [service],
-    routing: { modelId: model.id },
+    policy: { effective: { roles: { chat: { models: [model.id] } } } },
     ...patch,
   }) as unknown as Catalog;
 const open = (input: Partial<Input> = {}) =>
@@ -104,7 +104,9 @@ describe("admin first-run checklist", () => {
           providers: [],
           models: [],
           services: [],
-          routing: { modelId: null } as Catalog["routing"],
+          policy: {
+            effective: { roles: { chat: { models: [] } } },
+          } as unknown as Catalog["policy"],
         }),
         budget: null,
         members: 1,
@@ -129,7 +131,9 @@ describe("admin first-run checklist", () => {
     expect(
       open({
         catalog: catalog({
-          routing: { modelId: null } as Catalog["routing"],
+          policy: {
+            effective: { roles: { chat: { models: [] } } },
+          } as unknown as Catalog["policy"],
         }),
       }),
     ).toEqual(["routing", "budget"]);

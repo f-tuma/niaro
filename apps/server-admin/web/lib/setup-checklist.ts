@@ -39,7 +39,9 @@ export function setupChecklist(input: {
   const usable = catalog.models.filter(
     (m) => m.enabled && providers.some((p) => p.id === m.providerId),
   );
-  const chat = usable.find((m) => m.id === catalog.routing.modelId);
+  const chat = usable.find(
+    (m) => m.id === catalog.policy.effective.roles.chat?.models[0],
+  );
   const chatProvider = chat
     ? providers.find((p) => p.id === chat.providerId)
     : undefined;

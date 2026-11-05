@@ -29,6 +29,7 @@ import {
   finishLoopTrace,
   finishLoopStep,
   startLoopStep,
+  routeDetails,
   toolOutcome,
 } from "./loop-trace";
 import {
@@ -550,17 +551,23 @@ export function createNativeCatalogRuntime(
           if (event.type === "model-start") {
             steps.set(
               "model",
-              startLoopStep(
-                state,
-                "model",
-                "Mastra model",
-                event.model
+              startLoopStep(state, "model", "Mastra model", [
+                ...(event.model
                   ? [{ label: "Model", value: loopText(event.model, 160) }]
-                  : [],
-              ),
+                  : []),
+                ...routeDetails(
+                  event.role && event.reason
+                    ? { route: { role: event.role, reason: event.reason } }
+                    : {},
+                ),
+              ]),
             );
           } else if (event.type === "model-end") {
-            finishLoopStep(steps.get("model"), "succeeded");
+            // A step that never reached its provider before a fallback failed.
+            finishLoopStep(
+              steps.get("model"),
+              event.failed ? "failed" : "succeeded",
+            );
           } else if (event.type === "tool-start") {
             const step = startLoopStep(
               state,

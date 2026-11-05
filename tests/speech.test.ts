@@ -1,4 +1,9 @@
 import {
+  emptyOrganizationPolicy,
+  emptyWorkspacePolicy,
+  policyView,
+} from "../packages/protocol/model-policy";
+import {
   readerAudio,
   readsVerbatim,
   speakableText,
@@ -9,7 +14,6 @@ import {
 import {
   CatalogModelSchema,
   ProviderSchema,
-  Routing,
 } from "../packages/protocol/service-catalog";
 import type { IntegrationTransport } from "../apps/server-integrations/transport";
 import {
@@ -202,13 +206,17 @@ test("reader uses literal text with no tools/temperature; dedicated TTS uses bin
   ).rejects.toThrow("speech_too_long");
   expect(transport.mock.calls).toHaveLength(calls);
 });
-test("legacy routing keeps speech disabled independently of transcription", () => {
-  expect(
-    Routing.parse({ revision: 0, modelId: null, services: [] }).speech,
-  ).toEqual({
-    modelId: null,
-    method: "reader",
-    voice: "alloy",
+test("a policy nobody saved keeps spoken replies off, independently of transcription", () => {
+  const view = policyView(
+    {
+      organization: { revision: 0, policy: emptyOrganizationPolicy() },
+      workspace: { revision: 0, policy: emptyWorkspacePolicy() },
+    },
+    [],
+  );
+  expect(view.effective.roles.speech?.models).toEqual([]);
+  expect(view.effective.options.speech).toEqual({
+    voice: null,
     zeroDataRetention: true,
   });
 });

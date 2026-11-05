@@ -50,7 +50,7 @@ The administration Overview shows a checklist. Work through it from the top
 ([administration guide](administration.md)):
 
 1. An **AI provider** with a key (for example OpenRouter or OpenAI).
-2. A **model**, set as the workspace default in **Model choice**.
+2. A **model**, set for Chat in **Models** (the organization default serves every workspace).
 3. **Usage limits** in enforce mode, with a price for that model. Without them
    the process designer and process tests stay disabled.
 4. **Services**: add the CRM or Microsoft 365, add the actions you want, and

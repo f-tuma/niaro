@@ -15,6 +15,7 @@ import type { IntegrationTransport } from "../apps/server-integrations/transport
 import type { ModelMessage } from "../apps/server-integrations/models";
 import { memoryCorrectionIntent } from "../apps/server-identity/memory-runtime";
 import { systemEvidence } from "./agent-trust/harness";
+import { routingCommand } from "./helpers/model-policy";
 
 // Full identity → catalog planner → scoped memory hook; synthetic model only.
 test("memory chat: explicit notes persist into new sessions, opt-out and deletion invalidate actual inference", async () => {
@@ -186,8 +187,12 @@ test("memory chat: explicit notes persist into new sessions, opt-out and deletio
     const modelId = (await request(`api/identity/catalog?${query}`)).models[0]
       .id;
     await catalog({
-      type: "saveRouting",
-      routing: { revision: 0, planner: "model", modelId, services: [] },
+      ...routingCommand({
+        revision: 0,
+        planner: "model",
+        modelId,
+        services: [],
+      }),
     });
     const grant = await request("api/identity/mobile/pairing", target);
     const paired = await fetch(`${origin}/v1/${workspaceId}/auth/pair`, {

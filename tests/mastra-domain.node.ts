@@ -34,6 +34,7 @@ import type { IntegrationTransport } from "../apps/server-integrations/transport
 import { legacyQuestionCandidate } from "../apps/server-identity/legacy-question";
 import { HubStore } from "../apps/server-identity/hub-store";
 import { createHub } from "../apps/server-identity/hub";
+import { routingCommand } from "./helpers/model-policy";
 /** Everything the model reads: the stable instructions and the turn's context. */
 const promptText = (prepared: { instructions: string; context?: string }) =>
   prepared.instructions + "\n" + (prepared.context ?? "");
@@ -293,9 +294,9 @@ function fixture(path = ":memory:") {
         })
       : null;
     command({
-      type: "saveRouting",
-      routing: {
-        revision: store.routing(target.workspaceId).revision,
+      ...routingCommand({
+        revision: store.modelPolicies(target.organizationId, target.workspaceId)
+          .workspace.revision,
         modelId: chatId,
         services: [],
         decision: {
@@ -303,7 +304,7 @@ function fixture(path = ":memory:") {
           modelId: decisionId,
           minConfidence: 0.8,
         },
-      },
+      }),
     });
     return store.provider(target.organizationId, providerId).provider;
   };
@@ -2977,6 +2978,122 @@ test("a refused first write stays explicitly unverified after an unsupported com
       /consistency_checker_rejected_no_dispatch/,
       "the final checker receives the durable no-dispatch outcome",
     );
+  } finally {
+    await f.memoryStore.close();
+    f.db.close();
+  }
+});
+
+test("a write the checker rejects is answered once by the escalation model, then chat again", async () => {
+  const f = fixture();
+  try {
+    const provider = f.configureModels();
+    const strong = f.store.command(
+      CatalogCommand.parse({
+        ...target,
+        type: "saveModel",
+        revision: 0,
+        settings: {
+          providerId: provider.id,
+          model: "TEST-strong",
+          name: "TEST strong",
+          enabled: true,
+          tools: true,
+          kind: "chat",
+        },
+      }),
+    );
+    const current = f.store.modelPolicies(
+      target.organizationId,
+      target.workspaceId,
+    ).workspace;
+    f.store.command(
+      CatalogCommand.parse({
+        ...target,
+        type: "saveWorkspaceModelPolicy",
+        revision: current.revision,
+        policy: {
+          ...current.policy,
+          options: {
+            ...current.policy.options,
+            escalation: { mode: "escalate", models: [strong], tier: null },
+          },
+        },
+      }),
+    );
+    const createNote = f.addAction("TEST create note", {
+      type: "object",
+      properties: { title: { type: "string" } },
+      required: ["title"],
+      additionalProperties: false,
+    });
+    const session = await f
+      .domain()
+      .begin("TEST.escalated-write", "Create a note for TEST Person", "en", []);
+    const first = await session.prepareModel();
+    assert.equal(first.selected.model.model, "TEST-chat");
+    assert.equal(first.selected.route?.reason, "primary");
+    await f.expose(session);
+    f.setDecision("mismatch");
+    const refused = (await f.invoke(
+      session,
+      createNote,
+      { title: "TEST invented note" },
+      "TEST-escalated-create-note",
+    )) as { error: string };
+    assert.equal(refused.error, "checker_mismatch");
+    // The step that answers the rejection runs on the escalation model.
+    const escalated = await session.prepareModel();
+    assert.equal(escalated.selected.model.model, "TEST-strong");
+    assert.deepEqual(escalated.selected.route, {
+      role: "escalation",
+      index: 0,
+      fallback: false,
+      reason: "escalated after checker mismatch",
+    });
+    assert.equal(session.state.escalation, "used");
+    // The escalated step may not write again in this request, and the run
+    // escalates once: the next step is the chat model's.
+    const again = (await f.invoke(
+      session,
+      createNote,
+      { title: "TEST another invented note" },
+      "TEST-escalated-create-note-2",
+    )) as { error: string };
+    assert.equal(again.error, "partial_write_requires_new_request");
+    const after = await session.prepareModel();
+    assert.equal(after.selected.model.model, "TEST-chat");
+    assert.equal(f.dispatches(), 0);
+  } finally {
+    await f.memoryStore.close();
+    f.db.close();
+  }
+});
+
+test("without escalation a rejected write stays with the chat model", async () => {
+  const f = fixture();
+  try {
+    f.configureModels();
+    const createNote = f.addAction("TEST create note", {
+      type: "object",
+      properties: { title: { type: "string" } },
+      required: ["title"],
+      additionalProperties: false,
+    });
+    const session = await f
+      .domain()
+      .begin("TEST.stopped-write", "Create a note for TEST Person", "en", []);
+    await f.expose(session);
+    f.setDecision("mismatch");
+    await f.invoke(
+      session,
+      createNote,
+      { title: "TEST invented note" },
+      "TEST-stopped-create-note",
+    );
+    const next = await session.prepareModel();
+    assert.equal(next.selected.model.model, "TEST-chat");
+    assert.equal(session.state.escalation, undefined);
   } finally {
     await f.memoryStore.close();
     f.db.close();

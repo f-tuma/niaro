@@ -15,7 +15,6 @@ import type {
   IntegrationTransport,
   TransportRequest,
 } from "../apps/server-integrations/transport";
-import { reviewedSpeechVoices } from "../apps/server-integrations/speech-voices";
 import { authRequest } from "../packages/client-core/auth";
 import { messageCommand } from "../packages/client-core/commands";
 import {
@@ -41,6 +40,7 @@ import {
   SpeechCapabilitiesSchema,
   SpeechResultSchema,
 } from "../packages/protocol/speech";
+import { currentRouting, routingCommand } from "./helpers/model-policy";
 
 function latch() {
   let release!: () => void;
@@ -312,6 +312,12 @@ test(
             audioOutput: true,
             tools: false,
             enabled: true,
+            // The voices an administrator reviewed for this model.
+            voices: [
+              { voice: "alloy", label: "Alloy" },
+              { voice: "echo", label: "Echo" },
+              { voice: "shimmer", label: "Shimmer" },
+            ],
           },
         })) as { id: string }
       ).id;
@@ -336,11 +342,10 @@ test(
           ),
         );
         await admin("api/identity/catalog/command", {
-          type: "saveRouting",
           organizationId,
           workspaceId: ws,
-          routing: {
-            ...inv.routing,
+          ...routingCommand({
+            ...currentRouting(inv.policy),
             modelId: agentId,
             speech: {
               modelId,
@@ -349,7 +354,7 @@ test(
               zeroDataRetention: false,
               ...patch,
             },
-          },
+          }),
         });
       };
       await configure();
@@ -415,6 +420,7 @@ test(
             audioOutput: model.audioOutput,
             tools: model.tools,
             enabled: model.enabled,
+            voices: model.voices,
             ...patch,
           },
         });
@@ -528,6 +534,12 @@ test(
             audioOutput: true,
             tools: false,
             enabled: true,
+            // The voices an administrator reviewed for this model.
+            voices: [
+              { voice: "alloy", label: "Alloy" },
+              { voice: "echo", label: "Echo" },
+              { voice: "shimmer", label: "Shimmer" },
+            ],
           },
         })) as { id: string }
       ).id;
@@ -597,28 +609,29 @@ test(
                   identity["connections"].policyVersion(organizationId),
                 start = paid;
               const mutate = async () => {
-                const routing = (await inventory()).routing;
+                const routing = currentRouting((await inventory()).policy);
+                const store = identity["catalog"].store;
                 await identity["serial"](async () => {
                   const write = (speech: typeof routing.speech) =>
-                    identity["catalog"].store.command(
+                    store.command(
                       CatalogCommand.parse({
-                        type: "saveRouting",
                         ...target,
-                        routing: {
+                        ...routingCommand({
                           ...routing,
-                          revision:
-                            identity["catalog"].store["routing"](workspaceId)
-                              .revision,
+                          revision: store.modelPolicies(
+                            organizationId,
+                            workspaceId,
+                          ).workspace.revision,
                           speech,
-                        },
+                        }),
                       }),
                     );
                   if (change === "epoch") {
                     write({ ...routing.speech, modelId: otherReader });
                     write(routing.speech);
                     assert.equal(
-                      identity["catalog"].store["routing"](workspaceId).speech
-                        .modelId,
+                      store.route(organizationId, workspaceId, "speech")
+                        .models[0],
                       routing.speech.modelId,
                     );
                   } else
@@ -656,30 +669,20 @@ test(
       }
       for (const stage of ["before", "after"] as const) {
         await t.test(
-          `${stage} dispatch: removing the pinned allowed voice in isolated registry memory fails closed`,
+          `${stage} dispatch: an administrator removing the pinned voice from the model fails closed`,
           async () => {
             await configure();
             await select(web, "Echo");
-            const route = await identity["serial"](async () =>
-              identity["catalog"].store.speechVoiceRoute(
-                organizationId,
-                workspaceId,
-              ),
-            );
-            const policy = reviewedSpeechVoices(route);
-            assert(policy);
-            // Synthetic process-local policy state only; the accepted source file is never edited.
-            const options = policy.voices as unknown as {
-              voice: string;
-              label: string;
-            }[];
-            const original = [...options],
+            const model = (await inventory()).models.find(
+              (m) => m.id === modelId,
+            )!;
+            const original = model.voices ?? [],
               start = paid;
+            // The reviewed list lives on the model: its edit retires the choice.
             const remove = async () => {
-              options.splice(
-                options.findIndex((voice) => voice.voice === "echo"),
-                1,
-              );
+              await updateModel({
+                voices: original.filter((voice) => voice.voice !== "echo"),
+              });
             };
             if (stage === "before") before = remove;
             else after = remove;
@@ -689,10 +692,10 @@ test(
             } finally {
               before = undefined;
               after = undefined;
-              options.splice(0, options.length, ...original);
+              await updateModel({ voices: original });
+              await configure();
             }
             assert.equal(paid - start, stage === "before" ? 0 : 1);
-            assert.equal((await read(web)).effective.label, "Echo");
           },
         );
       }
@@ -705,16 +708,15 @@ test(
             attempts = speechRequests;
           after = async () => {
             transcript = "Different words that do not read the source.";
-            const routing = (await inventory()).routing;
+            const routing = currentRouting((await inventory()).policy);
             await identity["serial"](async () =>
               identity["catalog"].store.command(
                 CatalogCommand.parse({
-                  type: "saveRouting",
                   ...target,
-                  routing: {
+                  ...routingCommand({
                     ...routing,
                     speech: { ...routing.speech, zeroDataRetention: true },
-                  },
+                  }),
                 }),
               ),
             );

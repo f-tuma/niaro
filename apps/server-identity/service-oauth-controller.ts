@@ -33,7 +33,7 @@ import type { CatalogContext } from "./catalog-controller";
 import type { CatalogActor, ServiceCatalogStore } from "./service-catalog";
 import type { ServiceOAuthTarget } from "./service-oauth";
 import { IdentityError } from "./error";
-import { decideRoute } from "../server-integrations/decisions";
+import { decideChoice } from "../server-integrations/decisions";
 import { budgetedInferenceTransport } from "./inference-budget";
 
 const Target = CatalogTarget.extend({ serviceId: IdentityId });
@@ -437,16 +437,9 @@ export async function handleServiceOAuth(
       return model;
     });
     const checkModel = () => {
-      const current = catalog.resolveDecision(
-        input.organizationId,
-        input.workspaceId,
-      );
+      // The selector must still be this model, unchanged.
       if (
-        !current ||
-        current.model.id !== selected.model.id ||
-        current.model.revision !== selected.model.revision ||
-        current.provider.id !== selected.provider.id ||
-        current.provider.revision !== selected.provider.revision
+        !catalog.stillRouted(input.organizationId, input.workspaceId, selected)
       )
         throw new IdentityError(409, "catalog_conflict");
     };
@@ -462,13 +455,13 @@ export async function handleServiceOAuth(
         userId: initial.actor.userId,
       },
       selected,
-      "decision",
+      selected.model.kind === "decision" ? "decision" : "model",
       (run) => ctx.serial(run),
       validate,
       () => 0,
       { maxTokens: 10_000_000, maxCostMicros: 1_000_000_000, maxModelCalls: 1 },
     );
-    const answer = await decideRoute(
+    const answer = await decideChoice(
       budgeted,
       selected,
       {

@@ -6,8 +6,8 @@ import ipaddr from "ipaddr.js";
 import { ServiceUrl } from "../../packages/protocol/service-catalog";
 import { streamEvents } from "./chat-stream";
 import { providerFailure } from "./failures";
-import { IntegrationError } from "./integration-error";
-export { IntegrationError } from "./integration-error";
+import { IntegrationError, RequestNotSent } from "./integration-error";
+export { IntegrationError, RequestNotSent } from "./integration-error";
 export type DispatchGuard = (start: () => void) => Promise<void>;
 /** One request may wait this long at most; meeting records take minutes. */
 export const MAX_TRANSPORT_TIMEOUT_MS = 15 * 60_000;
@@ -285,7 +285,18 @@ export function createTransport(
             );
           },
         );
-        req.on("error", () => reject(failed()));
+        // Until the socket connects no byte of the request has left: a
+        // failure then provably never reached the other side.
+        let connected = false;
+        req.on("socket", (socket) => {
+          if (!socket.connecting) connected = true;
+          else socket.once("connect", () => (connected = true));
+        });
+        req.on("error", () =>
+          reject(
+            !connected && !signal.aborted ? new RequestNotSent() : failed(),
+          ),
+        );
         req.end(bytes);
       };
       if (input.beforeDispatch)

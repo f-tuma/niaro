@@ -108,7 +108,9 @@ export function PersonalDesignPage() {
             language={language}
             refreshGeneration={0}
             budgetReadable={isAdmin}
-            preferredModelId={catalog.data?.routing.modelId ?? undefined}
+            preferredModelId={
+              catalog.data?.policy.effective.roles.designer?.models[0]
+            }
             initialView={view}
             autoStart={edit === "canvas"}
           />
