@@ -210,9 +210,28 @@ The provider's daily request limit SHALL be counted separately from the ledger, 
 
 ### Requirement: Prices for routed models
 
-In enforce mode every model a budgeted role (chat, service routes, checker, selector, background, designer, web search) can reach SHALL have a price: the first model of each route, the others only with fallback on, and the escalation models when escalation is on. The Usage limits and Models pages SHALL name such a model while it has no price and refuse to save; at use a call to it SHALL be refused before dispatch with `catalog_budget_price_required`.
+In enforce mode every model a budgeted role (chat, service routes, checker, selector, background, designer, web search) can reach SHALL have a price: the first model of each route, the others only with fallback on, the escalation models when escalation is on and the models of the presets members may pick. The Usage limits and Models pages SHALL name such a model while it has no price and refuse to save; at use a call to it SHALL be refused before dispatch with `catalog_budget_price_required`.
 
 #### Scenario: Fallback model without a price
 
 - **WHEN** a workspace stops at limit and an administrator turns on fallback for chat to an unpriced second model
 - **THEN** the Models page names that model and does not save
+
+#### Scenario: Preset model without a price
+
+- **WHEN** an administrator in enforce mode offers members a preset whose tier has an unpriced model
+- **THEN** the Models page names that model and does not save
+
+### Requirement: Free providers' models
+
+For each chat, router or decision model of a provider the administrator marked free, the applied usage policy SHALL hold a zero price pinned to its current revisions, with 128,000 input and 16,384 output tokens, unless the workspace has its own price for it. Such prices SHALL never be stored or exported: a saved price equal to one SHALL be dropped. A run SHALL pin the prices that apply when it opens.
+
+#### Scenario: Local model under enforce mode
+
+- **WHEN** a workspace stops at limit and its chat model is on a free provider without a typed price
+- **THEN** chat runs, reserves tokens against the caps and records zero cost
+
+#### Scenario: Provider no longer free
+
+- **WHEN** an administrator turns off free for that provider
+- **THEN** the Models and Usage limits pages name the chat model as unpriced

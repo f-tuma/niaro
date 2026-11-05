@@ -8,7 +8,7 @@ How organization owners and administrators connect AI providers, keep the organi
 
 ### Requirement: Organization-owned providers
 
-The system SHALL let an organization owner or administrator add, edit and remove AI providers of the organization, each an OpenAI-compatible endpoint with a name, API base URL, enabled state, daily request limit (1–100,000) and an optional API key. An organization SHALL hold at most 50 providers. Members SHALL be refused every provider, model and routing command with 403 `identity_forbidden`.
+The system SHALL let an organization owner or administrator add, edit and remove AI providers of the organization, each an OpenAI-compatible endpoint with a name, API base URL, enabled state, daily request limit (1–100,000), preset, key handling, request format, free choice, data-handling note and an optional API key. An organization SHALL hold at most 50 providers. Members SHALL be refused every provider, model and routing command with 403 `identity_forbidden`.
 
 #### Scenario: Administrator adds OpenRouter
 
@@ -41,12 +41,17 @@ The system SHALL accept a provider base URL only when it is HTTPS or its origin 
 
 ### Requirement: Write-only provider keys
 
-The system SHALL store provider API keys encrypted in the identity store, SHALL never return them in any response (only `hasCredential`), and SHALL keep the stored key when a provider is saved without a new key.
+The system SHALL store provider API keys encrypted in the identity store, SHALL never return them in any response (only `hasCredential`), SHALL keep the stored key when a provider is saved without a new key, and SHALL remove it when the provider is saved without key handling.
 
 #### Scenario: Edit a provider without retyping the key
 
 - **WHEN** an administrator changes a provider's daily limit and sends no key
 - **THEN** the provider keeps its key and `hasCredential` stays true
+
+#### Scenario: Key handling turned off
+
+- **WHEN** an administrator switches a provider with a stored key to no key
+- **THEN** the stored key is removed and `hasCredential` is false
 
 ### Requirement: Provider daily request limit
 
@@ -68,25 +73,30 @@ The system SHALL refuse to remove a provider that still has models with 409 `cat
 
 ### Requirement: Model discovery
 
-The system SHALL list a provider's available models on request by calling the provider's `GET /models` from the server with the stored key, returning for each model its ID, name, tool support, audio input and output, context length, kind and list price. Discovery SHALL make no inference request. A malformed provider answer SHALL fail with 502 `integration_response_invalid`, and a provider edited since the request with 409 `catalog_conflict`.
+The system SHALL list a provider's models on request with the provider's plain `GET /models` from the server with its stored key, returning each model's ID, name, tool support, audio input and output, image input, context length, kind and list price where the provider publishes them. Discovery SHALL make no inference request. A malformed answer SHALL fail with 502 `integration_response_invalid`, a provider edited since the request with 409 `catalog_conflict`.
 
 #### Scenario: Provider returns an unexpected body
 
 - **WHEN** the provider's `/models` answer does not match the expected shape
 - **THEN** discovery fails with `integration_response_invalid` and the catalog is unchanged
 
+#### Scenario: Plain model list
+
+- **WHEN** a local server answers `/models` with only IDs
+- **THEN** each model is listed by its ID with unknown tool support, kind chat and no context length
+
 ### Requirement: Declared tool support
 
-Discovery SHALL report tool support as `true` only when the model's `supported_parameters` include `tools`, `false` when an explicit list lacks it, and `null` (unknown) when the provider publishes no list. Choose from catalog SHALL import only models that declare tool calling, audio input or output, or a `decision`, `transcription` or `speech` kind; a model with unknown tool support SHALL instead offer **Verify support**, which opens manual entry with tool calling unchecked.
+Discovery SHALL report tool support as `true` only when the model's `supported_parameters` include `tools`, `false` when an explicit list lacks it, and `null` (unknown) when the provider publishes no list. Choose from catalog SHALL import models that declare tool calling, audio input or output, or a `decision`, `transcription` or `speech` kind, and chat models with unknown tool support without tool calling, marked to be tested after adding.
 
 #### Scenario: Unknown tool support
 
 - **WHEN** a provider lists a model without `supported_parameters`
-- **THEN** it cannot be selected for import and offers Verify support
+- **THEN** it can be selected for import, is marked unknown and is added without tool calling
 
 ### Requirement: Model kinds
 
-Every catalog model SHALL have a kind: `chat` (default), `router`, `decision`, `transcription` or `speech`. Discovery SHALL classify a model as `router` when its tokenizer is `Router`, as `transcription` or `speech` from its output modalities, and otherwise as `chat`. `decision` and `transcription` models SHALL have no tools and no audio flags, `speech` models only audio output, and routers no audio flags.
+Every catalog model SHALL have a kind: `chat` (default), `router`, `decision`, `transcription` or `speech`. Discovery SHALL classify a model as `router` when its tokenizer is `Router`, as `transcription` or `speech` from its output modalities, and otherwise as `chat`. `decision` and `transcription` models SHALL have no tools, audio or image flags, `speech` models only audio output, and routers no audio flags.
 
 #### Scenario: Transcription model kind
 
@@ -109,7 +119,7 @@ The system SHALL import 1–50 unique models per request from a provider's catal
 
 ### Requirement: Manual model entry
 
-The system SHALL let an administrator add or edit a model by its provider model ID, name, kind, enabled state, declared capabilities (tool calling, audio input, audio output) and, for speaking models, up to 20 reviewed voices with labels; a second model with the same ID for the same provider SHALL be refused with 409 `catalog_model_exists`. The server SHALL not infer capabilities or kind from a model's name or ID.
+The system SHALL let an administrator add or edit a model by its provider model ID, name, kind, enabled state, declared capabilities (tool calling, image input, audio input, audio output) and, for speaking models, up to 20 reviewed voices with labels; a second model with the same ID for the same provider SHALL be refused with 409 `catalog_model_exists`. The server SHALL not infer capabilities or kind from a model's name or ID.
 
 #### Scenario: Duplicate model ID
 
@@ -186,15 +196,6 @@ Spoken replies SHALL use the speech role: a chat model with audio output reads, 
 - **WHEN** an administrator puts a reader model without reviewed voices in the speech role and leaves the voice empty
 - **THEN** the save fails with `catalog_voice_required`
 
-### Requirement: OpenRouter-only functions
-
-Voice input, meeting transcription, spoken replies, decision models and web search models SHALL be usable only on a provider whose base URL is the canonical `https://openrouter.ai/api/v1`; chat, service, background, designer, checker and selector chat models MAY use any OpenAI-compatible provider.
-
-#### Scenario: Transcription model on another provider
-
-- **WHEN** an administrator puts a transcription model of a provider at `https://api.example.com/v1` in the meeting role
-- **THEN** the save fails with `catalog_model_unavailable`
-
 ### Requirement: Availability at use
 
 The system SHALL check at each use that the chosen model and its provider are enabled and fit the role. Without fallback, an unavailable model SHALL fail with `catalog_model_unavailable` and no other model SHALL be used; with fallback, only as `Role fallback` allows.
@@ -206,7 +207,7 @@ The system SHALL check at each use that the chosen model and its provider are en
 
 ### Requirement: Provider and model pages
 
-The administration SHALL show providers as cards at `/admin/providers`, each provider's models and bulk controls at `/admin/providers/:providerId`, and the model policy at `/admin/routing`. **Choose from catalog** SHALL offer search by name or ID, a tool-calling filter and selection of up to 50 models, marking models already added. Viewing these pages SHALL make no model request.
+The administration SHALL show providers as cards at `/admin/providers` with their note and a Free badge, search backends below them, each provider's models and bulk controls at `/admin/providers/:providerId`, a capability test in the model editor, and the model policy at `/admin/routing`. **Choose from catalog** SHALL offer search by name or ID, a tool-calling filter and selection of up to 50 models, marking models already added. Viewing these pages SHALL make no model request.
 
 #### Scenario: Selection cap
 
@@ -293,7 +294,7 @@ On start, routing stored in the old single-choice shape SHALL become a workspace
 
 ### Requirement: Models page
 
-`/admin/routing` SHALL be the **Models** page with tabs for the organization default and this workspace: role rows with ordered model chips to add, reorder and remove, the source when inherited, a fallback switch per role, service routes, tiers, escalation and settings. Unavailable models and, in enforce mode, unpriced ones SHALL be marked. Viewing SHALL make no model request.
+`/admin/routing` SHALL be the **Models** page with tabs for the organization default and this workspace: role rows with ordered model chips to add, reorder and remove, the source when inherited, a fallback switch per role, service routes, tiers, escalation and settings, including the web search backend. Unavailable models and, in enforce mode, unpriced ones SHALL be marked. Viewing SHALL make no model request.
 
 #### Scenario: Inherited role
 
@@ -302,9 +303,156 @@ On start, routing stored in the old single-choice shape SHALL become a workspace
 
 ### Requirement: OpenRouter audio catalogs
 
-For the canonical OpenRouter base URL `https://openrouter.ai/api/v1`, discovery SHALL also read the transcription and speech catalogs (`?output_modalities=transcription`, `?output_modalities=speech`). Discovery SHALL add no model the provider does not list; a decision model is entered manually.
+For a provider in the OpenRouter format, discovery SHALL also read the transcription and speech catalogs (`?output_modalities=transcription`, `?output_modalities=speech`). Discovery SHALL add no model the provider does not list; a decision model is entered manually.
 
 #### Scenario: No built-in decision model
 
 - **WHEN** an administrator opens Choose from catalog for an OpenRouter provider
 - **THEN** only models the provider lists are offered
+
+### Requirement: Provider presets
+
+The provider form SHALL offer presets for OpenRouter, OpenAI, Anthropic, Gemini, Azure OpenAI, Ollama, LM Studio, vLLM, llama.cpp server, LocalAI and custom. A preset SHALL fill the address, key handling, request format, free choice and a data-handling note, and every field SHALL stay editable. Presets SHALL name no model, and nothing in routing SHALL read them.
+
+#### Scenario: Ollama preset
+
+- **WHEN** an administrator picks Ollama
+- **THEN** the form fills `http://localhost:11434/v1`, no key, the OpenAI format, free and the note "Runs locally. Nothing leaves the server.", and says the address must be a trusted origin
+
+#### Scenario: Preset then edit
+
+- **WHEN** an administrator picks a preset and changes its address
+- **THEN** the provider is saved with the typed address
+
+### Requirement: Provider key handling
+
+A provider SHALL send its key as a bearer token, in a named header (for example Azure's `api-key`) or not at all. A provider without a key SHALL store none, even if one is sent, and SHALL count as connected for availability.
+
+#### Scenario: Azure header
+
+- **WHEN** a provider uses header `api-key`
+- **THEN** discovery and model calls send the key in `api-key` and no `Authorization` header
+
+#### Scenario: Local server without a key
+
+- **WHEN** an administrator saves a provider with no key handling
+- **THEN** it has `hasCredential: false` and its models serve chat and voice
+
+### Requirement: Provider request format
+
+Each provider SHALL have a request format, `openai` or `openrouter`, chosen by the administrator. OpenRouter's routing privacy flags, JSON audio uploads, audio catalogs, web plugin and decisions API SHALL follow the format, not the address. Decision models and the provider's own web search SHALL need the OpenRouter format; other roles MAY use any provider.
+
+#### Scenario: Decision model on a plain provider
+
+- **WHEN** an administrator puts a decision model of an OpenAI-format provider in the selector role
+- **THEN** the save fails with `catalog_model_unavailable`
+
+#### Scenario: No flags for a plain provider
+
+- **WHEN** a chat model with audio input on an OpenAI-format provider interprets a voice request
+- **THEN** the request carries no `provider` routing field
+
+### Requirement: Stored provider dialect
+
+A save without a format SHALL keep the stored one, else take its preset's, else use OpenRouter's for OpenRouter's canonical address and `openai` otherwise. On start, providers stored before formats existed SHALL get one this way once, keeping their revision.
+
+#### Scenario: Provider from before the change
+
+- **WHEN** the server starts with a provider at `https://openrouter.ai/api/v1` saved without a format
+- **THEN** it gets the OpenRouter format and its revision and prices stay unchanged
+
+### Requirement: Free providers
+
+An administrator MAY mark a provider free (a local server, a free plan); the system SHALL never infer it from the address. Discovery SHALL report a free provider's list prices as zero, and its models' usage SHALL be priced as specified in `inference-budget`.
+
+#### Scenario: Free list price
+
+- **WHEN** an administrator opens Choose from catalog for a free provider
+- **THEN** every model shows a list price of zero
+
+### Requirement: Capability test
+
+An administrator SHALL be able to test a saved model (`POST …/catalog/models/test`): one small request per capability of its kind (tools, image input, audio input and output, transcription, speech), each counted against the provider's daily limit, chat probes under the inference budget. Results SHALL be supported, unsupported, failed with a code, or skipped. The test SHALL change nothing; its answers MAY fill the model form.
+
+#### Scenario: Local model test
+
+- **WHEN** an administrator tests a chat model whose server calls the tool, names the red test image and refuses audio
+- **THEN** tools and image input are supported, audio input unsupported, audio output skipped without a voice
+
+#### Scenario: Enforced limits without a price
+
+- **WHEN** the workspace stops at limit and the tested chat model has no price
+- **THEN** the test is refused with `catalog_budget_price_required` before any request
+
+### Requirement: Audio through standard endpoints
+
+Voice input, meeting transcription and spoken replies SHALL work with any provider: transcription models through `POST /audio/transcriptions` (multipart `file` in the OpenAI format, JSON `input_audio` in OpenRouter's), speech models through `POST /audio/speech`, and audio chat models through chat completions with audio input or output.
+
+#### Scenario: Meeting on a local server
+
+- **WHEN** the meeting transcription role has a transcription model of an OpenAI-format provider
+- **THEN** each chunk is uploaded as multipart with `response_format` `verbose_json` and segment timestamps
+
+### Requirement: Search backends
+
+The organization MAY keep up to 10 web search backends (SearXNG, Brave or Tavily) with a name, address, state and a write-only key stored like a provider key. A backend SHALL be refused removal with 409 `catalog_search_in_use` while a policy names it; a policy naming an unknown backend SHALL fail with 409 `catalog_search_unavailable`.
+
+#### Scenario: Backend in use
+
+- **WHEN** an administrator removes the backend a workspace searches with
+- **THEN** the server answers 409 `catalog_search_in_use`
+
+#### Scenario: Key never returned
+
+- **WHEN** an administrator saves a Brave backend with a key
+- **THEN** the catalog shows `hasCredential: true` and no key
+
+### Requirement: Data-handling note
+
+Each provider MAY have a data-handling note of up to 500 characters written by the administrator, prefilled by a preset; the providers page SHALL show it on the provider's card and page.
+
+#### Scenario: Local note
+
+- **WHEN** a provider's note is "Runs locally. Nothing leaves the server."
+- **THEN** its card and page show that note
+
+### Requirement: Member model presets
+
+The model policy SHALL have member presets: whether they are on (off by default) and up to four presets, each an id, an administrator's name and an organization tier. The organization sets a default and a workspace MAY override it. `GET /v1/:workspace/chat-presets` SHALL list the presets a member may pick by id and name only; none while off.
+
+#### Scenario: Turned on for one workspace
+
+- **WHEN** an administrator turns presets on with Fast and Thorough in workspace A only
+- **THEN** members of A see Fast and Thorough and members of other workspaces see none
+
+### Requirement: Presets stay within the policy
+
+A preset SHALL reach only its tier's models, the second and later ones only with chat fallback on, and only while the workspace offers it. Saving SHALL refuse a preset whose tier is missing or does not fit chat, and a tier a preset uses SHALL not be removed.
+
+#### Scenario: Unknown preset sent
+
+- **WHEN** a message arrives with a preset the workspace does not offer
+- **THEN** the request is answered with the chat role's model and no preset is recorded
+
+#### Scenario: Tier in use
+
+- **WHEN** an administrator removes the tier the Thorough preset uses
+- **THEN** the save is refused with `catalog_tier_not_found`
+
+### Requirement: Preset at use
+
+A request sent with an offered preset SHALL answer with the preset's tier and record the preset with the run; a checker escalation SHALL still take precedence once, and unavailable preset models SHALL leave the step to the chat role. Each step SHALL be an ordinary budgeted chat call.
+
+#### Scenario: Thorough request
+
+- **WHEN** a member sends a message with Thorough, whose tier is Strong
+- **THEN** the model steps run on Strong's first model and the run records the preset Thorough
+
+### Requirement: Member presets on the Models page
+
+The Models page SHALL have a Member presets section for the organization default and each workspace: an on switch, rows with the preset's name and tier, Add and Remove, and Use default on a workspace that overrides. It SHALL not save a preset without a name or tier, or presets turned on with none.
+
+#### Scenario: No tiers
+
+- **WHEN** the organization has no tiers
+- **THEN** the section says to add a tier first and offers no Add

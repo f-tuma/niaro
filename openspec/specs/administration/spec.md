@@ -394,12 +394,17 @@ A workspace's own instructions SHALL replace the organization default, not add t
 
 ### Requirement: Configuration bundle export
 
-Owners and administrators SHALL export the organization or one workspace as JSON `niaro-config-bundle` v1 (`GET …/config-bundle/export`), one typed section per part: providers, models, the model policy, connectors, server settings, instructions, roles, services, routing, usage, plugins, skills, processes. It SHALL hold no keys, tokens, sign-ins or per-person grants.
+Owners and administrators SHALL export the organization or one workspace as JSON `niaro-config-bundle` v1 (`GET …/config-bundle/export`), one typed section per part: providers, models, search backends, the model policy, connectors, server settings, instructions, roles, services, routing, usage, plugins, skills, processes. It SHALL hold no keys, tokens, sign-ins or per-person grants; a provider or search backend that needs a key SHALL say `keyRequired: true`.
 
 #### Scenario: Provider with a key
 
 - **WHEN** an administrator exports a provider with a stored key
 - **THEN** the file has its address with `keyRequired: true` and no key
+
+#### Scenario: Search backend with a key
+
+- **WHEN** an administrator exports a Brave search backend
+- **THEN** the file has its kind and address with `keyRequired: true` and no key, and an import lists it as needing a key
 
 ### Requirement: Bundle references by name
 
@@ -445,3 +450,12 @@ The console SHALL offer Configuration at `/admin/settings/configuration`, linked
 
 - **WHEN** an administrator chooses a bundle file
 - **THEN** the page shows what changes and imports only after confirmation
+
+### Requirement: Presets in the configuration bundle
+
+The model policy and routing sections of a configuration bundle SHALL carry member presets as they are, since they name tiers and no models. A bundle without them SHALL leave presets off for the organization and inherited for a workspace.
+
+#### Scenario: Workspace with presets
+
+- **WHEN** an administrator exports a workspace that offers the preset Quick and imports it into a fresh server
+- **THEN** the imported workspace offers Quick on the same tier

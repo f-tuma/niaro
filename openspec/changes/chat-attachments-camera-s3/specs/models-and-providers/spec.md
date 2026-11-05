@@ -1,28 +1,3 @@
-## MODIFIED Requirements
-
-### Requirement: Model discovery
-
-The system SHALL list a provider's available models on request by calling the provider's `GET /models` from the server with the stored key, returning for each model its ID, name, tool support, image input, audio input and output, context length, kind and list price. Discovery SHALL make no inference request. A malformed provider answer SHALL fail with 502 `integration_response_invalid`, and a provider edited since the request with 409 `catalog_conflict`.
-
-#### Scenario: Provider returns an unexpected body
-
-- **WHEN** the provider's `/models` answer does not match the expected shape
-- **THEN** discovery fails with `integration_response_invalid` and the catalog is unchanged
-
-### Requirement: Manual model entry
-
-The system SHALL let an administrator add or edit a model by its provider model ID, name, kind, enabled state, declared capabilities (tool calling, image input, audio input, audio output) and, for speaking models, up to 20 reviewed voices with labels; a second model with the same ID for the same provider SHALL be refused with 409 `catalog_model_exists`. The server SHALL not infer capabilities or kind from a model's name or ID.
-
-#### Scenario: Duplicate model ID
-
-- **WHEN** an administrator adds `openai/gpt-4o-mini` to a provider that already has it
-- **THEN** the server answers 409 `catalog_model_exists`
-
-#### Scenario: Decision model by kind
-
-- **WHEN** an administrator enters a model with kind decision
-- **THEN** it is stored as a decision model whatever its ID
-
 ## ADDED Requirements
 
 ### Requirement: Explicit image input support
