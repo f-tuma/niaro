@@ -701,6 +701,12 @@ export const CommandSchema = z.discriminatedUnion("type", [
       withoutProcess: z.literal(true).optional(),
       /** Services, processes and skills the person tagged with "@". */
       mentions: z.array(MessageMentionSchema).max(10).optional(),
+      /** A model preset the workspace offers (NIAR-296); the server answers
+       * with it only while it is offered, else with the chat model. */
+      preset: z
+        .string()
+        .regex(/^[a-z][a-z0-9-]{0,31}$/)
+        .optional(),
       /** The device's IANA timezone, e.g. Europe/Prague. The server validates it and
        * otherwise uses its own default; "tomorrow" means the person's tomorrow. */
       timeZone: z

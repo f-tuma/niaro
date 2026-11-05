@@ -20,6 +20,7 @@ export {
   effectiveRoute,
   emptyOrganizationPolicy,
   emptyWorkspacePolicy,
+  offeredPresets,
   policyView,
   type RouteKey,
   type StoredModelPolicies,
@@ -29,7 +30,10 @@ type PolicyLike = {
   roles?: Partial<Record<ModelRoleValue, RoleRouteValue>>;
   services?: { route: { models: string[]; tier: string | null } }[];
   tiers?: { models: string[] }[];
-  options?: { escalation?: { models: string[]; tier: string | null } };
+  options?: {
+    escalation?: { models: string[]; tier: string | null };
+    presets?: { items: { tier: string }[] };
+  };
 };
 /** Every model a policy names: its roles, services, tiers and escalation. */
 export function referencedModels(policy: PolicyLike) {
@@ -51,6 +55,8 @@ export function referencedTiers(policy: PolicyLike) {
   for (const service of policy.services ?? [])
     if (service.route.tier) ids.add(service.route.tier);
   if (policy.options?.escalation?.tier) ids.add(policy.options.escalation.tier);
+  for (const preset of policy.options?.presets?.items ?? [])
+    ids.add(preset.tier);
   return ids;
 }
 /**

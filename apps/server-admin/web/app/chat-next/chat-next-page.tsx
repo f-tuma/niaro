@@ -180,6 +180,14 @@ import {
   type NextChat,
 } from "./parts";
 import { MemorySaveLines, useChatMemorySaves } from "./memory-saves";
+import type { ChatPresets } from "../../../../../packages/protocol/model-policy";
+import {
+  AnswerReceiptLine,
+  PresetPicker,
+  useAnswerReceipts,
+  useChatPresets,
+  usePickedPreset,
+} from "./answer-receipt";
 import {
   appendedText,
   failedMessage as failedThreadMessage,
@@ -371,6 +379,13 @@ export function ChatNextConversation({
   }, [attachedTask]);
   const directory = useMentionDirectory(session);
   const chatSetup = useChatSetup(session);
+  // The model preset for the next messages, among those offered (NIAR-296).
+  const presets = useChatPresets(session);
+  const [preset, setPreset] = usePickedPreset(session.identityKey, presets);
+  const presetRef = useRef(preset);
+  useLayoutEffect(() => {
+    presetRef.current = preset;
+  }, [preset]);
   const [picked, setPicked] = useState<MentionItem[]>(initial.mentions);
   const pickedRef = useRef(picked);
   useLayoutEffect(() => {
@@ -666,6 +681,9 @@ export function ChatNextConversation({
               ? { withoutProcess: true as const }
               : {}),
             ...(mentions.length ? { mentions } : {}),
+            ...(!replyContext && presetRef.current
+              ? { preset: presetRef.current }
+              : {}),
           };
     } catch {
       if (!options.detached && !draftRef.current.trim()) setComposerText(value);
@@ -1202,8 +1220,20 @@ export function ChatNextConversation({
   }, [routeId]);
 
   const memorySaves = useChatMemorySaves(id);
+  // Receipts are read again whenever another answer is stored.
+  const answered = messages.filter(
+    (message) => message.role === "assistant" && message.replyToCommandId,
+  );
+  const answerReceipts = useAnswerReceipts(
+    session,
+    id,
+    answered.length
+      ? `${answered.length}:${answered.at(-1)!.replyToCommandId}`
+      : "",
+  );
   const chat: NextChat = {
     memorySaves,
+    answerReceipts,
     session,
     state,
     conversationId: id,
@@ -1545,6 +1575,9 @@ export function ChatNextConversation({
                       });
                     }}
                     initialAttachmentMenuOpen={initial.picker}
+                    presets={presets}
+                    preset={preset}
+                    onPreset={setPreset}
                     context={context}
                     validContext={validContext}
                     waitingForAnswer={waitingForProcessAnswer}
@@ -2005,6 +2038,7 @@ function AssistantMessage() {
             </p>
           )}
           {!live && <MemorySaveLines commandId={meta.replyToCommandId} />}
+          {!live && <AnswerReceiptLine commandId={meta.replyToCommandId} />}
         </article>
         {!live && !!text.trim() && (
           <MessageActions
@@ -2051,6 +2085,9 @@ function Composer({
   onFileOnly,
   onAttachTask,
   initialAttachmentMenuOpen,
+  presets,
+  preset,
+  onPreset,
 }: {
   composerRef: RefObject<HTMLTextAreaElement | null>;
   initialText: string;
@@ -2072,6 +2109,10 @@ function Composer({
   onFileOnly: () => void;
   onAttachTask: () => void;
   initialAttachmentMenuOpen: boolean;
+  /** Model presets the workspace offers, and the one picked (NIAR-296). */
+  presets: ChatPresets["presets"];
+  preset: string | undefined;
+  onPreset: (value: string | undefined) => void;
 }) {
   const aui = useAui();
   const chat = useNextChat();
@@ -2383,6 +2424,12 @@ function Composer({
               <AtSign aria-hidden="true" />
             </InputGroupButton>
           )}
+          <PresetPicker
+            presets={presets}
+            value={preset}
+            onChange={onPreset}
+            disabled={disabled || chat.readOnly}
+          />
           {stoppable ? (
             <InputGroupButton
               type="button"

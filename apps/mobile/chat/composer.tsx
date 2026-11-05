@@ -31,6 +31,8 @@ import {
   type VoiceReplyContext,
 } from "../VoiceReply";
 import type { useReplySpeech } from "../ReplySpeech";
+import { MobilePresetPicker } from "./answer-receipt";
+import type { ChatPresets } from "../../../packages/protocol/model-policy";
 
 type Mentions = ReturnType<typeof useMobileComposerMentions>;
 
@@ -79,6 +81,9 @@ export function ChatFooter({
   stopLabel,
   stopDisabled,
   voiceMode,
+  presets = [],
+  preset,
+  onPreset,
 }: {
   language: Language;
   notice?: React.ComponentProps<typeof ProcessCommandNoticeView>["notice"];
@@ -122,6 +127,10 @@ export function ChatFooter({
   stopLabel: string;
   stopDisabled: boolean;
   voiceMode: "ready" | "disabled" | "settings";
+  /** Model presets the workspace offers, and the one picked (NIAR-296). */
+  presets?: ChatPresets["presets"];
+  preset?: string;
+  onPreset?: (value: string | undefined) => void;
 }) {
   const tr = translate(language);
   return (
@@ -231,6 +240,14 @@ export function ChatFooter({
         />
       ) : (
         <View>
+          {onPreset ? (
+            <MobilePresetPicker
+              presets={presets}
+              value={preset}
+              onChange={onPreset}
+              language={language}
+            />
+          ) : null}
           <MobileAttachmentDraft value={attachments} />
           <MobileMentionSuggestions
             items={mentions.items}

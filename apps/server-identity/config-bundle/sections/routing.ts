@@ -6,6 +6,7 @@ import {
   MAX_ROLE_MODELS,
   ModelRole,
   OrganizationModelPolicy,
+  PresetOptions,
   SelectorOptions,
   SpeechOptions,
   TierId,
@@ -29,7 +30,8 @@ import {
  * page edits, with catalog models named by provider and model instead of ids.
  * The organization's default and each workspace's overrides travel apart,
  * so a workspace imported into another organization keeps only what it
- * changed.
+ * changed. Member presets (NIAR-296) name tiers, so they travel as they are;
+ * a bundle without them leaves presets off.
  */
 const RefList = z.array(ModelRef).max(MAX_ROLE_MODELS);
 const RouteRef = z.strictObject({
@@ -62,6 +64,7 @@ const OrganizationPolicySection = z.strictObject({
     speech: SpeechOptions,
     selector: SelectorOptions,
     escalation: EscalationRef,
+    presets: PresetOptions.optional(),
   }),
 });
 type OrganizationPolicySection = z.infer<typeof OrganizationPolicySection>;
@@ -77,6 +80,7 @@ const WorkspacePolicySection = z.strictObject({
     speech: SpeechOptions.optional(),
     selector: SelectorOptions.optional(),
     escalation: EscalationRef.optional(),
+    presets: PresetOptions.optional(),
   }),
 });
 type WorkspacePolicySection = z.infer<typeof WorkspacePolicySection>;
@@ -164,6 +168,7 @@ export const modelPolicySection =
           speech: policy.options.speech,
           selector: policy.options.selector,
           escalation: escalationOut(refs, policy.options.escalation),
+          presets: policy.options.presets,
         },
       };
     },
@@ -185,6 +190,10 @@ export const modelPolicySection =
               speech: data.options.speech,
               selector: data.options.selector,
               escalation: escalationIn(refs, data.options.escalation),
+              presets: data.options.presets ?? {
+                enabled: false,
+                items: [],
+              },
             },
           },
         );

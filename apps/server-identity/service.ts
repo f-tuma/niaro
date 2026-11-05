@@ -185,6 +185,17 @@ import {
 import { HUB_DETAIL_TTL_MS, HubStore } from "./hub-store";
 import { SkillStore, type SkillActor } from "./skill-store";
 import { InstructionsStore } from "./instructions-store";
+import { answerReceipts, RECEIPT_TURNS } from "./answer-receipts";
+import {
+  ANSWER_RECEIPTS_PROFILE,
+  AnswerReceiptPageSchema,
+  type AnswerReceiptPage,
+} from "../../packages/protocol/answer-receipts";
+import {
+  CHAT_PRESETS_PROFILE,
+  ChatPresetsSchema,
+  type ChatPresets,
+} from "../../packages/protocol/model-policy";
 import {
   InstructionsScopeSchema,
   type InstructionsContent,
@@ -343,7 +354,9 @@ async function body(req: IncomingMessage) {
               : req.url?.split("?")[0] === "/admin/api/identity/skills/command"
                 ? 524288
                 : req.url?.split("?")[0] === "/admin/auth/sign-in/email" ||
-                    req.url?.startsWith("/admin/api/identity/server-settings") ||
+                    req.url?.startsWith(
+                      "/admin/api/identity/server-settings",
+                    ) ||
                     // 8,000 characters of instructions and six starters.
                     req.url?.split("?")[0] ===
                       "/admin/api/identity/instructions/command"
@@ -2850,6 +2863,153 @@ export class IdentityService {
     return this.serial(async () => {
       const { actor } = this.appActor(header, workspaceId, serverId);
       return this.instructions.effective(actor.organizationId, workspaceId);
+    });
+  }
+  /**
+   * `GET /v1/:workspace/receipts`: what the chat's latest answers read,
+   * changed and had in context, and which model wrote each (NIAR-296).
+   * Built from the server's records of each request; anything the person
+   * can no longer open is left out. `files` names the files the person sent
+   * with a request, from the chat's own record.
+   */
+  async mobileAnswerReceipts(
+    header: string | undefined,
+    workspaceId: string,
+    serverId: string,
+    conversationId: string,
+    files?: (
+      scope: Scope,
+    ) => Promise<(commandId: string) => { id: string; name: string }[]>,
+  ): Promise<AnswerReceiptPage> {
+    const prepared = await this.serial(async () =>
+      this.appActor(header, workspaceId, serverId),
+    );
+    const { actor, scope } = prepared;
+    const sentFiles = files ? await files(scope) : undefined;
+    const check = () => {
+      if (this.closing) throw new IdentityError(503, "identity_unavailable");
+      const current = this.appActor(header, workspaceId, serverId);
+      if (JSON.stringify(current) !== JSON.stringify(prepared))
+        throw new IdentityError(403, "identity_forbidden");
+    };
+    const run = <T>(fn: () => T) =>
+      this.serial(async () => {
+        check();
+        return fn();
+      });
+    const store = this.catalog.store;
+    const catalogActor = { userId: actor.userId, role: actor.role };
+    const memoryActor: MemoryActor = {
+      organizationId: actor.organizationId,
+      workspaceId,
+      userId: actor.userId,
+      canManageShared: false,
+    };
+    const receipts = await answerReceipts({
+      run,
+      turns: () =>
+        store.conversationTurns(
+          workspaceId,
+          actor.userId,
+          conversationId,
+          RECEIPT_TURNS,
+        ),
+      invocation: (id) => store.invocation(id, workspaceId, actor.userId),
+      usableServices: () =>
+        new Set(
+          store
+            .inventory(actor.organizationId, workspaceId, {
+              ...catalogActor,
+              role: "owner",
+            })
+            .services.filter(
+              (service) =>
+                service.enabled &&
+                service.actions.some(
+                  (action) =>
+                    action.enabled && store.allowed(action, catalogActor),
+                ),
+            )
+            .map((service) => service.id),
+        ),
+      modelName: (id) => store.modelName(actor.organizationId, id),
+      skills: () =>
+        new Map(
+          this.skills.usable(actor).map((skill) => [skill.id, skill.name]),
+        ),
+      meetingTitle: (id) => {
+        try {
+          return this.meetings.get(scope, id).title;
+        } catch {
+          return undefined;
+        }
+      },
+      taskTitle: (id) => {
+        try {
+          const task = this.meetings.humanTasks.get(scope, id);
+          return task.status === "removed" ? undefined : task.title;
+        } catch {
+          return undefined;
+        }
+      },
+      memories: async (ids) => {
+        const settings = await run(() =>
+          MemorySettingsSchema.parse(
+            this.plugins.read(workspaceId).settings.memory ?? {},
+          ),
+        );
+        const options = {
+          run,
+          settings,
+          observationSourceView: (
+            source: import("../../packages/protocol/memory").ObservationSource,
+            a: MemoryActor,
+          ) => this.observationSourceView(source, a),
+          sourceAccess: (
+            source: import("../../packages/protocol/memory").MemorySource,
+            a: MemoryActor,
+          ) => this.memorySourceAccess(source, a, actor.role),
+        };
+        const found = new Map<string, string>();
+        for (const id of ids)
+          try {
+            const item = await this.memory.find(memoryActor, id, options);
+            if (item?.status === "active" && item.content)
+              found.set(id, item.content);
+          } catch (error) {
+            if (
+              error instanceof IdentityError &&
+              (error.status === 403 || error.status === 503)
+            )
+              throw error;
+            // Changed meanwhile or no longer readable: left out.
+          }
+        return found;
+      },
+      ...(sentFiles ? { files: sentFiles } : {}),
+    });
+    return AnswerReceiptPageSchema.parse({
+      profile: ANSWER_RECEIPTS_PROFILE,
+      conversationId,
+      receipts,
+    });
+  }
+  /** `GET /v1/:workspace/chat-presets`: the presets a member may pick here (NIAR-296). */
+  mobileChatPresets(
+    header: string | undefined,
+    workspaceId: string,
+    serverId: string,
+  ): Promise<ChatPresets> {
+    return this.serial(async () => {
+      const { actor } = this.appActor(header, workspaceId, serverId);
+      return ChatPresetsSchema.parse({
+        profile: CHAT_PRESETS_PROFILE,
+        workspaceId,
+        presets: this.catalog.store.offeredPresets(
+          actor.organizationId,
+          workspaceId,
+        ),
+      });
     });
   }
   /**

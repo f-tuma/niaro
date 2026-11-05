@@ -74,6 +74,7 @@ import type { WebCapability } from "../../packages/plugin-sdk";
 import { ProcessOfferResultSchema } from "../../packages/protocol/process-offer";
 import { ProcessProposalResultSchema } from "../../packages/protocol/process-proposal";
 import { IdentityId } from "../../packages/protocol/identity";
+import { TierId } from "../../packages/protocol/model-policy";
 import { HUB_WIDGET_TYPES } from "../../packages/protocol/widgets";
 import { processOfferInitialInput } from "../../packages/protocol/process-offer-input";
 import {
@@ -688,6 +689,26 @@ export const DomainCommandSchema = z.strictObject({
    * step repeats it with the escalation models, then used. Once per run.
    */
   escalation: z.enum(["checker_mismatch", "answer_check", "used"]).optional(),
+  /**
+   * The preset the person picked for this request (NIAR-296), as the
+   * workspace offered it when the request began. Absent: the chat role.
+   */
+  preset: z
+    .strictObject({ id: TierId, name: z.string().trim().min(1).max(40) })
+    .optional(),
+  /**
+   * The catalog model of the last model step that finished, with its route
+   * and reason: what wrote the answer, for its receipt (NIAR-296).
+   */
+  answerModel: z
+    .strictObject({
+      modelId: z.string().max(200),
+      role: z.string().max(240),
+      reason: z.string().max(200),
+    })
+    .optional(),
+  /** Meetings whose notes or transcript this request read (NIAR-296). */
+  meetingReads: z.array(z.string().uuid()).max(20).optional(),
   toolProblems: z
     .array(
       z.strictObject({
@@ -936,6 +957,8 @@ export type DomainMessageContext = {
   withoutProcess?: true;
   /** Services, processes and skills the person tagged; the server re-checks each. */
   mentions?: MessageMention[];
+  /** The preset the person picked; the server answers with it only while offered. */
+  preset?: string;
   session?: "new";
   /** The answer while it is written, for the person's progress view only. */
   reportDraft?: (draft: string | null) => void;
@@ -966,15 +989,19 @@ const messageHash = (
       : messageContext?.withoutProcess
         ? [text, language, "without-process"]
         : [text, language];
-  // Tags change the request; messages without them keep their earlier hash.
+  // Tags and a preset change the request; messages without them keep their
+  // earlier hash.
+  const tagged = messageContext?.mentions?.length
+    ? [
+        ...base,
+        "mentions",
+        messageContext.mentions.map((mention) => [mention.kind, mention.id]),
+      ]
+    : base;
   return digest(
-    messageContext?.mentions?.length
-      ? [
-          ...base,
-          "mentions",
-          messageContext.mentions.map((mention) => [mention.kind, mention.id]),
-        ]
-      : base,
+    messageContext?.preset
+      ? [...tagged, "preset", messageContext.preset]
+      : tagged,
   );
 };
 export type DomainOptions = {
@@ -1513,6 +1540,12 @@ export function createMastraDomain(
   const separateTasks = new Set<string>();
   const scopeHash = digest([scope, organizationId]);
 
+  /** A picked preset the workspace offers now; any other answers with the chat role. */
+  function offeredPreset(messageContext?: DomainMessageContext) {
+    return messageContext?.preset
+      ? store.preset(organizationId, scope.workspaceId, messageContext.preset)
+      : undefined;
+  }
   function attachmentBinding(commandId: string) {
     const raw = store.nativeAttachmentBinding(
       commandKey(commandId),
@@ -4568,8 +4601,24 @@ export function createMastraDomain(
             throw error;
         }
         if (pending) state.escalation = "used";
+        // A preset the person picked answers with its tier while the
+        // workspace still offers it; unavailable models leave the chat role.
+        let picked: NiaroModelSelection | undefined;
+        if (!escalated && state.preset)
+          try {
+            picked = store.resolvePreset(
+              organizationId,
+              scope.workspaceId,
+              state.preset.id,
+            );
+          } catch (error) {
+            if (!(error instanceof IdentityError) || error.status === 403)
+              throw error;
+          }
         const selected =
-          escalated ?? store.resolveModel(organizationId, scope.workspaceId);
+          escalated ??
+          picked ??
+          store.resolveModel(organizationId, scope.workspaceId);
         if (!selected) throw new IdentityError(409, "catalog_model_required");
         state.modelCalls++;
         persistLocked();
@@ -4948,13 +4997,28 @@ export function createMastraDomain(
         return closeHumanTask(args, meta.toolCallId);
       if (ctx.hub && hubTools.some((tool) => tool.name === name))
         return hubTool(name, args, meta.toolCallId);
-      if (ctx.meetings && meetingTools.some((tool) => tool.name === name))
-        return ctx.serial(async () => {
+      if (ctx.meetings && meetingTools.some((tool) => tool.name === name)) {
+        const result = await ctx.serial(async () => {
           await checkLocked();
           return name === meetingSearchTool.name
             ? ctx.meetings!.search(args)
             : ctx.meetings!.read(args);
         });
+        // A meeting read for the answer goes into its receipt.
+        const meetingId = String(args.meetingId ?? "");
+        if (
+          name === meetingReadTool.name &&
+          !(result as { error?: unknown }).error &&
+          z.string().uuid().safeParse(meetingId).success &&
+          !state.meetingReads?.includes(meetingId)
+        ) {
+          state.meetingReads = [...(state.meetingReads ?? []), meetingId].slice(
+            -20,
+          );
+          await save();
+        }
+        return result;
+      }
       if (ctx.skills && name === skillLoadTool.name)
         return loadSkill(String(args.skillId ?? ""));
       if (ctx.skills && name === skillProposeTool.name)
@@ -6445,6 +6509,7 @@ export function createMastraDomain(
           /* Revoked and expired context cannot flow into a new task. */
         }
       }
+      const preset = offeredPreset(messageContext);
       const state = DomainCommandSchema.parse({
         kind: "mastra-1",
         attachmentGeneration:
@@ -6479,6 +6544,7 @@ export function createMastraDomain(
         ...(messageContext?.mentions?.length
           ? { mentions: messageContext.mentions }
           : {}),
+        ...(preset ? { preset } : {}),
         ...(earlier?.length ? { earlier } : {}),
         threadId:
           reuseThread && prior.success
@@ -7080,6 +7146,8 @@ export function createMastraDomain(
         state.processProposal = undefined;
         if (messageContext?.mentions?.length)
           state.mentions = messageContext.mentions;
+        // Each message answers with the preset it was sent with, or none.
+        state.preset = offeredPreset(messageContext);
         state.connection = undefined;
         state.checked = false;
         state.failureRepair = false;

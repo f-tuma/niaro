@@ -88,6 +88,8 @@ export type NextChat = {
   dismissFailed: (commandId: string) => void;
   /** This chat's saves to memory, shown under the replies that made them. */
   memorySaves?: import("./memory-saves").ChatMemorySaves;
+  /** What each answer read, changed and used, shown under it (NIAR-296). */
+  answerReceipts?: import("./answer-receipt").ChatAnswerReceipts;
 };
 const NextChatContext = createContext<NextChat | null>(null);
 export const NextChatProvider = NextChatContext.Provider;

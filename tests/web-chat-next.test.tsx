@@ -1785,6 +1785,58 @@ test("the workspace's starters replace the app's suggestions and send at once", 
   expect(root.findByType("textarea").props.value).toBe("");
 });
 
+// NIAR-296 model presets.
+
+test("a picked model preset goes with the next message; none goes when Default is picked", async () => {
+  const { session, sent } = fakeSession(storeWith([]));
+  Object.assign(session, {
+    readChatSetup: jest.fn(async () => ({
+      profile: "workspace-instructions/1",
+      workspaceId: "ws-1",
+      instructions: null,
+      starters: ["Shrň moje schůzky", "Co čeká na schválení?"],
+    })),
+    readChatPresets: jest.fn(async () => [
+      { id: "quick", name: "Rychle" },
+      { id: "thorough", name: "Důkladně" },
+    ]),
+  });
+  const root = (await render(session)).root;
+  const picker = () =>
+    root.find(
+      (node) =>
+        node.type === "select" && node.props["data-testid"] === "preset-picker",
+    );
+  for (
+    let i = 0;
+    i < 50 &&
+    !(
+      root.findAll((node) => node.props["data-testid"] === "chat-starters")
+        .length &&
+      root.findAll(
+        (node) =>
+          node.type === "select" &&
+          node.props["data-testid"] === "preset-picker",
+      ).length
+    );
+    i++
+  )
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
+  expect(picker().props["aria-label"]).toBe("Předvolba modelu");
+  await act(async () =>
+    picker().props.onChange({ target: { value: "thorough" } }),
+  );
+  expect(picker().props.value).toBe("thorough");
+  const starters = byTestId(root, "chat-starters");
+  await act(async () => button(starters, "Shrň moje schůzky").props.onClick());
+  await act(async () => {});
+  expect(sent.at(-1)).toMatchObject({
+    type: "message.send",
+    text: "Shrň moje schůzky",
+    preset: "thorough",
+  });
+});
+
 test("without workspace starters the app's suggestions only fill the composer", async () => {
   const { session, sent } = fakeSession(storeWith([]));
   Object.assign(session, {

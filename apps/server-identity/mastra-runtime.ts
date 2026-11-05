@@ -498,6 +498,8 @@ export function createNativeCatalogRuntime(
         : input;
     };
     const steps = new Map<string, ReturnType<typeof startLoopStep>>();
+    // The model of the step under way; the last one that finished wrote the answer.
+    let modelStep: NonNullable<typeof state.answerModel> | undefined;
     // A mutation may commit and then lose its return value. Its business checkpoint
     // must survive native error handling, which runs in a different database.
     async function restoreCommittedMutation() {
@@ -558,17 +560,33 @@ export function createNativeCatalogRuntime(
                   : []),
                 ...routeDetails(
                   event.role && event.reason
-                    ? { route: { role: event.role, reason: event.reason } }
+                    ? {
+                        route: {
+                          role: event.role,
+                          reason: event.reason,
+                          ...(event.preset
+                            ? { preset: { name: event.preset } }
+                            : {}),
+                        },
+                      }
                     : {},
                 ),
               ]),
             );
+            modelStep = event.modelId
+              ? {
+                  modelId: event.modelId,
+                  role: event.role ?? "chat",
+                  reason: event.reason ?? "primary",
+                }
+              : undefined;
           } else if (event.type === "model-end") {
             // A step that never reached its provider before a fallback failed.
             finishLoopStep(
               steps.get("model"),
               event.failed ? "failed" : "succeeded",
             );
+            if (!event.failed && modelStep) state.answerModel = modelStep;
           } else if (event.type === "tool-start") {
             const step = startLoopStep(
               state,

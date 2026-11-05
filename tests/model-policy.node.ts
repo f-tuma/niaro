@@ -202,6 +202,133 @@ test("a role can point to a tier, and a tier edit moves every role on it", () =>
   );
 });
 
+test("member presets are off by default and reach only their tier while the workspace offers them", () => {
+  const h = harness();
+  const p = h.provider("TEST provider");
+  const chat = h.model(p, "test/chat");
+  const fast = h.model(p, "test/fast");
+  const strong = h.model(p, "test/strong");
+  const spare = h.model(p, "test/spare");
+  const transcriber = h.model(p, "test/transcriber", {
+    kind: "transcription",
+    tools: false,
+  });
+  const org = target.organizationId,
+    ws = target.workspaceId;
+  const tiers = [
+    { id: "fast", name: "Fast models", models: [fast] },
+    { id: "strong", name: "Strong models", models: [strong, spare] },
+  ];
+  const presets = {
+    enabled: true,
+    items: [
+      { id: "fast", name: "Fast", tier: "fast" },
+      { id: "thorough", name: "Thorough", tier: "strong" },
+    ],
+  };
+  // Defined but off: nothing is offered, and a picked preset reaches nothing.
+  h.saveOrganization({
+    tiers,
+    roles: { chat: { models: [chat] } },
+    options: { presets: { ...presets, enabled: false } },
+  });
+  assert.deepEqual(h.store.offeredPresets(org, ws), []);
+  assert.equal(h.store.resolvePreset(org, ws, "fast"), undefined);
+  assert.equal(h.store.route(org, ws, "preset:fast").models.length, 0);
+  // Turned on for one workspace: only there, by the names the admin gave.
+  h.saveWorkspace({ options: { presets } });
+  assert.deepEqual(h.store.offeredPresets(org, ws), [
+    { id: "fast", name: "Fast" },
+    { id: "thorough", name: "Thorough" },
+  ]);
+  assert.deepEqual(h.store.offeredPresets(org, second), []);
+  const picked = h.store.resolvePreset(org, ws, "thorough")!;
+  assert.equal(picked.model.id, strong);
+  assert.deepEqual(picked.route, {
+    role: "preset:thorough",
+    index: 0,
+    fallback: false,
+    reason: "primary",
+    preset: { id: "thorough", name: "Thorough" },
+  });
+  // A preset the workspace does not offer never reaches a model.
+  assert.equal(h.store.resolvePreset(org, ws, "missing"), undefined);
+  assert.equal(h.store.resolvePreset(org, second, "thorough"), undefined);
+  // Without fallback on chat, the second model of the tier is never reached.
+  assert.equal(
+    h.store.fallbackAfter(org, ws, picked, new RequestNotSent()),
+    undefined,
+  );
+  // A preset points to an existing tier whose models fit chat.
+  assert.throws(
+    () =>
+      h.saveWorkspace({
+        options: {
+          presets: {
+            enabled: true,
+            items: [{ id: "x", name: "X", tier: "missing" }],
+          },
+        },
+      }),
+    code("catalog_tier_not_found"),
+  );
+  assert.throws(
+    () =>
+      h.saveOrganization({
+        tiers: [
+          ...tiers,
+          { id: "voice", name: "Voice", models: [transcriber] },
+        ],
+        roles: { chat: { models: [chat] } },
+        options: {
+          presets: {
+            enabled: true,
+            items: [{ id: "voice", name: "Voice", tier: "voice" }],
+          },
+        },
+      }),
+    code("catalog_model_unavailable"),
+  );
+  // The tier stays while a preset uses it.
+  assert.throws(
+    () =>
+      h.saveOrganization({
+        tiers: [tiers[0]],
+        roles: { chat: { models: [chat] } },
+      }),
+    code("catalog_tier_not_found"),
+  );
+  // Enforce mode prices every model a member's preset can reach.
+  const price = (modelId: string) => ({
+    modelId,
+    modelRevision: 1,
+    providerRevision: 1,
+    maxInputTokens: 4096,
+    maxOutputTokens: 1000,
+    inputMicrosPerMillion: 1,
+    outputMicrosPerMillion: 1,
+  });
+  h.store.inferenceBudget.savePolicy(org, ws, 0, {
+    mode: "enforce",
+    maxTokens: 100_000,
+    maxCostMicros: 1_000_000,
+    prices: [price(chat)],
+  });
+  assert.deepEqual(
+    h.store
+      .unpricedRouteModels(org, ws)
+      .map((entry) => [entry.modelId, entry.routes]),
+    [
+      [fast, ["preset:fast"]],
+      [strong, ["preset:thorough"]],
+    ],
+  );
+  // Offering a preset with nothing in it is refused by the protocol.
+  assert.throws(() =>
+    h.saveWorkspace({ options: { presets: { enabled: true, items: [] } } }),
+  );
+});
+
 test("fallback moves on only from a model that cannot be used or was never sent", () => {
   const h = harness();
   const p = h.provider("TEST first");
