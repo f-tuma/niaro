@@ -1,0 +1,22 @@
+# Niaro's private SearXNG: answers the server's web searches in JSON on the
+# project network only. Everything not set here keeps SearXNG's defaults.
+use_default_settings:
+  engines:
+    # Onion search needs Tor, which this container has no way to reach.
+    remove: [ahmia, torch]
+
+general:
+  instance_name: "Niaro search"
+
+server:
+  # Replaced at start by SEARXNG_SECRET, or a random one when that is empty.
+  secret_key: "set-at-start"
+  # Only Niaro calls it, from one address: the bot limiter would block it.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  # Niaro reads format=json; the default image serves HTML only.
+  formats: [html, json]
+  safe_search: 0

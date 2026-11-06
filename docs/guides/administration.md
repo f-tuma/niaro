@@ -72,6 +72,10 @@ Below the providers, **Search backends** keeps SearXNG, Brave or Tavily for web
 search; their keys are write-only and never exported. **Models → Settings → Web
 search** chooses one, or the provider's own search with the Web search models.
 
+The compose files can run a private SearXNG next to the server (profile
+`search`, see [deployment](deployment.md#optional-web-search)); its address is
+`http://searxng:8080`, the form's default, with no key.
+
 Behavior: [models-and-providers](../../openspec/specs/models-and-providers/spec.md).
 
 ## Workspace knowledge

@@ -180,7 +180,10 @@ export const FREE_MODEL_LIMITS = Object.freeze({
 export const SEARCH_BACKEND_KINDS = ["searxng", "brave", "tavily"] as const;
 export const SearchBackendKind = z.enum(SEARCH_BACKEND_KINDS);
 export type SearchBackendKindValue = z.infer<typeof SearchBackendKind>;
-/** Defaults a search backend form starts from; the address stays editable. */
+/**
+ * Defaults a search backend form starts from; the address stays editable.
+ * SearXNG starts at the compose "search" profile's service.
+ */
 export const SEARCH_BACKEND_PRESETS: Readonly<
   Record<
     SearchBackendKindValue,
@@ -189,7 +192,7 @@ export const SEARCH_BACKEND_PRESETS: Readonly<
 > = {
   searxng: {
     label: "SearXNG",
-    url: "http://localhost:8888",
+    url: "http://searxng:8080",
     keyRequired: false,
   },
   brave: {

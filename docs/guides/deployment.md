@@ -508,6 +508,30 @@ build. Limits per file: 25 MiB, 100 pages, 10 minutes; photos are scaled to
 16 MP before OCR. A file it cannot read is reported to the assistant as such.
 Compare the engines on your own files with `services/converter/compare.py`.
 
+## Optional web search
+
+Web search can go to your own [SearXNG](https://docs.searxng.org/) instead of
+the model provider or a paid search API. The compose profile `search` builds
+`services/searxng`: the official image, pinned by digest, with JSON answers
+turned on and SearXNG's bot limiter off, since only Niaro calls it. It runs
+read-only without capabilities, publishes no port and holds no key; Niaro
+reaches it at `http://searxng:8080` on the project's own network. SearXNG asks
+public search engines, so the container needs a way out.
+
+1. Add the profile to `.env` (or Dokploy **Environment**), keeping any you
+   already have, e.g. `COMPOSE_PROFILES=documents,search`. Optional:
+   `SEARXNG_SECRET` (a random one is made at each start when empty) and
+   `SEARXNG_MEMORY` (default `512m`).
+2. Start it: `docker compose --profile search up -d --build`, or redeploy in
+   Dokploy.
+3. In administration, **Providers → Search backends**, add SearXNG with
+   address `http://searxng:8080` and no key.
+4. In **Models → Settings → Web search**, choose that backend.
+
+Without step 4 searches keep using the provider. Adjust engines in
+`services/searxng/settings.yml`; it keeps SearXNG's defaults for everything it
+does not set.
+
 ## Not in the image
 
 - Docker for installed connectors (see above).

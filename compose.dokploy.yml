@@ -27,6 +27,9 @@
 # Optional reading of attached documents and photos: add the profile
 # "documents" and set NIARO_CONVERTER_URL=http://converter:8000 (plus
 # CONVERTER_TOKEN); see docs/guides/object-storage.md.
+# Optional web search without an outside key: add the profile "search", then
+# add SearXNG at http://searxng:8080 in administration, Providers, Search
+# backends; see docs/guides/deployment.md, "Optional web search".
 name: niaro
 
 x-object-storage-environment: &object-storage-environment
@@ -220,6 +223,31 @@ services:
     pids_limit: 128
     # Docling reads a 100-page scan in about 1.5 GB; MarkItDown needs 0.5 GB.
     mem_limit: ${CONVERTER_MEMORY:-3g}
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  # Optional: a private SearXNG for web searches, reached by Niaro at
+  # http://searxng:8080 on the project's own network; no published port and
+  # no key. Add it in administration, Providers, Search backends, then pick it
+  # in Models, Settings, Web search.
+  searxng:
+    profiles: ["search"]
+    build:
+      context: https://github.com/f-tuma/niaro.git#${NIARO_GIT_REF:-main}:services/searxng
+    image: ${SEARXNG_IMAGE:-niaro-searxng:local}
+    restart: unless-stopped
+    environment:
+      # Optional; a random one is made at each start when empty.
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-}
+    networks: [default]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: ${SEARXNG_MEMORY:-512m}
     logging:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }

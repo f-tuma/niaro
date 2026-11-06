@@ -275,7 +275,7 @@ test("a search backend form fills the service's address and sends the key once",
   mutate.mockResolvedValue({ id: "TEST-search" });
   const close = jest.fn();
   const root = render(<SearchBackendForm state={state} close={close} />);
-  expect(input(root, "search-url").props.value).toBe("http://localhost:8888");
+  expect(input(root, "search-url").props.value).toBe("http://searxng:8080");
   act(() => select(root, "search-kind").props.onValueChange("brave"));
   expect(input(root, "search-url").props.value).toBe(
     "https://api.search.brave.com/res/v1",
