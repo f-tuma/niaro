@@ -475,24 +475,32 @@ export function HostedPage() {
                     <Badge variant="outline">{copy.image}</Badge>
                   )}
                 </ItemTitle>
-                <ItemDescription>
-                  <span className="flex min-w-0 flex-wrap items-center gap-x-3">
-                    <code className="truncate font-mono" title={server.url}>
-                      {server.url}
-                    </code>
-                    <span>{sourceLabel(server.definition)}</span>
-                    {server.restarts > 0 && (
-                      <span>
-                        {server.restarts} {copy.restarts}
-                      </span>
-                    )}
-                    {server.error && (
-                      <span className="text-destructive">
-                        {copy.errors[server.error] ?? server.error}
-                      </span>
-                    )}
+                {(server.restarts > 0 || server.error) && (
+                  <ItemDescription>
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-3">
+                      {server.restarts > 0 && (
+                        <span>
+                          {server.restarts} {copy.restarts}
+                        </span>
+                      )}
+                      {server.error && (
+                        <span className="text-destructive">
+                          {copy.errors[server.error] ?? server.error}
+                        </span>
+                      )}
+                    </span>
+                  </ItemDescription>
+                )}
+                {/* Where it runs: secondary detail, the address reaches
+                    only this server. */}
+                <span className="flex min-w-0 flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+                  <span className="truncate">
+                    {sourceLabel(server.definition)}
                   </span>
-                </ItemDescription>
+                  <code className="truncate font-mono" title={server.url}>
+                    {server.url}
+                  </code>
+                </span>
               </ItemContent>
               {/* Phones give status and actions their own line so the URL keeps the width. */}
               <ItemActions className="max-sm:ml-10 max-sm:basis-full">

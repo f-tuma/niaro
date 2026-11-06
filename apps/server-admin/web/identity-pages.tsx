@@ -4,6 +4,19 @@ import { WorkspaceKnowledge } from "./workspace-knowledge";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearch,
+} from "@tanstack/react-router";
+import { Badge } from "@admin/components/ui/badge";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@admin/components/ui/tabs";
+import {
   ArrowRightLeft,
   BookOpen,
   Boxes,
@@ -134,17 +147,38 @@ export function Accounts() {
 export function Workspaces() {
   return <IdentityPage page="workspaces" />;
 }
+/** One workspace's page: members, roles, instructions and knowledge. */
+export function WorkspacePage() {
+  const { workspaceId } = useParams({ strict: false });
+  return <IdentityPage page="workspace" workspaceId={workspaceId} />;
+}
+export const WORKSPACE_TABS = [
+  "members",
+  "roles",
+  "instructions",
+  "knowledge",
+] as const;
+export type WorkspaceTab = (typeof WORKSPACE_TABS)[number];
+export const workspaceSearchSchema = (
+  search: Record<string, unknown>,
+): { tab?: WorkspaceTab } =>
+  WORKSPACE_TABS.includes(search.tab as WorkspaceTab)
+    ? { tab: search.tab as WorkspaceTab }
+    : {};
 /**
  * Loads identity + organization detail and handles every pre-content state.
  * `content` pages (audit) render their own header once detail is available.
  */
 export function IdentityPage({
   page,
+  workspaceId,
   title,
   content,
   preserveDraft = false,
 }: {
-  page: "accounts" | "workspaces";
+  page: "accounts" | "workspaces" | "workspace";
+  /** The workspace the "workspace" page shows. */
+  workspaceId?: string;
   title?: string;
   content?: (detail: OrganizationDetail, refreshFailed: boolean) => ReactNode;
   preserveDraft?: boolean;
@@ -227,7 +261,14 @@ export function IdentityPage({
       (e) => e instanceof ApiError && [401, 403, 404].includes(e.status),
     );
   const pageTitle =
-    title ?? copy[page === "accounts" ? "people" : "workspaces"];
+    title ??
+    copy[
+      page === "accounts"
+        ? "people"
+        : page === "workspace"
+          ? "workspace"
+          : "workspaces"
+    ];
   const ready =
     data.authentication.identityEnabled &&
     !loading &&
@@ -258,8 +299,9 @@ export function IdentityPage({
       </>
     ) : (
       <OrganizationContent
-        key={`${page}:${organizationId}`}
+        key={`${page}:${organizationId}:${workspaceId ?? ""}`}
         page={page}
+        workspaceId={workspaceId}
         title={pageTitle}
         detail={detail.data!}
         pending={pending || detail.isFetching}
@@ -329,8 +371,12 @@ export function IdentityPage({
   );
 }
 type Mutation = (input: Record<string, unknown>) => Promise<boolean>;
-function OrganizationContent(props: {
-  page: "accounts" | "workspaces";
+function OrganizationContent({
+  workspaceId,
+  ...props
+}: {
+  page: "accounts" | "workspaces" | "workspace";
+  workspaceId?: string;
   title: string;
   detail: OrganizationDetail;
   pending: boolean;
@@ -339,8 +385,226 @@ function OrganizationContent(props: {
 }) {
   return props.page === "accounts" ? (
     <People {...props} />
+  ) : props.page === "workspace" ? (
+    <WorkspaceDetail {...props} workspaceId={workspaceId ?? ""} />
   ) : (
     <WorkspaceList {...props} />
+  );
+}
+
+/** The invitation sheet for one workspace. */
+function InviteSheet({
+  organizationId,
+  workspace,
+  onClose,
+}: {
+  organizationId: string;
+  workspace: Workspace | undefined;
+  onClose: () => void;
+}) {
+  const { copy } = useAdmin();
+  return (
+    <Sheet
+      open={!!workspace}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent size="form">
+        <SheetHeader>
+          <SheetTitle>{copy.inviteToWorkspace}</SheetTitle>
+          <SheetDescription>{workspace?.name}</SheetDescription>
+        </SheetHeader>
+        {workspace && (
+          <WorkspaceInvitations
+            organizationId={organizationId}
+            workspaceId={workspace.id}
+            onCancel={onClose}
+          />
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// Owners and administrators reach every workspace without an explicit grant.
+const withAccess = (detail: OrganizationDetail, workspace: Workspace) =>
+  detail.members.filter(
+    (m) => m.role !== "member" || workspace.members.includes(m.id),
+  );
+
+/**
+ * One workspace: who has access, its roles, instructions and knowledge, as
+ * tabs. Opening it never switches the console's workspace; the header says
+ * whether it is the current one and offers the switch.
+ */
+function WorkspaceDetail({
+  workspaceId,
+  detail,
+  pending,
+  banner,
+  mutate,
+}: {
+  workspaceId: string;
+  detail: OrganizationDetail;
+  pending: boolean;
+  banner: ReactNode;
+  mutate: Mutation;
+}) {
+  const { copy, setSelectedWorkspace } = useAdmin();
+  const scope = useConsoleScope();
+  const navigate = useNavigate();
+  const search = workspaceSearchSchema(useSearch({ strict: false }));
+  const [inviting, setInviting] = useState(false);
+  const workspace = detail.workspaces.find((w) => w.id === workspaceId);
+  const manage = detail.canManageWorkspaces;
+  if (!workspace)
+    return (
+      <>
+        <PageHeader
+          title={copy.workspaceNotFound}
+          back={{ to: "/workspaces", label: copy.workspaces }}
+        />
+        {banner}
+        <Nothing
+          icon={<Boxes />}
+          title={copy.workspaceNotFound}
+          description={copy.workspaceNotFoundHint}
+        >
+          <Button variant="outline" asChild>
+            <Link to="/workspaces">{copy.workspaces}</Link>
+          </Button>
+        </Nothing>
+      </>
+    );
+  const tab: WorkspaceTab = manage ? (search.tab ?? "members") : "members";
+  const setTab = (next: string) =>
+    void navigate({
+      to: "/workspaces/$workspaceId",
+      params: { workspaceId },
+      search: { tab: next as WorkspaceTab },
+      replace: true,
+    });
+  const current = workspace.id === scope.workspace?.id;
+  const members = withAccess(detail, workspace);
+  const roles = workspace.roles ?? [];
+  const membersList = (
+    <WorkspaceMembers
+      workspace={workspace}
+      members={members}
+      pending={pending}
+      manage={manage}
+      mutate={mutate}
+    />
+  );
+  return (
+    <>
+      <PageHeader
+        title={workspace.name}
+        back={{ to: "/workspaces", label: copy.workspaces }}
+        media={
+          <EntityIcon size="lg" tone="muted">
+            <span className="text-sm font-semibold">
+              {initials(workspace.name)}
+            </span>
+          </EntityIcon>
+        }
+        meta={
+          current ? (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Check aria-hidden="true" className="size-3.5" />
+              {copy.currentWorkspace}
+            </span>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedWorkspace(workspace.id)}
+            >
+              <ArrowRightLeft data-icon="inline-start" aria-hidden="true" />
+              {copy.switchTo}
+            </Button>
+          )
+        }
+        actions={
+          manage && (
+            <Button onClick={() => setInviting(true)} disabled={pending}>
+              <Mail data-icon="inline-start" aria-hidden="true" />
+              {copy.inviteByEmail}
+            </Button>
+          )
+        }
+      />
+      {banner}
+      {manage ? (
+        <Tabs value={tab} onValueChange={setTab}>
+          <div className="-mx-4 overflow-x-auto overflow-y-hidden border-b px-4 pt-1 pb-px md:mx-0 md:px-0">
+            <TabsList variant="line" aria-label={copy.workspaceSections}>
+              <TabsTrigger value="members">
+                <Users aria-hidden="true" />
+                {copy.workspaceMembers}
+                <Badge variant="secondary">{members.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="roles">
+                <ShieldCheck aria-hidden="true" />
+                {copy.workspaceRoles}
+                {roles.length > 0 && (
+                  <Badge variant="secondary">{roles.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="instructions">
+                <MessageSquareText aria-hidden="true" />
+                {copy.workspaceInstructions}
+              </TabsTrigger>
+              <TabsTrigger value="knowledge">
+                <BookOpen aria-hidden="true" />
+                {copy.workspaceKnowledge}
+              </TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent value="members" className="mt-4">
+            {membersList}
+          </TabsContent>
+          <TabsContent value="roles" className="mt-4">
+            <WorkspaceRoles
+              inline
+              workspace={workspace}
+              detail={detail}
+              pending={pending}
+              mutate={mutate}
+              feedback={null}
+            />
+          </TabsContent>
+          <TabsContent value="instructions" className="mt-4">
+            <WorkspaceInstructions
+              inline
+              key={workspace.id}
+              organizationId={detail.organizationId}
+              scope={{ type: "workspace", workspaceId: workspace.id }}
+              name={workspace.name}
+            />
+          </TabsContent>
+          <TabsContent value="knowledge" className="mt-4">
+            <WorkspaceKnowledge
+              inline
+              key={workspace.id}
+              organizationId={detail.organizationId}
+              workspaceId={workspace.id}
+              name={workspace.name}
+            />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        membersList
+      )}
+      {manage && (
+        <InviteSheet
+          organizationId={detail.organizationId}
+          workspace={inviting ? workspace : undefined}
+          onClose={() => setInviting(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -736,12 +1000,8 @@ function WorkspaceList({
   const scope = useConsoleScope();
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
-  const [membersFor, setMembersFor] = useState<string | null>(null);
   const [pairingFor, setPairingFor] = useState<string | null>(null);
-  const [rolesFor, setRolesFor] = useState<string | null>(null);
-  /** A workspace id, or "organization" for the default instructions. */
-  const [instructionsFor, setInstructionsFor] = useState<string | null>(null);
-  const [knowledgeFor, setKnowledgeFor] = useState<string | null>(null);
+  const [defaultInstructions, setDefaultInstructions] = useState(false);
   const shell = useShellCopy();
   const manage = detail.canManageWorkspaces;
   const searchable = detail.workspaces.length > 6;
@@ -749,20 +1009,7 @@ function WorkspaceList({
   const visible = detail.workspaces.filter((workspace) =>
     workspace.name.toLocaleLowerCase().includes(query),
   );
-  // Owners and administrators reach every workspace without an explicit grant.
-  const withAccess = (workspace: Workspace) =>
-    detail.members.filter(
-      (m) => m.role !== "member" || workspace.members.includes(m.id),
-    );
-  const editing = detail.workspaces.find((w) => w.id === membersFor);
   const pairing = detail.workspaces.find((w) => w.id === pairingFor);
-  const rolesWorkspace = detail.workspaces.find((w) => w.id === rolesFor);
-  const instructionsWorkspace = detail.workspaces.find(
-    (w) => w.id === instructionsFor,
-  );
-  const knowledgeWorkspace = detail.workspaces.find(
-    (w) => w.id === knowledgeFor,
-  );
   return (
     <>
       <PageHeader
@@ -786,9 +1033,7 @@ function WorkspaceList({
                 {copy.addWorkspace}
               </Button>
               <MoreActions label={copy.moreActions}>
-                <DropdownMenuItem
-                  onSelect={() => setInstructionsFor("organization")}
-                >
+                <DropdownMenuItem onSelect={() => setDefaultInstructions(true)}>
                   <MessageSquareText aria-hidden="true" />
                   {copy.defaultInstructions}
                 </DropdownMenuItem>
@@ -819,7 +1064,7 @@ function WorkspaceList({
               const summary = [
                 plural(
                   language,
-                  withAccess(workspace).length,
+                  withAccess(detail, workspace).length,
                   shell.membersCount,
                 ),
                 workspace.connectionCount > 0 &&
@@ -850,18 +1095,14 @@ function WorkspaceList({
                   </ItemMedia>
                   <ItemContent>
                     <ItemTitle>
-                      {manage ? (
-                        // The whole row opens the members sheet.
-                        <button
-                          type="button"
-                          className="text-left break-words outline-none after:absolute after:inset-0 hover:underline focus-visible:underline"
-                          onClick={() => setMembersFor(workspace.id)}
-                        >
-                          {workspace.name}
-                        </button>
-                      ) : (
-                        <span className="break-words">{workspace.name}</span>
-                      )}
+                      {/* The whole row opens the workspace's page. */}
+                      <Link
+                        to="/workspaces/$workspaceId"
+                        params={{ workspaceId: workspace.id }}
+                        className="text-left break-words outline-none after:absolute after:inset-0 hover:underline focus-visible:underline"
+                      >
+                        {workspace.name}
+                      </Link>
                     </ItemTitle>
                     <ItemDescription>{summary}</ItemDescription>
                   </ItemContent>
@@ -886,36 +1127,10 @@ function WorkspaceList({
                         label={`${copy.moreActions}: ${workspace.name}`}
                       >
                         <DropdownMenuItem
-                          disabled={pending}
-                          onSelect={() => setMembersFor(workspace.id)}
-                        >
-                          <Users aria-hidden="true" />
-                          {copy.manageMembers}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
                           onSelect={() => setPairingFor(workspace.id)}
                         >
                           <Mail aria-hidden="true" />
                           {copy.inviteByEmail}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          disabled={pending}
-                          onSelect={() => setRolesFor(workspace.id)}
-                        >
-                          <ShieldCheck aria-hidden="true" />
-                          {copy.workspaceRoles}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => setInstructionsFor(workspace.id)}
-                        >
-                          <MessageSquareText aria-hidden="true" />
-                          {copy.workspaceInstructions}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => setKnowledgeFor(workspace.id)}
-                        >
-                          <BookOpen aria-hidden="true" />
-                          {copy.workspaceKnowledge}
                         </DropdownMenuItem>
                       </MoreActions>
                     )}
@@ -954,90 +1169,20 @@ function WorkspaceList({
           </Field>
         </FormSheet>
       )}
-      <Sheet
-        open={!!editing}
-        onOpenChange={(open) => {
-          if (!open) setMembersFor(null);
-        }}
-      >
-        <SheetContent size="form">
-          {editing && (
-            <WorkspaceMembers
-              key={editing.id}
-              workspace={editing}
-              members={withAccess(editing)}
-              pending={pending}
-              mutate={mutate}
-              invite={() => {
-                setMembersFor(null);
-                setPairingFor(editing.id);
-              }}
-              close={() => setMembersFor(null)}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
-      {manage && instructionsFor && (
+      {manage && defaultInstructions && (
         <WorkspaceInstructions
-          key={instructionsFor}
           organizationId={detail.organizationId}
-          scope={
-            instructionsWorkspace
-              ? { type: "workspace", workspaceId: instructionsWorkspace.id }
-              : { type: "organization" }
-          }
-          name={instructionsWorkspace?.name}
-          open
+          scope={{ type: "organization" }}
           onOpenChange={(open) => {
-            if (!open) setInstructionsFor(null);
+            if (!open) setDefaultInstructions(false);
           }}
         />
       )}
-      {manage && knowledgeWorkspace && (
-        <WorkspaceKnowledge
-          key={knowledgeWorkspace.id}
-          organizationId={detail.organizationId}
-          workspaceId={knowledgeWorkspace.id}
-          name={knowledgeWorkspace.name}
-          open
-          onOpenChange={(open) => {
-            if (!open) setKnowledgeFor(null);
-          }}
-        />
-      )}
-      {manage && rolesWorkspace && (
-        <WorkspaceRoles
-          workspace={rolesWorkspace}
-          detail={detail}
-          pending={pending}
-          mutate={mutate}
-          feedback={banner}
-          open
-          onOpenChange={(open) => {
-            if (!open) setRolesFor(null);
-          }}
-        />
-      )}
-      <Sheet
-        open={!!pairing}
-        onOpenChange={(open) => {
-          if (!open) setPairingFor(null);
-        }}
-      >
-        <SheetContent size="form">
-          <SheetHeader>
-            <SheetTitle>{copy.inviteToWorkspace}</SheetTitle>
-            <SheetDescription>{pairing?.name}</SheetDescription>
-          </SheetHeader>
-          {pairing && (
-            <WorkspaceInvitations
-              organizationId={detail.organizationId}
-              workspaceId={pairing.id}
-              onCancel={() => setPairingFor(null)}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
+      <InviteSheet
+        organizationId={detail.organizationId}
+        workspace={pairing}
+        onClose={() => setPairingFor(null)}
+      />
     </>
   );
 }
@@ -1050,16 +1195,14 @@ function WorkspaceMembers({
   workspace,
   members,
   pending,
+  manage,
   mutate,
-  invite,
-  close,
 }: {
   workspace: Workspace;
   members: Member[];
   pending: boolean;
+  manage: boolean;
   mutate: Mutation;
-  invite: () => void;
-  close?: () => void;
 }) {
   const { copy } = useAdmin();
   const me = useConsoleScope().identity.data?.user?.id;
@@ -1070,82 +1213,68 @@ function WorkspaceMembers({
     `${member.name} ${member.email}`.toLocaleLowerCase().includes(query),
   );
   return (
-    <>
-      <SheetHeader>
-        <SheetTitle>{copy.workspaceMembers}</SheetTitle>
-        <SheetDescription>{workspace.name}</SheetDescription>
-      </SheetHeader>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4">
-        {members.length > 8 && (
-          <SearchField
-            value={search}
-            onChange={setSearch}
-            placeholder={copy.searchPeople}
-          />
-        )}
-        <Card variant="list" role="list" aria-label={copy.workspaceMembers}>
-          {visible.map((member) => (
-            <Item key={member.id} variant="row" size="row" role="listitem">
-              <ItemMedia>
-                <Avatar size="sm">
-                  <AvatarFallback>{initials(member.name)}</AvatarFallback>
-                </Avatar>
-              </ItemMedia>
-              <ItemContent>
-                <ItemTitle>
-                  <span className="truncate">
-                    {member.name}
-                    {member.userId === me && (
-                      <span className="font-normal text-muted-foreground">
-                        {" "}
-                        ({copy.you})
-                      </span>
-                    )}
-                  </span>
-                </ItemTitle>
-                <ItemDescription>{member.email}</ItemDescription>
-              </ItemContent>
-              <ItemActions>
-                {member.role === "member" ? (
-                  <MoreActions
-                    size="sm"
-                    label={`${copy.moreActions}: ${member.name}`}
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">
+        {copy.workspaceMembersHint}
+      </p>
+      {members.length > 8 && (
+        <SearchField
+          value={search}
+          onChange={setSearch}
+          placeholder={copy.searchPeople}
+        />
+      )}
+      <Card variant="list" role="list" aria-label={copy.workspaceMembers}>
+        {visible.map((member) => (
+          <Item key={member.id} variant="row" size="row" role="listitem">
+            <ItemMedia>
+              <Avatar size="sm">
+                <AvatarFallback>{initials(member.name)}</AvatarFallback>
+              </Avatar>
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>
+                <span className="truncate">
+                  {member.name}
+                  {member.userId === me && (
+                    <span className="font-normal text-muted-foreground">
+                      {" "}
+                      ({copy.you})
+                    </span>
+                  )}
+                </span>
+              </ItemTitle>
+              <ItemDescription>{member.email}</ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              {manage && member.role === "member" ? (
+                <MoreActions
+                  size="sm"
+                  label={`${copy.moreActions}: ${member.name}`}
+                >
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={pending}
+                    onSelect={() => setRemoving(member)}
                   >
-                    <DropdownMenuItem
-                      variant="destructive"
-                      disabled={pending}
-                      onSelect={() => setRemoving(member)}
-                    >
-                      <UserMinus aria-hidden="true" />
-                      {copy.removeAccess}
-                    </DropdownMenuItem>
-                  </MoreActions>
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    {copy[member.role]}
-                  </span>
-                )}
-              </ItemActions>
-            </Item>
-          ))}
-          {!visible.length && (
-            <p className="p-6 text-center text-sm text-muted-foreground">
-              {copy.noMatchingPeople}
-            </p>
-          )}
-        </Card>
-      </div>
-      <SheetFooter>
-        {close && (
-          <Button type="button" variant="ghost" onClick={close}>
-            {copy.close}
-          </Button>
+                    <UserMinus aria-hidden="true" />
+                    {copy.removeAccess}
+                  </DropdownMenuItem>
+                </MoreActions>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  {copy[member.role]}
+                </span>
+              )}
+            </ItemActions>
+          </Item>
+        ))}
+        {!visible.length && (
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            {copy.noMatchingPeople}
+          </p>
         )}
-        <Button type="button" disabled={pending} onClick={invite}>
-          <Mail data-icon="inline-start" aria-hidden="true" />
-          {copy.inviteByEmail}
-        </Button>
-      </SheetFooter>
+      </Card>
       <ConfirmAction
         open={!!removing}
         onOpenChange={(open) => !open && setRemoving(null)}
@@ -1163,6 +1292,6 @@ function WorkspaceMembers({
             });
         }}
       />
-    </>
+    </div>
   );
 }

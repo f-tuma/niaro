@@ -46,7 +46,7 @@ The web app's account menu SHALL show an **Administration** entry only to owners
 
 ### Requirement: Console navigation
 
-The console sidebar SHALL show the workspace switcher at the top, **Overview** first, then the groups **Services** (Services, Installed connectors, Built-in tools, External AI apps), **AI** (AI providers, Models, Usage limits, Skills), **Processes** (Processes, Runs), **People** (People, Workspaces, Sign-in methods) and **Settings** (Activity log, Settings), and the account menu (theme, language, sign out) at the bottom.
+The console sidebar SHALL show the workspace switcher at the top, **Overview** first, then the groups **Services** (Services, Installed connectors, Plugins, External AI apps), **AI** (AI providers, Models, Usage limits, Skills), **Processes** (Processes, Runs), **People** (People, Workspaces, Sign-in methods) and **Settings** (Activity log, Settings), and the account menu (theme, language, sign out) at the bottom. The whole sidebar SHALL be one labelled landmark.
 
 #### Scenario: Administrator opens the console
 
@@ -58,9 +58,23 @@ The console sidebar SHALL show the workspace switcher at the top, **Overview** f
 - **WHEN** an administrator chooses another workspace in the switcher
 - **THEN** workspace-scoped pages show that workspace's services, models, processes and runs
 
+#### Scenario: Switching on a workspace page
+
+- **WHEN** an administrator chooses another workspace in the switcher while a workspace's page is open
+- **THEN** that workspace's page opens, on the same tab
+
+### Requirement: Console language
+
+The console SHALL open in Czech when the browser prefers Czech over English and in English otherwise, until someone picks a language in the account menu; only that choice SHALL be remembered. Dates and times SHALL be formatted in the console's language.
+
+#### Scenario: Czech browser
+
+- **WHEN** someone with a Czech browser opens the console for the first time
+- **THEN** it is in Czech and the Activity log shows Czech dates and times
+
 ### Requirement: Console pages and owners
 
-Each console item SHALL open its page, specified by the named capability: Services `/admin/services` (`service-catalog`), Installed connectors `/admin/hosted` (`hosted-mcp-servers`), Built-in tools `/admin/plugins` (`plugins`), External AI apps `/admin/mcp` (`mcp-server`), AI providers and Models (`models-and-providers`), Usage limits (`inference-budget`), Skills (`skills`), Processes (`process-definitions`), People, Workspaces, Sign-in methods and Activity log (`identity-access`).
+Each console item SHALL open its page, specified by the named capability: Services `/admin/services` (`service-catalog`), Installed connectors `/admin/hosted` (`hosted-mcp-servers`), Plugins `/admin/plugins` (`plugins`), External AI apps `/admin/mcp` (`mcp-server`), AI providers and Models (`models-and-providers`), Usage limits (`inference-budget`), Skills (`skills`), Processes (`process-definitions`), People, Workspaces, Sign-in methods and Activity log (`identity-access`).
 
 #### Scenario: Open Model choice
 
@@ -69,7 +83,7 @@ Each console item SHALL open its page, specified by the named capability: Servic
 
 ### Requirement: Console addresses
 
-The console pages SHALL have these addresses: AI providers `/admin/providers`, Models `/admin/routing`, Usage limits `/admin/usage`, Skills `/admin/skills`, Processes `/admin/processes`, Runs `/admin/loops`, People `/admin/people`, Workspaces `/admin/workspaces`, Sign-in methods `/admin/auth-providers`, Activity log `/admin/audit` and Settings `/admin/settings`.
+The console pages SHALL have these addresses: AI providers `/admin/providers`, Models `/admin/routing`, Usage limits `/admin/usage`, Skills `/admin/skills`, Processes `/admin/processes`, Runs `/admin/loops`, People `/admin/people`, Workspaces `/admin/workspaces` (one workspace at `/admin/workspaces/<id>`), Sign-in methods `/admin/auth-providers`, Activity log `/admin/audit` and Settings `/admin/settings`.
 
 #### Scenario: Direct link to Runs
 
@@ -78,7 +92,7 @@ The console pages SHALL have these addresses: AI providers `/admin/providers`, M
 
 ### Requirement: Console routes
 
-The server SHALL return the console page only for its known routes, including detail routes such as `/admin/services/:id`, `/admin/providers/:id`, `/admin/plugins/:id`, `/admin/skills/:id` and `/admin/processes/:id`, so that reload and direct links work, and SHALL answer other paths under `/admin` with 404. `GET /admin` SHALL redirect to `/admin/`.
+The server SHALL return the console page only for its known routes, including detail routes such as `/admin/services/:id`, `/admin/providers/:id`, `/admin/plugins/:id`, `/admin/skills/:id`, `/admin/workspaces/:id` and `/admin/processes/:id`, so that reload and direct links work, and SHALL answer other paths under `/admin` with 404. `GET /admin` SHALL redirect to `/admin/`.
 
 #### Scenario: Reload a detail page
 
@@ -198,6 +212,24 @@ Owners and administrators SHALL read and change server-wide settings on **Settin
 - **WHEN** an administrator saves settings from an outdated revision
 - **THEN** the server answers 409 `server_settings_conflict` and keeps the newer values
 
+### Requirement: Settings page layout
+
+The Settings page SHALL group the settings under headings with a one-line hint each (Server, Meetings, Overview refresh, Allowed addresses, Your session), link to Sign-in methods and Configuration instead of repeating them, and show the start time and protocol only as a quiet line about the server. Allowed addresses SHALL say that service addresses are private or `http://` addresses the server may call and app addresses are browser origins allowed to use Niaro (CORS).
+
+#### Scenario: Operator origins
+
+- **WHEN** the operator set `NIARO_INTEGRATION_ORIGINS=http://searxng:8080`
+- **THEN** Allowed addresses lists `http://searxng:8080` read-only as set by the operator, outside the editable service addresses
+
+### Requirement: Operator origins in the settings view
+
+The settings view SHALL carry `operatorOrigins`, the service origins the operator trusts through `NIARO_INTEGRATION_ORIGINS`; they SHALL be trusted like the saved service addresses but never saved with the settings.
+
+#### Scenario: Saving keeps them apart
+
+- **WHEN** an administrator saves the settings while the operator trusts `http://searxng:8080`
+- **THEN** the saved service addresses do not include it and the view still lists it under `operatorOrigins`
+
 ### Requirement: When settings apply
 
 Name, time zone, meetings and scheduler settings SHALL apply at once. Integration and web client origins SHALL apply at the next start and SHALL be listed in `restartPending` until then, which the page shows.
@@ -216,19 +248,14 @@ The settings SHALL be limited to: meeting audio retention 0–3650 days, glossar
 - **WHEN** an administrator saves a meeting chunk length of 60 seconds
 - **THEN** the save is rejected and the stored settings stay unchanged
 
-### Requirement: Settings export and import
+### Requirement: Settings move with the configuration bundle
 
-The system SHALL export the server settings as a JSON file with `"profile": "niaro-server-settings"` and `"version": 1` that contains no secrets and no paths (`GET …/server-settings/export`), and SHALL import such a file (`POST …/server-settings/import`) only after validating it with the same rules as the profile, applying it with a revision check and auditing it as `server.settings_imported`. The console SHALL show the changes and ask for confirmation before importing.
+Server settings SHALL move between servers only in the configuration bundle's `serverSettings` section (see Configuration bundle export); there SHALL be no separate settings export or import, and `…/server-settings/export` and `…/server-settings/import` SHALL answer 404.
 
 #### Scenario: Move settings to another server
 
-- **WHEN** an administrator exports the settings on one server and imports the file on another
+- **WHEN** an administrator exports the organization on one server and imports the bundle on another
 - **THEN** after confirmation the second server has the same name, time zone, meetings, scheduler and origins
-
-#### Scenario: Invalid file
-
-- **WHEN** an administrator imports a file with another `profile` value or an out-of-range field
-- **THEN** the import is rejected and no setting changes
 
 ### Requirement: Run list
 
@@ -241,7 +268,7 @@ Owners and administrators SHALL list the organization's agent runs (chat turns, 
 
 #### Scenario: Support question
 
-- **WHEN** an administrator filters by process *Weekly pipeline*, version 3, status `failed` and the last 7 days
+- **WHEN** an administrator filters by process _Weekly pipeline_, version 3, status `failed` and the last 7 days
 - **THEN** only the failed runs of that version from the last 7 days are listed
 
 #### Scenario: Uncorroborated process
@@ -360,9 +387,18 @@ The console SHALL be complete in English and Czech, offer light and dark themes,
 - **WHEN** a member requests the filter choices
 - **THEN** the server answers 403
 
+### Requirement: Workspace page
+
+Each row on **Workspaces** SHALL open the workspace's page at `/admin/workspaces/<id>`, with a breadcrumb back to Workspaces and the tabs Members, Roles, Instructions and Knowledge (`?tab=`); members of the organization SHALL see only who has access. Opening the page SHALL NOT switch the console's workspace: its header SHALL say whether it is the current one or offer to switch. The row's menu SHALL hold only actions such as **Invite by email**.
+
+#### Scenario: Open a workspace
+
+- **WHEN** an administrator clicks the row "Sales" on Workspaces
+- **THEN** the Sales page opens on Members, and Roles, Instructions and Knowledge are tabs on the same page
+
 ### Requirement: Workspace instructions editor
 
-Owners and administrators SHALL edit Markdown instructions (at most 8,000 characters) and up to 6 distinct one-line starters (at most 200 characters each) per workspace and as an organization default, from the Workspaces page. Each save SHALL be a new revision bound to the revision it started from; a stale save SHALL be `409 instructions_conflict` and a member SHALL get `403 instructions_forbidden`.
+Owners and administrators SHALL edit Markdown instructions (at most 8,000 characters) and up to 6 distinct one-line starters (at most 200 characters each) per workspace on the Instructions tab of the workspace's page, and as an organization default from the Workspaces list. Each save SHALL be a new revision bound to the revision it started from; a stale save SHALL be `409 instructions_conflict` and a member SHALL get `403 instructions_forbidden`.
 
 #### Scenario: Two administrators save
 
@@ -444,7 +480,7 @@ An import SHALL add missing roles without members, save processes only as drafts
 
 ### Requirement: Configuration page
 
-The console SHALL offer Configuration at `/admin/settings/configuration`, linked from Settings, with Export (organization or workspace), Import of a file, the preview per section and an import confirmation, in English and Czech.
+The console SHALL offer Configuration at `/admin/settings/configuration`, linked from Settings, with Export (organization or workspace), one Import action for a file, the preview per section and an import confirmation, in English and Czech.
 
 #### Scenario: Import from the page
 
@@ -460,14 +496,14 @@ The model policy and routing sections of a configuration bundle SHALL carry memb
 - **WHEN** an administrator exports a workspace that offers the preset Quick and imports it into a fresh server
 - **THEN** the imported workspace offers Quick on the same tier
 
-### Requirement: Knowledge settings sheet
+### Requirement: Knowledge settings
 
-Owners and administrators SHALL open a workspace's Knowledge sheet from the Workspaces page: the index status, **Rebuild index** (disabled while a pass runs), whether files are indexed, the source candidates to pick and the passage length (300–4,000) and overlap (under half the length). Saves SHALL be revision-checked (409 `knowledge_conflict`); members SHALL get 403.
+Owners and administrators SHALL find a workspace's knowledge on the Knowledge tab of the workspace's page: the index status, **Rebuild index** (disabled while a pass runs), whether files are indexed, the source candidates to pick and the passage length (300–4,000) and overlap (under half the length). Saves SHALL be revision-checked (409 `knowledge_conflict`); members SHALL get 403.
 
 #### Scenario: Picking a source
 
 - **WHEN** an administrator ticks "List procedures" of the Wiki and saves
-- **THEN** the sheet closes, a pass indexes that action and the status shows its passages
+- **THEN** the tab says it is saved, a pass indexes that action and the status shows its passages
 
 #### Scenario: Member asks for the settings
 

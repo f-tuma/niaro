@@ -92,10 +92,13 @@ import { StatusBadge, StatusDot } from "@admin/components/console/status";
 import { EntityIcon } from "@admin/components/console/entity-icon";
 import { useConsoleScope } from "./console-scope";
 import { useAdmin } from "./context";
+import { AccountProviderLinks } from "./account-providers";
 import { api, ApiError } from "./lib/api";
 
 const en = {
   title: "Sign-in methods",
+  yourAccount: "Your account",
+  yourAccountHint: "Connect your own account to a method to sign in with it.",
   search: "Search sign-in methods…",
   notFound: "No matching sign-in methods",
   clearSearch: "Clear search",
@@ -159,6 +162,8 @@ const en = {
 type CopyText = typeof en;
 const cs: CopyText = {
   title: "Metody přihlášení",
+  yourAccount: "Tvůj účet",
+  yourAccountHint: "Připoj svůj účet k metodě a přihlašuj se přes ni.",
   search: "Hledat metody přihlášení…",
   notFound: "Žádné odpovídající metody přihlášení",
   clearSearch: "Zrušit hledání",
@@ -330,8 +335,9 @@ function CompanyProviders({
   organizationId: string;
   copy: CopyText;
 }) {
-  const { data } = useAdmin(),
+  const { data, language } = useAdmin(),
     client = useQueryClient();
+  const scope = useConsoleScope();
   const { authProviderId } = useParams({ strict: false });
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -543,6 +549,16 @@ function CompanyProviders({
           </ProviderEmpty>
         )
       ) : null}
+      {!authProviderId && (
+        // Linking your own account to a method, under the methods themselves.
+        <AccountProviderLinks
+          language={language}
+          userId={scope.identity.data?.user?.id}
+          organizationId={organizationId}
+          title={copy.yourAccount}
+          description={copy.yourAccountHint}
+        />
+      )}
       <Sheet
         open={!!editor && canManage}
         onOpenChange={(open) => {

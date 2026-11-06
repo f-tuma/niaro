@@ -1,4 +1,3 @@
-import { AccountProviders } from "./account-providers";
 import { PageHeader, Section } from "@admin/components/console/page";
 import {
   SettingRow,
@@ -15,7 +14,11 @@ import { FileJson } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
 import { useConfigBundleCopy } from "./config-bundle-copy";
 
-/** Theme and language live in the account menu in the sidebar footer. */
+/**
+ * Server-wide settings in titled groups, then the console session. Theme and
+ * language live in the account menu; sign-in methods and export/import have
+ * their own pages.
+ */
 export function Settings() {
   const copy = useShellCopy();
   const bundleCopy = useConfigBundleCopy();
@@ -27,26 +30,12 @@ export function Settings() {
     account && scope.organization && scope.organization.role !== "member"
       ? scope.organization.id
       : undefined;
-  const server = (
-    <>
-      <SettingRow label={copy.started}>
-        <SettingValue>
-          <RelativeTime value={data.server.startedAt} />
-        </SettingValue>
-      </SettingRow>
-      <SettingRow label={copy.appSessionLifetime}>
-        <SettingValue>
-          {Math.round(data.server.sessionSeconds / 60)} {copy.minutes}
-        </SettingValue>
-      </SettingRow>
-      <SettingRow label={copy.protocol}>
-        <SettingValue>
-          <code className="font-mono text-xs">
-            {data.server.workflowProfile}
-          </code>
-        </SettingValue>
-      </SettingRow>
-    </>
+  const sessionLifetime = (
+    <SettingRow label={copy.appSessionLifetime}>
+      <SettingValue>
+        {Math.round(data.server.sessionSeconds / 60)} {copy.minutes}
+      </SettingValue>
+    </SettingRow>
   );
   return (
     <>
@@ -64,8 +53,21 @@ export function Settings() {
         }
       />
       <div className="grid items-start gap-8 lg:grid-cols-2 2xl:grid-cols-3">
-        {account && <AccountProviders />}
-        <Section title={copy.session}>
+        {manager ? (
+          <ServerSettingsSections organizationId={manager}>
+            {sessionLifetime}
+          </ServerSettingsSections>
+        ) : (
+          <Section title={copy.groupServer}>
+            <SettingRows>
+              <SettingRow label={copy.serverName}>
+                <SettingValue>{data.server.name}</SettingValue>
+              </SettingRow>
+              {sessionLifetime}
+            </SettingRows>
+          </Section>
+        )}
+        <Section title={copy.session} description={copy.sessionHint}>
           <SettingRows>
             <SettingRow label={copy.signInMethod}>
               <SettingValue>
@@ -77,23 +79,21 @@ export function Settings() {
                 <RelativeTime value={data.authentication.expiresAt} />
               </SettingValue>
             </SettingRow>
+            {manager && (
+              <SettingRow label={copy.signIn} meta={copy.signInMethodsHint}>
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/auth-providers">{copy.open}</Link>
+                </Button>
+              </SettingRow>
+            )}
           </SettingRows>
         </Section>
-        {manager ? (
-          <ServerSettingsSections organizationId={manager}>
-            {server}
-          </ServerSettingsSections>
-        ) : (
-          <Section title={copy.groupServer}>
-            <SettingRows>
-              <SettingRow label={copy.serverName}>
-                <SettingValue>{data.server.name}</SettingValue>
-              </SettingRow>
-              {server}
-            </SettingRows>
-          </Section>
-        )}
       </div>
+      <p className="text-xs text-muted-foreground">
+        {copy.aboutServer}: {copy.started}{" "}
+        <RelativeTime value={data.server.startedAt} /> · {copy.protocol}{" "}
+        <code className="font-mono">{data.server.workflowProfile}</code>
+      </p>
     </>
   );
 }

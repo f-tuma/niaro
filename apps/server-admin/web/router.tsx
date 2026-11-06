@@ -14,7 +14,12 @@ import { ModelPolicyPage } from "./model-policy-page";
 import { PluginsPage } from "./plugins-page";
 import { PluginFilesPage } from "./plugin-files-page";
 import { AuthProvidersPage } from "./auth-providers";
-import { Accounts, Workspaces } from "./identity-pages";
+import {
+  Accounts,
+  Workspaces,
+  WorkspacePage,
+  workspaceSearchSchema,
+} from "./identity-pages";
 import { AuditPage, auditSearchSchema } from "./audit-page";
 import { McpPage, mcpSearchSchema } from "./mcp-page";
 import { UsageLimitsPage } from "./usage-limits-page";
@@ -113,6 +118,12 @@ export const router = createRouter({
     page("/providers/$providerId", ProviderDetailPage),
     page("/people", () => <Accounts />),
     page("/workspaces", () => <Workspaces />),
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/workspaces/$workspaceId",
+      validateSearch: workspaceSearchSchema,
+      component: WorkspacePage,
+    }),
     page("/hosted", HostedPage),
     page("/auth-providers", AuthProvidersPage),
     page("/auth-providers/$authProviderId", AuthProvidersPage),

@@ -78,28 +78,23 @@ Instance owners SHALL read and change server-wide settings on **Settings** (`GET
 - **WHEN** an administrator who is not an instance owner requests `/admin/api/identity/server-settings/diarizer`
 - **THEN** the server answers 403 `instance_owner_required` and contacts no diarizer
 
-### Requirement: Settings export and import
+### Requirement: Settings move with the configuration bundle
 
-The system SHALL export the server settings as a JSON file with `"profile": "niaro-server-settings"` and `"version": 1` that contains no secrets and no paths (`GET …/server-settings/export`), and SHALL import such a file (`POST …/server-settings/import`) only after validating it with the same rules as the profile, applying it with a revision check and auditing it as `server.settings_imported`. The console SHALL show the changes and ask for confirmation before importing.
+Server settings SHALL move between servers only in the configuration bundle's `serverSettings` section (see Configuration bundle export), which only an instance owner's export carries and only an instance owner's import applies; there SHALL be no separate settings export or import, and `…/server-settings/export` and `…/server-settings/import` SHALL answer 404.
 
 #### Scenario: Move settings to another server
 
-- **WHEN** an instance owner exports the settings on one server and imports the file on another
+- **WHEN** an instance owner exports the organization on one server and imports the bundle on another
 - **THEN** after confirmation the second server has the same name, time zone, meetings, scheduler and origins
-
-#### Scenario: Invalid file
-
-- **WHEN** an instance owner imports a file with another `profile` value or an out-of-range field
-- **THEN** the import is rejected and no setting changes
 
 #### Scenario: Export by another organization
 
-- **WHEN** the owner of a non-instance organization requests the export
-- **THEN** the server answers 403 `instance_owner_required` and returns no file
+- **WHEN** the owner of a non-instance organization exports the organization
+- **THEN** the bundle has no `serverSettings` section
 
 ### Requirement: Console navigation
 
-The console sidebar SHALL show the workspace switcher at the top, **Overview** first, then the groups **Services** (Services, Installed connectors, Built-in tools, External AI apps), **AI** (AI providers, Model choice, Usage limits, Skills), **Processes** (Processes, Runs), **People** (People, Workspaces, Sign-in methods) and **Settings** (Activity log, and Settings for instance owners), and the account menu (account, theme, language, sign out) at the bottom.
+The console sidebar SHALL show the workspace switcher at the top, **Overview** first, then the groups **Services** (Services, Installed connectors, Plugins, External AI apps), **AI** (AI providers, Model choice, Usage limits, Skills), **Processes** (Processes, Runs), **People** (People, Workspaces, Sign-in methods) and **Settings** (Activity log, and Settings for instance owners), and the account menu (account, theme, language, sign out) at the bottom. The whole sidebar SHALL be one labelled landmark.
 
 #### Scenario: Administrator opens the console
 
@@ -110,6 +105,11 @@ The console sidebar SHALL show the workspace switcher at the top, **Overview** f
 
 - **WHEN** an administrator chooses another workspace in the switcher
 - **THEN** workspace-scoped pages show that workspace's services, model choice, processes and runs
+
+#### Scenario: Switching on a workspace page
+
+- **WHEN** an administrator chooses another workspace in the switcher while a workspace's page is open
+- **THEN** that workspace's page opens, on the same tab
 
 #### Scenario: Instance owner opens the console
 

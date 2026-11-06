@@ -280,15 +280,18 @@ local mail sink see the [development guide](development.md#invitation-mail-and-m
 
 Owners and administrators change some profile values in administration →
 **Settings**: name, time zone, meetings, Overview refresh and the two origin
-lists. Saved values win over the profile. **Export** and **Import** move them
-between servers as a JSON file without secrets. Details:
+lists, each group with a one-line hint. Saved values win over the profile.
+Service addresses the operator sets with `NIARO_INTEGRATION_ORIGINS` are
+trusted too and listed there read-only. To move the settings to another
+server, use **Settings → Configuration**: its bundle carries the server
+settings with the rest of the configuration, without secrets. Details:
 [administration](../../openspec/specs/administration/spec.md) and the
 [administration guide](administration.md).
 
 ### Plugins
 
 Built-in plugins ship read-only in `/app/plugins/`. Plugins added or edited in
-administration → **Built-in tools**, or copied in by the operator, live in
+administration → **Plugins**, or copied in by the operator, live in
 `/data/identity/plugins/<id>/` (`plugin.json` and `index.ts`) and are part of
 the volume and its backup. Plugins run inside the server process; set
 `NIARO_PLUGIN_EDITING=0` where the organization owner is not the operator.

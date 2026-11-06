@@ -10,6 +10,7 @@ says where to click and what to enter. Console structure:
 [administration](../../openspec/specs/administration/spec.md).
 
 - [AI providers and models](#ai-providers-and-models)
+- [Workspaces](#workspaces)
 - [Usage limits](#usage-limits)
 - [Sign-in methods](#sign-in-methods)
 - [Services](#services)
@@ -18,6 +19,7 @@ says where to click and what to enter. Console structure:
 - [Web access and browser automation](#web-access-and-browser-automation)
 - [Meetings](#meetings)
 - [Overview widgets](#overview-widgets)
+- [Server settings](#server-settings)
 
 ## AI providers and models
 
@@ -27,7 +29,7 @@ says where to click and what to enter. Console structure:
    token, a named header such as Azure's `api-key`, or no key), **Request
    format** (OpenAI-compatible or OpenRouter) and a **Data handling** note;
    change anything afterwards. A local server's address must first be added
-   to the trusted origins in Settings. Turn on **Free or local** only when the
+   to **Settings → Allowed addresses → Service addresses**. Turn on **Free or local** only when the
    provider really charges nothing: its models then cost nothing under usage
    limits. Decision models and the provider's own web search need the
    OpenRouter format; voice, meetings and spoken replies work with any
@@ -80,6 +82,27 @@ The compose files can run a private SearXNG next to the server (profile
 
 Behavior: [models-and-providers](../../openspec/specs/models-and-providers/spec.md).
 
+## Workspaces
+
+**Workspaces** lists them; click a row to open the workspace's page, with the
+tabs **Members**, **Roles**, **Instructions** and **Knowledge**
+(`/admin/workspaces/<id>?tab=…`). Opening a page does not switch the
+console's workspace: the header says **Current** or offers **Switch to**, and
+switching in the sidebar while a workspace page is open opens that
+workspace's page. **Invite by email** is in the page header and in the row's
+**⋯** menu; **⋯ → Default instructions** in the list header edits the
+organization default.
+
+- **Members**: everyone with access. Owners and administrators reach every
+  workspace; members only those they were invited to, and **⋯ → Remove
+  access** takes it back.
+- **Roles**: **Add role**, a name and its members; services can then allow
+  actions per role.
+- **Instructions**: the text and starters the assistant gets in this
+  workspace, with their history and **Restore**. Empty means the
+  organization default applies.
+- **Knowledge**: see [Workspace knowledge](#workspace-knowledge).
+
 ## Workspace knowledge
 
 Knowledge lets the assistant find passages of files people sent in their
@@ -92,13 +115,13 @@ an index, not a document store: nothing is uploaded, filed or edited there.
    `/embeddings` works.
 2. **Models → Embeddings**: put that model in the role (organization default
    or one workspace). Without it there is no index and no knowledge search.
-3. **Workspaces → ⋯ → Knowledge**: files sent in chats are indexed by
+3. **Workspaces** → a workspace → **Knowledge**: files sent in chats are indexed by
    default, each found only by the person who sent it (attached files are
    read only when the document converter runs). Tick **Sources**, read
    actions of shared services that need no input, to index what they return;
    members find a source's passages only while they may use that action.
    **Passages** sets their length and overlap.
-4. The sheet shows the model, passages, documents, last sync, progress and
+4. The tab shows the model, passages, documents, last sync, progress and
    errors. Saving indexes what changed; **Rebuild index** drops the
    workspace's index and builds it again, for example after you change the
    embedding model.
@@ -162,8 +185,8 @@ Google account.
 3. Enter **Client ID** and **Client secret**. Microsoft needs the
    **Microsoft tenant ID**; Google can be limited to one **Google hosted
    domain**. Save.
-4. People who already have an account link it in the console's **Settings →
-   Sign-in methods → Connect account**, then can sign in with it.
+4. People who already have an account link it under **Sign-in methods → Your
+   account → Connect account**, then can sign in with it.
 
 A secret left blank in an edit keeps the stored one. To change the provider
 kind, client or tenant, add a new method.
@@ -265,7 +288,8 @@ permissions** adds them; everyone then signs in again.
 
 ### Members' own services
 
-On **Services**, two workspace settings:
+Under the list on **Services**, the **Member services** section holds two
+workspace settings, each with a one-line hint:
 
 - **Members' own services**: _Not allowed_, _After an administrator's
   approval_ (default) or _At once_.
@@ -310,7 +334,7 @@ call of its own. Behavior and tools:
 
 The server's instructions ask the app to search Niaro before asking the
 person and to save durable facts about them as it learns them. Memory must
-be turned on for the workspace (**Built-in tools → Memory**) for saves to
+be turned on for the workspace (**Plugins → Memory**) for saves to
 work.
 
 ### Access token
@@ -370,7 +394,7 @@ OAuth access lasts at most an hour; link again after it expires.
 
 ### Web search and reading
 
-**Built-in tools → Web**: _Enabled_, **Save changes**, per workspace. Settings
+**Plugins → Web**: _Enabled_, **Save changes**, per workspace. Settings
 on that page: search engine (`exa`, `native`, `auto`), results per search,
 page text length, zero data retention providers only. Server-wide defaults go
 in the profile under `plugins.settings.web`. Where searches go is set on
@@ -567,3 +591,26 @@ administrator." instead of an admin link.
 | The service refused access: …                 | **Open service**: the checklist names missing sign-in permissions, or check the key |
 | The assistant found nothing to read for this. | Refresh, or change the widget's request                                             |
 | The assistant couldn't read the data.         | Refresh, or change the widget's request                                             |
+
+## Server settings
+
+**Settings** (`/admin/settings`, owners and administrators) groups the
+server-wide values, each group with a one-line hint: **Server** (name, time
+zone, app session lifetime), **Meetings**, **Overview refresh**, **Allowed
+addresses** and **Your session**. A quiet line at the bottom says when the
+server started and which protocol it speaks.
+
+**Allowed addresses** (both lists apply after the server restarts):
+
+- **Service addresses**: private or `http://` addresses the server may call,
+  such as services, model providers (a local Ollama) and search backends
+  (`http://searxng:8080`). Addresses the operator sets with
+  `NIARO_INTEGRATION_ORIGINS` are trusted too; they are listed read-only under
+  **Set by the operator** and change only in the server's environment.
+- **App addresses**: other web origins allowed to use Niaro from a browser
+  (CORS).
+
+To move settings to another server, use **Settings → Configuration**
+(`/admin/settings/configuration`): **Export** downloads the organization or
+one workspace, including the server settings, and **Import** shows what a
+file changes before applying it. Sign-in methods have their own page.

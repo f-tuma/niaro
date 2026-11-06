@@ -273,12 +273,9 @@ import { ServerSettingsStore, serverSettingsDefaults } from "./server-settings";
 import { handleConfigBundle } from "./config-bundle/http";
 import { CONFIG_BUNDLE_MAX_BYTES } from "../../packages/protocol/config-bundle";
 import {
-  ImportServerSettingsSchema,
   SERVER_SETTINGS_PROFILE,
   ServerSettingsViewSchema,
   UpdateServerSettingsSchema,
-  serverSettingsFile,
-  serverSettingsOfFile,
   type ServerSettings,
 } from "../../packages/protocol/server-settings";
 import {
@@ -533,6 +530,7 @@ export async function openIdentity(
     const serverSettings = new ServerSettingsStore(
       db,
       serverSettingsDefaults(config),
+      settings.operatorOrigins ?? [],
     );
     const current = serverSettings.read().settings;
     // One list for catalog validation and the transport: administration's
@@ -5216,6 +5214,7 @@ export class IdentityService {
       settings: current.settings,
       defaults: store.defaults,
       restartPending: store.restartPending(),
+      operatorOrigins: store.operatorOrigins,
     });
   }
   private needsSetup() {
@@ -7332,8 +7331,6 @@ export class IdentityService {
           const methods = (
             {
               "": ["GET", "POST"],
-              "/export": ["GET"],
-              "/import": ["POST"],
               "/diarizer": ["GET"],
             } as Record<string, string[] | undefined>
           )[action];
@@ -7349,8 +7346,7 @@ export class IdentityService {
           const actor = await this.actor(req, organizationId);
           if (actor.role === "member")
             throw new IdentityError(403, "identity_forbidden");
-          if (action === "/export")
-            return respond(200, serverSettingsFile(store.read().settings));
+          // Export and import travel in the configuration bundle.
           // Whether the saved diarizer answers and has its model loaded.
           if (action === "/diarizer")
             return respond(
@@ -7360,14 +7356,8 @@ export class IdentityService {
               ),
             );
           if (req.method === "POST") {
-            const change =
-              action === "/import"
-                ? ImportServerSettingsSchema.parse(payload)
-                : UpdateServerSettingsSchema.parse(payload);
-            const settings =
-              "file" in change
-                ? serverSettingsOfFile(change.file)
-                : change.settings;
+            const change = UpdateServerSettingsSchema.parse(payload);
+            const settings = change.settings;
             let previous;
             try {
               previous = await this.transaction(async () => {
@@ -7377,10 +7367,7 @@ export class IdentityService {
                   workspaceId: null,
                   actorId: actor.userId,
                   source: "console",
-                  action:
-                    action === "/import"
-                      ? "server.settings_imported"
-                      : "server.settings_changed",
+                  action: "server.settings_changed",
                   targetId: null,
                   outcome: "succeeded",
                   details: {

@@ -11,7 +11,7 @@ Today the product cannot create a second organization (owner setup runs once, Be
 - The organization created by the first owner setup is recorded as the **instance organization** (also when setup ran from the recovery console); servers without a record adopt their earliest-created organization once at start. The record never changes through the console or API.
 - **Instance owners** = people with the role `owner` in the instance organization.
 - Server settings (read, save, export, import, diarizer status) are limited to instance owners; everyone else gets 403 `instance_owner_required`. **BREAKING**: administrators of the instance organization lose access to server settings (see design, open question).
-- Plugin files (read and edit) are limited to instance owners; Built-in tools offers file editing only to them.
+- Plugin files (read and edit) are limited to instance owners; Plugins offers file editing only to them.
 - The identity state reports whether the signed-in person is an instance owner; the console shows **Settings** only to instance owners and explains the restriction on a direct link.
 - The personal parts of today's Settings page (linking a sign-in method to one's account, session information, read-only server facts) move to a new **Account** page (`/admin/account`) in the sidebar's account menu, so every console user keeps them.
 - Refused server-setting changes are audited with outcome `denied`.
