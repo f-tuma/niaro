@@ -29,6 +29,11 @@ A price SHALL name a model and pin its model revision and provider revision, wit
 - **WHEN** a price names a model that is not a chat, router or decision model of the workspace
 - **THEN** saving is refused with `409 catalog_model_unavailable`
 
+#### Scenario: A save that keeps what is priced
+
+- **WHEN** an administrator renames a model, switches it or its provider on or off, or changes the provider's key or daily limit, while its price was current
+- **THEN** the stored price moves to the new revisions and stays in force; only another model id, provider, provider address or request format leaves it to be confirmed again
+
 ### Requirement: Policy administration
 
 Owners and administrators SHALL read the policy at `GET /admin/api/identity/catalog/budget?organizationId=&workspaceId=` and replace it with `POST /admin/api/identity/catalog/budget` carrying the complete policy and its current revision, using their account session. Members MUST NOT read or change it. A successful save SHALL increment the revision and record a `catalog.ai_changed` audit entry in the same transaction.

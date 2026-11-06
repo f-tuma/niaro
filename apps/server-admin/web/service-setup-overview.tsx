@@ -44,6 +44,7 @@ import { designCs, designEn } from "./process-design-copy";
 import { useWorkspaceProcesses } from "./service-process-overview";
 import { useServiceSetupCopy, serviceTabSchema } from "./service-setup-copy";
 import { ServiceChecklist } from "./service-checklist";
+import { useHostedServers } from "./hosted-page";
 
 /** How many actions and processes the overview previews before "View all". */
 const preview = 5;
@@ -70,6 +71,11 @@ export function ServiceSetupOverview({
     processCopy = useAdmin().language === "cs" ? designCs : designEn,
     canManage = !!state.query.data?.canManage;
   const [editing, setEditing] = useState(false);
+  // A service on an installed connector has a loopback address only this
+  // server reaches; name the connector first.
+  const installed = useHostedServers(
+    canManage ? state.scope.organization?.id : undefined,
+  ).data?.servers.some((server) => server.url === service.url);
   const processes = useWorkspaceProcesses(state).data?.filter(
     (p) => p.serviceId === service.id,
   );
@@ -283,7 +289,19 @@ export function ServiceSetupOverview({
           items={[
             {
               label: copy.address,
-              value: (
+              value: installed ? (
+                <span className="flex flex-col gap-0.5">
+                  <Link
+                    to="/hosted"
+                    className="underline-offset-4 hover:underline"
+                  >
+                    {catalog.installedConnector}
+                  </Link>
+                  <span className="font-mono text-xs break-all text-muted-foreground">
+                    {service.url}
+                  </span>
+                </span>
+              ) : (
                 <span className="font-mono text-xs break-all">
                   {service.url}
                 </span>

@@ -95,7 +95,7 @@ export function PageHeader({
               )}
             </h1>
             {description && (
-              <p className="truncate text-sm text-muted-foreground">
+              <p className="text-sm text-pretty text-muted-foreground">
                 {description}
               </p>
             )}

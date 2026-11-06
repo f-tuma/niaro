@@ -666,6 +666,94 @@ test("a free provider's models get a zero price that is never stored", () => {
   }
 });
 
+test("a typed price follows its model through saves that keep what it prices", () => {
+  const h = harness([]);
+  try {
+    const provider = {
+      name: "TEST paid",
+      url: "https://api.example.test/v1",
+      enabled: true,
+      dailyRequestLimit: 100,
+    };
+    const paid = h.command({
+      type: "saveProvider",
+      revision: 0,
+      settings: provider,
+    });
+    const model = {
+      providerId: paid,
+      name: "TEST model",
+      model: "paid",
+      enabled: true,
+      tools: true,
+    };
+    const id = h.command({ type: "saveModel", revision: 0, settings: model });
+    const budget = h.store.inferenceBudget;
+    const price = {
+      modelId: id,
+      modelRevision: 1,
+      providerRevision: 1,
+      maxInputTokens: 8192,
+      maxOutputTokens: 1024,
+      inputMicrosPerMillion: 100,
+      outputMicrosPerMillion: 200,
+    };
+    budget.savePolicy("org", target.workspaceId, 0, {
+      ...budget.policy("org", target.workspaceId).settings,
+      prices: [price],
+    });
+    const pinned = () =>
+      budget.storedPolicy("org", target.workspaceId).settings.prices[0];
+    // Renaming, switching off and on, a new limit: the price stays current.
+    h.command({
+      type: "saveModel",
+      id,
+      revision: 1,
+      settings: { ...model, name: "TEST renamed", enabled: false },
+    });
+    h.command({
+      type: "saveModel",
+      id,
+      revision: 2,
+      settings: { ...model, name: "TEST renamed" },
+    });
+    h.command({
+      type: "saveProvider",
+      id: paid,
+      revision: 1,
+      settings: { ...provider, dailyRequestLimit: 50 },
+    });
+    assert.deepEqual(pinned(), {
+      ...price,
+      modelRevision: 3,
+      providerRevision: 2,
+    });
+    const selected = h.store.model("org", id);
+    assert.equal(selected.model.revision, 3);
+    assert.equal(selected.provider.revision, 2);
+    // Another model id, or another address, needs the price confirmed again.
+    h.command({
+      type: "saveModel",
+      id,
+      revision: 3,
+      settings: { ...model, model: "other" },
+    });
+    h.command({
+      type: "saveProvider",
+      id: paid,
+      revision: 2,
+      settings: { ...provider, url: "https://other.example.test/v1" },
+    });
+    assert.deepEqual(pinned(), {
+      ...price,
+      modelRevision: 3,
+      providerRevision: 2,
+    });
+  } finally {
+    h.db.close();
+  }
+});
+
 test("voice and meetings use the standard audio endpoints of any provider", async () => {
   const server = await fakeServer((seen) => {
     if (seen.path === "/v1/audio/transcriptions")
