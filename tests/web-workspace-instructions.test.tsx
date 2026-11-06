@@ -202,3 +202,48 @@ test("history shows each version's author and restores an older one; a stale sav
   renderer.unmount();
   client.clear();
 });
+
+test("on the workspace page the instructions are a section: saving keeps them open and Cancel puts the saved text back", async () => {
+  let renderer!: TestRenderer.ReactTestRenderer;
+  const client = new QueryClient({
+    defaultOptions: { queries: { gcTime: 0, retry: false } },
+  });
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <QueryClientProvider client={client}>
+        <WorkspaceInstructions
+          inline
+          organizationId="org-1"
+          scope={{ type: "workspace", workspaceId: "ws-1" }}
+          name="Obchod"
+        />
+      </QueryClientProvider>,
+    );
+  });
+  const root = renderer.root;
+  for (let i = 0; i < 20 && !root.findAllByType("textarea").length; i++)
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
+  // No sheet around it: the page names the workspace.
+  expect(
+    root.findAll((node) => String(node.props["data-host"]).startsWith("Sheet")),
+  ).toHaveLength(0);
+  const textarea = () => root.findByType("textarea");
+  await act(async () =>
+    textarea().props.onChange({ target: { value: "Vykej." } }),
+  );
+  await act(async () => buttons(root, "Zrušit")[0]!.props.onClick());
+  expect(textarea().props.value).toBe("Tykej.");
+  await act(async () =>
+    textarea().props.onChange({ target: { value: "Vykej." } }),
+  );
+  await act(async () =>
+    root.findByType("form").props.onSubmit({ preventDefault: () => {} }),
+  );
+  expect(mockApi).toHaveBeenCalledWith(
+    "identity/instructions/command",
+    expect.objectContaining({ type: "save", content: expect.anything() }),
+  );
+  expect(text(root)).toContain("Uloženo");
+  renderer.unmount();
+  client.clear();
+});

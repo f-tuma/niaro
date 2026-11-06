@@ -23,14 +23,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@admin/components/ui/item";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@admin/components/ui/sheet";
+import { PanelFooter, WorkspacePanel, usePanelBody } from "./workspace-panel";
 import { Disclosure } from "@admin/components/console/disclosure";
 import { SubmitButton } from "@admin/components/console/forms";
 import { RelativeTime } from "@admin/components/console/time";
@@ -134,15 +127,18 @@ export function WorkspaceInstructions({
   organizationId,
   scope,
   name,
-  open,
+  inline = false,
+  open = true,
   onOpenChange,
 }: {
   organizationId: string;
   scope: InstructionsScope;
   /** The workspace's name, or nothing for the organization default. */
   name?: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** A section of the workspace page instead of a sheet. */
+  inline?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const { language } = useAdmin();
   const words = copy[language];
@@ -161,49 +157,52 @@ export function WorkspaceInstructions({
     staleTime: 0,
   });
   const [pending, setPending] = useState(false);
+  const [saved, setSaved] = useState(false);
   return (
-    <Sheet
+    <WorkspacePanel
+      inline={inline}
       open={open}
       onOpenChange={(value) => {
-        if (!pending) onOpenChange(value);
+        if (!pending) onOpenChange?.(value);
       }}
+      title={words.title}
+      description={name ?? words.organizationDefault}
     >
-      <SheetContent size="wide">
-        <SheetHeader>
-          <SheetTitle>{words.title}</SheetTitle>
-          <SheetDescription>
-            {name ?? words.organizationDefault}
-          </SheetDescription>
-        </SheetHeader>
-        {view.isError ? (
-          <div className="flex flex-col gap-3 px-4">
-            <Alert variant="destructive">
-              <AlertDescription>{words.loadFailed}</AlertDescription>
-            </Alert>
-            <Button
-              variant="outline"
-              className="self-start"
-              onClick={() => void view.refetch()}
-            >
-              {words.retry}
-            </Button>
-          </div>
-        ) : !view.data ? (
-          <div className="px-4">
-            <Skeleton className="h-64 w-full" />
-          </div>
-        ) : (
-          <InstructionsForm
-            key={view.data.revision}
-            organizationId={organizationId}
-            view={view.data}
-            pending={pending}
-            setPending={setPending}
-            onClose={() => onOpenChange(false)}
-          />
-        )}
-      </SheetContent>
-    </Sheet>
+      {view.isError ? (
+        <div
+          className={
+            inline ? "flex flex-col gap-3" : "flex flex-col gap-3 px-4"
+          }
+        >
+          <Alert variant="destructive">
+            <AlertDescription>{words.loadFailed}</AlertDescription>
+          </Alert>
+          <Button
+            variant="outline"
+            className="self-start"
+            onClick={() => void view.refetch()}
+          >
+            {words.retry}
+          </Button>
+        </div>
+      ) : !view.data ? (
+        <div className={inline ? undefined : "px-4"}>
+          <Skeleton className="h-64 w-full" />
+        </div>
+      ) : (
+        <InstructionsForm
+          key={view.data.revision}
+          organizationId={organizationId}
+          view={view.data}
+          pending={pending}
+          setPending={setPending}
+          saved={saved}
+          onChange={() => setSaved(false)}
+          onSaved={() => (inline ? setSaved(true) : onOpenChange?.(false))}
+          onCancel={inline ? undefined : () => onOpenChange?.(false)}
+        />
+      )}
+    </WorkspacePanel>
   );
 }
 
@@ -212,19 +211,32 @@ function InstructionsForm({
   view,
   pending,
   setPending,
-  onClose,
+  saved,
+  onChange,
+  onSaved,
+  onCancel,
 }: {
   organizationId: string;
   view: InstructionsAdminView;
   pending: boolean;
   setPending: (pending: boolean) => void;
-  onClose: () => void;
+  /** The last save went through and nothing changed since. */
+  saved: boolean;
+  onChange: () => void;
+  onSaved: () => void;
+  /** Closes the sheet; on the page, Cancel puts the saved text back. */
+  onCancel?: () => void;
 }) {
   const { language } = useAdmin();
   const words = copy[language];
   const client = useQueryClient();
   const id = useId();
-  const [draft, setDraft] = useState<InstructionsContent>(view.content);
+  const body = usePanelBody("gap-6");
+  const [draft, setDraftState] = useState<InstructionsContent>(view.content);
+  const setDraft = (next: InstructionsContent) => {
+    setDraftState(next);
+    onChange();
+  };
   const [error, setError] = useState<string | null>(null);
   const key = instructionsKey(organizationId, view.scope);
   const starters = draft.starters;
@@ -279,13 +291,10 @@ function InstructionsForm({
             content,
           })
         )
-          onClose();
+          onSaved();
       }}
     >
-      <fieldset
-        disabled={pending}
-        className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 pb-4"
-      >
+      <fieldset disabled={pending} className={body}>
         <FieldGroup>
           <Field>
             <FieldLabel htmlFor={`${id}-text`}>{words.instructions}</FieldLabel>
@@ -436,17 +445,28 @@ function InstructionsForm({
           </Alert>
         )}
       </fieldset>
-      <SheetFooter>
+      <PanelFooter>
+        {saved && (
+          <p role="status" className="text-sm text-muted-foreground sm:mr-auto">
+            {words.saved}
+          </p>
+        )}
         <Button
           type="button"
           variant="ghost"
           disabled={pending}
-          onClick={onClose}
+          onClick={
+            onCancel ??
+            (() => {
+              setDraftState(view.content);
+              setError(null);
+            })
+          }
         >
           {words.cancel}
         </Button>
         <SubmitButton pending={pending}>{words.save}</SubmitButton>
-      </SheetFooter>
+      </PanelFooter>
     </form>
   );
 }

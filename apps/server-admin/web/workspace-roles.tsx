@@ -11,14 +11,7 @@ import {
   FieldLegend,
   FieldDescription,
 } from "@admin/components/ui/field";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  SheetFooter,
-} from "@admin/components/ui/sheet";
+import { PanelFooter, WorkspacePanel, panelBody } from "./workspace-panel";
 import {
   Empty,
   EmptyHeader,
@@ -95,7 +88,8 @@ export function WorkspaceRoles({
   pending,
   mutate,
   feedback,
-  open,
+  inline = false,
+  open = true,
   onOpenChange,
 }: {
   workspace: Workspace;
@@ -103,8 +97,10 @@ export function WorkspaceRoles({
   pending: boolean;
   mutate: (input: Record<string, unknown>) => Promise<boolean>;
   feedback: ReactNode;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** A section of the workspace page instead of a sheet. */
+  inline?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const { language, copy } = useAdmin();
   const shell = useShellCopy();
@@ -130,230 +126,228 @@ export function WorkspaceRoles({
     setSearch("");
     setDraft(role);
   };
+  // The panel's own context is inside it; this component decides from `inline`.
+  const body = (gap: string) => panelBody(inline, gap);
+  const title = draft
+    ? draft.id
+      ? cs
+        ? "Upravit roli"
+        : "Edit role"
+      : cs
+        ? "Přidat roli"
+        : "Add role"
+    : cs
+      ? "Role v prostoru"
+      : "Workspace roles";
   return (
-    <Sheet
+    <WorkspacePanel
+      inline={inline}
       open={open}
       onOpenChange={(value) => {
         if (!pending) {
-          onOpenChange(value);
+          onOpenChange?.(value);
           setDraft(null);
           setDeleting(null);
         }
       }}
+      title={title}
+      description={workspace.name}
     >
-      <SheetContent size="wide">
-        <SheetHeader>
-          <SheetTitle>
-            {draft
-              ? draft.id
-                ? cs
-                  ? "Upravit roli"
-                  : "Edit role"
-                : cs
-                  ? "Přidat roli"
-                  : "Add role"
-              : cs
-                ? "Role v prostoru"
-                : "Workspace roles"}
-          </SheetTitle>
-          <SheetDescription>{workspace.name}</SheetDescription>
-        </SheetHeader>
-        {draft ? (
-          <form
-            className="flex min-h-0 flex-1 flex-col"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (
-                await mutate({
-                  ...target,
-                  type: "saveWorkspaceRole",
-                  ...draft,
-                  id: draft.id || undefined,
-                })
-              )
-                setDraft(null);
-            }}
-          >
-            <fieldset
-              disabled={pending}
-              className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-4"
-            >
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="workspace-role-name">
-                    {cs ? "Název" : "Name"}
-                  </FieldLabel>
-                  <Input
-                    id="workspace-role-name"
-                    value={draft.name}
-                    maxLength={100}
-                    required
-                    onChange={(event) =>
-                      setDraft({ ...draft, name: event.target.value })
-                    }
-                  />
-                </Field>
-                <FieldSet>
-                  <FieldLegend>
-                    {cs ? "Členové" : "Members"}{" "}
-                    <span className="font-normal text-muted-foreground tabular-nums">
-                      {draft.memberIds.length}
-                    </span>
-                  </FieldLegend>
-                  <SearchField
-                    placeholder={cs ? "Hledat členy…" : "Search members…"}
-                    value={search}
-                    onChange={setSearch}
-                  />
-                  <FieldGroup>
-                    {visible.map((member) => (
-                      <Field key={member.id} orientation="horizontal">
-                        <Checkbox
-                          id={`role-member-${member.id}`}
-                          checked={draft.memberIds.includes(member.id)}
-                          onCheckedChange={(checked) =>
-                            setDraft({
-                              ...draft,
-                              memberIds:
-                                checked === true
-                                  ? [...draft.memberIds, member.id]
-                                  : draft.memberIds.filter(
-                                      (id) => id !== member.id,
-                                    ),
-                            })
-                          }
-                        />
-                        <FieldLabel htmlFor={`role-member-${member.id}`}>
-                          {member.name}
-                          <span className="font-normal text-muted-foreground">
-                            {member.email}
-                          </span>
-                        </FieldLabel>
-                      </Field>
-                    ))}
-                    {!visible.length && (
-                      <FieldDescription>
-                        {cs
-                          ? "Žádní odpovídající členové."
-                          : "No matching members."}
-                      </FieldDescription>
-                    )}
-                  </FieldGroup>
-                </FieldSet>
-              </FieldGroup>
-              {feedback}
-            </fieldset>
-            <SheetFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={pending}
-                onClick={() => setDraft(null)}
-              >
-                {copy.cancel}
-              </Button>
-              <Button type="submit" disabled={pending || !draft.name.trim()}>
-                {draft.id ? copy.saveChanges : cs ? "Přidat roli" : "Add role"}
-              </Button>
-            </SheetFooter>
-          </form>
-        ) : (
-          <>
-            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">
-              {!roles.length ? (
-                <Empty variant="outline">
-                  <EmptyHeader>
-                    <EmptyTitle>
-                      {cs ? "Zatím žádné role" : "No roles yet"}
-                    </EmptyTitle>
-                    <EmptyDescription>
-                      {cs
-                        ? "Například Obchod nebo Podpora."
-                        : "For example Sales or Support."}
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              ) : (
-                <Card variant="list">
-                  {roles.map((role) => (
-                    <Item key={role.id} variant="row" size="row">
-                      <ItemMedia variant="icon">
-                        <ShieldCheck aria-hidden="true" />
-                      </ItemMedia>
-                      <ItemContent>
-                        <ItemTitle>{role.name}</ItemTitle>
-                        <ItemDescription>
-                          {plural(
-                            language,
-                            role.memberIds.length,
-                            shell.membersCount,
-                          )}
-                        </ItemDescription>
-                      </ItemContent>
-                      <ItemActions>
-                        <MoreActions
-                          size="sm"
-                          label={`${copy.moreActions}: ${role.name}`}
-                        >
-                          <DropdownMenuItem
-                            disabled={pending}
-                            onSelect={() => edit(role)}
-                          >
-                            <Pencil aria-hidden="true" />
-                            {cs ? "Upravit" : "Edit"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            variant="destructive"
-                            disabled={pending}
-                            onSelect={() => setDeleting(role)}
-                          >
-                            <Trash2 aria-hidden="true" />
-                            {cs ? "Smazat" : "Delete"}
-                          </DropdownMenuItem>
-                        </MoreActions>
-                      </ItemActions>
-                    </Item>
+      {inline && draft && <h2 className="text-base font-semibold">{title}</h2>}
+      {draft ? (
+        <form
+          className={
+            inline ? "flex flex-col gap-4" : "flex min-h-0 flex-1 flex-col"
+          }
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (
+              await mutate({
+                ...target,
+                type: "saveWorkspaceRole",
+                ...draft,
+                id: draft.id || undefined,
+              })
+            )
+              setDraft(null);
+          }}
+        >
+          <fieldset disabled={pending} className={body("gap-5")}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="workspace-role-name">
+                  {cs ? "Název" : "Name"}
+                </FieldLabel>
+                <Input
+                  id="workspace-role-name"
+                  value={draft.name}
+                  maxLength={100}
+                  required
+                  onChange={(event) =>
+                    setDraft({ ...draft, name: event.target.value })
+                  }
+                />
+              </Field>
+              <FieldSet>
+                <FieldLegend>
+                  {cs ? "Členové" : "Members"}{" "}
+                  <span className="font-normal text-muted-foreground tabular-nums">
+                    {draft.memberIds.length}
+                  </span>
+                </FieldLegend>
+                <SearchField
+                  placeholder={cs ? "Hledat členy…" : "Search members…"}
+                  value={search}
+                  onChange={setSearch}
+                />
+                <FieldGroup>
+                  {visible.map((member) => (
+                    <Field key={member.id} orientation="horizontal">
+                      <Checkbox
+                        id={`role-member-${member.id}`}
+                        checked={draft.memberIds.includes(member.id)}
+                        onCheckedChange={(checked) =>
+                          setDraft({
+                            ...draft,
+                            memberIds:
+                              checked === true
+                                ? [...draft.memberIds, member.id]
+                                : draft.memberIds.filter(
+                                    (id) => id !== member.id,
+                                  ),
+                          })
+                        }
+                      />
+                      <FieldLabel htmlFor={`role-member-${member.id}`}>
+                        {member.name}
+                        <span className="font-normal text-muted-foreground">
+                          {member.email}
+                        </span>
+                      </FieldLabel>
+                    </Field>
                   ))}
-                </Card>
-              )}
-              {feedback}
-            </div>
-            <SheetFooter>
-              <Button
-                disabled={pending}
-                onClick={() => {
-                  setSearch("");
-                  setDraft({ id: "", revision: 0, name: "", memberIds: [] });
-                }}
-              >
-                <Plus data-icon="inline-start" aria-hidden="true" />
-                {cs ? "Přidat roli" : "Add role"}
-              </Button>
-            </SheetFooter>
-          </>
-        )}
-        {deleting && (
-          <ConfirmAction
-            open
-            onOpenChange={(value) => !value && setDeleting(null)}
-            title={cs ? "Smazat roli?" : "Delete role?"}
-            description={deleting.name}
-            confirmLabel={cs ? "Smazat" : "Delete"}
-            cancelLabel={copy.cancel}
-            onConfirm={async () => {
-              if (
-                await mutate({
-                  ...target,
-                  type: "removeWorkspaceRole",
-                  id: deleting.id,
-                  revision: deleting.revision,
-                })
-              )
-                setDeleting(null);
-            }}
-          />
-        )}
-      </SheetContent>
-    </Sheet>
+                  {!visible.length && (
+                    <FieldDescription>
+                      {cs
+                        ? "Žádní odpovídající členové."
+                        : "No matching members."}
+                    </FieldDescription>
+                  )}
+                </FieldGroup>
+              </FieldSet>
+            </FieldGroup>
+            {feedback}
+          </fieldset>
+          <PanelFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => setDraft(null)}
+            >
+              {copy.cancel}
+            </Button>
+            <Button type="submit" disabled={pending || !draft.name.trim()}>
+              {draft.id ? copy.saveChanges : cs ? "Přidat roli" : "Add role"}
+            </Button>
+          </PanelFooter>
+        </form>
+      ) : (
+        <>
+          <div className={body("gap-4")}>
+            {!roles.length ? (
+              <Empty variant="outline">
+                <EmptyHeader>
+                  <EmptyTitle>
+                    {cs ? "Zatím žádné role" : "No roles yet"}
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    {cs
+                      ? "Například Obchod nebo Podpora."
+                      : "For example Sales or Support."}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              <Card variant="list">
+                {roles.map((role) => (
+                  <Item key={role.id} variant="row" size="row">
+                    <ItemMedia variant="icon">
+                      <ShieldCheck aria-hidden="true" />
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle>{role.name}</ItemTitle>
+                      <ItemDescription>
+                        {plural(
+                          language,
+                          role.memberIds.length,
+                          shell.membersCount,
+                        )}
+                      </ItemDescription>
+                    </ItemContent>
+                    <ItemActions>
+                      <MoreActions
+                        size="sm"
+                        label={`${copy.moreActions}: ${role.name}`}
+                      >
+                        <DropdownMenuItem
+                          disabled={pending}
+                          onSelect={() => edit(role)}
+                        >
+                          <Pencil aria-hidden="true" />
+                          {cs ? "Upravit" : "Edit"}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          disabled={pending}
+                          onSelect={() => setDeleting(role)}
+                        >
+                          <Trash2 aria-hidden="true" />
+                          {cs ? "Smazat" : "Delete"}
+                        </DropdownMenuItem>
+                      </MoreActions>
+                    </ItemActions>
+                  </Item>
+                ))}
+              </Card>
+            )}
+            {feedback}
+          </div>
+          <PanelFooter>
+            <Button
+              disabled={pending}
+              onClick={() => {
+                setSearch("");
+                setDraft({ id: "", revision: 0, name: "", memberIds: [] });
+              }}
+            >
+              <Plus data-icon="inline-start" aria-hidden="true" />
+              {cs ? "Přidat roli" : "Add role"}
+            </Button>
+          </PanelFooter>
+        </>
+      )}
+      {deleting && (
+        <ConfirmAction
+          open
+          onOpenChange={(value) => !value && setDeleting(null)}
+          title={cs ? "Smazat roli?" : "Delete role?"}
+          description={deleting.name}
+          confirmLabel={cs ? "Smazat" : "Delete"}
+          cancelLabel={copy.cancel}
+          onConfirm={async () => {
+            if (
+              await mutate({
+                ...target,
+                type: "removeWorkspaceRole",
+                id: deleting.id,
+                revision: deleting.revision,
+              })
+            )
+              setDeleting(null);
+          }}
+        />
+      )}
+    </WorkspacePanel>
   );
 }
