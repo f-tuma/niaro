@@ -145,7 +145,7 @@ host turns it into an error for the model, so a tool need not catch it.
 
 ## Write your first plugin
 
-1. **Create it.** **Built-in tools → Add plugin** (`/admin/plugins`), id
+1. **Create it.** **Plugins → Add plugin** (`/admin/plugins`), id
    `word-count`. The server writes the template (the plugin above) to
    `<identity directory>/plugins/word-count/` and opens its files. Without the
    console: copy the two files into that directory and restart.
@@ -156,7 +156,7 @@ host turns it into an error for the model, so a tool need not catch it.
 3. **Check**, then **Save changes**. Check loads the edited files without
    saving and says why they do not load. Saving puts the plugin in force
    without a restart.
-4. **Turn it on** for a workspace: **Built-in tools → Word count**, _Enabled_,
+4. **Turn it on** for a workspace: **Plugins → Word count**, _Enabled_,
    set its settings, **Save changes**.
 5. **Try it** in the app: "How many words are in: …?" The model calls
    `internal_word_count_count`.
@@ -168,7 +168,7 @@ Renaming or adding a tool means changing both files: the tool list in
 
 ## Editing in the console or as files
 
-**In the console** (**Built-in tools** → a plugin → **Files**; organization
+**In the console** (**Plugins** → a plugin → **Files**; organization
 owners only):
 
 - **Check** loads the files without saving.
@@ -176,7 +176,7 @@ owners only):
   (built-in) or new version. A refused save keeps your text and shows why.
 - **Reset to built-in** (`…` menu, on an override) deletes your copy. On your
   own plugin the same menu has **Delete plugin**.
-- Plugins that fail to load at start are listed on the **Built-in tools**
+- Plugins that fail to load at start are listed on the **Plugins**
   page under **Tools that did not load**.
 
 **As files:** edit `<identity directory>/plugins/<id>/` and restart the

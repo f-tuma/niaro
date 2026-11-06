@@ -119,7 +119,7 @@ export function createAdminHandler(
       /^\/admin\/services\/[A-Za-z0-9_-]+\/processes\/[A-Za-z0-9_-]+\/?$/.test(
         url.pathname,
       ) ||
-      /^\/admin\/(?:mcp(?:\/consent)?|device|service-connect|hosted|tools|access|settings|accounts|people|services|workspaces|audit|loops|ai|providers|auth-providers|routing|usage|plugins|skills|built-in|settings\/configuration|(?:services|plugins|providers|auth-providers|skills)\/[A-Za-z0-9_-]+|connections\/(?:model|voice|crm|calendar))\/?$/.test(
+      /^\/admin\/(?:mcp(?:\/consent)?|device|service-connect|hosted|tools|access|settings|accounts|people|services|workspaces|audit|loops|ai|providers|auth-providers|routing|usage|plugins|skills|built-in|settings\/configuration|(?:services|plugins|providers|auth-providers|skills|workspaces)\/[A-Za-z0-9_-]+|connections\/(?:model|voice|crm|calendar))\/?$/.test(
         url.pathname,
       );
     if (

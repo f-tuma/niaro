@@ -16,5 +16,5 @@ The system SHALL let only an instance owner read a plugin's `plugin.json` and `i
 
 #### Scenario: Files offered only to instance owners
 
-- **WHEN** an owner of a non-instance organization opens Built-in tools
+- **WHEN** an owner of a non-instance organization opens Plugins
 - **THEN** no plugin offers its files for reading or editing

@@ -15,7 +15,7 @@
 
 - [ ] 3.1 Move `AccountProviders`, session and server facts from `Settings()` to a new Account page (`/admin/account`, account menu entry, `router.tsx`, console route pattern in `apps/server-admin/http.ts`, sign-in `returnPath` pattern in `service.ts`, `account-providers.tsx` return path); verify a jest case for the Account page incl. the recovery variant and that `/admin/account` reloads (`tests/admin-mcp-login.node.ts`-style HTTP check or a new case in `tests/server-settings.node.ts`). (Req: Account page, Console addresses)
 - [ ] 3.2 Show Settings only to instance owners (navigation flag, shell filter), render the explanation for others, query server settings with `instance.organizationId`, map `instance_owner_required` in copy EN/CS; verify `npx jest --runInBand tests/web-server-settings.test.tsx`. (Req: Settings only for instance owners, Console navigation)
-- [ ] 3.3 Replace the service checklist's Settings link with the "ask the server's owner" hint for non-owners and hide plugin file access in Built-in tools; verify `npx jest --runInBand tests/web-plugin-files.test.tsx` and a checklist case. (Req: Settings only for instance owners, Plugin files in the console)
+- [ ] 3.3 Replace the service checklist's Settings link with the "ask the server's owner" hint for non-owners and hide plugin file access in Plugins; verify `npx jest --runInBand tests/web-plugin-files.test.tsx` and a checklist case. (Req: Settings only for instance owners, Plugin files in the console)
 - [ ] 3.4 Update `docs/guides/administration.md` (Settings for the server's owner, account linking under Account) and add the instance-organization decision to `docs/architecture.md` "Identity and credentials"; verify the documented paths match the routes.
 
 ## 4. Integration checks

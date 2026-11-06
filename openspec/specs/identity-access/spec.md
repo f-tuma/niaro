@@ -41,7 +41,7 @@ The system SHALL derive the acting person from a verified server session and SHA
 
 ### Requirement: Role permissions
 
-The system SHALL let only owners change organization roles and remove people from the organization. Owners and administrators SHALL manage workspaces, workspace access, workspace roles, invitations, services, models, usage limits, sign-in methods, external AI apps, built-in tools, runs and the activity log. Members SHALL use chat, Overview, Tasks, Meetings, Processes, Skills and Connections within their own grants, and SHALL receive `403` or `404` on administrative APIs.
+The system SHALL let only owners change organization roles and remove people from the organization. Owners and administrators SHALL manage workspaces, workspace access, workspace roles, invitations, services, models, usage limits, sign-in methods, external AI apps, plugins, runs and the activity log. Members SHALL use chat, Overview, Tasks, Meetings, Processes, Skills and Connections within their own grants, and SHALL receive `403` or `404` on administrative APIs.
 
 #### Scenario: Administrator tries to change a role
 
