@@ -1,10 +1,7 @@
 import { shellCopy } from "../apps/server-admin/web/shell-copy";
 import { catalogCopy } from "../apps/server-admin/web/catalog-copy";
 import { mcpCopy } from "../apps/server-admin/web/mcp-copy";
-import {
-  usageCopy,
-  usageSaveStatus,
-} from "../apps/server-admin/web/usage-copy";
+import { usageCopy } from "../apps/server-admin/web/usage-copy";
 import { navigation } from "../apps/server-admin/web/console-navigation";
 import {
   countToday,
@@ -105,27 +102,17 @@ describe("admin navigation", () => {
   });
 });
 
-describe("usage limits save bar", () => {
-  test("prices pinned to older models ask for a save, not about edits", () => {
-    for (const language of ["en", "cs"] as const) {
-      const copy = usageCopy[language];
-      expect(
-        usageSaveStatus(copy, { error: null, edited: false, stale: 2 }),
-      ).toBe(copy.stalePrices);
-      expect(
-        usageSaveStatus(copy, { error: null, edited: true, stale: 2 }),
-      ).toBe(copy.unsavedChanges);
-      expect(
-        usageSaveStatus(copy, {
-          error: "TEST failed",
-          edited: false,
-          stale: 2,
-        }),
-      ).toBe("TEST failed");
-    }
-    expect(usageCopy.en.stalePrices).toBe(
-      "Some models changed. Save to update their prices.",
+describe("usage limits stale prices", () => {
+  test("prices pinned to changed models ask to be confirmed, not saved as edits", () => {
+    expect(usageCopy.en.stalePrices(2)).toBe(
+      "2 prices were set before their model or provider changed. They are not used until you confirm them.",
     );
+    expect(usageCopy.en.stalePrices(1)).toContain("confirm it");
+    expect(usageCopy.cs.stalePrices(2)).toContain("nepotvrdíš");
+    for (const language of ["en", "cs"] as const)
+      expect(usageCopy[language].stalePrices(2)).not.toBe(
+        usageCopy[language].unsavedChanges,
+      );
   });
 });
 

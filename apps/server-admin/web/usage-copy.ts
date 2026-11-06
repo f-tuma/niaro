@@ -31,7 +31,16 @@ const en = {
       : "Providers published no prices for these models.",
   fillFailed: "Could not load prices from the provider.",
   unsavedChanges: "Unsaved changes",
-  stalePrices: "Some models changed. Save to update their prices.",
+  stalePrices: (count: number) =>
+    count === 1
+      ? "One price was set before its model or provider changed. It is not used until you confirm it."
+      : `${count} prices were set before their model or provider changed. They are not used until you confirm them.`,
+  stalePricesWithEdits: (count: number) =>
+    count === 1
+      ? "One price was set before its model or provider changed. Saving your changes confirms it."
+      : `${count} prices were set before their model or provider changed. Saving your changes confirms them.`,
+  confirmPrices: "Confirm prices",
+  staleRow: "Model or provider changed; check this price.",
   discardChanges: "Discard changes",
   save: "Save changes",
   saveFailed: "Could not save the limits. Reload and try again.",
@@ -71,7 +80,16 @@ const cs: UsageCopy = {
       : "Poskytovatelé pro tyto modely ceny nezveřejnili.",
   fillFailed: "Ceny od poskytovatele se nepodařilo načíst.",
   unsavedChanges: "Neuložené změny",
-  stalePrices: "Některé modely se změnily. Ulož a ceny se obnoví.",
+  stalePrices: (count) =>
+    count === 1
+      ? "Jedna cena byla zadaná před změnou modelu nebo poskytovatele. Nepoužije se, dokud ji nepotvrdíš."
+      : `Ceny zadané před změnou modelu nebo poskytovatele: ${count}. Nepoužijí se, dokud je nepotvrdíš.`,
+  stalePricesWithEdits: (count) =>
+    count === 1
+      ? "Jedna cena byla zadaná před změnou modelu nebo poskytovatele. Uložením změn ji potvrdíš."
+      : `Ceny zadané před změnou modelu nebo poskytovatele: ${count}. Uložením změn je potvrdíš.`,
+  confirmPrices: "Potvrdit ceny",
+  staleRow: "Model nebo poskytovatel se změnil; zkontroluj cenu.",
   discardChanges: "Zahodit změny",
   save: "Uložit změny",
   saveFailed: "Limity se nepodařilo uložit. Načti stránku a zkus to znovu.",
@@ -81,19 +99,6 @@ const cs: UsageCopy = {
 };
 
 export const usageCopy = { en, cs };
-/**
- * The save bar's line. Right after loading, nothing was edited yet, but
- * prices pinned to an older model or provider revision still need a save.
- */
-export function usageSaveStatus(
-  copy: UsageCopy,
-  state: { error: string | null; edited: boolean; stale: number },
-) {
-  return (
-    state.error ??
-    (!state.edited && state.stale > 0 ? copy.stalePrices : copy.unsavedChanges)
-  );
-}
 export function useUsageCopy() {
   return useAdmin().language === "cs" ? cs : en;
 }

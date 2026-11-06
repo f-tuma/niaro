@@ -9,7 +9,7 @@ import {
 import { ModelDiscoveryResponse } from "../../../packages/protocol/service-catalog";
 import { budgetedReach } from "../../../packages/protocol/model-policy";
 import { Button } from "@admin/components/ui/button";
-import { Card } from "@admin/components/ui/card";
+import { Card, CardContent } from "@admin/components/ui/card";
 import { Input } from "@admin/components/ui/input";
 import {
   Alert,
@@ -47,7 +47,8 @@ import {
   CatalogBoundary,
   type CatalogState,
 } from "./catalog-shared";
-import { usageSaveStatus, useUsageCopy } from "./usage-copy";
+import { useUsageCopy } from "./usage-copy";
+import { useIsExtraWide } from "./hooks/use-mobile";
 
 // Generous per-call ceilings: the request ceiling bounds the serialized request
 // size (tool schemas and design context included), the reply ceiling caps max_tokens.
@@ -135,6 +136,7 @@ function UsageLimits({ state }: { state: CatalogState }) {
   const [filling, setFilling] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const extraWide = useIsExtraWide();
   if (policy.isPending)
     return (
       <>
@@ -209,15 +211,19 @@ function UsageLimits({ state }: { state: CatalogState }) {
       call.tokens > settings.maxTokens || call.cost > settings.maxCostMicros
     );
   };
-  // Prices pinned to an older model or provider revision are stale; saving refreshes them.
-  const stale = settings.prices.filter((price) => {
+  // A listed model's price pinned to an older model or provider revision is
+  // not used until someone confirms it still holds. Prices of models this
+  // page does not list (disabled, without tools, a free provider's) wait
+  // untouched until the model is listed again.
+  const isStale = (price: InferencePrice) => {
     const model = models.find((m) => m.id === price.modelId);
     return (
-      !model ||
-      model.revision !== price.modelRevision ||
-      providerRevision(model.providerId) !== price.providerRevision
+      !!model &&
+      (model.revision !== price.modelRevision ||
+        providerRevision(model.providerId) !== price.providerRevision)
     );
-  });
+  };
+  const stale = settings.prices.filter(isStale);
   // Every model a role can reach (see Models) needs a price to stop at limit.
   const routedUnpriced =
     settings.mode === "enforce"
@@ -279,17 +285,20 @@ function UsageLimits({ state }: { state: CatalogState }) {
     setBusy(true);
     setError(null);
     try {
-      // Drop prices for removed models and re-pin current revisions.
+      // Saving confirms the listed prices at the current revisions, keeps
+      // the prices of unlisted models as they are and drops removed models.
       const prices = settings.prices.flatMap((price) => {
         const model = models.find((m) => m.id === price.modelId);
-        return model
-          ? [
-              {
-                ...price,
-                modelRevision: model.revision,
-                providerRevision: providerRevision(model.providerId),
-              },
-            ]
+        if (model)
+          return [
+            {
+              ...price,
+              modelRevision: model.revision,
+              providerRevision: providerRevision(model.providerId),
+            },
+          ];
+        return catalog.models.some((m) => m.id === price.modelId)
+          ? [price]
           : [];
       });
       const result = InferenceBudgetPolicySchema.parse(
@@ -311,6 +320,72 @@ function UsageLimits({ state }: { state: CatalogState }) {
   }
   const unpricedInEnforce =
     settings.mode === "enforce" && models.some((m) => !priceOf(m.id));
+  const priceFields = [
+    "inputMicrosPerMillion",
+    "outputMicrosPerMillion",
+    "maxInputTokens",
+    "maxOutputTokens",
+  ] as const;
+  type PriceField = (typeof priceFields)[number];
+  const fieldLabel = (field: PriceField) =>
+    field === "inputMicrosPerMillion"
+      ? `${copy.input} (${copy.priceUnit})`
+      : field === "outputMicrosPerMillion"
+        ? `${copy.output} (${copy.priceUnit})`
+        : field === "maxInputTokens"
+          ? copy.maxInput
+          : copy.maxOutput;
+  const modelNotes = (model: (typeof models)[number]) => {
+    const price = priceOf(model.id);
+    return (
+      <>
+        {price && isStale(price) && (
+          <span className="text-xs text-warning">{copy.staleRow}</span>
+        )}
+        {price && settings.mode === "enforce" && tooLarge(price) && (
+          <span className="text-xs text-destructive">{copy.exceedsRun}</span>
+        )}
+      </>
+    );
+  };
+  const priceInput = (model: (typeof models)[number], field: PriceField) => {
+    const price = priceOf(model.id);
+    if (field === "maxInputTokens" || field === "maxOutputTokens")
+      return (
+        <GroupedNumberInput
+          aria-label={`${model.name}: ${field === "maxInputTokens" ? copy.maxInput : copy.maxOutput}`}
+          disabled={busy || !price}
+          value={price?.[field]}
+          min={field === "maxInputTokens" ? 2048 : 1}
+          max={field === "maxInputTokens" ? 1_000_000 : 128_000}
+          onCommit={(value) => setPrice(model, { [field]: value })}
+        />
+      );
+    return (
+      <InputGroup>
+        <InputGroupInput
+          aria-label={`${model.name}: ${field === "inputMicrosPerMillion" ? copy.input : copy.output} (${copy.pricesMeta})`}
+          inputMode="decimal"
+          placeholder={copy.noPrice}
+          disabled={busy}
+          defaultValue={price ? dollars(price[field], language) : ""}
+          key={`${field}/${price?.[field] ?? "none"}`}
+          onBlur={(e) => {
+            const value = micros(e.target.value);
+            if (!e.target.value.trim()) {
+              const other =
+                field === "inputMicrosPerMillion"
+                  ? "outputMicrosPerMillion"
+                  : "inputMicrosPerMillion";
+              if (!price?.[other]) setPrice(model, null);
+              else setPrice(model, { [field]: 0 });
+            } else if (value !== null && value <= 1_000_000_000)
+              setPrice(model, { [field]: value });
+          }}
+        />
+      </InputGroup>
+    );
+  };
   return (
     <>
       <PageHeader title={copy.title} />
@@ -395,6 +470,28 @@ function UsageLimits({ state }: { state: CatalogState }) {
             <AlertDescription>{notice}</AlertDescription>
           </Alert>
         )}
+        {stale.length > 0 && (
+          <Alert>
+            <AlertDescription>
+              {draft === null
+                ? copy.stalePrices(stale.length)
+                : copy.stalePricesWithEdits(stale.length)}
+            </AlertDescription>
+            {draft === null && (
+              <AlertAction>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || invalid}
+                  onClick={() => void save()}
+                >
+                  {busy && <Spinner data-icon="inline-start" />}
+                  {copy.confirmPrices}
+                </Button>
+              </AlertAction>
+            )}
+          </Alert>
+        )}
         {routedUnpriced.length > 0 ? (
           <Alert variant="destructive">
             <AlertDescription>
@@ -415,31 +512,21 @@ function UsageLimits({ state }: { state: CatalogState }) {
           )
         )}
         {models.length ? (
-          <Card variant="flush">
-            <Table aria-label={copy.prices}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{copy.model}</TableHead>
-                  <TableHead className="w-28 sm:w-36">
-                    {copy.input} ({copy.priceUnit})
-                  </TableHead>
-                  <TableHead className="w-28 sm:w-36">
-                    {copy.output} ({copy.priceUnit})
-                  </TableHead>
-                  <TableHead className="hidden w-36 xl:table-cell">
-                    {copy.maxInput}
-                  </TableHead>
-                  <TableHead className="hidden w-36 xl:table-cell">
-                    {copy.maxOutput}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {models.map((model) => {
-                  const price = priceOf(model.id);
-                  const over =
-                    !!price && settings.mode === "enforce" && tooLarge(price);
-                  return (
+          extraWide ? (
+            <Card variant="flush">
+              <Table aria-label={copy.prices}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{copy.model}</TableHead>
+                    {priceFields.map((field) => (
+                      <TableHead key={field} className="w-36">
+                        {fieldLabel(field)}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {models.map((model) => (
                     <TableRow key={model.id}>
                       <TableCell className="max-w-0">
                         <div className="flex min-w-0 flex-col">
@@ -447,76 +534,57 @@ function UsageLimits({ state }: { state: CatalogState }) {
                           <span className="truncate font-mono text-xs text-muted-foreground">
                             {model.model}
                           </span>
-                          {over && (
-                            <span className="text-xs text-destructive">
-                              {copy.exceedsRun}
-                            </span>
-                          )}
+                          {modelNotes(model)}
                         </div>
                       </TableCell>
-                      {(
-                        [
-                          "inputMicrosPerMillion",
-                          "outputMicrosPerMillion",
-                        ] as const
-                      ).map((field) => (
+                      {priceFields.map((field) => (
                         <TableCell key={field}>
-                          <InputGroup>
-                            <InputGroupInput
-                              aria-label={`${model.name}: ${field === "inputMicrosPerMillion" ? copy.input : copy.output} (${copy.pricesMeta})`}
-                              inputMode="decimal"
-                              placeholder={copy.noPrice}
-                              disabled={busy}
-                              defaultValue={
-                                price ? dollars(price[field], language) : ""
-                              }
-                              key={`${field}/${price?.[field] ?? "none"}`}
-                              onBlur={(e) => {
-                                const value = micros(e.target.value);
-                                if (!e.target.value.trim()) {
-                                  const other =
-                                    field === "inputMicrosPerMillion"
-                                      ? "outputMicrosPerMillion"
-                                      : "inputMicrosPerMillion";
-                                  if (!price?.[other]) setPrice(model, null);
-                                  else setPrice(model, { [field]: 0 });
-                                } else if (
-                                  value !== null &&
-                                  value <= 1_000_000_000
-                                )
-                                  setPrice(model, { [field]: value });
-                              }}
-                            />
-                          </InputGroup>
+                          {priceInput(model, field)}
                         </TableCell>
                       ))}
-                      {(["maxInputTokens", "maxOutputTokens"] as const).map(
-                        (field) => (
-                          <TableCell
-                            key={field}
-                            className="hidden xl:table-cell"
-                          >
-                            <GroupedNumberInput
-                              aria-label={`${model.name}: ${field === "maxInputTokens" ? copy.maxInput : copy.maxOutput}`}
-                              disabled={busy || !price}
-                              value={price?.[field]}
-                              min={field === "maxInputTokens" ? 2048 : 1}
-                              max={
-                                field === "maxInputTokens" ? 1_000_000 : 128_000
-                              }
-                              onCommit={(value) =>
-                                setPrice(model, { [field]: value })
-                              }
-                            />
-                          </TableCell>
-                        ),
-                      )}
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </Card>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          ) : (
+            // Narrow screens: one card per model with all four fields labelled.
+            <ul aria-label={copy.prices} className="flex flex-col gap-3">
+              {models.map((model) => (
+                <li key={model.id}>
+                  <Card size="sm">
+                    <CardContent className="flex min-w-0 flex-col">
+                      <span className="font-medium break-words">
+                        {model.name}
+                      </span>
+                      <span className="font-mono text-xs break-all text-muted-foreground">
+                        {model.model}
+                      </span>
+                      {modelNotes(model)}
+                    </CardContent>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {priceFields.map((field) => (
+                          <div
+                            key={field}
+                            className="flex min-w-0 flex-col gap-1"
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="text-xs text-muted-foreground"
+                            >
+                              {fieldLabel(field)}
+                            </span>
+                            {priceInput(model, field)}
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </li>
+              ))}
+            </ul>
+          )
         ) : (
           <Empty variant="outline">
             <EmptyHeader>
@@ -525,13 +593,9 @@ function UsageLimits({ state }: { state: CatalogState }) {
           </Empty>
         )}
       </Section>
-      {(draft !== null || busy || stale.length > 0 || error) && (
+      {(draft !== null || error) && (
         <SaveBar
-          status={usageSaveStatus(copy, {
-            error,
-            edited: draft !== null,
-            stale: stale.length,
-          })}
+          status={error ?? copy.unsavedChanges}
           tone={error ? "error" : "muted"}
         >
           <Button

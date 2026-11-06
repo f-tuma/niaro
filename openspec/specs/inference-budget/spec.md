@@ -62,6 +62,25 @@ The administration's Usage limits page SHALL list the workspace's tool-capable c
 - **WHEN** the token cap is smaller than a price's 2,048 input tokens plus its output ceiling in enforce mode
 - **THEN** the page does not save
 
+#### Scenario: Prices on a phone
+
+- **WHEN** an administrator opens Usage limits on a 390 px wide screen
+- **THEN** each model shows its full name and the labelled Input, Output, Max request and Max reply fields
+
+### Requirement: Prices of changed models
+
+On the Usage limits page, a listed model's price pinned to an older model or provider revision SHALL be marked and explained as not used until confirmed, with one **Confirm prices** action that saves it at the current revisions; it SHALL NOT be presented as unsaved changes. Prices of models the page does not list SHALL be kept unchanged on save and SHALL NOT be reported as changed.
+
+#### Scenario: Price of a changed model
+
+- **WHEN** an administrator opens the page after a listed model's provider was edited
+- **THEN** that model's price is marked as not used until confirmed, **Confirm prices** saves it at the current revisions, and no unsaved-changes bar appears
+
+#### Scenario: Price of a disabled model
+
+- **WHEN** an administrator opens the page while a priced model is disabled
+- **THEN** nothing is reported as changed and saving keeps that price as it was
+
 ### Requirement: Runs pin their policy
 
 A root run SHALL pin the policy revision and digest, organization, workspace and user when it opens. When the policy changes, further model calls of an already pinned run SHALL be refused with `catalog_budget_policy_changed`; its ledger and completed receipts SHALL stay as they are. Child agents of a process SHALL share the parent root run, with caps narrowed to the minimum of the workspace and the process's frozen caps and the process's model-call cap.
