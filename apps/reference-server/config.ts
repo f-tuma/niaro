@@ -104,6 +104,10 @@ export const ServerConfigSchema = z
             accountSessionDays: z.number().int().min(1).max(90).default(30),
             connectionOrigins: z.array(ConnectionOrigin).max(20).default([]),
             integrationOrigins: IntegrationOrigins.default([]),
+            /** Service addresses the operator trusts on top of the list
+             * administration keeps, from NIARO_INTEGRATION_ORIGINS; e.g. the
+             * compose profiles' own services on the project network. */
+            operatorOrigins: IntegrationOrigins.default([]),
             calendarCollections: z
               .array(CalendarCollectionUrl)
               .max(20)
@@ -266,6 +270,26 @@ function hostedRuntime(env: NodeJS.ProcessEnv = process.env) {
 }
 
 /**
+ * NIARO_INTEGRATION_ORIGINS: comma-separated origins (http://searxng:8080) the
+ * operator trusts for services and providers, on top of administration's list.
+ */
+function operatorOrigins(env: NodeJS.ProcessEnv = process.env) {
+  const value = env.NIARO_INTEGRATION_ORIGINS?.trim();
+  if (!value) return undefined;
+  const origins = IntegrationOrigins.safeParse(
+    value
+      .split(",")
+      .map((origin: string) => origin.trim())
+      .filter(Boolean),
+  );
+  if (!origins.success)
+    throw new ServerConfigError(
+      "NIARO_INTEGRATION_ORIGINS must list origins such as http://searxng:8080, separated by commas.",
+    );
+  return origins.data;
+}
+
+/**
  * SMTP_HOST, SMTP_PORT, SMTP_SECURE (true | starttls | false), SMTP_USER,
  * SMTP_PASSWORD and SMTP_FROM
  * override the profile's invitation mail settings, so the password can stay
@@ -388,6 +412,9 @@ export function loadServerConfig(file?: string): ServerConfig {
   const editing = pluginEditing();
   if (editing !== undefined && config.administration?.identity)
     config.administration.identity.pluginEditing = editing;
+  const origins = operatorOrigins();
+  if (origins && config.administration?.identity)
+    config.administration.identity.operatorOrigins = origins;
   applyMailEnvironment(config);
   const base = file ? dirname(resolve(file)) : "/";
   config.dataDirectory = resolve(base, config.dataDirectory);

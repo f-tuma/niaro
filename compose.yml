@@ -75,6 +75,10 @@ services:
       # http://converter:8000, and the token it expects (its CONVERTER_TOKEN).
       NIARO_CONVERTER_URL: ${NIARO_CONVERTER_URL:-}
       NIARO_CONVERTER_TOKEN: ${CONVERTER_TOKEN:-}
+      # Private service addresses the server may call, comma-separated, on top
+      # of administration's list; the default trusts the "search" profile's
+      # SearXNG (unused while that profile is off).
+      NIARO_INTEGRATION_ORIGINS: ${NIARO_INTEGRATION_ORIGINS:-http://searxng:8080}
     volumes:
       - niaro-data:/data
       - ${NIARO_CONFIG:-./examples/self-hosted/server.json}:/config/server.json:ro

@@ -154,6 +154,7 @@ test("identity uses a profile-relative private directory and a canonical local l
     accountSessionDays: 30,
     connectionOrigins: [],
     integrationOrigins: [],
+    operatorOrigins: [],
     calendarCollections: [],
     mobile: { model: "disabled", voice: "disabled", sessionIdleDays: 30 },
     aiProfiles: { models: [], voices: [] },
@@ -445,6 +446,7 @@ describe("automatic profile from the environment", () => {
     "NIARO_PORT",
     "NIARO_LISTEN_HOST",
     "NIARO_HOSTED_RUNTIME",
+    "NIARO_INTEGRATION_ORIGINS",
     "TZ",
     "SMTP_HOST",
     "SMTP_PORT",
@@ -553,6 +555,21 @@ describe("automatic profile from the environment", () => {
     expect(loadServerConfig().name).toBe("Niaro");
   });
 
+  test("the operator trusts private service origins from the environment", () => {
+    Object.assign(process.env, {
+      NIARO_PUBLIC_URL: "https://niaro.example.com",
+      NIARO_DATA: directory,
+      NIARO_INTEGRATION_ORIGINS: " http://searxng:8080 , http://ollama:11434,",
+    });
+    expect(
+      loadServerConfig().administration?.identity?.operatorOrigins,
+    ).toEqual(["http://searxng:8080", "http://ollama:11434"]);
+    for (const invalid of ["searxng:8080", "http://searxng:8080/search"]) {
+      process.env.NIARO_INTEGRATION_ORIGINS = invalid;
+      expect(() => loadServerConfig()).toThrow(ServerConfigError);
+    }
+  });
+
   test("container overrides still apply, and an explicit profile wins", () => {
     Object.assign(process.env, {
       NIARO_PUBLIC_URL: "https://niaro.example.com",
@@ -566,6 +583,7 @@ describe("automatic profile from the environment", () => {
     const automatic = loadServerConfig();
     expect(automatic.listen.host).toBe("0.0.0.0");
     expect(automatic.administration?.identity?.hosting.runtime).toBe("process");
+    expect(automatic.administration?.identity?.operatorOrigins).toEqual([]);
     expect(automatic.administration?.identity?.mail).toMatchObject({
       host: "smtp.example.test",
       port: 465,

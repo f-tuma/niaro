@@ -182,6 +182,7 @@ Read by the server (image or `pnpm server`):
 | `NIARO_PLUGIN_EDITING`                                                             | profile (on)                             | `0` makes plugin files read-only in administration.                                                 |
 | `NIARO_DIARIZATION_TOKEN`                                                          | compose: `DIARIZER_TOKEN`                | Token for the diarization service.                                                                  |
 | `NIARO_CONVERTER_URL`, `NIARO_CONVERTER_TOKEN`                                     | unset; compose: `CONVERTER_TOKEN`        | The document converter (`http://converter:8000`) and its token; unset keeps attachments unread.     |
+| `NIARO_INTEGRATION_ORIGINS`                                                        | unset; compose: `http://searxng:8080`    | Private service origins the server may call, comma-separated, on top of administration's list.      |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | unset                                    | Mail; see [Mail](#mail).                                                                            |
 
 Compose only: `NIARO_DATA_VOLUME` (volume name, default `niaro-data`),
@@ -189,7 +190,8 @@ Compose only: `NIARO_DATA_VOLUME` (volume name, default `niaro-data`),
 for diarization `DIARIZER_TOKEN`, `DIARIZER_THREADS`, `DIARIZER_MEMORY`,
 `DIARIZER_IMAGE`, `DIARIZER_DOCKERFILE`, `HF_TOKEN` (pyannote only), and for
 document reading `CONVERTER_TOKEN`, `CONVERTER_DOCKERFILE`, `CONVERTER_MEMORY`,
-`CONVERTER_THREADS`, `CONVERTER_TIMEOUT_SECONDS`, `CONVERTER_IMAGE`; plus
+`CONVERTER_THREADS`, `CONVERTER_TIMEOUT_SECONDS`, `CONVERTER_IMAGE`, for web
+search `SEARXNG_SECRET`, `SEARXNG_MEMORY`, `SEARXNG_IMAGE`; plus
 `COMPOSE_PROFILES`.
 
 ### Automatic profile
@@ -517,6 +519,11 @@ turned on and SearXNG's bot limiter off, since only Niaro calls it. It runs
 read-only without capabilities, publishes no port and holds no key; Niaro
 reaches it at `http://searxng:8080` on the project's own network. SearXNG asks
 public search engines, so the container needs a way out.
+
+That address is private, so the server calls it only because the operator
+trusts it: compose sets `NIARO_INTEGRATION_ORIGINS=http://searxng:8080` by
+default. If you set `NIARO_INTEGRATION_ORIGINS` yourself, keep that origin in
+the list.
 
 1. Add the profile to `.env` (or Dokploy **Environment**), keeping any you
    already have, e.g. `COMPOSE_PROFILES=documents,search`. Optional:

@@ -535,9 +535,15 @@ export async function openIdentity(
       serverSettingsDefaults(config),
     );
     const current = serverSettings.read().settings;
-    // One list for catalog validation and the transport: hosted servers add their
-    // loopback origin while they exist and remove it when deleted.
-    const trusted = [...current.integrationOrigins];
+    // One list for catalog validation and the transport: administration's
+    // addresses and the operator's (NIARO_INTEGRATION_ORIGINS); hosted servers
+    // add their loopback origin while they exist and remove it when deleted.
+    const trusted = [
+      ...new Set([
+        ...current.integrationOrigins,
+        ...(settings.operatorOrigins ?? []),
+      ]),
+    ];
     const hosted = new HostedServers(
       db,
       join(settings.directory, "hosted"),
