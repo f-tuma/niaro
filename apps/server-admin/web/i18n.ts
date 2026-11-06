@@ -60,7 +60,7 @@ export const en = {
   aiConflict:
     "Settings changed elsewhere. Refresh to load the current version.",
   auditAIChanged: "Models & voice changed",
-  auditPluginsChanged: "Built-in tools changed",
+  auditPluginsChanged: "Plugins changed",
   auditMemoryChanged: "Memory changed",
   auditPetChanged: "Pet appearance changed",
   auditPetPositionChanged: "Personal position changed",
@@ -244,7 +244,8 @@ export const en = {
   defaultInstructions: "Default instructions",
   workspaceNotFound: "Workspace not found",
   workspaceNotFoundHint: "It may belong to another organization.",
-  workspaceMembersHint: "Owners and administrators reach every workspace; members only those they were invited to.",
+  workspaceMembersHint:
+    "Owners and administrators reach every workspace; members only those they were invited to.",
   workspaceSections: "Workspace settings",
   removeMember: "Remove member",
   disconnectConfirm: "Disconnect all your paired devices?",
@@ -471,7 +472,7 @@ export const cs: typeof en = {
   aiConflict:
     "Nastavení se mezitím změnilo. Obnov stránku a načti aktuální verzi.",
   auditAIChanged: "Změna modelů a hlasu",
-  auditPluginsChanged: "Změna vestavěných nástrojů",
+  auditPluginsChanged: "Změna pluginů",
   auditMemoryChanged: "Změna paměti",
   auditPetChanged: "Vzhled peta změněn",
   auditPetPositionChanged: "Osobní pozice změněna",
@@ -654,7 +655,8 @@ export const cs: typeof en = {
   defaultInstructions: "Výchozí pokyny",
   workspaceNotFound: "Pracovní prostor nenalezen",
   workspaceNotFoundHint: "Možná patří do jiné organizace.",
-  workspaceMembersHint: "Vlastníci a správci mají přístup do všech prostorů, členové jen tam, kam je někdo pozval.",
+  workspaceMembersHint:
+    "Vlastníci a správci mají přístup do všech prostorů, členové jen tam, kam je někdo pozval.",
   workspaceSections: "Nastavení prostoru",
   removeMember: "Odebrat člena",
   disconnectConfirm: "Odpojit všechna tvá spárovaná zařízení?",

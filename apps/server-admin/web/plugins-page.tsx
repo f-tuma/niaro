@@ -18,6 +18,7 @@ import {
 import {
   Card,
   CardContent,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@admin/components/ui/card";
@@ -133,13 +134,19 @@ function useWorkspacePlugins(
 function PluginState({
   plugin,
   settings,
+  always = false,
 }: {
   plugin: WorkspacePlugins["plugins"][number];
   settings: PluginPreferences;
+  /** Also say when it is on, as the cards do. */
+  always?: boolean;
 }) {
   const copy = usePluginsCopy();
   const enabled = settings.enabled.includes(plugin.id);
-  if (plugin.available && enabled) return null;
+  if (plugin.available && enabled)
+    return always ? (
+      <StatusBadge tone="success">{copy.enabled}</StatusBadge>
+    ) : null;
   return (
     <StatusBadge tone={!plugin.available ? "warning" : "neutral"}>
       {!plugin.available ? copy.unavailable : copy.disabled}
@@ -404,10 +411,6 @@ function WorkspacePluginPanel({
                             : copy.operator}
                         </Badge>
                       )}
-                      <PluginState
-                        plugin={plugin}
-                        settings={query.data.settings}
-                      />
                     </div>
                   </div>
                 </CardHeader>
@@ -433,6 +436,13 @@ function WorkspacePluginPanel({
                     </span>
                   </div>
                 </CardContent>
+                <CardFooter className="mt-auto">
+                  <PluginState
+                    plugin={plugin}
+                    settings={query.data.settings}
+                    always
+                  />
+                </CardFooter>
               </Card>
             ))}
           </div>

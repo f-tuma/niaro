@@ -1,6 +1,7 @@
 import { shellCopy } from "../apps/server-admin/web/shell-copy";
 import { catalogCopy } from "../apps/server-admin/web/catalog-copy";
 import { mcpCopy } from "../apps/server-admin/web/mcp-copy";
+import { pluginsCopy } from "../apps/server-admin/web/plugins-copy";
 import {
   usageCopy,
   usageSaveStatus,
@@ -18,13 +19,8 @@ import { plural } from "../apps/server-admin/web/lib/plural";
 // named for what it does, in both languages, and the same name everywhere.
 describe("admin navigation", () => {
   test.each([
-    ["en", "Built-in tools", "External AI apps", "Installed connectors"],
-    [
-      "cs",
-      "Vestavěné nástroje",
-      "Externí AI aplikace",
-      "Instalované konektory",
-    ],
+    ["en", "Plugins", "External AI apps", "Installed connectors"],
+    ["cs", "Pluginy", "Externí AI aplikace", "Instalované konektory"],
   ] as const)(
     "%s names pages for what they do",
     (language, plugins, mcp, hosted) => {
@@ -46,6 +42,9 @@ describe("admin navigation", () => {
       expect(catalogCopy[language].routing).toBe(copy.routing);
       expect(catalogCopy[language].plugins).toBe(copy.plugins);
       expect(mcpCopy[language].title).toBe(copy.mcp);
+      // One term for the nav, the page and its button.
+      expect(pluginsCopy[language].title).toBe(copy.plugins);
+      expect(pluginsCopy[language].addPlugin.toLowerCase()).toContain("plugin");
     },
   );
 
@@ -201,6 +200,12 @@ describe("overview: needs attention", () => {
     expect(shellCopy.cs.requestsShare.replace("{p}", "85")).toBe(
       "Dotazy na AI dnes na 85 % limitu",
     );
-    expect(shellCopy.en.certainty.replace("{p}", "80")).toBe("80 % sure");
+    // The same term as the Models page uses for the setting.
+    expect(shellCopy.en.certainty.replace("{p}", "80")).toBe(
+      "Required certainty 80 %",
+    );
+    expect(shellCopy.cs.certainty.replace("{p}", "80")).toBe(
+      "Požadovaná jistota 80 %",
+    );
   });
 });

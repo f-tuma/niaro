@@ -82,7 +82,8 @@ import {
   Alert,
   AlertDescription,
 } from "@admin/components/ui/alert";
-import { PageHeader, Toolbar } from "@admin/components/console/page";
+import { PageHeader, Section, Toolbar } from "@admin/components/console/page";
+import { SettingRow, SettingRows } from "@admin/components/console/setting-row";
 import { EntityIcon } from "@admin/components/console/entity-icon";
 import { Disclosure } from "@admin/components/console/disclosure";
 import { StatusBadge } from "@admin/components/console/status";
@@ -107,6 +108,7 @@ import {
   serviceSettings,
 } from "./catalog-shared";
 import { useAdmin } from "./context";
+import { useHostedServers } from "./hosted-page";
 import { ServiceAccess } from "./service-access";
 import { ServiceAuthentication } from "./service-auth";
 import { WorkspaceRolePicker } from "./workspace-roles";
@@ -176,69 +178,82 @@ const ownServiceLabel = (
         : copy.ownServiceRejected
   }`;
 
-/** Whether members may connect services of their own, for the workspace. */
+/**
+ * Whether members may connect services of their own, and who manages their
+ * actions: a settings section under the list, never in its toolbar.
+ */
 export function OwnServicesPolicy({ state }: { state: CatalogState }) {
   const { copy } = state;
   const policy = state.query.data?.personalServices ?? "review";
   const management = state.query.data?.personalManagement ?? "owner";
   return (
-    <>
-      <Select
-        value={policy}
-        disabled={state.busy}
-        onValueChange={(value) =>
-          void state.mutate("command", {
-            type: "savePersonalServicesPolicy",
-            policy: value,
-          })
-        }
-      >
-        <SelectTrigger
-          aria-label={copy.ownServicesPolicy}
-          title={copy.ownServicesPolicyHint}
-          data-testid="own-services-policy"
+    <Section title={copy.memberServices} description={copy.memberServicesHint}>
+      <SettingRows>
+        <SettingRow
+          label={copy.ownServicesPolicy}
+          labelId="own-services-policy-label"
+          meta={copy.ownServicesPolicyHint}
+          wide
         >
-          <span className="text-muted-foreground">
-            {copy.ownServicesPolicy}:
-          </span>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="off">{copy.ownServicesOff}</SelectItem>
-          <SelectItem value="review">{copy.ownServicesReview}</SelectItem>
-          <SelectItem value="free">{copy.ownServicesFree}</SelectItem>
-        </SelectContent>
-      </Select>
-      {policy !== "off" && (
-        <Select
-          value={management}
-          disabled={state.busy}
-          onValueChange={(value) =>
-            void state.mutate("command", {
-              type: "savePersonalServicesPolicy",
-              management: value,
-            })
-          }
-        >
-          <SelectTrigger
-            aria-label={copy.ownServicesManagement}
-            title={copy.ownServicesManagementHint}
-            data-testid="own-services-management"
+          <Select
+            value={policy}
+            disabled={state.busy}
+            onValueChange={(value) =>
+              void state.mutate("command", {
+                type: "savePersonalServicesPolicy",
+                policy: value,
+              })
+            }
           >
-            <span className="text-muted-foreground">
-              {copy.ownServicesManagement}:
-            </span>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="owner">{copy.ownServicesByOwner}</SelectItem>
-            <SelectItem value="administrators">
-              {copy.ownServicesByAdmins}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      )}
-    </>
+            <SelectTrigger
+              aria-labelledby="own-services-policy-label"
+              className="w-full"
+              data-testid="own-services-policy"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">{copy.ownServicesOff}</SelectItem>
+              <SelectItem value="review">{copy.ownServicesReview}</SelectItem>
+              <SelectItem value="free">{copy.ownServicesFree}</SelectItem>
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        {policy !== "off" && (
+          <SettingRow
+            label={copy.ownServicesManagement}
+            labelId="own-services-management-label"
+            meta={copy.ownServicesManagementHint}
+            wide
+          >
+            <Select
+              value={management}
+              disabled={state.busy}
+              onValueChange={(value) =>
+                void state.mutate("command", {
+                  type: "savePersonalServicesPolicy",
+                  management: value,
+                })
+              }
+            >
+              <SelectTrigger
+                aria-labelledby="own-services-management-label"
+                className="w-full"
+                data-testid="own-services-management"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="owner">{copy.ownServicesByOwner}</SelectItem>
+                <SelectItem value="administrators">
+                  {copy.ownServicesByAdmins}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        )}
+      </SettingRows>
+    </Section>
   );
 }
 
@@ -306,6 +321,12 @@ function Services() {
       (s.name + " " + s.url).toLowerCase().includes(search.toLowerCase()),
   );
   const canManage = !!state.query.data?.canManage;
+  // A service on an installed connector points at a loopback address only
+  // this server reaches; its card names the connector instead.
+  const hosted = useHostedServers(
+    canManage ? state.scope.organization?.id : undefined,
+  ).data;
+  const hostedUrls = new Set(hosted?.servers.map((server) => server.url));
   return (
     <>
       <PageHeader
@@ -334,18 +355,14 @@ function Services() {
           )
         }
         actions={
-          canManage && (
-            <>
-              <OwnServicesPolicy state={state} />
-              {all.length > 0 && (
-                <Button asChild>
-                  <Link to="/services/new">
-                    <Plus data-icon="inline-start" aria-hidden="true" />
-                    {copy.addService}
-                  </Link>
-                </Button>
-              )}
-            </>
+          canManage &&
+          all.length > 0 && (
+            <Button asChild>
+              <Link to="/services/new">
+                <Plus data-icon="inline-start" aria-hidden="true" />
+                {copy.addService}
+              </Link>
+            </Button>
           )
         }
       />
@@ -359,6 +376,7 @@ function Services() {
                     key={service.id}
                     service={service}
                     state={state}
+                    installed={hostedUrls.has(service.url)}
                   />
                 ))}
               </div>
@@ -402,6 +420,7 @@ function Services() {
             )}
           </Empty>
         )}
+        {canManage && <OwnServicesPolicy state={state} />}
       </CatalogBoundary>
     </>
   );
@@ -410,9 +429,12 @@ function Services() {
 function ServiceCard({
   service,
   state,
+  installed = false,
 }: {
   service: Service;
   state: CatalogState;
+  /** Runs on an installed connector of this server. */
+  installed?: boolean;
 }) {
   const { copy } = state;
   const status = serviceState(service, copy);
@@ -451,9 +473,18 @@ function ServiceCard({
       </CardContent>
       <CardFooter className="mt-auto">
         <div className="flex w-full min-w-0 items-center justify-between gap-3">
-          <span className="truncate font-mono text-xs text-muted-foreground">
-            {new URL(service.url).host}
-          </span>
+          {installed ? (
+            <Link
+              to="/hosted"
+              className="relative z-10 truncate text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              {copy.installedConnector}
+            </Link>
+          ) : (
+            <span className="truncate font-mono text-xs text-muted-foreground">
+              {new URL(service.url).host}
+            </span>
+          )}
           <span className="shrink-0 text-xs text-muted-foreground">
             {service.protocol === "openapi" ? copy.api : copy.mcp}
           </span>

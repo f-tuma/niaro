@@ -1,6 +1,6 @@
 import { useAdmin } from "./context";
 const en = {
-  title: "Built-in tools",
+  title: "Plugins",
   files: "Files",
   addPlugin: "Add plugin",
   pluginId: "Plugin ID",
@@ -35,7 +35,7 @@ const en = {
   settingInvalid: "Check the highlighted values.",
   settings: "Settings",
   notFound: "Tool not found",
-  empty: "No built-in tools available",
+  empty: "No plugins available",
   dateTime: "Date & time",
   memory: "Memory",
   retentionDays: "Retention (days)",
@@ -141,7 +141,7 @@ const en = {
   invalid_offset: "This UTC offset does not match the selected time.",
 };
 const cs: Record<keyof typeof en, string> = {
-  title: "Vestavěné nástroje",
+  title: "Pluginy",
   files: "Soubory",
   addPlugin: "Přidat plugin",
   pluginId: "ID pluginu",
@@ -175,7 +175,7 @@ const cs: Record<keyof typeof en, string> = {
   settingInvalid: "Zkontroluj označené hodnoty.",
   settings: "Nastavení",
   notFound: "Nástroj nebyl nalezen",
-  empty: "Žádné dostupné vestavěné nástroje",
+  empty: "Žádné dostupné pluginy",
   dateTime: "Datum a čas",
   memory: "Paměť",
   retentionDays: "Uchování (dny)",
@@ -278,6 +278,7 @@ const cs: Record<keyof typeof en, string> = {
     "Tento čas při posunu hodin dopředu neexistuje. Vyber jiný čas.",
   invalid_offset: "UTC offset neodpovídá zvolenému času.",
 };
+export const pluginsCopy = { en, cs };
 export function usePluginsCopy() {
   return useAdmin().language === "cs" ? cs : en;
 }

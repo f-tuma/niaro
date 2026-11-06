@@ -23,7 +23,7 @@ const en = {
   of: "of",
 
   services: "Services",
-  plugins: "Built-in tools",
+  plugins: "Plugins",
   addService: "Add service",
   serviceDescription: "Description for the assistant",
   searchServices: "Search services…",
@@ -40,6 +40,10 @@ const en = {
   noServices: "Connect your first service",
   noServicesHint: "CRM, mail, calendar or your own app.",
   // Services people connect for themselves
+  memberServices: "Member services",
+  memberServicesHint:
+    "Services members connect for themselves with an address and a key.",
+  installedConnector: "Installed connector",
   ownServicesPolicy: "Members' own services",
   ownServicesPolicyHint:
     "Whether people may connect a service of their own with its address and key.",
@@ -322,7 +326,7 @@ const cs: Record<keyof typeof en, string> = {
   of: "z",
 
   services: "Služby",
-  plugins: "Vestavěné nástroje",
+  plugins: "Pluginy",
   addService: "Přidat službu",
   serviceDescription: "Popis pro asistenta",
   searchServices: "Hledat služby…",
@@ -338,6 +342,9 @@ const cs: Record<keyof typeof en, string> = {
   status: "Stav",
   noServices: "Připoj první službu",
   noServicesHint: "CRM, pošta, kalendář nebo vlastní aplikace.",
+  memberServices: "Služby členů",
+  memberServicesHint: "Služby, které si členové připojí sami adresou a klíčem.",
+  installedConnector: "Instalovaný konektor",
   ownServicesPolicy: "Vlastní služby členů",
   ownServicesPolicyHint:
     "Zda si lidé mohou připojit vlastní službu adresou a klíčem.",
