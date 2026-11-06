@@ -207,7 +207,7 @@ The system SHALL check at each use that the chosen model and its provider are en
 
 ### Requirement: Provider and model pages
 
-The administration SHALL show providers as cards at `/admin/providers` with their note and a Free badge, search backends below them, each provider's models and bulk controls at `/admin/providers/:providerId`, a capability test in the model editor, and the model policy at `/admin/routing`. **Choose from catalog** SHALL offer search by name or ID, a tool-calling filter and selection of up to 50 models, marking models already added. Viewing these pages SHALL make no model request.
+The administration SHALL show providers as cards at `/admin/providers` with their note and a Free badge, each provider's models and bulk controls at `/admin/providers/:providerId`, a capability test in the model editor, and the model policy at `/admin/routing`. **Choose from catalog** SHALL offer search by name or ID, a tool-calling filter and selection of up to 50 models, marking models already added. Viewing these pages SHALL make no model request.
 
 #### Scenario: Selection cap
 
@@ -294,12 +294,30 @@ On start, routing stored in the old single-choice shape SHALL become a workspace
 
 ### Requirement: Models page
 
-`/admin/routing` SHALL be the **Models** page with tabs for the organization default and this workspace: role rows with ordered model chips to add, reorder and remove, the source when inherited, a fallback switch per role, service routes, tiers, escalation and settings, including the web search backend. Unavailable models and, in enforce mode, unpriced ones SHALL be marked. Viewing SHALL make no model request.
+`/admin/routing` SHALL be the **Models** page with tabs for the organization default and this workspace, each tab controlling a rendered panel: role rows with ordered model chips to add, reorder and remove, the source when inherited, a fallback switch per role, service routes, tiers, escalation, member presets and settings, each explained by a one-line hint. The voice setting SHALL offer the reviewed voices of the speech role's model when it has any. Viewing SHALL make no model request.
 
 #### Scenario: Inherited role
 
 - **WHEN** an administrator opens the workspace tab where background work is not set
 - **THEN** the row says it is the same as chat and offers Override
+
+### Requirement: Web search on the Models page
+
+Web search SHALL have one section on the Models page: **Search with** (a search backend or the provider's own search) and, on the organization tab, the organization's search backends to add, edit and remove. The role that serves the provider's own search SHALL be named **Web search model**. The providers page SHALL only point to it.
+
+#### Scenario: Adding SearXNG
+
+- **WHEN** an administrator opens Models on the organization tab
+- **THEN** the Web search section offers Add search backend next to Search with
+
+### Requirement: Model marks on the Models page
+
+Unavailable models SHALL be marked. In enforce mode a model SHALL be marked unpriced only on a route that is budgeted (see `inference-budget`), and the mark SHALL lead to Usage limits.
+
+#### Scenario: Unbudgeted role without a price
+
+- **WHEN** voice input uses a transcription model without a price in enforce mode
+- **THEN** its row shows no price warning
 
 ### Requirement: OpenRouter audio catalogs
 

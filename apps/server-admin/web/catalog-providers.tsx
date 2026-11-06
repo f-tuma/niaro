@@ -99,7 +99,6 @@ import { ApiError } from "./lib/api";
 import { ProviderForm } from "./provider-form";
 import { useProviderCopy } from "./provider-copy";
 import { ModelCapabilityTest } from "./model-capability-test";
-import { SearchBackendsSection } from "./search-backends";
 
 /** Short lists are scanned by eye; search appears past this many items. */
 const searchThreshold = 6;
@@ -122,6 +121,22 @@ function NotManager({ state }: { state: CatalogState }) {
         <EmptyTitle>{state.copy.notManager}</EmptyTitle>
       </EmptyHeader>
     </Empty>
+  );
+}
+
+/** Search backends live on the Models page, beside the web search choice. */
+function SearchPointer() {
+  const text = useProviderCopy();
+  return (
+    <p className="mt-8 text-sm text-muted-foreground">
+      {text.searchElsewhere}{" "}
+      <Link
+        to="/routing"
+        className="font-medium text-foreground underline-offset-4 hover:underline"
+      >
+        {text.openModels}
+      </Link>
+    </p>
   );
 }
 
@@ -206,11 +221,7 @@ export function ProvidersPage() {
             )}
           </>
         )}
-        {canManage && (
-          <div className="mt-8">
-            <SearchBackendsSection state={state} />
-          </div>
-        )}
+        {canManage && <SearchPointer />}
       </CatalogBoundary>
       <ProviderSheet
         state={state}

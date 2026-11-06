@@ -41,7 +41,7 @@ says where to click and what to enter. Console structure:
 3. **Models** (`/admin/routing`): the **Organization default** tab sets the
    models every workspace uses; the **This workspace** tab overrides single
    roles. Each role (Chat, Checker, Service picker, Background work, Process
-   design, Web search, Voice input, Meeting transcription, Spoken replies)
+   design, Web search model, Voice input, Meeting transcription, Spoken replies)
    takes an ordered list of models, the first one used; **Override** and
    **Use default** switch a workspace row between its own list and the
    inherited one. Background work, process design and web search follow Chat
@@ -68,9 +68,11 @@ and changed, the memories, skills, meetings and files it used, the
 knowledge passages it was given, and the model that wrote it by the name
 you gave it on the Models page.
 
-Below the providers, **Search backends** keeps SearXNG, Brave or Tavily for web
-search; their keys are write-only and never exported. **Models → Settings → Web
-search** chooses one, or the provider's own search with the Web search models.
+Web search has one place: **Models → Web search**. On the **Organization
+default** tab, **Search backends** keeps SearXNG, Brave or Tavily; their keys
+are write-only and never exported. **Search with** chooses one of them, or the
+provider's own search, which uses the **Web search model** role. A workspace
+can choose differently on its own tab.
 
 The compose files can run a private SearXNG next to the server (profile
 `search`, see [deployment](deployment.md#optional-web-search)); its address is
@@ -133,8 +135,10 @@ Behavior: [knowledge](../../openspec/changes/niar-298-workspace-knowledge/specs/
 Each model a role can reach needs its own price, including the Service
 picker, the Checker, fallback, escalation and member preset models: with **Stop at limit**
 the page names the missing ones and does not save until they are priced.
-Editing a model or its provider makes its price out of date; save the page
-again.
+Editing a model or its provider makes its price out of date: the price is
+not used until you check it and press **Confirm prices** (saving other
+changes confirms it too). Prices of disabled models wait unchanged until the
+model is enabled again.
 
 Behavior: [inference-budget](../../openspec/specs/inference-budget/spec.md).
 
@@ -370,9 +374,9 @@ OAuth access lasts at most an hour; link again after it expires.
 on that page: search engine (`exa`, `native`, `auto`), results per search,
 page text length, zero data retention providers only. Server-wide defaults go
 in the profile under `plugins.settings.web`. Where searches go is set on
-**Models**: a search backend (SearXNG, Brave, Tavily), or the provider's own
-search with the Web search role, which must be on an OpenRouter-format
-provider.
+**Models → Web search → Search with**: a search backend (SearXNG, Brave,
+Tavily), or the provider's own search with the Web search model role, which
+must be on an OpenRouter-format provider.
 
 - **Costs.** A search through the provider is a model call of the run on the
   workspace's provider key and counts against usage limits. With Exa,

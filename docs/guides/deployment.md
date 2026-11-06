@@ -531,9 +531,10 @@ the list.
    `SEARXNG_MEMORY` (default `512m`).
 2. Start it: `docker compose --profile search up -d --build`, or redeploy in
    Dokploy.
-3. In administration, **Providers → Search backends**, add SearXNG with
-   address `http://searxng:8080` and no key.
-4. In **Models → Settings → Web search**, choose that backend.
+3. In administration, **Models → Organization default → Web search**, add
+   SearXNG under **Search backends** with address `http://searxng:8080` and
+   no key.
+4. In **Search with** just above, choose that backend and save.
 
 Without step 4 searches keep using the provider. Adjust engines in
 `services/searxng/settings.yml`; it keeps SearXNG's defaults for everything it
