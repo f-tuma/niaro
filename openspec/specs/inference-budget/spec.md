@@ -29,6 +29,11 @@ A price SHALL name a model and pin its model revision and provider revision, wit
 - **WHEN** a price names a model that is not a chat, router or decision model of the workspace
 - **THEN** saving is refused with `409 catalog_model_unavailable`
 
+#### Scenario: A save that keeps what is priced
+
+- **WHEN** an administrator renames a model, switches it or its provider on or off, or changes the provider's key or daily limit, while its price was current
+- **THEN** the stored price moves to the new revisions and stays in force; only another model id, provider, provider address or request format leaves it to be confirmed again
+
 ### Requirement: Policy administration
 
 Owners and administrators SHALL read the policy at `GET /admin/api/identity/catalog/budget?organizationId=&workspaceId=` and replace it with `POST /admin/api/identity/catalog/budget` carrying the complete policy and its current revision, using their account session. Members MUST NOT read or change it. A successful save SHALL increment the revision and record a `catalog.ai_changed` audit entry in the same transaction.
@@ -61,6 +66,25 @@ The administration's Usage limits page SHALL list the workspace's tool-capable c
 
 - **WHEN** the token cap is smaller than a price's 2,048 input tokens plus its output ceiling in enforce mode
 - **THEN** the page does not save
+
+#### Scenario: Prices on a phone
+
+- **WHEN** an administrator opens Usage limits on a 390 px wide screen
+- **THEN** each model shows its full name and the labelled Input, Output, Max request and Max reply fields
+
+### Requirement: Prices of changed models
+
+On the Usage limits page, a listed model's price pinned to an older model or provider revision SHALL be marked and explained as not used until confirmed, with one **Confirm prices** action that saves it at the current revisions; it SHALL NOT be presented as unsaved changes. Prices of models the page does not list SHALL be kept unchanged on save and SHALL NOT be reported as changed.
+
+#### Scenario: Price of a changed model
+
+- **WHEN** an administrator opens the page after a listed model's provider was edited
+- **THEN** that model's price is marked as not used until confirmed, **Confirm prices** saves it at the current revisions, and no unsaved-changes bar appears
+
+#### Scenario: Price of a disabled model
+
+- **WHEN** an administrator opens the page while a priced model is disabled
+- **THEN** nothing is reported as changed and saving keeps that price as it was
 
 ### Requirement: Runs pin their policy
 

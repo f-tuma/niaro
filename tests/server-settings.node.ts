@@ -10,15 +10,13 @@ import { createReferenceServer } from "../apps/reference-server/runtime";
 import { openIdentity } from "../apps/server-identity/service";
 import { issueAdminKey } from "../apps/server-admin/auth";
 import {
-  ServerSettingsFileSchema,
   ServerSettingsViewSchema,
-  serverSettingsOfFile,
   type ServerSettings,
 } from "../packages/protocol/server-settings";
 import { WorkspacePluginsSchema } from "../packages/protocol/workspace-plugins";
 
 const password = "TEST-server-settings-password-2026";
-test("server settings: profile defaults, owner and administrator writes, audit, export, import and restart", async () => {
+test("server settings: profile defaults, owner and administrator writes, audit, operator origins and restart", async () => {
   const root = mkdtempSync(join(tmpdir(), "server-settings-"));
   let app: ReturnType<typeof createReferenceServer>;
   const server = createServer((req, res) => app.emit("request", req, res));
@@ -40,6 +38,7 @@ test("server settings: profile defaults, owner and administrator writes, audit, 
           directory: join(root, "identity"),
           baseURL: origin,
           integrationOrigins: ["http://127.0.0.1:9411"],
+          operatorOrigins: ["http://searxng:8080"],
           meetings: { audioRetentionDays, glossary: ["TEST Niaro"] },
           hub: { scheduler: { intervalSeconds: 0 } },
         },
@@ -176,6 +175,8 @@ test("server settings: profile defaults, owner and administrator writes, audit, 
     assert.deepEqual(initial.settings, defaults);
     assert.deepEqual(initial.defaults, defaults);
     assert.deepEqual(initial.restartPending, []);
+    // The operator's origins are shown, never saved with the settings.
+    assert.deepEqual(initial.operatorOrigins, ["http://searxng:8080"]);
     assert.equal((await read(admin)).revision, 0);
 
     // Owners and administrators only, from an account.
@@ -183,10 +184,12 @@ test("server settings: profile defaults, owner and administrator writes, audit, 
     assert.equal((await save(defaults, 0, member)).status, 403);
     // The recovery key session has no account in the organization.
     assert.equal((await operator(path)).status, 403);
-    assert.equal(
-      (await owner(`admin/api/identity/server-settings/export`)).status,
-      400,
-    );
+    // Export and import travel in the configuration bundle.
+    for (const action of ["export", "import"])
+      assert.equal(
+        (await owner(`admin/api/identity/server-settings/${action}`)).status,
+        404,
+      );
     assert.equal(
       (await owner("admin/api/identity/server-settings/other")).status,
       404,
@@ -253,67 +256,23 @@ test("server settings: profile defaults, owner and administrator writes, audit, 
       { previousRevision: 0, revision: 1 },
     );
 
-    // Export: the settings only, no paths or secrets.
-    assert.equal(
-      (await member(path.replace("settings?", "settings/export?"))).status,
-      403,
-    );
-    const exported = await owner(path.replace("settings?", "settings/export?"));
-    assert.equal(exported.status, 200);
-    const file = ServerSettingsFileSchema.parse(exported.data);
-    assert.equal(file.profile, "niaro-server-settings");
-    assert.equal(file.version, 1);
-    assert.deepEqual(serverSettingsOfFile(file), changed);
-    assert.ok(!JSON.stringify(exported.data).includes(root));
-
-    // Import: the same schema, audited separately.
-    const importPath = "admin/api/identity/server-settings/import";
-    assert.equal(
-      (
-        await owner(importPath, {
-          organizationId,
-          revision: 1,
-          file: { ...file, version: 2 },
-        })
-      ).status,
-      400,
-    );
-    assert.equal(
-      (
-        await owner(importPath, {
-          organizationId,
-          revision: 1,
-          file: { ...file, keyFile: "/data/admin-key.json" },
-        })
-      ).status,
-      400,
-    );
-    assert.equal(
-      (await member(importPath, { organizationId, revision: 1, file })).status,
-      403,
-    );
-    const imported = await owner(importPath, {
-      organizationId,
-      revision: 1,
-      file: {
-        ...file,
+    // Putting the origins back clears the pending restart; turning audio
+    // retention on starts the sweep.
+    const second = await save(
+      {
+        ...changed,
         name: "TEST Imported",
         integrationOrigins: defaults.integrationOrigins,
         meetings: defaults.meetings,
       },
-    });
-    assert.equal(imported.status, 200);
-    const afterImport = ServerSettingsViewSchema.parse(imported.data);
+      1,
+    );
+    assert.equal(second.status, 200);
+    const afterImport = ServerSettingsViewSchema.parse(second.data);
     assert.equal(afterImport.revision, 2);
     assert.equal(afterImport.settings.name, "TEST Imported");
     assert.deepEqual(afterImport.restartPending, []);
     assert.ok(identity["meetingSweep"]);
-    assert.deepEqual(
-      (await audit()).find(
-        (entry) => entry.action === "server.settings_imported",
-      )?.details,
-      { previousRevision: 1, revision: 2 },
-    );
 
     // After a restart the saved values are read at startup; a setting equal
     // to the profile keeps following the profile.

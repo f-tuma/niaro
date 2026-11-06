@@ -18,3 +18,7 @@ export function useIsMobile() {
 export function useIsWide() {
   return useMedia("(min-width: 1024px)");
 }
+/** Room for a five-column editing table beside the sidebar (Tailwind `xl`). */
+export function useIsExtraWide() {
+  return useMedia("(min-width: 1280px)");
+}

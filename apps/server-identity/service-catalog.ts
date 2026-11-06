@@ -166,6 +166,21 @@ export type StoredInvocation = {
   failure?: ActionFailure;
 };
 /** All synchronous methods run inside the identity queue/transaction. No remote I/O in this store. */
+/** Whether a model or provider save keeps what its usage prices were set for. */
+function samePricing(
+  kind: string,
+  before: Record<string, unknown>,
+  after: unknown,
+) {
+  const next = after as Record<string, unknown>;
+  const keys =
+    kind === "model"
+      ? ["providerId", "model"]
+      : kind === "provider"
+        ? ["url", "dialect"]
+        : null;
+  return !!keys && keys.every((key) => before[key] === next[key]);
+}
 export class ServiceCatalogStore {
   private key: Buffer;
   readonly workspaceRoles: WorkspaceRoleStore;
@@ -502,7 +517,74 @@ export class ServiceCatalogStore {
         "INSERT INTO agent_catalog VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,data=excluded.data,secret=excluded.secret",
       )
       .run(nextId, scope, kind, revision + 1, JSON.stringify(data), secret);
+    if (previous && samePricing(kind, JSON.parse(previous.data), data))
+      this.repinPrices(scope, kind, nextId, revision, revision + 1);
     return nextId;
+  }
+  /**
+   * Usage prices are pinned to a model's and its provider's revision, so a
+   * price set for one model at one address is never applied to another. A
+   * save that keeps what is priced (renaming, switching on or off, a new key
+   * or limit) moves the prices that were current to the new revision; a
+   * price that was already outdated stays outdated.
+   */
+  private repinPrices(
+    scope: string,
+    kind: string,
+    id: string,
+    from: number,
+    to: number,
+  ) {
+    let rows: { workspace_id: string; settings: string }[];
+    try {
+      rows = this.db
+        .prepare(
+          "SELECT workspace_id,settings FROM agent_inference_policy WHERE organization_id=?",
+        )
+        .all(scope) as typeof rows;
+    } catch {
+      // No usage policy table yet: nothing is priced.
+      return;
+    }
+    const models =
+      kind === "provider"
+        ? new Set(
+            this.rows(scope, "model")
+              .filter((row) => JSON.parse(row.data).providerId === id)
+              .map((row) => row.id),
+          )
+        : undefined;
+    for (const row of rows) {
+      const settings = JSON.parse(row.settings) as {
+        prices?: {
+          modelId: string;
+          modelRevision: number;
+          providerRevision: number;
+        }[];
+      };
+      let changed = false;
+      const prices = (settings.prices ?? []).map((price) => {
+        if (
+          kind === "model" &&
+          price.modelId === id &&
+          price.modelRevision === from
+        ) {
+          changed = true;
+          return { ...price, modelRevision: to };
+        }
+        if (models?.has(price.modelId) && price.providerRevision === from) {
+          changed = true;
+          return { ...price, providerRevision: to };
+        }
+        return price;
+      });
+      if (changed)
+        this.db
+          .prepare(
+            "UPDATE agent_inference_policy SET settings=? WHERE workspace_id=?",
+          )
+          .run(JSON.stringify({ ...settings, prices }), row.workspace_id);
+    }
   }
   private remove(scope: string, kind: string, id: string, revision: number) {
     this.check(this.row(scope, kind, id), revision);

@@ -28,6 +28,7 @@ const en = {
   callClosed: "This call is no longer waiting for approval.",
   callFailed: "The call could not run. Your MCP client can read the reason.",
   title: "External AI apps",
+  subtitle: "Lets Claude, ChatGPT and other AI apps use Niaro over MCP.",
   register: "Register OAuth client",
   callback: "Callback URL",
   callbackHint:
@@ -140,6 +141,8 @@ const cs: Record<keyof typeof en, string> = {
   callClosed: "Toto volání už na schválení nečeká.",
   callFailed: "Volání se nepodařilo provést. MCP klient si může přečíst důvod.",
   title: "Externí AI aplikace",
+  subtitle:
+    "Umožní Claudu, ChatGPT a dalším AI aplikacím používat Niaro přes MCP.",
   register: "Zaregistrovat OAuth klienta",
   callback: "Návratová adresa",
   callbackHint:

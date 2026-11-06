@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { ArrowUp, Plus, Trash2, X } from "lucide-react";
 import {
   MODEL_ROLES,
@@ -32,7 +33,12 @@ import { Input } from "@admin/components/ui/input";
 import { Switch } from "@admin/components/ui/switch";
 import { Spinner } from "@admin/components/ui/spinner";
 import { Alert, AlertDescription } from "@admin/components/ui/alert";
-import { Tabs, TabsList, TabsTrigger } from "@admin/components/ui/tabs";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@admin/components/ui/tabs";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -68,6 +74,7 @@ import {
   type CatalogState,
 } from "./catalog-shared";
 import { useModelPolicyCopy, type ModelPolicyCopy } from "./model-policy-copy";
+import { SearchBackendsSection } from "./search-backends";
 
 type RouteKey = ModelRoleValue | "service" | "escalation";
 
@@ -171,10 +178,20 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
       policy: workspace ?? saved.workspace.policy,
     },
   };
-  const view = policyView(
-    draft,
-    catalog.services.map((service) => service.id),
-  );
+  const serviceIds = catalog.services.map((service) => service.id);
+  const view = policyView(draft, serviceIds);
+  // The organization tab shows the default alone, without this workspace's
+  // overrides.
+  const tabDraft: StoredModelPolicies =
+    tab === "organization"
+      ? {
+          ...draft,
+          workspace: {
+            revision: 0,
+            policy: { roles: {}, services: [], options: {} },
+          },
+        }
+      : draft;
   const enforce = budget.data?.settings.mode === "enforce";
   // The server prices a free provider's models at zero (its policy view
   // already lists them); the catalog says the same while it loads.
@@ -190,6 +207,15 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
   const unpriced = enforce
     ? [...budgetedReach(view.effective).keys()].filter((id) => !priced.has(id))
     : [];
+  // Which routes of this tab spend budget: voice, speech and the other
+  // unbudgeted roles never need a price.
+  const reach = enforce
+    ? budgetedReach(
+        tab === "organization"
+          ? policyView(tabDraft, serviceIds).effective
+          : view.effective,
+      )
+    : null;
   const name = (id: string) =>
     catalog.models.find((model) => model.id === id)?.name ?? id;
   const dirty = organization !== null || workspace !== null;
@@ -220,6 +246,7 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
     tiers,
     disabled: state.busy,
     priced: enforce ? priced : null,
+    reach,
   };
   const orgPolicy = draft.organization.policy;
   const wsPolicy = draft.workspace.policy;
@@ -278,6 +305,30 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
       options: next ? { ...rest, presets: next } : rest,
     });
   };
+  // Voices the administrator reviewed on the speech role's first model.
+  const speechModelId = effectiveRole(tabDraft, "speech").models[0];
+  const voices =
+    catalog.models.find((model) => model.id === speechModelId)?.voices ?? [];
+  const voice =
+    (tab === "organization"
+      ? orgPolicy.options.speech.voice
+      : effective.speech.voice) ?? null;
+  const setVoice = (next: string | null) => {
+    const speech = {
+      ...(tab === "organization" ? orgPolicy.options.speech : effective.speech),
+      voice: next,
+    };
+    if (tab === "organization")
+      setOrganization({
+        ...orgPolicy,
+        options: { ...orgPolicy.options, speech },
+      });
+    else
+      setWorkspace({
+        ...wsPolicy,
+        options: { ...wsPolicy.options, speech },
+      });
+  };
   // Tiers need a name and a model; an escalation needs models to go to;
   // offered presets need a name and an existing tier.
   const invalid =
@@ -290,19 +341,10 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
       (item) =>
         !item.name.trim() || !tiers.some((tier) => tier.id === item.tier),
     );
-  return (
+  // Both panels exist so each tab names a real panel; only the open one
+  // has content.
+  const body = (
     <>
-      <Tabs
-        value={tab}
-        onValueChange={(value) =>
-          setTab(value === "workspace" ? "workspace" : "organization")
-        }
-      >
-        <TabsList variant="line" aria-label={copy.title}>
-          <TabsTrigger value="organization">{copy.organization}</TabsTrigger>
-          <TabsTrigger value="workspace">{copy.workspace}</TabsTrigger>
-        </TabsList>
-      </Tabs>
       {unpriced.length > 0 && (
         <Alert variant="destructive">
           <AlertDescription>
@@ -311,24 +353,14 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
         </Alert>
       )}
       <Section title={copy.roles}>
+        <p className="text-sm text-muted-foreground">{copy.rolesHint}</p>
         <SettingRows>
           {MODEL_ROLES.map((role) => {
             const own =
               tab === "organization"
                 ? orgPolicy.roles[role]
                 : wsPolicy.roles[role];
-            const resolved = effectiveRole(
-              tab === "organization"
-                ? {
-                    ...draft,
-                    workspace: {
-                      revision: 0,
-                      policy: { roles: {}, services: [], options: {} },
-                    },
-                  }
-                : draft,
-              role,
-            );
+            const resolved = effectiveRole(tabDraft, role);
             return (
               <SettingRow
                 key={role}
@@ -349,6 +381,7 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
                   {...editor}
                   id={`role-${role}`}
                   routeKey={role}
+                  reachKey={role}
                   label={copy.roleNames[role]}
                   route={own}
                   resolved={resolved}
@@ -378,6 +411,7 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
                       {...editor}
                       id={`service-${service.id}`}
                       routeKey="service"
+                      reachKey={`service:${service.id}`}
                       label={service.name}
                       route={own}
                       resolved={effectiveRoute(draft, `service:${service.id}`)}
@@ -466,6 +500,7 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
                 {...editor}
                 id="escalation-route"
                 routeKey="escalation"
+                reachKey="escalation"
                 label={copy.escalation}
                 route={{
                   models: escalation.models,
@@ -528,23 +563,71 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
               }
             />
           </SettingRow>
-          <SettingRow label={copy.speechVoice} htmlFor="speech-voice" wide>
-            <Input
-              id="speech-voice"
+          <SettingRow
+            label={copy.speechVoice}
+            meta={
+              voices.length ? copy.speechVoiceMeta : copy.speechVoiceTypeMeta
+            }
+            htmlFor="speech-voice"
+            wide
+          >
+            {voices.length ? (
+              <Select
+                disabled={state.busy}
+                value={voice ?? "first"}
+                onValueChange={(next) =>
+                  setVoice(next === "first" ? null : next)
+                }
+              >
+                <SelectTrigger id="speech-voice" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="first">
+                    {copy.speechVoiceDefault}
+                  </SelectItem>
+                  {voices.map((item) => (
+                    <SelectItem key={item.voice} value={item.voice}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                  {voice && !voices.some((item) => item.voice === voice) && (
+                    <SelectItem value={voice}>{voice}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                id="speech-voice"
+                disabled={state.busy}
+                placeholder={copy.speechVoiceDefault}
+                maxLength={200}
+                value={voice ?? ""}
+                onChange={(event) =>
+                  setVoice(event.target.value.trim() || null)
+                }
+              />
+            )}
+          </SettingRow>
+          <SettingRow
+            label={copy.speechRetention}
+            meta={copy.speechRetentionMeta}
+            htmlFor="speech-retention"
+          >
+            <Switch
+              id="speech-retention"
               disabled={state.busy}
-              placeholder={copy.speechVoiceDefault}
-              maxLength={200}
-              value={
-                (tab === "organization"
-                  ? orgPolicy.options.speech.voice
-                  : effective.speech.voice) ?? ""
+              checked={
+                tab === "organization"
+                  ? orgPolicy.options.speech.zeroDataRetention
+                  : effective.speech.zeroDataRetention
               }
-              onChange={(event) => {
+              onCheckedChange={(zeroDataRetention) => {
                 const speech = {
                   ...(tab === "organization"
                     ? orgPolicy.options.speech
                     : effective.speech),
-                  voice: event.target.value.trim() || null,
+                  zeroDataRetention,
                 };
                 if (tab === "organization")
                   setOrganization({
@@ -560,8 +643,59 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
             />
           </SettingRow>
           <SettingRow
-            label={copy.webSearch}
-            meta={copy.webSearchMeta}
+            label={copy.minConfidence}
+            meta={copy.minConfidenceMeta}
+            htmlFor="min-confidence"
+          >
+            <InputGroup className="w-28">
+              <InputGroupInput
+                id="min-confidence"
+                type="number"
+                min={50}
+                max={100}
+                step={1}
+                disabled={state.busy}
+                value={Math.round(
+                  (tab === "organization"
+                    ? orgPolicy.options.selector.minConfidence
+                    : effective.selector.minConfidence) * 100,
+                )}
+                onChange={(event) => {
+                  const value = Number(event.target.value) / 100;
+                  if (!(value >= 0.5 && value <= 1)) return;
+                  const selector = { minConfidence: value };
+                  if (tab === "organization")
+                    setOrganization({
+                      ...orgPolicy,
+                      options: { ...orgPolicy.options, selector },
+                    });
+                  else
+                    setWorkspace({
+                      ...wsPolicy,
+                      options: { ...wsPolicy.options, selector },
+                    });
+                }}
+              />
+              <InputGroupAddon align="inline-end">
+                <InputGroupText>%</InputGroupText>
+              </InputGroupAddon>
+            </InputGroup>
+          </SettingRow>
+        </SettingRows>
+      </Section>
+      <SearchBackendsSection
+        state={state}
+        title={copy.webSearch}
+        manage={tab === "organization"}
+      >
+        <SettingRows>
+          <SettingRow
+            label={copy.searchWith}
+            meta={
+              tab === "organization"
+                ? copy.searchWithMeta
+                : copy.searchWithWorkspaceMeta
+            }
             htmlFor="web-search-backend"
             wide
           >
@@ -603,76 +737,34 @@ function ModelPolicyForm({ state }: { state: CatalogState }) {
               </SelectContent>
             </Select>
           </SettingRow>
-          <SettingRow
-            label={copy.speechRetention}
-            meta={copy.speechRetentionMeta}
-            htmlFor="speech-retention"
-          >
-            <Switch
-              id="speech-retention"
-              disabled={state.busy}
-              checked={
-                tab === "organization"
-                  ? orgPolicy.options.speech.zeroDataRetention
-                  : effective.speech.zeroDataRetention
-              }
-              onCheckedChange={(zeroDataRetention) => {
-                const speech = {
-                  ...(tab === "organization"
-                    ? orgPolicy.options.speech
-                    : effective.speech),
-                  zeroDataRetention,
-                };
-                if (tab === "organization")
-                  setOrganization({
-                    ...orgPolicy,
-                    options: { ...orgPolicy.options, speech },
-                  });
-                else
-                  setWorkspace({
-                    ...wsPolicy,
-                    options: { ...wsPolicy.options, speech },
-                  });
-              }}
-            />
-          </SettingRow>
-          <SettingRow label={copy.minConfidence} htmlFor="min-confidence">
-            <InputGroup className="w-28">
-              <InputGroupInput
-                id="min-confidence"
-                type="number"
-                min={50}
-                max={100}
-                step={1}
-                disabled={state.busy}
-                value={Math.round(
-                  (tab === "organization"
-                    ? orgPolicy.options.selector.minConfidence
-                    : effective.selector.minConfidence) * 100,
-                )}
-                onChange={(event) => {
-                  const value = Number(event.target.value) / 100;
-                  if (!(value >= 0.5 && value <= 1)) return;
-                  const selector = { minConfidence: value };
-                  if (tab === "organization")
-                    setOrganization({
-                      ...orgPolicy,
-                      options: { ...orgPolicy.options, selector },
-                    });
-                  else
-                    setWorkspace({
-                      ...wsPolicy,
-                      options: { ...wsPolicy.options, selector },
-                    });
-                }}
-              />
-              <InputGroupAddon align="inline-end">
-                <InputGroupText>%</InputGroupText>
-              </InputGroupAddon>
-            </InputGroup>
-          </SettingRow>
         </SettingRows>
-      </Section>
+      </SearchBackendsSection>
+    </>
+  );
+  return (
+    <>
+      <Tabs
+        value={tab}
+        onValueChange={(value) =>
+          setTab(value === "workspace" ? "workspace" : "organization")
+        }
+      >
+        <TabsList variant="line" aria-label={copy.title}>
+          <TabsTrigger value="organization">{copy.organization}</TabsTrigger>
+          <TabsTrigger value="workspace">{copy.workspace}</TabsTrigger>
+        </TabsList>
+        {(["organization", "workspace"] as const).map((value) => (
+          <TabsContent
+            key={value}
+            value={value}
+            forceMount
+            hidden={tab !== value}
+            className="mt-6"
+          >
+            {tab === value && <div className="flex flex-col gap-8">{body}</div>}
+          </TabsContent>
+        ))}
+      </Tabs>
       {(dirty || state.busy || state.error) && (
         <SaveBar
           status={state.error ?? copy.unsavedChanges}
@@ -709,6 +801,8 @@ type EditorProps = {
   disabled: boolean;
   /** In enforce mode: the models with a price; null in observe mode. */
   priced: Set<string> | null;
+  /** In enforce mode: each model a budgeted route reaches, with the routes. */
+  reach: Map<string, string[]> | null;
 };
 
 /**
@@ -722,8 +816,10 @@ function RouteEditor({
   tiers,
   disabled,
   priced,
+  reach,
   id,
   routeKey,
+  reachKey,
   label,
   route,
   resolved,
@@ -733,6 +829,11 @@ function RouteEditor({
 }: EditorProps & {
   id: string;
   routeKey: RouteKey;
+  /**
+   * The route in `budgetedReach`; a model needs a price only where that
+   * route reaches it. Without one (a tier), any budgeted use counts.
+   */
+  reachKey?: string;
   label: string;
   route: RoleRouteValue | undefined;
   resolved: EffectiveRouteValue;
@@ -849,9 +950,21 @@ function RouteEditor({
               {missing && (
                 <Badge variant="destructive">{copy.unavailable}</Badge>
               )}
-              {priced && !priced.has(modelId) && (
-                <Badge variant="warning">{copy.noPrice}</Badge>
-              )}
+              {priced &&
+                !priced.has(modelId) &&
+                (reachKey
+                  ? reach?.get(modelId)?.includes(reachKey)
+                  : reach?.has(modelId)) && (
+                  <Badge asChild variant="warning">
+                    <Link
+                      to="/usage"
+                      title={copy.setPrice(name(modelId))}
+                      aria-label={copy.setPrice(name(modelId))}
+                    >
+                      {copy.noPrice}
+                    </Link>
+                  </Badge>
+                )}
               {!route.tier && index > 0 && (
                 <Button
                   variant="ghost"
@@ -946,6 +1059,7 @@ function TierEditor({
   tiers,
   disabled,
   priced,
+  reach,
   onChange,
 }: EditorProps & { onChange: (tiers: ModelTierValue[]) => void }) {
   const newId = () => {
@@ -976,6 +1090,7 @@ function TierEditor({
         )
       }
     >
+      <p className="text-sm text-muted-foreground">{copy.tiersHint}</p>
       {tiers.length ? (
         <SettingRows>
           {tiers.map((tier, index) => (
@@ -1006,6 +1121,7 @@ function TierEditor({
                 tiers={[]}
                 disabled={disabled}
                 priced={priced}
+                reach={reach}
                 id={`tier-${tier.id}`}
                 routeKey="chat"
                 label={tier.name}

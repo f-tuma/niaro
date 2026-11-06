@@ -55,8 +55,8 @@ The administration Overview shows a checklist. Work through it from the top
    the process designer and process tests stay disabled.
 4. **Services**: add the CRM or Microsoft 365, add the actions you want, and
    set who may use them and what needs approval.
-5. **People**: invite testers with **Invite by email** (on People or in a
-   workspace). Without SMTP you get a link to pass on; it works once and
+5. **People**: invite testers with **Invite by email** (on People or on a
+   workspace's page). Without SMTP you get a link to pass on; it works once and
    expires after 48 hours.
 
 ## 3. People

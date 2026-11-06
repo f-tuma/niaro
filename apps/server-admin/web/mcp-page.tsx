@@ -172,6 +172,7 @@ export function McpPage() {
     <>
       <PageHeader
         title={copy.title}
+        description={copy.subtitle}
         actions={
           ready ? (
             <Button onClick={() => setCreating(true)}>

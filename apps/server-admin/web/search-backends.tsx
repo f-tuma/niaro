@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import {
   SearchBackendSettings,
@@ -59,11 +59,21 @@ function host(url: string) {
 }
 
 /**
- * The organization's web search backends (SearXNG, Brave, Tavily) on the
- * providers page. A workspace chooses one on the Models page; keys are
- * write-only like provider keys.
+ * The Models page's web search section: the choice passed as children, then
+ * the organization's search backends (SearXNG, Brave, Tavily) when `manage`
+ * is on (the organization tab). Keys are write-only like provider keys.
  */
-export function SearchBackendsSection({ state }: { state: CatalogState }) {
+export function SearchBackendsSection({
+  state,
+  title,
+  manage,
+  children,
+}: {
+  state: CatalogState;
+  title: string;
+  manage: boolean;
+  children: ReactNode;
+}) {
   const text = useProviderCopy(),
     { copy } = state;
   const backends = state.query.data?.searchBackends ?? [];
@@ -71,89 +81,107 @@ export function SearchBackendsSection({ state }: { state: CatalogState }) {
   const [removing, setRemoving] = useState<SearchBackend | null>(null);
   return (
     <Section
-      title={text.searchBackends}
-      count={backends.length || undefined}
+      title={title}
       actions={
-        <Button
-          variant="outline"
-          disabled={state.busy || backends.length >= MAX_SEARCH_BACKENDS}
-          onClick={() => {
-            state.setError(null);
-            setEditing("new");
-          }}
-        >
-          <Plus data-icon="inline-start" aria-hidden="true" />
-          {text.addSearchBackend}
-        </Button>
+        manage && (
+          <Button
+            variant="outline"
+            disabled={state.busy || backends.length >= MAX_SEARCH_BACKENDS}
+            onClick={() => {
+              state.setError(null);
+              setEditing("new");
+            }}
+          >
+            <Plus data-icon="inline-start" aria-hidden="true" />
+            {text.addSearchBackend}
+          </Button>
+        )
       }
     >
-      <p className="text-sm text-muted-foreground">{text.searchBackendsHint}</p>
-      {backends.length ? (
-        <Card variant="flush">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{copy.name}</TableHead>
-                <TableHead className="hidden md:table-cell">
-                  {text.searchKind}
-                </TableHead>
-                <TableHead className="w-24 text-right">
-                  <span className="sr-only">{copy.edit}</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {backends.map((backend) => (
-                <TableRow key={backend.id}>
-                  <TableCell className="max-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-medium">
-                        {backend.name}
-                      </span>
-                      {!backend.enabled && (
-                        <StatusBadge tone="neutral">{copy.paused}</StatusBadge>
-                      )}
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {host(backend.url)}
-                    </p>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {SEARCH_BACKEND_PRESETS[backend.kind].label}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`${copy.edit}: ${backend.name}`}
-                      disabled={state.busy}
-                      onClick={() => {
-                        state.setError(null);
-                        setEditing(backend);
-                      }}
-                    >
-                      <Pencil aria-hidden="true" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`${text.deleteSearchBackend}: ${backend.name}`}
-                      disabled={state.busy}
-                      onClick={() => setRemoving(backend)}
-                    >
-                      <Trash2 aria-hidden="true" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      ) : (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Search aria-hidden="true" className="size-4" />
-          {text.noSearchBackends}
-        </p>
+      {children}
+      {manage && (
+        <>
+          <h3 className="text-sm font-medium">
+            {text.searchBackends}
+            {backends.length > 0 && (
+              <span className="ml-2 font-normal text-muted-foreground tabular-nums">
+                {backends.length}
+              </span>
+            )}
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {text.searchBackendsHint}
+          </p>
+          {backends.length ? (
+            <Card variant="flush">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{copy.name}</TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      {text.searchKind}
+                    </TableHead>
+                    <TableHead className="w-24 text-right">
+                      <span className="sr-only">{copy.edit}</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {backends.map((backend) => (
+                    <TableRow key={backend.id}>
+                      <TableCell className="max-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-medium">
+                            {backend.name}
+                          </span>
+                          {!backend.enabled && (
+                            <StatusBadge tone="neutral">
+                              {copy.paused}
+                            </StatusBadge>
+                          )}
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {host(backend.url)}
+                        </p>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {SEARCH_BACKEND_PRESETS[backend.kind].label}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`${copy.edit}: ${backend.name}`}
+                          disabled={state.busy}
+                          onClick={() => {
+                            state.setError(null);
+                            setEditing(backend);
+                          }}
+                        >
+                          <Pencil aria-hidden="true" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`${text.deleteSearchBackend}: ${backend.name}`}
+                          disabled={state.busy}
+                          onClick={() => setRemoving(backend)}
+                        >
+                          <Trash2 aria-hidden="true" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          ) : (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Search aria-hidden="true" className="size-4" />
+              {text.noSearchBackends}
+            </p>
+          )}
+        </>
       )}
       <Sheet
         open={editing !== null}

@@ -95,7 +95,7 @@ export function PageHeader({
               )}
             </h1>
             {description && (
-              <p className="truncate text-sm text-muted-foreground">
+              <p className="text-sm text-pretty text-muted-foreground">
                 {description}
               </p>
             )}
@@ -145,6 +145,7 @@ function HeaderControls({
 /** A titled region inside a page. Use instead of ad-hoc h2 + wrapper divs. */
 export function Section({
   title,
+  description,
   count,
   toolbar,
   actions,
@@ -152,6 +153,8 @@ export function Section({
   id,
 }: {
   title: string;
+  /** One line under the title saying what the section is for. */
+  description?: ReactNode;
   count?: number;
   toolbar?: ReactNode;
   actions?: ReactNode;
@@ -171,6 +174,9 @@ export function Section({
         </h2>
         <HeaderControls toolbar={toolbar} actions={actions} />
       </div>
+      {description && (
+        <p className="-mt-2 text-sm text-muted-foreground">{description}</p>
+      )}
       {children}
     </section>
   );

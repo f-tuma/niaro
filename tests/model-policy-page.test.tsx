@@ -36,6 +36,39 @@ jest.mock("../apps/server-admin/web/catalog-shared", () => ({
   }),
   CatalogBoundary: ({ children }: { children: React.ReactNode }) => children,
 }));
+jest.mock("@tanstack/react-router", () => {
+  const React = jest.requireActual<typeof import("react")>("react");
+  return {
+    Link: ({ to, children, ...props }: Record<string, unknown>) =>
+      React.createElement(
+        "a",
+        { ...props, href: to as string },
+        children as React.ReactNode,
+      ),
+  };
+});
+jest.mock("../apps/server-admin/web/search-backends", () => {
+  const React = jest.requireActual<typeof import("react")>("react");
+  return {
+    // The web search section: its title, the choice, and whether the
+    // organization's backends are managed here.
+    SearchBackendsSection: ({
+      title,
+      manage,
+      children,
+    }: {
+      title: string;
+      manage: boolean;
+      children: React.ReactNode;
+    }) =>
+      React.createElement(
+        "section",
+        { "data-host": "SearchBackendsSection", "data-manage": manage },
+        title,
+        children,
+      ),
+  };
+});
 jest.mock("../apps/server-admin/web/model-choice-picker", () => {
   const React = jest.requireActual<typeof import("react")>("react");
   return {
@@ -386,4 +419,115 @@ test("stop at limit marks unpriced models and keeps the save off", async () => {
     (node) => node.type === "button" && text(node) === "Save changes",
   );
   expect(save.props.disabled).toBe(true);
+});
+
+test("No price shows only on routes that spend budget and leads to Usage limits", async () => {
+  mockCatalog = catalog({
+    organization: {
+      revision: 1,
+      policy: {
+        ...emptyOrganizationPolicy(),
+        roles: {
+          chat: { models: ["chat"], tier: null, fallback: false },
+          background: { models: ["small"], tier: null, fallback: false },
+          voice_input: { models: ["stt"], tier: null, fallback: false },
+        },
+      },
+    },
+  });
+  mockApi.mockResolvedValue(budget("enforce", ["chat"]));
+  const root = await render();
+  const badge = row(root, "Background work").find(
+    (node) => node.type === "a" && text(node) === "No price",
+  );
+  expect(badge.props.href).toBe("/usage");
+  expect(badge.props["aria-label"]).toBe(
+    "Set a price for TEST small in Usage limits",
+  );
+  // Voice input is never budgeted, so its transcription model needs no price.
+  expect(text(row(root, "Voice input"))).not.toContain("No price");
+});
+
+test("each tab names a rendered panel and the open one holds the page", async () => {
+  mockCatalog = catalog();
+  mockApi.mockResolvedValue(budget("observe"));
+  const root = await render();
+  const panels = root.findAll(
+    (node) => node.props["data-host"] === "TabsContent",
+  );
+  expect(
+    panels.map((panel) => [panel.props.value, panel.props.hidden]),
+  ).toEqual([
+    ["organization", false],
+    ["workspace", true],
+  ]);
+  expect(panels.every((panel) => panel.props.forceMount)).toBe(true);
+  expect(text(panels[1]!)).toBe("");
+  // Search backends are managed on the organization tab, beside Search with.
+  const search = root.find(
+    (node) => node.props["data-host"] === "SearchBackendsSection",
+  );
+  expect(search.props["data-manage"]).toBe(true);
+  expect(text(search)).toContain("Search with");
+  expect(text(row(root, "Web search model"))).toContain(
+    "Used when searches go through the provider",
+  );
+  await act(async () => {
+    root
+      .find((node) => node.props["data-host"] === "Tabs")
+      .props.onValueChange("workspace");
+  });
+  expect(
+    root.find((node) => node.props["data-host"] === "SearchBackendsSection")
+      .props["data-manage"],
+  ).toBe(false);
+});
+
+test("the voice offers the speech model's reviewed voices", async () => {
+  mockCatalog = {
+    ...catalog({
+      organization: {
+        revision: 1,
+        policy: {
+          ...emptyOrganizationPolicy(),
+          roles: {
+            speech: { models: ["tts"], tier: null, fallback: false },
+          },
+        },
+      },
+    }),
+    models: [
+      ...models,
+      model("tts", {
+        kind: "speech",
+        tools: false,
+        voices: [{ voice: "test-voice", label: "TEST calm" }],
+      }),
+    ],
+  } as Catalog;
+  mockApi.mockResolvedValue(budget("observe"));
+  mockMutate.mockResolvedValue({ id: "TEST-org" });
+  const root = await render();
+  const voice = row(root, "Voice");
+  expect(text(voice)).toContain("TEST calm");
+  expect(voice.findAll((node) => node.type === "input")).toHaveLength(0);
+  await act(async () => {
+    voice
+      .find((node) => node.props["data-host"] === "Select")
+      .props.onValueChange("test-voice");
+  });
+  await act(async () => {
+    root
+      .find((node) => node.type === "button" && text(node) === "Save changes")
+      .props.onClick();
+  });
+  expect(mockMutate).toHaveBeenCalledWith("command", {
+    type: "saveOrganizationModelPolicy",
+    revision: 1,
+    policy: expect.objectContaining({
+      options: expect.objectContaining({
+        speech: expect.objectContaining({ voice: "test-voice" }),
+      }),
+    }),
+  });
 });

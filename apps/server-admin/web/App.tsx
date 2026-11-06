@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useRouterState } from "@tanstack/react-router";
 import { DeviceLogin } from "./device-login";
 import { ServiceConnect } from "./service-auth";
@@ -28,6 +28,7 @@ import { SubmitButton } from "@admin/components/console/forms";
 import { en, cs, type Copy } from "./i18n";
 import { AccountInputs, formValues, issue } from "./account-inputs";
 import { AdminContext } from "./context";
+import { preferredLanguage, storeLanguage } from "./lib/language";
 import { designAuthority, resetDesignAuthority } from "./lib/design-authority";
 import {
   ApiError,
@@ -39,13 +40,6 @@ import {
   overviewKey,
 } from "./lib/api";
 
-function initialLanguage(): "en" | "cs" {
-  try {
-    return localStorage.getItem("agent-admin-language") === "cs" ? "cs" : "en";
-  } catch {
-    return "en";
-  }
-}
 /** setTimeout's largest delay (2^31 - 1 ms). */
 const MAX_TIMER_MS = 2_147_483_647;
 
@@ -78,7 +72,12 @@ export function App() {
   const [selectedOrganization, setSelectedOrganization] = useState<
     string | null
   >(null);
-  const [language, setLanguage] = useState(initialLanguage);
+  const [language, setLanguageState] = useState(preferredLanguage);
+  // Only an explicit choice is stored, so the browser language keeps applying.
+  const setLanguage = useCallback((value: "en" | "cs") => {
+    setLanguageState(value);
+    storeLanguage(value);
+  }, []);
   const copy = language === "cs" ? cs : en;
   const client = useQueryClient();
   const overview = useQuery({
@@ -150,11 +149,6 @@ export function App() {
   const data = overview.data;
   useEffect(() => {
     document.documentElement.lang = language;
-    try {
-      localStorage.setItem("agent-admin-language", language);
-    } catch {
-      /* Preference remains usable without storage. */
-    }
   }, [language]);
   useEffect(() => () => request.current?.abort(), []);
   useEffect(() => {

@@ -19,6 +19,7 @@ import {
 } from "../../../../packages/protocol/identity";
 import { api, ApiError, authApi } from "../lib/api";
 import { resetDesignAuthority } from "../lib/design-authority";
+import { LANGUAGE_KEY, preferredLanguage } from "../lib/language";
 import { UiLanguageContext } from "../context";
 import { ProviderSignIn } from "../provider-sign-in";
 import { AppContext, type AppContextValue, type AppWorkspace } from "./context";
@@ -26,7 +27,7 @@ import { appCopy } from "./copy";
 import { useChatSession } from "./chat-session";
 import { appRouter } from "./router";
 
-const languageKey = "agent-admin-language";
+const languageKey = LANGUAGE_KEY;
 const workspaceKey = "niaro:app-workspace";
 function read(key: string) {
   try {
@@ -42,11 +43,7 @@ function write(key: string, value: string) {
     /* Still usable for this page. */
   }
 }
-const browserLanguage = (): "en" | "cs" =>
-  (read(languageKey) ??
-    (navigator.language.toLowerCase().startsWith("cs") ? "cs" : "en")) === "cs"
-    ? "cs"
-    : "en";
+const browserLanguage = preferredLanguage;
 
 /** The web app: sign in, pick a workspace, then chat and the personal menu. */
 export function WebApp() {

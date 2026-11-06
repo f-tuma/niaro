@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Boxes,
@@ -148,61 +148,67 @@ function ConsoleLayout({
             <a href="#console-content">{copy.skipToContent}</a>
           </Button>
           <Sidebar collapsible="icon" variant="inset">
-            <SidebarHeader>
-              <WorkspaceSwitcher />
-            </SidebarHeader>
-            <SidebarContent>
-              <nav aria-label={copy.navigation} className="contents">
-                {navigation.map((group, index) => (
-                  <SidebarGroup key={group.label ?? index}>
-                    {group.label && (
-                      <SidebarGroupLabel>{copy[group.label]}</SidebarGroupLabel>
-                    )}
-                    <SidebarGroupContent>
-                      <SidebarMenu>
-                        {group.items.map((item) => (
-                          <SidebarMenuItem key={item.to}>
-                            <SidebarMenuButton
-                              asChild
-                              isActive={active?.to === item.to}
-                              tooltip={copy[item.key]}
-                            >
-                              <Link
-                                to={item.to}
-                                aria-current={
-                                  active?.to === item.to ? "page" : undefined
-                                }
+            {/* One landmark holds the whole sidebar: switcher, navigation,
+                the way back to the app and the account menu. */}
+            <aside aria-label={copy.sidebar} className="contents">
+              <SidebarHeader>
+                <WorkspaceSwitcher />
+              </SidebarHeader>
+              <SidebarContent>
+                <nav aria-label={copy.navigation} className="contents">
+                  {navigation.map((group, index) => (
+                    <SidebarGroup key={group.label ?? index}>
+                      {group.label && (
+                        <SidebarGroupLabel>
+                          {copy[group.label]}
+                        </SidebarGroupLabel>
+                      )}
+                      <SidebarGroupContent>
+                        <SidebarMenu>
+                          {group.items.map((item) => (
+                            <SidebarMenuItem key={item.to}>
+                              <SidebarMenuButton
+                                asChild
+                                isActive={active?.to === item.to}
+                                tooltip={copy[item.key]}
                               >
-                                <item.icon aria-hidden="true" />
-                                <span>{copy[item.key]}</span>
-                              </Link>
-                            </SidebarMenuButton>
-                          </SidebarMenuItem>
-                        ))}
-                      </SidebarMenu>
-                    </SidebarGroupContent>
-                  </SidebarGroup>
-                ))}
-              </nav>
-              <SidebarGroup className="mt-auto">
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    <SidebarMenuItem>
-                      <SidebarMenuButton asChild tooltip={copy.backToApp}>
-                        <a href="/">
-                          <ArrowLeft aria-hidden="true" />
-                          <span>{copy.backToApp}</span>
-                        </a>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
-            </SidebarContent>
-            <SidebarFooter>
-              <UserMenu logout={() => edits.request(logout)} busy={busy} />
-            </SidebarFooter>
-            <SidebarRail />
+                                <Link
+                                  to={item.to}
+                                  aria-current={
+                                    active?.to === item.to ? "page" : undefined
+                                  }
+                                >
+                                  <item.icon aria-hidden="true" />
+                                  <span>{copy[item.key]}</span>
+                                </Link>
+                              </SidebarMenuButton>
+                            </SidebarMenuItem>
+                          ))}
+                        </SidebarMenu>
+                      </SidebarGroupContent>
+                    </SidebarGroup>
+                  ))}
+                </nav>
+                <SidebarGroup className="mt-auto">
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton asChild tooltip={copy.backToApp}>
+                          <a href="/">
+                            <ArrowLeft aria-hidden="true" />
+                            <span>{copy.backToApp}</span>
+                          </a>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              </SidebarContent>
+              <SidebarFooter>
+                <UserMenu logout={() => edits.request(logout)} busy={busy} />
+              </SidebarFooter>
+              <SidebarRail />
+            </aside>
           </Sidebar>
           <SidebarInset className="min-h-0 min-w-0">
             <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4 md:px-6">
@@ -297,6 +303,24 @@ function WorkspaceSwitcher() {
   const { data, setSelectedOrganization, setSelectedWorkspace } = useAdmin();
   const { isMobile } = useSidebar();
   const edits = useProcessEditsGuard();
+  const path = usePath();
+  const navigate = useNavigate();
+  // On a workspace's page the switch also opens the chosen workspace's page,
+  // so the page and the switcher always name the same workspace.
+  const workspacePage = /^\/workspaces\/[^/]+$/.test(path);
+  const switchWorkspace = (id: string) => {
+    setSelectedWorkspace(id);
+    if (workspacePage)
+      void navigate({
+        to: "/workspaces/$workspaceId",
+        params: { workspaceId: id },
+        search: (previous) => previous,
+      });
+  };
+  const switchOrganization = (id: string) => {
+    setSelectedOrganization(id);
+    if (workspacePage) void navigate({ to: "/workspaces" });
+  };
   const guardScope =
     scope.organization && scope.workspace
       ? {
@@ -365,7 +389,7 @@ function WorkspaceSwitcher() {
                   onSelect={() => {
                     if (workspace.id !== scope.workspace?.id)
                       edits.request(
-                        () => setSelectedWorkspace(workspace.id),
+                        () => switchWorkspace(workspace.id),
                         guardScope,
                       );
                   }}
@@ -394,7 +418,7 @@ function WorkspaceSwitcher() {
                       onSelect={() => {
                         if (organization.id !== scope.organization?.id)
                           edits.request(
-                            () => setSelectedOrganization(organization.id),
+                            () => switchOrganization(organization.id),
                             guardScope,
                           );
                       }}

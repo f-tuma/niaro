@@ -265,6 +265,7 @@ test("same-server admin protects inventory, rejects cross-origin writes, revokes
       "plugins/memory",
       "providers/test-provider",
       "auth-providers/ap_0123456789abcdef0123456789abcdef",
+      "workspaces/ws_TEST-1",
       "connections/model",
       "connections/voice",
       "connections/crm",

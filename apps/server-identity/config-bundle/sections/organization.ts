@@ -33,7 +33,7 @@ const orgTarget = (ctx: OrganizationContext) => ({
   workspaceId: ctx.organizationId,
 });
 
-/** Server-wide settings, the same values as `niaro-server-settings`. */
+/** Server-wide settings, the values of administration → Settings. */
 export const serverSettingsSection = organizationSection({
   key: "serverSettings",
   schema: z.strictObject({

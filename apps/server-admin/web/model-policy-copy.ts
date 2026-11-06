@@ -18,7 +18,7 @@ const en = {
     selector: "Service picker",
     background: "Background work",
     designer: "Process design",
-    web_search: "Web search",
+    web_search: "Web search model",
     voice_input: "Voice input",
     meeting_transcription: "Meeting transcription",
     speech: "Spoken replies",
@@ -31,7 +31,8 @@ const en = {
     selector: "Picks services and actions",
     background: "Widgets, memory, meetings, action names",
     designer: "Process proposals and the designer",
-    web_search: "OpenRouter-format chat models, unless a search backend is set",
+    web_search:
+      "Used when searches go through the provider (OpenRouter-format chat models)",
     voice_input: "Audio input or transcription models",
     meeting_transcription: "Transcription models",
     speech: "Audio output or speech models",
@@ -47,27 +48,33 @@ const en = {
   tierLabel: (name: string) => `Tier: ${name}`,
   fallback: "Fallback",
   fallbackMeta: "Next model only when the call never reached its provider",
+  rolesHint:
+    "The first model does the job. With Fallback on, the next one is tried only when a provider cannot be reached.",
   off: "Off",
   noModels: "No models",
   inherited: (names: string) => `Inherited: ${names}`,
-  followsRole: (role: string) => `Same as ${role}`,
+  followsRole: (role: string) => `Same as ${role}, changes with it`,
   override: "Override",
   useDefault: "Use default",
   unavailable: "Unavailable",
   noPrice: "No price",
+  setPrice: (name: string) => `Set a price for ${name} in Usage limits`,
   addTier: "Add tier",
   tierName: "Name",
   removeTier: (name: string) => `Remove tier ${name}`,
   newTier: "New tier",
-  noTiers: "No tiers yet. A tier is a named list of models roles can share.",
+  noTiers: "No tiers yet.",
+  tiersHint:
+    "A tier is a named list of models. Roles, escalation and member presets can use it, so changing a tier changes all of them.",
   escalationMode: "After a checker rejection",
   escalationStop: "Stop",
   escalationEscalate: "Escalate",
-  escalationMeta: "Repeats the rejected step once with these models",
+  escalationMeta:
+    "Stop: the chat model handles the rejection. Escalate: the step is retried once with the models below.",
   presets: "Member presets",
   presetsEnabled: "Members pick a preset",
   presetsMeta:
-    "Members choose one of these for a message in the chat. Each uses a tier; usage limits still apply.",
+    "Members pick one of these in the chat for a message, for example faster or more careful. Each uses a tier.",
   presetsInherited: "Follows the organization default until you change it",
   presetName: "Preset name",
   presetTier: "Tier",
@@ -76,18 +83,27 @@ const en = {
   removePreset: (name: string) => `Remove preset ${name}`,
   noPresetTiers: "Add a tier first: a preset uses one of the tiers.",
   serverVoice: "Server speech recognition",
-  serverVoiceMeta: "When voice input has no models",
+  serverVoiceMeta:
+    "Turns speech into text on this server when Voice input has no model",
   speechVoice: "Voice",
   speechVoiceDefault: "The model's first voice",
+  speechVoiceMeta: "Which voice Spoken replies use",
+  speechVoiceTypeMeta:
+    "Type a voice name the speech model offers, or leave empty for its first voice",
   speechRetention: "Require zero data retention",
   webSearch: "Web search",
-  webSearchMeta:
-    "A search backend, or the provider's own search with the web search models.",
+  searchWith: "Search with",
+  searchWithMeta:
+    "A search backend below, or the provider's own search with the Web search model",
+  searchWithWorkspaceMeta:
+    "A search backend, or the provider's own search with the Web search model. Backends are added under Organization default.",
   webSearchProvider: "Provider's own search",
   speechRetentionMeta:
-    "If no provider of the model keeps zero retention, replies are not read aloud and people see a privacy notice.",
+    "Replies are read aloud only by providers that keep no copy of the text",
   voiceSetup: "Voice assets not installed",
   minConfidence: "Required certainty",
+  minConfidenceMeta:
+    "The service picker chooses alone only when at least this sure; otherwise the chat model picks",
   inheritedValue: "Inherited",
   noServices: "No services yet.",
   unpriced: (names: string) =>
@@ -118,7 +134,7 @@ const cs: ModelPolicyCopy = {
     selector: "Výběr služby",
     background: "Práce na pozadí",
     designer: "Návrh procesů",
-    web_search: "Hledání na webu",
+    web_search: "Model pro hledání na webu",
     voice_input: "Hlasový vstup",
     meeting_transcription: "Přepis schůzek",
     speech: "Mluvené odpovědi",
@@ -132,7 +148,7 @@ const cs: ModelPolicyCopy = {
     background: "Widgety, paměť, schůzky, názvy akcí",
     designer: "Návrhy procesů a návrhář",
     web_search:
-      "Chatové modely ve formátu OpenRouter, pokud není nastaven vyhledávač",
+      "Použije se, když hledání jde přes poskytovatele (chatové modely ve formátu OpenRouter)",
     voice_input: "Modely se zvukovým vstupem nebo přepisem",
     meeting_transcription: "Modely pro přepis",
     speech: "Modely se zvukovým výstupem nebo řečí",
@@ -148,28 +164,33 @@ const cs: ModelPolicyCopy = {
   tierLabel: (name) => `Úroveň: ${name}`,
   fallback: "Záloha",
   fallbackMeta: "Další model jen když volání nedošlo k poskytovateli",
+  rolesHint:
+    "Práci dělá první model. Se zapnutou zálohou se další zkusí jen tehdy, když poskytovatel není dostupný.",
   off: "Vypnuto",
   noModels: "Žádné modely",
   inherited: (names) => `Zděděno: ${names}`,
-  followsRole: (role) => `Stejné jako ${role}`,
+  followsRole: (role) => `Stejně jako role ${role}, mění se s ní`,
   override: "Přepsat",
   useDefault: "Použít výchozí",
   unavailable: "Nedostupný",
   noPrice: "Bez ceny",
+  setPrice: (name) => `Nastavit cenu modelu ${name} v Limitech využití`,
   addTier: "Přidat úroveň",
   tierName: "Název",
   removeTier: (name) => `Odebrat úroveň ${name}`,
   newTier: "Nová úroveň",
-  noTiers:
-    "Zatím žádné úrovně. Úroveň je pojmenovaný seznam modelů, který můžou role sdílet.",
+  noTiers: "Zatím žádné úrovně.",
+  tiersHint:
+    "Úroveň je pojmenovaný seznam modelů. Můžou ji používat role, eskalace i předvolby pro členy, takže změna úrovně změní všechny.",
   escalationMode: "Po zamítnutí kontrolou",
   escalationStop: "Zastavit",
   escalationEscalate: "Eskalovat",
-  escalationMeta: "Zamítnutý krok jednou zopakuje s těmito modely",
+  escalationMeta:
+    "Zastavit: se zamítnutím si poradí chatový model. Eskalovat: krok se jednou zopakuje s modely níže.",
   presets: "Předvolby pro členy",
   presetsEnabled: "Členové volí předvolbu",
   presetsMeta:
-    "Členové si v chatu u zprávy vyberou jednu z nich. Každá používá úroveň; limity využití platí dál.",
+    "Členové si v chatu u zprávy vyberou jednu z nich, třeba rychlejší nebo pečlivější. Každá používá úroveň.",
   presetsInherited: "Řídí se výchozím nastavením organizace, dokud ho nezměníš",
   presetName: "Název předvolby",
   presetTier: "Úroveň",
@@ -178,18 +199,27 @@ const cs: ModelPolicyCopy = {
   removePreset: (name) => `Odebrat předvolbu ${name}`,
   noPresetTiers: "Nejdřív přidej úroveň: předvolba používá jednu z úrovní.",
   serverVoice: "Rozpoznávání řeči na serveru",
-  serverVoiceMeta: "Když hlasový vstup nemá modely",
+  serverVoiceMeta:
+    "Převádí řeč na text přímo na tomto serveru, když hlasový vstup nemá model",
   speechVoice: "Hlas",
   speechVoiceDefault: "První hlas modelu",
+  speechVoiceMeta: "Kterým hlasem se čtou mluvené odpovědi",
+  speechVoiceTypeMeta:
+    "Napiš název hlasu, který model řeči nabízí, nebo nech prázdné pro jeho první hlas",
   speechRetention: "Vyžadovat nulové uchovávání dat",
   webSearch: "Hledání na webu",
-  webSearchMeta:
-    "Vyhledávač, nebo vlastní hledání poskytovatele s modely pro hledání na webu.",
+  searchWith: "Hledat přes",
+  searchWithMeta:
+    "Vyhledávač níže, nebo vlastní hledání poskytovatele s modelem pro hledání na webu",
+  searchWithWorkspaceMeta:
+    "Vyhledávač, nebo vlastní hledání poskytovatele s modelem pro hledání na webu. Vyhledávače se přidávají ve Výchozím v organizaci.",
   webSearchProvider: "Vlastní hledání poskytovatele",
   speechRetentionMeta:
-    "Když žádný poskytovatel modelu nulové uchovávání nenabízí, odpovědi se nečtou nahlas a lidé uvidí upozornění na soukromí.",
+    "Odpovědi čtou nahlas jen poskytovatelé, kteří si text neukládají",
   voiceSetup: "Hlasová data nejsou nainstalovaná",
   minConfidence: "Požadovaná jistota",
+  minConfidenceMeta:
+    "Výběr služby rozhodne sám, jen když si je aspoň takhle jistý; jinak vybírá chatový model",
   inheritedValue: "Zděděno",
   noServices: "Zatím žádné služby.",
   unpriced: (names) =>

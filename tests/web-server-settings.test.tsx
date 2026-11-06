@@ -3,8 +3,6 @@ import TestRenderer, { act, type ReactTestInstance } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   SERVER_SETTINGS_PROFILE,
-  serverSettingsFile,
-  serverSettingsOfFile,
   type ServerSettings,
 } from "../packages/protocol/server-settings";
 import { Settings } from "../apps/server-admin/web/pages";
@@ -20,10 +18,6 @@ jest.mock("../apps/server-admin/web/lib/api", () => ({
       this.status = mockStatus;
     }
   },
-}));
-const mockDownload = jest.fn();
-jest.mock("../apps/server-admin/web/lib/download", () => ({
-  downloadFile: (...args: unknown[]) => mockDownload(...args),
 }));
 let mockRole = "owner";
 jest.mock("../apps/server-admin/web/context", () => ({
@@ -55,9 +49,6 @@ jest.mock("@tanstack/react-router", () => {
       React.createElement("a", { href: to }, children),
   };
 });
-jest.mock("../apps/server-admin/web/account-providers", () => ({
-  AccountProviders: () => null,
-}));
 const host = (overrides?: Record<string, unknown>) =>
   jest
     .requireActual<typeof import("./helpers/web-hosts")>("./helpers/web-hosts")
@@ -128,11 +119,17 @@ jest.mock(
     const slots =
       (name: string) =>
       // eslint-disable-next-line react/display-name -- test stand-in
-      ({ title, actions, children }: Record<string, React.ReactNode>) =>
+      ({
+        title,
+        description,
+        actions,
+        children,
+      }: Record<string, React.ReactNode>) =>
         React.createElement(
           "section",
-          { "data-host": name },
+          { "data-host": name, title },
           title,
+          description,
           actions,
           children,
         );
@@ -176,6 +173,7 @@ const view = (revision: number, value: ServerSettings) => ({
   settings: value,
   defaults: settings,
   restartPending: [],
+  operatorOrigins: [] as string[],
 });
 const mounted: { unmount(): void }[] = [];
 async function render() {
@@ -202,7 +200,6 @@ async function render() {
 afterEach(() => {
   for (const entry of mounted.splice(0)) act(() => entry.unmount());
   mockApi.mockReset();
-  mockDownload.mockReset();
   mockRole = "owner";
 });
 
@@ -219,33 +216,61 @@ test("a member's console shows the server read-only", async () => {
 test("owners reach the configuration export and import from Settings", async () => {
   mockApi.mockImplementation(async () => view(3, settings));
   const root = await render();
-  const link = root.find((node) => node.type === "a");
+  const link = root.find(
+    (node) =>
+      node.type === "a" && node.props.href === "/settings/configuration",
+  );
   expect(link.props.href).toBe("/settings/configuration");
   expect(text(link)).toBe("Configuration");
 });
 
-test("export downloads the settings file", async () => {
-  mockApi.mockImplementation(async (path: string) =>
-    path.startsWith("identity/server-settings/export")
-      ? serverSettingsFile(settings)
-      : view(3, settings),
-  );
+test("settings are grouped with a hint each; export and import live on Configuration only", async () => {
+  mockApi.mockImplementation(async () => ({
+    ...view(3, settings),
+    operatorOrigins: ["http://searxng:8080"],
+  }));
   const root = await render();
   expect(mockApi).toHaveBeenCalledWith(
     "identity/server-settings?organizationId=org_TEST",
     undefined,
     expect.anything(),
   );
-  await act(async () => button(root, "Export").props.onClick());
-  await flush();
-  expect(mockDownload).toHaveBeenCalledTimes(1);
-  const [name, body] = mockDownload.mock.calls[0]!;
-  expect(name).toBe("niaro-settings.json");
-  expect(JSON.parse(body)).toEqual({
-    profile: "niaro-server-settings",
-    version: 1,
-    ...settings,
-  });
+  const all = text(root);
+  for (const heading of [
+    "Server",
+    "Meetings",
+    "Overview refresh",
+    "Allowed addresses",
+    "Your session",
+  ])
+    expect(
+      root.findAll(
+        (node) =>
+          node.props["data-host"] === "Section" && node.props.title === heading,
+      ),
+    ).toHaveLength(1);
+  expect(all).toContain("Both lists apply after the server restarts.");
+  expect(all).toContain("a local Ollama");
+  expect(all).toContain("(CORS)");
+  // The operator's origins are trusted too and shown read-only.
+  expect(all).toContain("Set by the operator");
+  expect(all).toContain("http://searxng:8080");
+  expect(all).toContain("NIARO_INTEGRATION_ORIGINS");
+  // No second export/import and no copy of the sign-in methods page.
+  expect(root.findAll((node) => node.props.type === "file")).toHaveLength(0);
+  expect(
+    root.findAll(
+      (node) =>
+        node.type === "button" && ["Export", "Import"].includes(text(node)),
+    ),
+  ).toHaveLength(0);
+  const signIn = root.find(
+    (node) => node.type === "a" && node.props.href === "/auth-providers",
+  );
+  expect(text(signIn)).toBe("Open");
+  // The protocol is a quiet line about the server, not a setting.
+  expect(all).toContain("About this server");
+  expect(all).toContain("agent-workflow/1");
 });
 
 test("an edited field is validated and saved with the revision", async () => {
@@ -280,61 +305,6 @@ test("an edited field is validated and saved with the revision", async () => {
     revision: 3,
     settings: { ...settings, name: "TEST Renamed" },
   });
-});
-
-test("import shows what changes, then applies the file", async () => {
-  const incoming = serverSettingsFile({
-    ...settings,
-    name: "TEST Imported",
-    meetings: { ...settings.meetings, glossary: ["Niaro", "Brno"] },
-  });
-  mockApi.mockImplementation(async (path: string, body?: unknown) =>
-    body ? view(4, serverSettingsOfFile(incoming)) : view(3, settings),
-  );
-  const root = await render();
-  const input = root.find(
-    (node) => node.type === "input" && node.props.type === "file",
-  );
-  // Not a settings file: nothing to confirm.
-  await act(async () =>
-    input.props.onChange({
-      target: {
-        files: [{ size: 20, text: async () => '{"version":1}' }],
-      },
-    }),
-  );
-  await flush();
-  expect(text(root)).toContain("Not a settings file.");
-  expect(
-    root.findAll((node) => node.props["data-host"] === "DetailList"),
-  ).toHaveLength(0);
-  await act(async () =>
-    input.props.onChange({
-      target: {
-        files: [{ size: 400, text: async () => JSON.stringify(incoming) }],
-      },
-    }),
-  );
-  await flush();
-  const changes = root.find((node) => node.props["data-host"] === "DetailList");
-  expect(text(changes)).toContain("NameTEST ImportedWas: TEST Server");
-  expect(text(changes)).toContain("GlossaryNiaro, BrnoWas: None");
-  expect(text(changes)).not.toContain("Time zone");
-  const confirm = root.find(
-    (node) =>
-      node.props["data-host"] === "AlertDialogAction" &&
-      text(node) === "Import",
-  );
-  await act(async () => confirm.props.onClick({ preventDefault() {} }));
-  await flush();
-  expect(mockApi).toHaveBeenLastCalledWith("identity/server-settings/import", {
-    organizationId: "org_TEST",
-    revision: 3,
-    file: incoming,
-  });
-  expect(
-    root.findAll((node) => node.props["data-host"] === "DetailList"),
-  ).toHaveLength(0);
 });
 
 test("diarization: the switch shows the service's state and saves with its address", async () => {

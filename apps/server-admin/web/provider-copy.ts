@@ -61,9 +61,12 @@ const en = {
     speech: "Speech",
   } as Record<ModelCapabilityProbeValue, string>,
   unknownCapabilities: "Unknown, test after adding",
+  searchElsewhere:
+    "Web search and its search backends are set on the Models page.",
+  openModels: "Open Models",
   searchBackends: "Search backends",
   searchBackendsHint:
-    "Where web searches go when a workspace does not use the provider's own search.",
+    "SearXNG, Brave or Tavily for the whole organization. Pick one in Search with above.",
   addSearchBackend: "Add search backend",
   searchBackendSettings: "Search backend",
   searchKind: "Service",
@@ -132,9 +135,12 @@ const cs: ProviderCopy = {
     speech: "Řeč",
   },
   unknownCapabilities: "Neznámé, otestuj po přidání",
+  searchElsewhere:
+    "Hledání na webu a vyhledávače se nastavují na stránce Modely.",
+  openModels: "Otevřít Modely",
   searchBackends: "Vyhledávače",
   searchBackendsHint:
-    "Kam jdou hledání na webu, když prostor nepoužívá vlastní hledání poskytovatele.",
+    "SearXNG, Brave nebo Tavily pro celou organizaci. Vyber ho výše v Hledat přes.",
   addSearchBackend: "Přidat vyhledávač",
   searchBackendSettings: "Vyhledávač",
   searchKind: "Služba",
