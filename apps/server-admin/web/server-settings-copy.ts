@@ -2,9 +2,12 @@ import { useAdmin } from "./context";
 
 const en = {
   server: "Server",
+  serverHint:
+    "The server's name and the time zone workspaces use unless they set their own.",
   name: "Name",
   timeZone: "Time zone",
   meetings: "Meetings",
+  meetingsHint: "How meeting recordings are kept and transcribed.",
   audioRetentionDays: "Keep audio",
   audioRetentionMeta: "Days, 0 = forever",
   chunkSeconds: "Transcript chunk",
@@ -24,6 +27,8 @@ const en = {
   on: "On",
   off: "Off",
   hubScheduler: "Overview refresh",
+  hubSchedulerHint:
+    "How often the AI widgets on people's Overview refresh in the background.",
   intervalSeconds: "Every",
   intervalMeta: "Seconds, 0 = off",
   maxPerTick: "Widgets per pass",
@@ -31,34 +36,36 @@ const en = {
   idleDays: "Skip idle after",
   idleDaysMeta: "Days",
   origins: "Allowed addresses",
+  originsHint:
+    "What the server may call, and which other web apps may call it. Both lists apply after the server restarts.",
   integrationOrigins: "Service addresses",
+  integrationOriginsMeta:
+    "Private or http:// addresses the server may call: services, model providers such as a local Ollama, search backends such as http://searxng:8080. One per line.",
   allowedOrigins: "App addresses",
-  afterRestart: "After restart",
+  allowedOriginsMeta:
+    "Other web origins allowed to use Niaro from a browser (CORS), such as https://intranet.example.com. One per line.",
+  operatorOrigins: "Set by the operator",
+  operatorOriginsMeta:
+    "Trusted as well, from NIARO_INTEGRATION_ORIGINS in the server's environment.",
   restartPending: "Waiting for restart",
-  export: "Export",
-  import: "Import",
-  importTitle: "Import settings?",
-  nothingChanges: "Nothing changes.",
-  was: "Was",
-  none: "None",
-  notSettingsFile: "Not a settings file.",
   unsavedChanges: "Unsaved changes",
   invalid: "Check the highlighted values",
   conflict: "Changed elsewhere. Refresh and try again.",
   failed: "Could not save. Try again.",
-  exportFailed: "Could not export. Try again.",
   loadFailed: "Could not load server settings.",
   retry: "Retry",
   discardChanges: "Discard changes",
   saveChanges: "Save changes",
-  cancel: "Cancel",
 };
 type ServerSettingsCopy = typeof en;
 const cs: ServerSettingsCopy = {
   server: "Server",
+  serverHint:
+    "Název serveru a časové pásmo, které používají prostory bez vlastního nastavení.",
   name: "Název",
   timeZone: "Časové pásmo",
   meetings: "Schůzky",
+  meetingsHint: "Jak se nahrávky schůzek uchovávají a přepisují.",
   audioRetentionDays: "Uchovat zvuk",
   audioRetentionMeta: "Dny, 0 = navždy",
   chunkSeconds: "Úsek přepisu",
@@ -78,6 +85,8 @@ const cs: ServerSettingsCopy = {
   on: "Zapnuto",
   off: "Vypnuto",
   hubScheduler: "Obnova přehledu",
+  hubSchedulerHint:
+    "Jak často se AI widgety na Přehledu lidí obnovují na pozadí.",
   intervalSeconds: "Každých",
   intervalMeta: "Sekundy, 0 = vypnuto",
   maxPerTick: "Widgetů za běh",
@@ -85,27 +94,26 @@ const cs: ServerSettingsCopy = {
   idleDays: "Vynechat po",
   idleDaysMeta: "Dny bez otevření",
   origins: "Povolené adresy",
+  originsHint:
+    "Co smí server volat a které další webové aplikace smí volat jeho. Oba seznamy platí po restartu serveru.",
   integrationOrigins: "Adresy služeb",
+  integrationOriginsMeta:
+    "Soukromé nebo http:// adresy, které smí server volat: služby, poskytovatelé modelů jako místní Ollama, vyhledávače jako http://searxng:8080. Jedna na řádek.",
   allowedOrigins: "Adresy aplikací",
-  afterRestart: "Po restartu",
+  allowedOriginsMeta:
+    "Další webové adresy, ze kterých se smí k Niaru připojit aplikace v prohlížeči (CORS), například https://intranet.example.com. Jedna na řádek.",
+  operatorOrigins: "Nastavil provozovatel",
+  operatorOriginsMeta:
+    "Také povolené, z NIARO_INTEGRATION_ORIGINS v prostředí serveru.",
   restartPending: "Čeká na restart",
-  export: "Exportovat",
-  import: "Importovat",
-  importTitle: "Importovat nastavení?",
-  nothingChanges: "Nic se nezmění.",
-  was: "Dříve",
-  none: "Nic",
-  notSettingsFile: "Tohle není soubor s nastavením.",
   unsavedChanges: "Neuložené změny",
   invalid: "Zkontroluj označené hodnoty",
   conflict: "Mezitím to změnil někdo jiný. Obnov a zkus znovu.",
   failed: "Uložení se nepovedlo. Zkus to znovu.",
-  exportFailed: "Export se nepovedl. Zkus to znovu.",
   loadFailed: "Nastavení serveru se nepodařilo načíst.",
   retry: "Zkusit znovu",
   discardChanges: "Zahodit změny",
   saveChanges: "Uložit změny",
-  cancel: "Zrušit",
 };
 export function useServerSettingsCopy() {
   return useAdmin().language === "cs" ? cs : en;

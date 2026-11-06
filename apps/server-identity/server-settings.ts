@@ -35,6 +35,9 @@ export class ServerSettingsStore {
   constructor(
     private db: DatabaseSync,
     readonly defaults: ServerSettings,
+    /** Service origins the operator trusts (NIARO_INTEGRATION_ORIGINS);
+     * shown beside the administration's list, never saved in it. */
+    readonly operatorOrigins: readonly string[] = [],
   ) {
     db.exec(`CREATE TABLE IF NOT EXISTS agent_server_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),

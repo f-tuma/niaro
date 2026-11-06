@@ -1,14 +1,10 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { z } from "zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Upload } from "lucide-react";
 import {
-  ServerSettingsFileSchema,
   ServerSettingsSchema,
   ServerSettingsViewSchema,
-  serverSettingsOfFile,
   type ServerSettings,
-  type ServerSettingsFile,
 } from "../../../packages/protocol/server-settings";
 import { Button } from "@admin/components/ui/button";
 import { Input } from "@admin/components/ui/input";
@@ -21,21 +17,14 @@ import {
   AlertAction,
   AlertDescription,
 } from "@admin/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@admin/components/ui/alert-dialog";
 import { Section } from "@admin/components/console/page";
-import { SettingRow, SettingRows } from "@admin/components/console/setting-row";
-import { DetailList, SaveBar } from "@admin/components/console/forms";
+import {
+  SettingRow,
+  SettingRows,
+  SettingValue,
+} from "@admin/components/console/setting-row";
+import { SaveBar } from "@admin/components/console/forms";
 import { api, ApiError, overviewKey } from "./lib/api";
-import { downloadFile } from "./lib/download";
 import { useServerSettingsCopy } from "./server-settings-copy";
 
 type Copy = ReturnType<typeof useServerSettingsCopy>;
@@ -50,9 +39,10 @@ type Field = {
   meta?: keyof Copy;
   kind: "text" | "number" | "lines" | "switch";
 };
-const GROUPS: { title: keyof Copy; fields: Field[] }[] = [
+const GROUPS: { title: keyof Copy; hint: keyof Copy; fields: Field[] }[] = [
   {
     title: "server",
+    hint: "serverHint",
     fields: [
       { path: ["name"], label: "name", kind: "text" },
       { path: ["timeZone"], label: "timeZone", kind: "text" },
@@ -60,6 +50,7 @@ const GROUPS: { title: keyof Copy; fields: Field[] }[] = [
   },
   {
     title: "meetings",
+    hint: "meetingsHint",
     fields: [
       {
         path: ["meetings", "audioRetentionDays"],
@@ -94,6 +85,7 @@ const GROUPS: { title: keyof Copy; fields: Field[] }[] = [
   },
   {
     title: "hubScheduler",
+    hint: "hubSchedulerHint",
     fields: [
       {
         path: ["hubScheduler", "intervalSeconds"],
@@ -117,13 +109,20 @@ const GROUPS: { title: keyof Copy; fields: Field[] }[] = [
   },
   {
     title: "origins",
+    hint: "originsHint",
     fields: [
       {
         path: ["integrationOrigins"],
         label: "integrationOrigins",
+        meta: "integrationOriginsMeta",
         kind: "lines",
       },
-      { path: ["allowedOrigins"], label: "allowedOrigins", kind: "lines" },
+      {
+        path: ["allowedOrigins"],
+        label: "allowedOrigins",
+        meta: "allowedOriginsMeta",
+        kind: "lines",
+      },
     ],
   },
 ];
@@ -179,31 +178,11 @@ function withDraft(saved: ServerSettings, draft: Record<string, string>) {
     ),
   };
 }
-function shown(field: Field, value: unknown, copy: Copy) {
-  if (field.kind === "switch") return value ? copy.on : copy.off;
-  if (field.kind !== "lines") return String(value);
-  const lines = value as string[];
-  return lines.length ? lines.join(", ") : copy.none;
-}
-/** The fields an import would change, with their current and new values. */
-export function serverSettingsChanges(
-  current: ServerSettings,
-  next: ServerSettings,
-) {
-  return FIELDS.filter(
-    (field) =>
-      JSON.stringify(valueOf(current, field.path)) !==
-      JSON.stringify(valueOf(next, field.path)),
-  ).map((field) => ({
-    field,
-    from: valueOf(current, field.path),
-    to: valueOf(next, field.path),
-  }));
-}
 
 /**
  * Server-wide settings from administration (owners and administrators): the
- * profile supplies the defaults. `children` are the read-only server rows.
+ * profile supplies the defaults. `children` are read-only rows added to the
+ * Server section. Export and import live on the Configuration page.
  */
 export function ServerSettingsSections({
   organizationId,
@@ -229,8 +208,6 @@ export function ServerSettingsSections({
   const [draft, setDraft] = useState<Record<string, string> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [incoming, setIncoming] = useState<ServerSettingsFile | null>(null);
-  const upload = useRef<HTMLInputElement>(null);
   const view = query.data;
   if (!view)
     return (
@@ -254,18 +231,21 @@ export function ServerSettingsSections({
       </Section>
     );
   const edited = draft ? withDraft(view.settings, draft) : null;
-  const send = async (path: string, body: object) => {
+  const save = async (settings: ServerSettings) => {
     setBusy(true);
     setError(null);
     try {
       client.setQueryData(
         key,
         ServerSettingsViewSchema.parse(
-          await api(`identity/server-settings${path}`, body),
+          await api("identity/server-settings", {
+            organizationId,
+            revision: view.revision,
+            settings,
+          }),
         ),
       );
       setDraft(null);
-      setIncoming(null);
       // The console shows the server's name from the overview.
       void client.invalidateQueries({ queryKey: overviewKey });
     } catch (failure) {
@@ -278,45 +258,12 @@ export function ServerSettingsSections({
       setBusy(false);
     }
   };
-  const exportFile = async () => {
-    setError(null);
-    try {
-      const file = ServerSettingsFileSchema.parse(
-        await api(
-          `identity/server-settings/export?organizationId=${encodeURIComponent(organizationId)}`,
-        ),
-      );
-      downloadFile("niaro-settings.json", `${JSON.stringify(file, null, 2)}\n`);
-    } catch {
-      setError(copy.exportFailed);
-    }
-  };
-  const pick = async (files: FileList | null) => {
-    const file = files?.[0];
-    if (upload.current) upload.current.value = "";
-    if (!file) return;
-    setError(null);
-    try {
-      if (file.size > 65536) throw Error();
-      setIncoming(
-        ServerSettingsFileSchema.parse(JSON.parse(await file.text())),
-      );
-    } catch {
-      setError(copy.notSettingsFile);
-    }
-  };
-  const changes = incoming
-    ? serverSettingsChanges(view.settings, serverSettingsOfFile(incoming))
-    : [];
   const row = (field: Field) => {
     const id = `server-${keyOf(field).replaceAll(".", "-")}`;
     const [first] = field.path;
-    const restart =
-      first === "integrationOrigins" || first === "allowedOrigins"
-        ? view.restartPending.includes(first)
-          ? copy.restartPending
-          : copy.afterRestart
-        : undefined;
+    const waiting =
+      (first === "integrationOrigins" || first === "allowedOrigins") &&
+      view.restartPending.includes(first);
     const value =
       draft?.[keyOf(field)] ??
       textOf(field, valueOf(view.settings, field.path));
@@ -362,12 +309,24 @@ export function ServerSettingsSections({
         setDraft((current) => ({ ...current, [keyOf(field)]: text }));
       },
     };
+    const meta = field.meta && copy[field.meta];
     return (
       <SettingRow
         key={id}
         label={copy[field.label]}
         htmlFor={id}
-        meta={restart ?? (field.meta && copy[field.meta])}
+        meta={
+          waiting ? (
+            <>
+              {meta}{" "}
+              <span className="font-medium text-foreground">
+                {copy.restartPending}
+              </span>
+            </>
+          ) : (
+            meta
+          )
+        }
         wide={field.kind !== "number"}
       >
         {field.kind === "lines" ? (
@@ -382,115 +341,31 @@ export function ServerSettingsSections({
   };
   return (
     <>
-      {GROUPS.map((group, index) => (
+      {GROUPS.map((group) => (
         <Section
           key={group.title}
           title={copy[group.title]}
-          actions={
-            index === 0 ? (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => void exportFile()}
-                >
-                  <Download data-icon="inline-start" aria-hidden="true" />
-                  {copy.export}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => upload.current?.click()}
-                >
-                  <Upload data-icon="inline-start" aria-hidden="true" />
-                  {copy.import}
-                </Button>
-              </>
-            ) : undefined
-          }
+          description={copy[group.hint]}
         >
-          {index === 0 && (
-            <input
-              ref={upload}
-              type="file"
-              hidden
-              accept=".json,application/json"
-              aria-label={copy.import}
-              onChange={(event) => void pick(event.target.files)}
-            />
-          )}
-          {index === 0 && error && draft === null && !incoming && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
           <SettingRows>
             {group.fields.map(row)}
-            {index === 0 && children}
+            {group.title === "server" && children}
+            {group.title === "origins" && view.operatorOrigins.length > 0 && (
+              <SettingRow
+                label={copy.operatorOrigins}
+                meta={copy.operatorOriginsMeta}
+                wide
+              >
+                <SettingValue>
+                  <span className="font-mono text-xs">
+                    {view.operatorOrigins.join(", ")}
+                  </span>
+                </SettingValue>
+              </SettingRow>
+            )}
           </SettingRows>
         </Section>
       ))}
-      <AlertDialog
-        open={!!incoming}
-        onOpenChange={(open) => {
-          if (open || busy) return;
-          setIncoming(null);
-          setError(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{copy.importTitle}</AlertDialogTitle>
-            {!changes.length && (
-              <AlertDialogDescription>
-                {copy.nothingChanges}
-              </AlertDialogDescription>
-            )}
-          </AlertDialogHeader>
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          {changes.length > 0 && (
-            <DetailList
-              stacked
-              items={changes.map(({ field, from, to }) => ({
-                label: copy[field.label],
-                value: (
-                  <span className="flex flex-col gap-0.5">
-                    <span>{shown(field, to, copy)}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {copy.was}: {shown(field, from, copy)}
-                    </span>
-                  </span>
-                ),
-              }))}
-            />
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>{copy.cancel}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={busy || !changes.length}
-              onClick={(event) => {
-                // Stays open until the import is applied.
-                event.preventDefault();
-                if (incoming)
-                  void send("/import", {
-                    organizationId,
-                    revision: view.revision,
-                    file: incoming,
-                  });
-              }}
-            >
-              {busy && <Spinner data-icon="inline-start" />}
-              {copy.import}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       {draft !== null && (
         <SaveBar
           status={
@@ -510,14 +385,7 @@ export function ServerSettingsSections({
           </Button>
           <Button
             disabled={busy || !edited?.settings}
-            onClick={() =>
-              edited?.settings &&
-              void send("", {
-                organizationId,
-                revision: view.revision,
-                settings: edited.settings,
-              })
-            }
+            onClick={() => edited?.settings && void save(edited.settings)}
           >
             {busy && <Spinner data-icon="inline-start" />}
             {copy.saveChanges}

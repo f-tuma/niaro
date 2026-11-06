@@ -35,7 +35,6 @@ import {
 } from "@admin/components/ui/dropdown-menu";
 import {
   Empty,
-  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -261,15 +260,6 @@ export function ConfigBundlePage() {
             </EmptyMedia>
             <EmptyDescription>{copy.empty}</EmptyDescription>
           </EmptyHeader>
-          <EmptyContent>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => upload.current?.click()}
-            >
-              {copy.pick}
-            </Button>
-          </EmptyContent>
         </Empty>
       )}
       {loaded && <Outcome loaded={loaded} copy={copy} />}

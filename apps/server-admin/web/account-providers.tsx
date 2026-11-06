@@ -15,32 +15,23 @@ import {
 } from "@admin/components/ui/item";
 import { EntityIcon } from "@admin/components/console/entity-icon";
 import { Section } from "@admin/components/console/page";
-import { useConsoleScope } from "./console-scope";
-import { useAdmin } from "./context";
 import { providerRedirect } from "./lib/provider-redirect";
 import { api } from "./lib/api";
 
-export function AccountProviders() {
-  const { language } = useAdmin();
-  const scope = useConsoleScope();
-  return (
-    <AccountProviderLinks
-      language={language}
-      userId={scope.identity.data?.user?.id}
-      organizationId={scope.organization?.id}
-    />
-  );
-}
 export function AccountProviderLinks({
   language,
   userId,
   organizationId,
   returnPath,
+  title,
+  description,
 }: {
   language: "cs" | "en";
   userId?: string;
   organizationId?: string;
   returnPath?: string;
+  title?: string;
+  description?: string;
 }) {
   const cs = language === "cs";
   const [busy, setBusy] = useState<string | null>(null);
@@ -58,7 +49,10 @@ export function AccountProviderLinks({
   if (!organizationId || (!query.isError && !query.data?.providers.length))
     return null;
   return (
-    <Section title={cs ? "Metody přihlášení" : "Sign-in methods"}>
+    <Section
+      title={title ?? (cs ? "Metody přihlášení" : "Sign-in methods")}
+      description={description}
+    >
       {(failed || query.isError) && (
         <Alert variant="destructive">
           <AlertDescription>
