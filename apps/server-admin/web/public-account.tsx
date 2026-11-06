@@ -32,6 +32,7 @@ import {
 } from "@admin/components/ui/select";
 import { Alert, AlertDescription } from "@admin/components/ui/alert";
 import { Spinner } from "@admin/components/ui/spinner";
+import { preferredLanguage } from "./lib/language";
 
 /** A phone or tablet browser, where people may rather use the app. */
 const phone = () =>
@@ -40,15 +41,7 @@ const phone = () =>
   /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 /** No console session here: use the stored console choice, else the browser. */
-function pageLanguage(): "en" | "cs" {
-  try {
-    const stored = localStorage.getItem("agent-admin-language");
-    if (stored === "cs" || stored === "en") return stored;
-  } catch {
-    /* Storage can be unavailable; fall back to the browser language. */
-  }
-  return navigator.language.toLowerCase().startsWith("cs") ? "cs" : "en";
-}
+const pageLanguage = preferredLanguage;
 
 function Identity({ label, email }: { label: string; email?: string }) {
   if (!email) return null;
