@@ -83,6 +83,21 @@ describe("dialog and sheet widths are named by their job", () => {
       expect(content.props.className.split(" ")).toContain(width);
   });
 
+  // The grip is a phone bottom-sheet exit; side panels on wider screens
+  // close with their own buttons, Escape or the overlay.
+  test("SheetContent hides the grip on side panels from sm up", () => {
+    const root = render(<SheetContent>Body</SheetContent>).root;
+    expect(slot(root, "sheet-content").props.className.split(" ")).toContain(
+      "group/sheet",
+    );
+    const grip = slot(root, "sheet-dismiss").props.className.split(" ");
+    expect(grip).toContain("sm:group-data-[side=right]/sheet:hidden");
+    expect(grip).toContain("sm:group-data-[side=left]/sheet:hidden");
+    expect(grip.some((name: string) => name.includes("side=bottom"))).toBe(
+      false,
+    );
+  });
+
   // The named sizes replace every ad-hoc width at the call sites.
   test("no page sets a dialog's or a sheet's width itself", () => {
     const web = join(__dirname, "../apps/server-admin/web");
