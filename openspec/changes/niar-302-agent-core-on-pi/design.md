@@ -27,7 +27,7 @@ The agent core lives in `@niaro/server-agent` under `pi/`, exported as `@niaro/s
 | `scope.ts`       | `niaro.scope` conversation document (organization, workspace, member) and the per-request binding of Pi's provider session to scope and budget run               |
 | `tools.ts`       | Policy A for writes: `idempotentWriteTool` (key, replay safe) and `interruptibleWriteTool` (no key, the model is told)                                           |
 
-The identity side is `apps/server-identity/agent-core.ts` (`agentCoreModelHost`): it turns a request's route and scope into a call plan over the catalog store, the transport and the ledger. `IdentityService.openAgentCore()` opens the core on start (`<identity directory>/agent-core.sqlite`) and `close()` closes it before the identity database. Pi is ESM-only, so the CommonJS-scoped identity code loads it with `import()`, as it loads the Mastra runtime.
+The identity side is `apps/server-identity/agent-core.ts` (`agentCoreModelHost`): it turns a request's route and scope into a call plan over the catalog store, the transport and the ledger. `IdentityService.openAgentCore()` opens the core on start (beside the identity database; see D10 for the file name) and `close()` closes it before the identity database. Pi is ESM-only, so the CommonJS-scoped identity code loads it with `import()`, as it loads the Mastra runtime.
 
 ### D3. Pi models are policy routes, decided per request
 
@@ -57,14 +57,25 @@ The call plan's transport is `budgetedInferenceTransport` around the server's in
 
 ### D9. Data
 
-Wave 1 adds `agent-core.sqlite` in the identity directory and leaves every existing file as it is: the identity database and the Mastra store open as before. Chosen for later waves: chat histories and process checkpoints in the Mastra store are **not migrated**. Wave 3 starts new chat threads on Pi; wave 4 drops the Mastra store and removes conversation and process rows that point into it with a one-time cleanup, so an existing server still opens with its members, catalog, policies, budgets, memory and processes' definitions intact. Backup and restore learn the new file in wave 4, when the Mastra file leaves them.
+Wave 1 adds the agent core file (`identity.sqlite.pi.sqlite` since wave 2) in the identity directory and leaves every existing file as it is: the identity database and the Mastra store open as before. Chosen for later waves: chat histories and process checkpoints in the Mastra store are **not migrated**. Wave 3 starts new chat threads on Pi; wave 4 drops the Mastra store and removes conversation and process rows that point into it with a one-time cleanup, so an existing server still opens with its members, catalog, policies, budgets, memory and processes' definitions intact. Backup and restore learn the new file in wave 4, when the Mastra file leaves them.
+
+### D10. Processes on Pi tasks (wave 2, NIAR-303)
+
+A process run keeps today's call-driven contract (`NativeWorkflowInput` → waiting, succeeded or failed) and today's trusted boundary (`authorize`, `enter`, `leave`, `action`, `agent`, `reconcile`) in the identity server; only the engine under it changed. `apps/server-agent/pi/process-engine.ts`:
+
+- **Checkpoint.** One session document per run (`niaro.process-run`, keyed by the run's workflow id: compiler, run, resource, artifact) with the frozen graph's digest, the input, the steps (node, carry before, the decision it was resumed with, status `running`/`success`/`suspended`, carry after, pending approval or question) and the result. Every change is stored as a complete revision.
+- **Drives.** Each call creates one `niaro.process-segment` task (background task of the root conversation) that runs node after node, one phase per node, committing the step as `running` before the boundary call and its end after it, and ends when the run waits, succeeds or fails. The boundary lives in the request that drives the run, passed to the task by an in-memory token.
+- **Restart.** Segment tasks are `abandonOnRestart`: a reopened core aborts the one a crash cut off, and the checkpoint stays inside the node. Nothing resumes by itself (spec "No implicit execution"); the original command continues from that node once `reconcile` proves every stored boundary (`proveProcessRunCheckpoint`), and the domain's receipts decide whether an action already took effect. This is how policy A's "a process resumes" applies to processes: resumable from the exact node, never blindly.
+- **Agent core per controller.** `agent-core-owner.ts` opens one core per catalog controller beside its identity database (`identity.sqlite.pi.sqlite`; in memory for `:memory:` databases), which the identity server opens at start and closes with the native runtime. The wave 1 file name `agent-core.sqlite` changed to this sibling name so tests that share a temporary directory never share a core.
+- **Old data.** Runs in flight on Mastra workflow snapshots are not migrated: an original command finds no checkpoint and fails with `process_checkpoint_missing` (breaking changes allowed).
+- **Not moved yet.** Agent steps still run on the Mastra native agent runtime (`NativeAgentInput`), which chat shares; both move in wave 3 (task 3.8). The contract and native test runners keep Mastra datasets as their report store until wave 4.
 
 ## Risks
 
 - **Upstream churn.** Exact pins; upgrades only after a changelog and API review; the tests in `tests/pi-*.node.ts` gate them.
 - **Internal states in the transcript.** Failed attempts are `error` entries, interrupted writes are error tool results, killed streams leave `aborted` partials. The member projection (wave 3) filters them; members see only answers.
 - **No shared transaction with the identity database.** Receipts that must commit with the transcript move into Pi documents and memos; external writes carry keys (D7).
-- **Server start depends on the agent core file.** A corrupt `agent-core.sqlite` stops the server from starting (fail closed), like a corrupt identity database.
+- **Server start depends on the agent core file.** A corrupt agent core file stops the server from starting (fail closed), like a corrupt identity database.
 - **Conservative route metadata** may compact earlier than a large-context model needs; refine per route when chat moves (wave 3).
 
 ## Notes for waves 2 to 4

@@ -9,7 +9,7 @@ The server SHALL run one Pi Durable agent core over its own `node:sqlite` file i
 #### Scenario: Fresh start
 
 - **WHEN** the server starts with no agent core file
-- **THEN** it creates `agent-core.sqlite` next to the identity database with owner-only permissions
+- **THEN** it creates `identity.sqlite.pi.sqlite` next to the identity database with owner-only permissions
 
 #### Scenario: Reopen
 

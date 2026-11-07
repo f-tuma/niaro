@@ -65,9 +65,10 @@ the decision, then the reason.
   2026-11-07; NIAR-302 to NIAR-305, `openspec/changes/niar-302-agent-core-on-pi`),
   for one language, one process, one database driver (`node:sqlite`), one
   agent core and one path to models. The core (`apps/server-agent/pi/`) is one
-  Pi Harness over `agent-core.sqlite` in the identity directory, opened and
-  closed with the identity server. Until wave 4 Mastra still runs chat and
-  processes; the Mastra notes below describe that code.
+  Pi Harness over `identity.sqlite.pi.sqlite` beside the identity database, opened and
+  closed with the identity server. Process graphs run on it as Pi tasks
+  (NIAR-303); chat and process agent steps still run on Mastra until wave 3,
+  and the Mastra notes below describe that code.
 - **Pi reaches models only through Niaro.** Pi models are route keys of the
   model policy; each request resolves the catalog model, key, integration
   transport and budget reservation at that moment. pi-ai's vendor SDKs are not
