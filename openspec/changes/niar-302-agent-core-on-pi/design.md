@@ -1,0 +1,79 @@
+# Design
+
+## Context
+
+Owner decision of 2026-11-07: replace Mastra with Pi Durable (`@earendil-works/pi-durable`) as Niaro's agent core, for the simplest reliable stack: one language, one process, one database driver (`node:sqlite`), one agent core, one path to models. The NIAR-301 spike (`spikes/pi-durable/`) proved providers from runtime configuration, policy hooks (approval, service access, a hard budget around the provider) and crash recovery with a real SIGKILL. This change carries the migration in four waves; wave 1 (NIAR-302) builds the foundation without changing what members see.
+
+## Decisions
+
+### D1. Owner decisions (binding)
+
+1. **Models only through Niaro.** Every Pi model request goes through Niaro's integration transport (`apps/server-integrations/transport.ts`: SSRF guard, trusted origins) and the admin model policy and roles (`packages/protocol/model-policy.ts`, providers and models from the catalog). Code never names a model.
+2. **The budget ledger stays Niaro's** (`apps/server-identity/inference-budget.ts`): reserve before each model call, settle after, unknown usage keeps its hold.
+3. **Recovery policy A.** After a restart an interrupted model call may be retried, counted against the budget and bounded by Pi's `restartLimit`; a process resumes; an external write is never re-run blindly: it carries an idempotency key, or the model is told it was interrupted.
+4. **Exact pins.** Pi packages are pinned to exact versions; every Pi upgrade starts with a review of its changelog and API (`docs/architecture.md`).
+5. **Breaking changes are allowed** (pilot): no compatibility shims for old data or builds, but existing server data must still open.
+6. **Members never see internal delivery states,** and sent text never returns to the composer.
+
+### D2. One module boundary: `apps/server-agent/pi/`
+
+The agent core lives in `@niaro/server-agent` under `pi/`, exported as `@niaro/server-agent/pi`, beside the Mastra runtime it replaces:
+
+| File             | Role                                                                                                                                                             |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core.ts`        | `PiAgentCore`: one Harness over one `node:sqlite` file (created `0600`), policy A settings, the binding extension, `createConversation(scope, route)`, `close()` |
+| `provider.ts`    | The Niaro Pi provider: route keys as Pi models, one call plan per request, streaming, fallback, error codes Pi can classify                                      |
+| `openai-wire.ts` | Pi transcript to an OpenAI-compatible chat completions body, and the completion (streamed or not) back to a Pi assistant message with usage                      |
+| `scope.ts`       | `niaro.scope` conversation document (organization, workspace, member) and the per-request binding of Pi's provider session to scope and budget run               |
+| `tools.ts`       | Policy A for writes: `idempotentWriteTool` (key, replay safe) and `interruptibleWriteTool` (no key, the model is told)                                           |
+
+The identity side is `apps/server-identity/agent-core.ts` (`agentCoreModelHost`): it turns a request's route and scope into a call plan over the catalog store, the transport and the ledger. `IdentityService.openAgentCore()` opens the core on start (`<identity directory>/agent-core.sqlite`) and `close()` closes it before the identity database. Pi is ESM-only, so the CommonJS-scoped identity code loads it with `import()`, as it loads the Mastra runtime.
+
+### D3. Pi models are policy routes, decided per request
+
+A Pi model id is a route key of the model policy (`chat`, `background`, `designer`, `checker`, `selector`, `web_search`, `escalation`, `service:<id>`, `preset:<id>`), never a catalog or vendor model. For each request the host resolves the route under the workspace's policy (`ServiceCatalogStore.selectRoute`, with role defaults and tiers), so a policy change applies to the next request, and the provider and key come from the catalog. Fallback moves to the next model only after a failure that provably never left (`fallbackAfter`), never after any text was streamed. A `beforeProviderRequest` hook may change sampling but never the model: the body's model is reset to the policy's.
+
+Pi's route models carry conservative metadata (64k context, 8k output) for Pi's compaction; the real model's limits are enforced by the ledger (`max_tokens` clamped in enforce mode).
+
+### D4. Our own provider instead of pi-ai's adapters
+
+`pi-durable` hard-depends on `pi-ai`, and `pi-ai` lists the SDK of every vendor it speaks (openai, anthropic, google-genai, bedrock: about 100 packages). Niaro implements Pi's `Provider` interface itself over the integration transport, speaking the OpenAI-compatible chat completions dialect that both OpenAI and OpenRouter providers use today (the body matches the current model code: temperature 0.1, no parallel tool calls, no `max_tokens` unless the ledger clamps it). The four vendor SDKs are removed with pnpm overrides (`pnpm-workspace.yaml`); pi-ai's own modules load them lazily and Niaro never loads those modules. A test asserts that the SDKs cannot be resolved and that a full Pi run never calls `fetch`. Niaro's requests carry no third-party attribution headers (`identity: { attribution: null }`).
+
+### D5. Scope and budget run per request
+
+Pi gives a provider only the conversation's provider session id. A `beforeRequest` hook (same task invocation, right before the request) binds that id to the conversation's `niaro.scope` document and to the budget run `pi:<conversation>:<first input of the run>`. The provider session is created with the conversation (`conversationCreated`), so the first request is bound too. A request without a complete scope is refused (`niaro_scope_missing`) before anything is sent. Because the run key is stable for one Pi run, a retry after a restart reserves against the same ledger run as the interrupted attempt. This side channel is not a Pi contract (spike risk 5); it is covered by tests and must keep the binding extension installed in every conversation (waves 2 and 3 must not narrow `agent.extensions` without it).
+
+### D6. Budget around every request
+
+The call plan's transport is `budgetedInferenceTransport` around the server's integration transport: reservation under the identity queue before dispatch (refusals such as `catalog_budget_exhausted` never reach the provider), `max_tokens` clamped in enforce mode, dispatch marked right before the first byte, settlement from the provider's own usage, `unknown` with the full hold on a failure after dispatch, zero for a connection that provably never left. The provider's daily request counter (`useProvider`) increments in the dispatch guard. Pi's own usage record (`pi.usage`) gets the provider's token counts and, for display, the ledger's price; the ledger stays the authority.
+
+### D7. Recovery policy A as Pi settings
+
+`RECOVERY_POLICY_A`: `retry` enabled with at most 2 retries (backoff from 2 s, at most 30 s) and `restartLimit` 3. A host may tighten them, never loosen them (the core takes the minimum). On open the core calls `resume()`: an interrupted model request is a failed attempt and is retried; each attempt reserves once, and the killed one keeps its hold (the ledger turns `dispatched` into `unknown` when it opens). Error text decides Pi's retry: transient failures (timeouts, connections, 429 and 5xx) read "...: model service temporarily unavailable", which matches pi-ai's retryable patterns; refusals are bare codes that match none, so they fail the run at once. Writes follow `tools.ts`: an idempotent write is re-run with the key `niaro-pi-task:<task id>` (stable across Pi's re-run, different for a model's new call), any other write gets Pi's "interrupted and may have partially run" result.
+
+### D8. Crash harness for every wave
+
+`tests/helpers/pi-crash.ts` starts a worker (`<worker> <scenario> start <dir>`), waits for a `MARK <name>` line, kills it with SIGKILL, then runs `<worker> <scenario> resume <dir>` and returns its `RESULT <json>` for the test to assert. Wave 1's worker (`tests/helpers/pi-crash-worker.ts`) covers a killed streamed model call and killed keyed and unkeyed writes; waves 2 and 3 add their own scenarios (approval waits, process phases, chat delivery).
+
+### D9. Data
+
+Wave 1 adds `agent-core.sqlite` in the identity directory and leaves every existing file as it is: the identity database and the Mastra store open as before. Chosen for later waves: chat histories and process checkpoints in the Mastra store are **not migrated**. Wave 3 starts new chat threads on Pi; wave 4 drops the Mastra store and removes conversation and process rows that point into it with a one-time cleanup, so an existing server still opens with its members, catalog, policies, budgets, memory and processes' definitions intact. Backup and restore learn the new file in wave 4, when the Mastra file leaves them.
+
+## Risks
+
+- **Upstream churn.** Exact pins; upgrades only after a changelog and API review; the tests in `tests/pi-*.node.ts` gate them.
+- **Internal states in the transcript.** Failed attempts are `error` entries, interrupted writes are error tool results, killed streams leave `aborted` partials. The member projection (wave 3) filters them; members see only answers.
+- **No shared transaction with the identity database.** Receipts that must commit with the transcript move into Pi documents and memos; external writes carry keys (D7).
+- **Server start depends on the agent core file.** A corrupt `agent-core.sqlite` stops the server from starting (fail closed), like a corrupt identity database.
+- **Conservative route metadata** may compact earlier than a large-context model needs; refine per route when chat moves (wave 3).
+
+## Notes for waves 2 to 4
+
+- **Loading Pi.** Pi's packages are ESM-only and the repository's code outside `apps/server-agent` is CommonJS under tsx: load `@niaro/server-agent/pi` (and pi-ai or pi-durable in tests) with `await import(...)`, never a static value import; `import type` is fine. Tests load in a `before()` hook (no top-level await); see `tests/pi-agent-core.node.ts`.
+- **Opening conversations.** Use `PiAgentCore.createConversation(scope, route)`: it writes `niaro.scope`, and the core creates the provider session with every conversation. For a service's or a preset's route call `core.provider.route("service:<id>")` before configuring a conversation with it; after a restart, offer the routes of stored conversations again before `resume()` (open with `resume: false`, offer, then `harness.resume()`), or their next request fails with `no_model`.
+- **Keep the binding extension.** A conversation whose `agent.extensions` leaves out `niaro-binding` can make no model request (`niaro_scope_missing`).
+- **Budget runs.** The run key is `pi:<conversation>:<first input>`; processes pass frozen caps through `agentCoreModelHost({ caps })`. The ledger turns `dispatched` attempts into `unknown` when the identity database opens, which relies on the server lock.
+- **What Pi writes into the transcript.** `pi.assistant` entries with `stopReason` `error` (failed attempts, refusals with a bare code), `aborted` partials after a kill, `pi.tool-result` errors wrapped in `<harness>…</harness>` for blocks and interruptions. The member projection shows none of them.
+- **Progress persistence.** Streamed progress is stored at most about one second late (`progress.persistWithinMs`); a kill can lose that much of a partial, never a committed answer.
+- **Crash scenarios.** Add a scenario to a worker like `tests/helpers/pi-crash-worker.ts` (print `MARK <name>` at the crash point, `RESULT <json>` after resuming) and assert in a `node --test` file with `crashAndResume()`. Open the core with `resume: false` in the resumed step to look at stored state before Pi runs anything.
+- **Not yet decided upstream.** Pi's `afterFailedRun` stays `keep` (queued inputs wait for the next input); chat may want `continue` or `withdraw` (wave 3 decision).

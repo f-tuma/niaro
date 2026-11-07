@@ -61,6 +61,26 @@ the decision, then the reason.
 
 ## Agent runtime
 
+- **Pi Durable replaces Mastra as the agent core** (owner decision
+  2026-11-07; NIAR-302 to NIAR-305, `openspec/changes/niar-302-agent-core-on-pi`),
+  for one language, one process, one database driver (`node:sqlite`), one
+  agent core and one path to models. The core (`apps/server-agent/pi/`) is one
+  Pi Harness over `agent-core.sqlite` in the identity directory, opened and
+  closed with the identity server. Until wave 4 Mastra still runs chat and
+  processes; the Mastra notes below describe that code.
+- **Pi reaches models only through Niaro.** Pi models are route keys of the
+  model policy; each request resolves the catalog model, key, integration
+  transport and budget reservation at that moment. pi-ai's vendor SDKs are not
+  installed (pnpm overrides) and no request uses `fetch`.
+- **Recovery policy A.** After a restart Pi resumes its work: an interrupted
+  model call may be retried (each attempt reserved against the budget, at most
+  2 retries and `restartLimit` 3), and an external write is never re-run
+  blindly: it carries an idempotency key, or the model is told it was
+  interrupted.
+- **Pi packages are pinned to exact versions, and every Pi upgrade starts with
+  a review of its changelog and API changes.** Pi's API breaks between
+  releases (1.5.0 had 34 breaking changes). Upgrade `pi-durable`, `pi-ai`,
+  `chord` and `pi-schema` together and rerun `tests/pi-*.node.ts`.
 - **Mastra owns the loop, history and checkpoints; Niaro owns authority,
   receipts and approvals.** Native checkpoints and business receipts share no
   transaction, which is why recovery is explicit.
