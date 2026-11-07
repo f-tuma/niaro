@@ -414,6 +414,14 @@ export function observeLegacyTuple(
     sqliteFamilies,
   });
 }
+/** `agent-core.sqlite` in the identity database's directory, as a tuple path. */
+function agentCorePath(identityDatabase: string) {
+  const slash = identityDatabase.lastIndexOf("/");
+  return (
+    (slash < 0 ? "" : identityDatabase.slice(0, slash + 1)) +
+    "agent-core.sqlite"
+  );
+}
 function validateManifest(value: unknown) {
   const parsed = LegacyInventoryManifestSchema.safeParse(value);
   requireCondition(parsed.success, "manifest_invalid");
@@ -457,11 +465,17 @@ function validateManifest(value: unknown) {
       rolePaths.every((path) => names.has(path)),
     "manifest_invalid",
   );
+  // The Pi agent core (NIAR-302) keeps its own database beside the identity
+  // database; it holds no legacy run, so it is known but never inventoried.
+  const agentCore = agentCorePath(manifest.roles.identityDatabase);
   const databaseRoles = [
     manifest.roles.identityDatabase,
     manifest.roles.workflowDatabase,
     ...manifest.roles.nativeDatabases,
     ...manifest.roles.ownerLocks,
+    ...(names.has(agentCore) && !rolePaths.includes(agentCore)
+      ? [agentCore]
+      : []),
   ];
   requireCondition(
     databaseRoles.every((path) => path.endsWith(".sqlite")) &&
