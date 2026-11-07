@@ -1,0 +1,28 @@
+{
+  "name": "@niaro/pi-durable-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "packageManager": "pnpm@12.4.2",
+  "dependencies": {
+    "@earendil-works/pi-durable": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/chord": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.15",
+    "tsx": "4.21.0",
+    "typescript": "6.0.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "q1": "tsx scripts/q1-providers.ts",
+    "q2": "tsx scripts/q2-hooks.ts",
+    "q3": "tsx scripts/q3-crash.ts",
+    "all": "tsx scripts/q1-providers.ts && tsx scripts/q2-hooks.ts && tsx scripts/q3-crash.ts"
+  }
+}

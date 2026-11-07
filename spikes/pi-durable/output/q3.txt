@@ -1,0 +1,126 @@
+$ pnpm q3   # 2026-11-07T09:59:36+01:00
+
+=== Q3 a) killed during a model request (streaming) ===
+  [start pid 324148] MARK submitted {"id":9}
+  [start pid 324148] MARK streaming {}
+  [parent] SIGKILL pid 324148 (1500 ms after "streaming")
+  [parent] start process ended: code=null signal=SIGKILL
+  [resume pid 324237]   ledger before resume: [{"id":1,"run_key":"9","model":"faux/scripted","status":"dispatched","reserved_micros":2413,"cost_micros":null,"input_tokens":null,"output_tokens":null}]
+  [resume pid 324237]   submission 9: done
+  [resume pid 324237]   pi.user [user] "tell a long story"
+  [resume pid 324237]   pi.assistant [assistant] "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 wo" stop=aborted
+  [resume pid 324237]   pi.assistant [assistant] "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 wo" stop=stop
+  [resume pid 324237]   ledger after: [{"id":1,"run_key":"9","model":"faux/scripted","status":"dispatched","reserved_micros":2413,"cost_micros":null,"input_tokens":null,"output_tokens":null},{"id":2,"run_key":"9","model":"faux/scripted","status":"settled","reserved_micros":2413,"cost_micros":412,"input_tokens":119,"output_tokens":103}]
+  [resume pid 324237] PASS a: resumed run completes
+  [resume pid 324237] PASS a: exactly one final reply — assistant stops=aborted,stop
+  [resume pid 324237] PASS a: partial answer kept as an aborted entry (the UI must hide or mark it) — aborted=1
+  [resume pid 324237] PASS a: one user entry
+  [resume pid 324237] PASS a: the killed request's reservation stays as a hold (status dispatched), the retry settles
+  [parent] resume process ended: code=0
+
+=== Q3 b) killed after write side effect, before result commit — replay unsafe (Pi default) + content idempotency key ===
+  [start pid 324249] MARK submitted {"id":9}
+  [start pid 324249] MARK side_effect_done {}
+  [parent] SIGKILL pid 324249 (1300 ms after "side_effect_done")
+  [parent] start process ended: code=null signal=SIGKILL
+  [resume pid 324282]   side effects before resume: [{"idempotency_key":"content:dbe798a9be82ebb4","text":"pay invoice 42","executions":1}]
+  [resume pid 324282]   submission 9: done
+  [resume pid 324282]   pi.user [user] "write pay invoice 42"
+  [resume pid 324282]   pi.assistant [assistant] toolCall write_note({"text":"pay invoice 42"}) stop=toolUse
+  [resume pid 324282]   pi.tool-result [toolResult:write_note] "<harness>\n[error] Tool write_note was interrupted and may have partially run\n</harness>" isError
+  [resume pid 324282]   pi.assistant [assistant] "That was interrupted; trying again." toolCall write_note({"text":"pay invoice 42"}) stop=toolUse
+  [resume pid 324282]   pi.tool-result [toolResult:write_note] "Note \"pay invoice 42\" was already saved (idempotent replay)."
+  [resume pid 324282]   pi.assistant [assistant] "Done: Note \"pay invoice 42\" was already saved (idempotent replay)." stop=stop
+  [resume pid 324282]   side effects after: [{"idempotency_key":"content:dbe798a9be82ebb4","text":"pay invoice 42","executions":1}]
+  [resume pid 324282]   our log:
+  [resume pid 324282]     approval call_324249_1 approved
+  [resume pid 324282]     write_note execute key=content:dbe798a9be82ebb4 executed=true
+  [resume pid 324282]     approval call_324282_1 approved
+  [resume pid 324282]     write_note execute key=content:dbe798a9be82ebb4 executed=false
+  [resume pid 324282] PASS b-unsafe: run completes
+  [resume pid 324282] PASS b-unsafe: model was told the write was interrupted
+  [resume pid 324282] PASS b-unsafe: the model retried the write (new tool call)
+  [resume pid 324282] PASS b-unsafe: content idempotency key: side effect executed once
+  [parent] resume process ended: code=0
+
+=== Q3 b') same crash, replay unsafe, NO stable idempotency key (control) ===
+  [start pid 324294] MARK submitted {"id":9}
+  [start pid 324294] MARK side_effect_done {}
+  [parent] SIGKILL pid 324294 (1300 ms after "side_effect_done")
+  [parent] start process ended: code=null signal=SIGKILL
+  [resume pid 324355]   side effects before resume: [{"idempotency_key":"call:call_324294_1:0.06144084495702096","text":"pay invoice 42","executions":1}]
+  [resume pid 324355]   submission 9: done
+  [resume pid 324355]   pi.user [user] "write pay invoice 42"
+  [resume pid 324355]   pi.assistant [assistant] toolCall write_note({"text":"pay invoice 42"}) stop=toolUse
+  [resume pid 324355]   pi.tool-result [toolResult:write_note] "<harness>\n[error] Tool write_note was interrupted and may have partially run\n</harness>" isError
+  [resume pid 324355]   pi.assistant [assistant] "That was interrupted; trying again." toolCall write_note({"text":"pay invoice 42"}) stop=toolUse
+  [resume pid 324355]   pi.tool-result [toolResult:write_note] "Saved note \"pay invoice 42\"."
+  [resume pid 324355]   pi.assistant [assistant] "Done: Saved note \"pay invoice 42\"." stop=stop
+  [resume pid 324355]   side effects after: [{"idempotency_key":"call:call_324294_1:0.06144084495702096","text":"pay invoice 42","executions":1},{"idempotency_key":"call:call_324355_1:0.015435717169710816","text":"pay invoice 42","executions":1}]
+  [resume pid 324355]   our log:
+  [resume pid 324355]     approval call_324294_1 approved
+  [resume pid 324355]     write_note execute key=call:call_324294_1:0.06144084495702096 executed=true
+  [resume pid 324355]     approval call_324355_1 approved
+  [resume pid 324355]     write_note execute key=call:call_324355_1:0.015435717169710816 executed=true
+  [resume pid 324355] PASS b-none: run completes
+  [resume pid 324355] PASS b-none: model was told the write was interrupted
+  [resume pid 324355] PASS b-none: the model retried the write (new tool call)
+  [resume pid 324355] PASS b-none: without a stable key the retry duplicates the side effect (the failure we must prevent) — effects=2
+  [parent] resume process ended: code=0
+
+=== Q3 b'') same crash, replay safe + per-task idempotency key ===
+  [start pid 324406] MARK submitted {"id":9}
+  [start pid 324406] MARK side_effect_done {}
+  [parent] SIGKILL pid 324406 (1300 ms after "side_effect_done")
+  [parent] start process ended: code=null signal=SIGKILL
+  [resume pid 324467]   side effects before resume: [{"idempotency_key":"task:13","text":"pay invoice 42","executions":1}]
+  [resume pid 324467]   submission 9: done
+  [resume pid 324467]   pi.user [user] "write pay invoice 42"
+  [resume pid 324467]   pi.assistant [assistant] toolCall write_note({"text":"pay invoice 42"}) stop=toolUse
+  [resume pid 324467]   pi.tool-result [toolResult:write_note] "Note \"pay invoice 42\" was already saved (idempotent replay)."
+  [resume pid 324467]   pi.assistant [assistant] "Done: Note \"pay invoice 42\" was already saved (idempotent replay)." stop=stop
+  [resume pid 324467]   side effects after: [{"idempotency_key":"task:13","text":"pay invoice 42","executions":1}]
+  [resume pid 324467]   our log:
+  [resume pid 324467]     approval call_324406_1 approved
+  [resume pid 324467]     write_note execute key=task:13 executed=true
+  [resume pid 324467]     write_note execute key=task:13 executed=false
+  [resume pid 324467] PASS b-safe: run completes
+  [resume pid 324467] PASS b-safe: Pi re-ran execute() after restart (replay: safe)
+  [resume pid 324467] PASS b-safe: no interrupted result; model sees the idempotent result
+  [resume pid 324467] PASS b-safe: side effect executed once
+  [parent] resume process ended: code=0
+
+=== Q3 c) killed while waiting for approval ===
+  [start pid 324481] MARK approval_pending {"callId":"call_324481_1","tool":"write_note","arguments":{"text":"transfer 100 EUR"},"requestedAt":1794041985576}
+  [parent] SIGKILL pid 324481 (300 ms after "approval_pending")
+  [parent] start process ended: code=null signal=SIGKILL
+  [resume pid 324523]   scheduling=paused; pending approvals from storage: [{"task":13,"status":"pending","memo":{"callId":"call_324481_1","tool":"write_note","arguments":{"text":"transfer 100 EUR"},"requestedAt":1794041985576}}]
+  [resume pid 324523] PASS c: approval still pending after restart
+  [resume pid 324523] PASS c: still waiting after resume, nothing executed
+  [resume pid 324523] PASS c: re-run hook got the same durable request (memo first-writer-wins)
+  [resume pid 324523]   submission 9: done
+  [resume pid 324523]   pi.user [user] "write transfer 100 EUR"
+  [resume pid 324523]   pi.assistant [assistant] toolCall write_note({"text":"transfer 100 EUR"}) stop=toolUse
+  [resume pid 324523]   pi.tool-result [toolResult:write_note] "Saved note \"transfer 100 EUR\"."
+  [resume pid 324523]   pi.assistant [assistant] "Done: Saved note \"transfer 100 EUR\"." stop=stop
+  [resume pid 324523] PASS c: approving continues the run
+  [resume pid 324523] PASS c: write executed exactly once
+  [parent] resume process ended: code=0
+
+=== Q3 d) duplicate submission with the same requestId (concurrent, then again after a crash) ===
+  [start pid 324553] MARK submitted {"first":9,"concurrentDuplicate":9}
+  [parent] SIGKILL pid 324553 (400 ms after "submitted")
+  [parent] start process ended: code=null signal=SIGKILL
+  [resume pid 324565]   resubmitted after restart -> submission 9 (original 9)
+  [resume pid 324565]   submission 9: done
+  [resume pid 324565]   pi.user [user] "read Ada"
+  [resume pid 324565]   pi.assistant [assistant] toolCall read_contact({"name":"Ada"}) stop=toolUse
+  [resume pid 324565]   pi.tool-result [toolResult:read_contact] "Ada: ada@example.test"
+  [resume pid 324565]   pi.assistant [assistant] "Done: Ada: ada@example.test" stop=stop
+  [resume pid 324565] PASS d: same requestId returns the original submission
+  [resume pid 324565] PASS d: processed once (one user entry, one final answer)
+  [resume pid 324565] PASS d: run done
+  [resume pid 324565]   read_contact executions in this process: 1
+  [parent] resume process ended: code=0
+
+Q3 done: all checks passed

@@ -1,0 +1,34 @@
+$ pnpm q1   # 2026-11-07T09:53:22+01:00
+
+=== Q1-A: arbitrary OpenAI-compatible base URLs, auth styles, custom headers, per-run model ===
+  pi.user [user] "Find Ada"
+  pi.assistant [assistant] toolCall lookup_contact({"name":"Ada"}) stop=toolUse
+  pi.tool-result [toolResult:lookup_contact] "Ada Lovelace, ada@example.test"
+  pi.assistant [assistant] "Stub answer from vendor/model-a: Ada Lovelace, ada@example.test" stop=stop
+  pi.user [user] "Find Ada again"
+  pi.assistant [assistant] toolCall lookup_contact({"name":"Ada"}) stop=toolUse
+  pi.tool-result [toolResult:lookup_contact] "Ada Lovelace, ada@example.test"
+  pi.assistant [assistant] "Stub answer from deployment-b: Ada Lovelace, ada@example.test" stop=stop
+  stub saw:
+    /gateway/v1/chat/completions model=vendor/model-a authorization=Bearer <redacted> api-key=- x-niaro-workspace=ws-123 tools=lookup_contact max_tokens=256
+    /gateway/v1/chat/completions model=vendor/model-a authorization=Bearer <redacted> api-key=- x-niaro-workspace=ws-123 tools=lookup_contact max_tokens=256
+    /azure/openai/v1/chat/completions model=deployment-b authorization=- api-key=<set> x-niaro-workspace=- tools=lookup_contact max_tokens=128
+    /azure/openai/v1/chat/completions model=deployment-b authorization=- api-key=<set> x-niaro-workspace=- tools=lookup_contact max_tokens=128
+PASS run 1 answered
+PASS run 2 answered
+PASS gateway: bearer key + custom header + wire model name
+PASS azure-style: key in api-key header, bearer suppressed — authorization=absent,authorization=absent
+  checker role -> cat-model-c (chat) path=/local/v1/chat/completions model=llama-local authorization=- stop=toolUse
+PASS keyless local provider: no Authorization header
+
+=== Q1-B: real OpenRouter tool-calling round trip from the dev identity DB ===
+  provider: OpenRouter url=https://openrouter.ai/api/v1 dialect=openrouter auth=bearer key=<loaded, 73 chars>
+  chat model: catalog c372e421-f47d-4cd3-9197-81d8d143876c -> openai/gpt-6-luna (model chosen by the organization's role policy: roles.chat.models[0]) price/Mtok in=0.1 out=0.5
+  settled: done in 1965 ms
+  pi.user [user] "Call get_weather for Prague, then answer in one short sentence."
+  pi.assistant [assistant] toolCall get_weather({"city":"Prague"}) stop=toolUse
+  pi.tool-result [toolResult:get_weather] "Prague: 12 °C, cloudy"
+  pi.assistant [assistant] "Prague is 12°C and cloudy." stop=stop
+  pi.usage 22323dab-0732-4e6a-8eae-6f9b9eb204f5/openai/gpt-6-luna: input=149 output=32 cacheRead=0 cost.total=$0.000031
+PASS real OpenRouter run answered
+PASS tool executed exactly once — calls=1

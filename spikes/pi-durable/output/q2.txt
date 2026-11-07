@@ -1,0 +1,51 @@
+$ pnpm q2   # 2026-11-07T09:59:35+01:00
+
+=== Q2.1 approval: write waits for a durable decision, approve ===
+  pending approval: {"callId":"call_324051_1","tool":"write_note","arguments":{"text":"buy milk"},"requestedAt":1794041976090}
+  durable memo on the tool task (harness.inspect): {"niaro.approval":{"callId":"call_324051_1","tool":"write_note","arguments":{"text":"buy milk"},"requestedAt":1794041976090}}
+  write executed before decision: 0
+PASS write does not run while waiting
+  pi.user [user] "write buy milk"
+  pi.assistant [assistant] toolCall write_note({"text":"buy milk"}) stop=toolUse
+  pi.tool-result [toolResult:write_note] "Saved note \"buy milk\"."
+  pi.assistant [assistant] "Done: Saved note \"buy milk\"." stop=stop
+PASS approved write executed once
+PASS run answered once
+
+=== Q2.2 approval: reject ===
+  pi.user [user] "write delete everything"
+  pi.assistant [assistant] toolCall write_note({"text":"delete everything"}) stop=toolUse
+  pi.tool-result [toolResult:write_note] "<harness>\n[error] Tool call blocked: rejected by user-ada: not now\n</harness>" isError
+  pi.assistant [assistant] "The tool failed: <harness>\n[error] Tool call blocked: rejected by user-ada: not now\n</harn" stop=stop
+PASS rejected write not executed
+PASS model got an error result naming the rejection
+
+=== Q2.3 access: member loses access to a service mid-conversation ===
+  pi.user [user] "read Ada"
+  pi.assistant [assistant] toolCall read_contact({"name":"Ada"}) stop=toolUse
+  pi.tool-result [toolResult:read_contact] "Ada: ada@example.test"
+  pi.assistant [assistant] "Done: Ada: ada@example.test" stop=stop
+  pi.user [user] "read Bob"
+  pi.assistant [assistant] toolCall read_contact({"name":"Bob"}) stop=toolUse
+  pi.tool-result [toolResult:read_contact] "<harness>\n[error] Tool call blocked: access_denied: user-ada may not use notes.read\n</harn" isError
+  pi.assistant [assistant] "The tool failed: <harness>\n[error] Tool call blocked: access_denied: user-ada may not use " stop=stop
+PASS first read executed, second refused before execute()
+PASS refusal reported to the model as a blocked tool result
+
+=== Q2.4 hard budget: reserve before each call, refuse over the cap, settle after ===
+  pi.user [user] "read Ada"
+  pi.assistant [assistant] toolCall read_contact({"name":"Ada"}) stop=toolUse
+  pi.tool-result [toolResult:read_contact] "Ada: ada@example.test"
+  pi.assistant [assistant]  stop=error error="budget_exhausted: accounted 28 + reservation 3071 > cap 3000 micro-USD"
+  settled: unanswered reason=model_error
+  pi.live.runFailure: {"taskId":15,"inputs":[9],"reason":"model_error","detail":"budget_exhausted: accounted 28 + reservation 3071 > cap 3000 micro-USD","first":8}
+  our ledger (attempt rows):
+    {"id":1,"run_key":"9","model":"faux/scripted","status":"settled","reserved_micros":2404,"cost_micros":28,"input_tokens":116,"output_tokens":7}
+    {"id":2,"run_key":"9","model":"faux/scripted","status":"refused","reserved_micros":3071,"cost_micros":null,"input_tokens":null,"output_tokens":null}
+  pi.usage: {"faux/scripted":{"input":0,"output":7,"cacheRead":0,"cacheWrite":116,"totalTokens":123,"cost":{"input":0,"output":0.000028,"cacheRead":0,"cacheWrite":0,"total":0.000028,"totalFromProvider":false}}}
+PASS first call reserved+settled with actual cost
+PASS second call refused before dispatch
+PASS tool still ran once (the refused call was the follow-up model call)
+PASS run ends unanswered with model_error, not retried
+PASS Pi usage counts the settled call's tokens — pi=123 ours=123
+PASS Pi usage cost equals our settled cost — pi=28.0 ours=28
