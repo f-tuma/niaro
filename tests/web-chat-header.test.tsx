@@ -86,9 +86,10 @@ async function render(
   const fake = fakeSession();
   mockApp.session = fake as unknown as ClientSession;
   let renderer!: TestRenderer.ReactTestRenderer;
+  const client = new QueryClient();
   await act(async () => {
     renderer = TestRenderer.create(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={client}>
         <ChatHeader
           session={fake as unknown as ClientSession}
           chatId="conv-1"
@@ -99,8 +100,22 @@ async function render(
     );
   });
   await act(async () => {});
+  mounted.push({ renderer, client });
   return { root: renderer.root, fake, renderer };
 }
+
+// Unmount every header and drop its queries, so no React Query notification
+// fires after the test has ended.
+const mounted: {
+  renderer: TestRenderer.ReactTestRenderer;
+  client: QueryClient;
+}[] = [];
+afterEach(async () => {
+  for (const { renderer, client } of mounted.splice(0)) {
+    await act(async () => renderer.unmount());
+    client.clear();
+  }
+});
 
 beforeEach(() => {
   mockNavigate.mockReset();
