@@ -33,6 +33,8 @@
 - [ ] 3.5 Saved memory, knowledge and attachments re-homed as Pi tools and documents.
 - [ ] 3.6 Refine route model metadata (context window per route) for compaction.
 - [ ] 3.7 Crash scenarios for chat delivery; spec deltas for `chat`, `chat-delivery` and `agent-runtime`.
+- [ ] 3.9 Old Mastra threads stay readable until wave 4; sending in one starts a Pi conversation in the same entry with a note (design D11).
+- [ ] 3.10 Move the single-call Mastra agents (meeting analysis, profile extraction, widget fill, catalog enrichment, quiet agent, saved memory) to Pi model calls.
 - [ ] 3.8 Port the native agent runtime contract (`NativeAgentInput`: session, tools, approvals as `beforeTool` memos, `ask_user` questions, saved memory, structured output, budget caps via `agentCoreModelHost({ caps })`) onto Pi conversations, for chat and process agent steps together; replace the child proofs (`proveSuspended`, `proveRetired`, `proveQuestionRecovery`) with Pi task and conversation state; rewrite the child crash tests (`process-question-crash`, `process-owner-crash`) as Pi scenarios.
 
 ## 4. Wave 4: remove Mastra and libSQL (NIAR-305)
