@@ -19,11 +19,15 @@ test("live task polling cannot discard the final failure or its user message", a
       });
   }, 1);
   try {
-    h.onChat((body) =>
-      toolResults(body).some((result) => result.data?.contacts)
-        ? h.call("find_service", { need: "CRM" })
-        : h.lookupScript(body),
-    );
+    h.onChat(async (body) => {
+      if (!toolResults(body).some((result) => result.data?.contacts))
+        return h.lookupScript(body);
+      // The run waits until a poll has seen its task, so polling surely
+      // overlaps the run whatever the runtime's speed.
+      for (let waited = 0; !progressSeen && waited < 5000; waited += 5)
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      return h.call("find_service", { need: "CRM" });
+    });
     const result = await h.send("TEST look up Jane Test and their tasks", {
       id: "TEST-polled-exhaustion",
       language: "cs",

@@ -9,7 +9,7 @@ import { FixtureStorage } from "../apps/fixture-server/storage";
 import { createFixtureServer } from "../apps/fixture-server/http";
 import { issuePairingCode } from "../apps/fixture-server/auth";
 import { IdentityError } from "../apps/server-identity/error";
-import { nativeCatalogOwner } from "../apps/server-identity/mastra-runtime";
+import { nativeChatOwner } from "../apps/server-identity/mastra-runtime";
 import {
   AUTH_PROFILE,
   PROFILE,
@@ -676,7 +676,7 @@ test(
     const h = createTrustHarness();
     try {
       const started = holdModel(h);
-      const runtime = await nativeCatalogOwner(h.controller);
+      const runtime = await nativeChatOwner(h.controller);
       const proof = runtime.isSettled;
       runtime.isSettled = () => false;
       const original = command("TEST-unsettled");

@@ -17,6 +17,27 @@ type Owner = {
 };
 const cores = new WeakMap<object, Promise<PiAgentCore>>();
 
+/** Which runtime drives the chat (NIAR-304): Mastra until the Pi path is complete. */
+export type AgentCoreKind = "mastra" | "pi";
+const kinds = new WeakMap<object, AgentCoreKind>();
+/** NIARO_AGENT_CORE, `mastra` when unset; anything else is refused. */
+export function agentCoreKindFromEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+): AgentCoreKind {
+  const value = env.NIARO_AGENT_CORE?.trim();
+  if (!value) return "mastra";
+  if (value !== "mastra" && value !== "pi")
+    throw new Error("NIARO_AGENT_CORE must be mastra or pi.");
+  return value;
+}
+/** The server's choice for one controller (its profile's `agentCore`). */
+export function setAgentCoreKind(controller: object, kind: AgentCoreKind) {
+  kinds.set(controller, kind);
+}
+export function agentCoreKind(controller: object): AgentCoreKind {
+  return kinds.get(controller) ?? agentCoreKindFromEnvironment();
+}
+
 /** The agent core file of an identity database, from its native store URL. */
 export function agentCoreFile(nativeStorageUrl: string) {
   if (!nativeStorageUrl.startsWith("file:")) return undefined;

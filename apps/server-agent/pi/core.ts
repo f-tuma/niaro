@@ -14,6 +14,7 @@ import { chmodSync } from "node:fs";
 import { createModels } from "@earendil-works/pi-ai";
 import {
   createRegistry,
+  defineExtension,
   Harness,
   MemoryStorage,
   ProviderDoc,
@@ -25,6 +26,12 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import type { RouteKey } from "../../../packages/protocol/model-policy";
 import { IntegrationError } from "../../server-integrations/transport";
 import { ctx } from "./context";
+import {
+  NATIVE_MODEL,
+  NATIVE_PROVIDER,
+  NativeAgentHost,
+  createPiAgentRuntime,
+} from "./native-agent";
 import { RECOVERY_POLICY_A } from "./policy";
 import {
   executeProcessRun,
@@ -77,6 +84,7 @@ export class PiAgentCore {
     readonly harness: Harness,
     readonly provider: NiaroPiProvider,
     readonly bindings: CallBindings,
+    readonly native: NativeAgentHost,
   ) {}
 
   static async open(options: PiAgentCoreOptions) {
@@ -99,11 +107,35 @@ export class PiAgentCore {
     );
     const models = createModels();
     models.setProvider(provider);
+    // The native agent contract (chat, NIAR-304) through its own provider.
+    const native = new NativeAgentHost();
+    models.setProvider(native.provider());
     const registry = createRegistry();
-    registry.install(bindingExtension(bindings));
-    registry.install(processEngineExtension);
-    for (const extension of options.extensions ?? [])
+    const binding = bindingExtension(bindings);
+    const nativeExtension = native.extension();
+    const base = [
+      binding,
+      processEngineExtension,
+      nativeExtension,
+      ...(options.extensions ?? []),
+    ];
+    for (const extension of base) registry.install(extension);
+    // Run tools live in one extension per native conversation; only that
+    // conversation selects it.
+    const runTools = new Map<string, Extension>();
+    native.installTools = (conversationId, names) => {
+      const extension = defineExtension({
+        name: `niaro-native-tools-${conversationId}`,
+        tools: names.map((name) => native.tool(name)),
+      });
       registry.install(extension);
+      runTools.set(conversationId, extension);
+    };
+    native.extensionsFor = (conversationId) => [
+      binding,
+      nativeExtension,
+      ...(runTools.has(conversationId) ? [runTools.get(conversationId)!] : []),
+    ];
     const storage = options.file
       ? await openNodeSqliteStorage(options.file)
       : new MemoryStorage();
@@ -119,7 +151,18 @@ export class PiAgentCore {
           // Niaro's requests carry no third-party attribution headers.
           identity: { attribution: null },
           settings: () => ({
+            // Conversations select the base extensions unless they choose.
+            extensions: base,
             ...settings,
+            compaction: {
+              ...settings.compaction,
+              modelOverrides: {
+                ...settings.compaction?.modelOverrides,
+                // The domain bounds a native thread's context itself; a
+                // summary would need a model call no session is bound to.
+                [`${NATIVE_PROVIDER}/${NATIVE_MODEL}`]: { enabled: false },
+              },
+            },
             retry: {
               ...RECOVERY_POLICY_A.retry,
               ...settings.retry,
@@ -148,8 +191,10 @@ export class PiAgentCore {
     }
     // Process runs are background tasks of the root conversation.
     await harness.root(ctx);
+    // Calls waiting for a person resolve their tools again before resume.
+    await native.restore(harness);
     if (options.resume !== false) harness.resume();
-    return new PiAgentCore(harness, provider, bindings);
+    return new PiAgentCore(harness, provider, bindings, native);
   }
 
   /** A conversation acting for a member in a workspace; its model is a policy route. */
@@ -179,7 +224,14 @@ export class PiAgentCore {
     return proveProcessRunRetired(this.harness, input);
   }
 
-  close() {
+  /** The native agent runtime (chat) on this core (NIAR-304). */
+  agentRuntime() {
+    return (this.runtime ??= createPiAgentRuntime(this));
+  }
+  private runtime: ReturnType<typeof createPiAgentRuntime> | undefined;
+
+  async close() {
+    await this.runtime?.close();
     return this.harness.close(ctx);
   }
 }

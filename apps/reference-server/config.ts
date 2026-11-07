@@ -98,6 +98,9 @@ export const ServerConfigSchema = z
              * false (or NIARO_PLUGIN_EDITING=0) leaves the files read-only.
              * Unset means on. */
             pluginEditing: z.boolean().optional(),
+            /** The runtime the chat runs on while it moves to Pi (NIAR-304);
+             * NIARO_AGENT_CORE overrides it. Unset means mastra. */
+            agentCore: z.enum(["mastra", "pi"]).optional(),
             mail: MailSettings.optional(),
             /** How long a browser stays signed in to an account without being
              * used; every day of use extends it. */
@@ -259,6 +262,14 @@ function pluginEditing(env: NodeJS.ProcessEnv = process.env) {
     throw new ServerConfigError("NIARO_PLUGIN_EDITING must be 0 or 1.");
   return value === "1";
 }
+/** NIARO_AGENT_CORE=mastra|pi: the runtime the chat runs on (NIAR-304). */
+function agentCore(env: NodeJS.ProcessEnv = process.env) {
+  const value = env.NIARO_AGENT_CORE?.trim();
+  if (!value) return undefined;
+  if (value !== "mastra" && value !== "pi")
+    throw new ServerConfigError("NIARO_AGENT_CORE must be mastra or pi.");
+  return value;
+}
 function hostedRuntime(env: NodeJS.ProcessEnv = process.env) {
   const runtime = env.NIARO_HOSTED_RUNTIME?.trim();
   if (!runtime) return undefined;
@@ -412,6 +423,9 @@ export function loadServerConfig(file?: string): ServerConfig {
   const editing = pluginEditing();
   if (editing !== undefined && config.administration?.identity)
     config.administration.identity.pluginEditing = editing;
+  const core = agentCore();
+  if (core && config.administration?.identity)
+    config.administration.identity.agentCore = core;
   const origins = operatorOrigins();
   if (origins && config.administration?.identity)
     config.administration.identity.operatorOrigins = origins;

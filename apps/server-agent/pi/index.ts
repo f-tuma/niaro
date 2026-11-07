@@ -42,3 +42,14 @@ export {
   type NativeWorkflowInput,
   type NativeWorkflowResult,
 } from "./process-engine";
+export {
+  createPiAgentRuntime,
+  NATIVE_MODEL,
+  NATIVE_PROVIDER,
+  NativeAgentHost,
+  NativeConversationDoc,
+  NativeThreadDoc,
+  projectHistory,
+  projectMessages,
+  type PiAgentRuntime,
+} from "./native-agent";

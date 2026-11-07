@@ -42,7 +42,11 @@ import { ServiceConnectionRequired } from "./service-oauth";
 import { presentServiceAnswer } from "./service-answer";
 import { logSkippedTask, requestLevelFailure } from "./task-projection-guard";
 import type { InferenceRunCaps } from "./inference-budget";
-import { closeAgentCore } from "./agent-core-owner";
+import {
+  agentCoreFor,
+  agentCoreKind,
+  closeAgentCore,
+} from "./agent-core-owner";
 
 /** Model steps for a chat answer: it may read several services and page
  * through records. The last two only answer (see the agent runtime). */
@@ -55,6 +59,19 @@ type NativeRuntime = Awaited<
   ReturnType<(typeof import("@niaro/server-agent"))["createNativeAgentRuntime"]>
 >;
 type NativeOwnerHandle = { store: { nativeStorageUrl: string } };
+type PiRuntime = import("@niaro/server-agent/pi").PiAgentRuntime;
+/** What the chat needs of a native runtime; Mastra's and Pi's both answer it. */
+type ChatRuntime = Pick<
+  NativeRuntime,
+  | "isSettled"
+  | "proveRetired"
+  | "proveSuspended"
+  | "eraseAttachmentRun"
+  | "forgetThreads"
+> & {
+  execute: NativeRuntime["execute"] | PiRuntime["execute"];
+  inspect: NativeRuntime["inspect"] | PiRuntime["inspect"];
+};
 const owners = new WeakMap<NativeOwnerHandle, Promise<NativeRuntime>>();
 /** Only the authenticated command coordinator can create this abort reason. */
 export const REQUEST_INTERRUPTION_REASON = Symbol("request-interruption");
@@ -90,6 +107,20 @@ export function nativeCatalogOwner(controller: NativeOwnerHandle) {
   return runtime;
 }
 
+/**
+ * The runtime a person's chat runs on: Pi when the server's agent core
+ * switch says so (NIAR-304, `NIARO_AGENT_CORE`), Mastra otherwise. Process
+ * agent steps and the designer stay on Mastra (`nativeCatalogOwner`).
+ */
+export async function nativeChatOwner(
+  controller: CatalogController,
+  loopLimits: LoopLimits = "chat",
+): Promise<ChatRuntime> {
+  if (loopLimits === "chat" && agentCoreKind(controller) === "pi")
+    return (await agentCoreFor(controller)).agentRuntime();
+  return nativeCatalogOwner(controller);
+}
+
 /** Close the native checkpoint and conversation store before the identity DB. */
 export async function closeNativeCatalogRuntime(controller: NativeOwnerHandle) {
   await closeAgentCore(controller);
@@ -105,8 +136,11 @@ export async function inspectNativeCatalogRuntime(
   threadId: string,
   resourceId: string,
 ) {
-  const runtime = await nativeCatalogOwner(controller);
-  return runtime.inspect({ threadId, resourceId });
+  const runtime = await nativeChatOwner(controller);
+  // Pi projects its entries into the same message shape (a subset of it).
+  return (await runtime.inspect({ threadId, resourceId })) as Awaited<
+    ReturnType<NativeRuntime["inspect"]>
+  >;
 }
 
 const attachmentTaskOwners = new WeakMap<
@@ -236,7 +270,9 @@ export async function purgeNativeAttachmentGeneration(
     if (unproved) throw new IdentityError(409, "attachment_native_unknown");
     return;
   }
-  const owner = await nativeCatalogOwner(controller);
+  const owner = await nativeChatOwner(
+    controller as unknown as CatalogController,
+  );
   for (const [root, ids] of roots) {
     if (!prove()) throw new IdentityError(409, "catalog_conflict");
     await owner.eraseAttachmentRun({
@@ -324,7 +360,7 @@ export function createNativeCatalogRuntime(
   const key = (commandId: string) =>
     digest([scope.serverId, scope.workspaceId, scope.userId, commandId]);
   const retired = async (
-    runtime: NativeRuntime,
+    runtime: ChatRuntime,
     state: DomainSession["state"],
   ) => {
     try {
@@ -346,7 +382,7 @@ export function createNativeCatalogRuntime(
     publish: boolean,
     originalError: unknown,
   ): Promise<ServiceAnswer> {
-    const runtime = await nativeCatalogOwner(controller);
+    const runtime = await nativeChatOwner(controller, loopLimits);
     if (!(await retired(runtime, state))) throw new NativeRunUnsettledError();
     if (!publish) {
       try {
@@ -464,7 +500,7 @@ export function createNativeCatalogRuntime(
     reportStep?: (step: AnswerStreamStep) => void,
     reportApproval?: (approval: AnswerStreamApproval) => void,
   ) {
-    const runtime = await nativeCatalogOwner(controller);
+    const runtime = await nativeChatOwner(controller, loopLimits);
     const state = session.state;
     if (state.trace) {
       state.trace.status = "running";
@@ -859,7 +895,7 @@ export function createNativeCatalogRuntime(
         let resumable =
           available && !!state.pending && !state.terminalCandidate;
         if (resumable) {
-          const owner = await nativeCatalogOwner(controller);
+          const owner = await nativeChatOwner(controller, loopLimits);
           try {
             resumable = await owner.proveSuspended({
               runId: state.runId,
@@ -991,7 +1027,7 @@ export function createNativeCatalogRuntime(
             ...(action?.result ? { result: action.result } : {}),
           };
         }
-        const owner = await nativeCatalogOwner(controller);
+        const owner = await nativeChatOwner(controller, loopLimits);
         // Settled suspension is a different proof from native retirement.
         // Cancellation closes domain resume authority and leaves the exact
         // durable checkpoint dormant; it never executes or resumes that call.
@@ -1057,7 +1093,7 @@ export function createNativeCatalogRuntime(
     if (state.answer) return;
     await withConversation(state.conversationId, () =>
       controller.withTurn(state.runId, async () => {
-        const owner = await nativeCatalogOwner(controller);
+        const owner = await nativeChatOwner(controller, loopLimits);
         // A run still executing is never closed underneath its worker.
         if (!(await retired(owner, state))) throw new NativeRunUnsettledError();
         if (state.terminalCandidate) await domain.finalizeFailure(state.runId);
@@ -1149,7 +1185,7 @@ export function createNativeCatalogRuntime(
         );
       });
       if (!candidates.length) return true;
-      const owner = await nativeCatalogOwner(controller);
+      const owner = await nativeChatOwner(controller, loopLimits);
       for (const state of candidates)
         if (!(await retired(owner, state))) return false;
       return true;
@@ -1174,7 +1210,7 @@ export function createNativeCatalogRuntime(
             return (
               !attachment.phase.preparationStarted && !!attachment.phase.proofId
             );
-          const owner = await nativeCatalogOwner(controller),
+          const owner = await nativeChatOwner(controller, loopLimits),
             prior = attachment.phase.prior;
           return (
             (await owner.proveRetired({
@@ -1201,7 +1237,9 @@ export function createNativeCatalogRuntime(
           ? parsed.data
           : null;
       });
-      return !!state && retired(await nativeCatalogOwner(controller), state);
+      return (
+        !!state && retired(await nativeChatOwner(controller, loopLimits), state)
+      );
     },
     tasks: (roots) => projectTasks(roots),
     async readTask(commandId) {
@@ -1224,7 +1262,7 @@ export function createNativeCatalogRuntime(
       let task = (await projectTasks([state], true))[0] ?? null;
       if (!task) return null;
       if (!state.pending && !["expired", "superseded"].includes(task.status)) {
-        const owner = await nativeCatalogOwner(controller);
+        const owner = await nativeChatOwner(controller, loopLimits);
         let settled = false;
         try {
           settled =
@@ -1317,7 +1355,7 @@ export function createNativeCatalogRuntime(
         controller.withTurn(id, async () => {
           const state = await domain.selectTask(id, revision, conversationId);
           if (state.terminalCandidate && !state.answer) {
-            const owner = await nativeCatalogOwner(controller);
+            const owner = await nativeChatOwner(controller, loopLimits);
             if (!(await retired(owner, state)))
               throw new NativeRunUnsettledError();
             return domain.finalizeFailure(state.runId);
@@ -1340,7 +1378,7 @@ export function createNativeCatalogRuntime(
       if (!threadIds.length) return 0;
       // The chat's turn lock: a turn still finishing writes its thread first.
       return withConversation(conversationId, async () => {
-        const runtime = await nativeCatalogOwner(controller);
+        const runtime = await nativeChatOwner(controller, loopLimits);
         return runtime.forgetThreads({ threadIds, resourceId });
       });
     },
@@ -1450,7 +1488,7 @@ export function createNativeCatalogRuntime(
       if (!state) return null;
       return withConversation(input.conversationId, () =>
         controller.withTurn(state.runId, async () => {
-          const owner = await nativeCatalogOwner(controller);
+          const owner = await nativeChatOwner(controller, loopLimits);
           if (!(await retired(owner, state)))
             throw state.terminalCandidate
               ? new NativeRunUnsettledError()
@@ -1603,7 +1641,7 @@ export function createNativeCatalogRuntime(
                 messageContext,
                 commandId,
               );
-              const owner = await nativeCatalogOwner(controller);
+              const owner = await nativeChatOwner(controller, loopLimits);
               if (!(await retired(owner, parent)))
                 throw new NativeRunUnsettledError();
             }
@@ -1623,7 +1661,7 @@ export function createNativeCatalogRuntime(
               if (answer)
                 return finish(continuation.session, Promise.resolve(answer));
               if (continuation.session.state.terminalCandidate) {
-                const owner = await nativeCatalogOwner(controller);
+                const owner = await nativeChatOwner(controller, loopLimits);
                 if (!(await retired(owner, continuation.session.state)))
                   throw new NativeRunUnsettledError();
                 await continuation.session.finishFailure();
@@ -1660,7 +1698,7 @@ export function createNativeCatalogRuntime(
             const prior = await recorded(session);
             if (prior) return finish(session, Promise.resolve(prior));
             if (session.state.terminalCandidate) {
-              const owner = await nativeCatalogOwner(controller);
+              const owner = await nativeChatOwner(controller, loopLimits);
               if (!(await retired(owner, session.state)))
                 throw new NativeRunUnsettledError();
               await session.finishFailure();
@@ -1709,7 +1747,7 @@ export function createNativeCatalogRuntime(
               { ...messageContext, session: "new" },
               { ...options, signal: undefined },
             );
-            const owner = await nativeCatalogOwner(controller);
+            const owner = await nativeChatOwner(controller, loopLimits);
             if (stopped.state.terminalCandidate) {
               if (!(await retired(owner, stopped.state)))
                 throw new NativeRunUnsettledError();
@@ -1761,7 +1799,7 @@ export function createNativeCatalogRuntime(
       if (exactAlias && saved.terminalCandidate) {
         return withConversation(saved.conversationId, () =>
           controller.withTurn(saved.runId, async () => {
-            const owner = await nativeCatalogOwner(controller);
+            const owner = await nativeChatOwner(controller, loopLimits);
             if (!(await retired(owner, saved)))
               throw new NativeRunUnsettledError();
             const answer = await domain.finalizeFailure(saved.runId);
@@ -1839,7 +1877,7 @@ export function createNativeCatalogRuntime(
             // Approval dispatch can end before execute(session) is entered.
             // Its settled adapter receipts still need a durable chat outcome.
             if (signal.reason !== REQUEST_INTERRUPTION_REASON) throw error;
-            const runtime = await nativeCatalogOwner(controller);
+            const runtime = await nativeChatOwner(controller, loopLimits);
             if (!runtime.isSettled(session.state.runId))
               throw new RequestInterruptionUnsettledError();
             return session.finishInterrupted();
