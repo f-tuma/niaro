@@ -1711,9 +1711,12 @@ export function createPiAgentRuntime(core: NativeCore) {
       const conversation = await harness.conversation(cid(id), ctx);
       const view = await conversation!.context(ctx);
       return {
-        messages: projectMessages(view.entries, threadId, resourceId).slice(
-          -HISTORY_MESSAGES,
-        ),
+        messages: projectMessages(
+          view.entries,
+          threadId,
+          resourceId,
+          doc.runs,
+        ).slice(-HISTORY_MESSAGES),
       };
     },
     async eraseAttachmentRun(binding: ThreadBinding) {
@@ -1764,6 +1767,8 @@ export function projectMessages(
   entries: readonly EntryRecord[],
   threadId: string,
   resourceId: string,
+  /** The runs' records, for each answer's privacy stamp (NIAR-263). */
+  runs: Readonly<Record<string, RunRecord>> = {},
 ) {
   const results = new Map<string, unknown>();
   const errors = new Map<string, string>();
@@ -1794,9 +1799,24 @@ export function projectMessages(
     createdAt: Date;
     threadId: string;
     resourceId: string;
-    content: { format: 2; parts: ProjectedPart[] };
+    content: {
+      format: 2;
+      parts: ProjectedPart[];
+      metadata?: {
+        niaroNativePrivacy: {
+          version: 1;
+          privateContext: boolean;
+          runId: string;
+        };
+      };
+    };
   }[] = [];
-  for (const entry of entries)
+  let runId: string | undefined;
+  for (const entry of entries) {
+    if (entry.kind === "niaro.user") {
+      const data = entry.data as { runId?: unknown } | undefined;
+      runId = typeof data?.runId === "string" ? data.runId : undefined;
+    }
     for (const message of entry.model ?? []) {
       const createdAt = new Date(
         "timestamp" in message ? message.timestamp : Date.now(),
@@ -1852,9 +1872,24 @@ export function projectMessages(
             createdAt,
             threadId,
             resourceId,
-            content: { format: 2, parts },
+            content: {
+              format: 2,
+              parts,
+              ...(runId
+                ? {
+                    metadata: {
+                      niaroNativePrivacy: {
+                        version: 1 as const,
+                        privateContext: runs[runId]?.privateContext !== false,
+                        runId,
+                      },
+                    },
+                  }
+                : {}),
+            },
           });
       }
     }
+  }
   return messages;
 }
