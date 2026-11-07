@@ -1,8 +1,6 @@
 import { z } from "zod";
-import type {
-  NativeAgentInput,
-  NativeWorkflowInput,
-} from "@niaro/server-agent";
+import type { NativeAgentInput } from "@niaro/server-agent";
+import type { NativeWorkflowInput } from "@niaro/server-agent/pi";
 import type { ProcessStep } from "../../packages/protocol/service-processes";
 import type { Scope } from "../../packages/protocol";
 import {

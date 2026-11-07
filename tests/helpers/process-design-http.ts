@@ -517,43 +517,50 @@ export async function designHttpFixture(
       // snapshot before capturing any baseline: a separate WAL-aware SQLite
       // connection must checkpoint completely and close all physical sidecars.
       // Production backups instead require the owner process to have exited.
-      const nativeFile = fileURLToPath(
+      // Both native stores: the Mastra one and the Pi agent core (process
+      // checkpoints, NIAR-303), which sits beside it.
+      const mastraFile = fileURLToPath(
         identity["catalog"].store.nativeStorageUrl,
       );
-      assert(
-        existsSync(nativeFile) ||
-          (!existsSync(nativeFile + "-wal") &&
-            !existsSync(nativeFile + "-shm")),
-        "TEST native snapshot has orphaned sidecars",
-      );
-      if (!original && existsSync(nativeFile)) {
-        const db = new DatabaseSync(nativeFile);
-        try {
-          const checkpoint = db
-            .prepare("PRAGMA wal_checkpoint(TRUNCATE)")
-            .get();
+      for (const nativeFile of [
+        mastraFile,
+        mastraFile.replace(/\.mastra\.sqlite$/, ".pi.sqlite"),
+      ]) {
+        assert(
+          existsSync(nativeFile) ||
+            (!existsSync(nativeFile + "-wal") &&
+              !existsSync(nativeFile + "-shm")),
+          "TEST native snapshot has orphaned sidecars",
+        );
+        if (!original && existsSync(nativeFile)) {
+          const db = new DatabaseSync(nativeFile);
+          try {
+            const checkpoint = db
+              .prepare("PRAGMA wal_checkpoint(TRUNCATE)")
+              .get();
+            assert(
+              checkpoint,
+              "TEST native snapshot checkpoint must return proof",
+            );
+            assert.equal(
+              checkpoint.busy,
+              0,
+              "TEST native snapshot is still busy",
+            );
+            assert.equal(checkpoint.log, 0);
+            assert.equal(checkpoint.checkpointed, 0);
+          } finally {
+            db.close();
+          }
           assert(
-            checkpoint,
-            "TEST native snapshot checkpoint must return proof",
+            !existsSync(nativeFile + "-wal"),
+            "TEST native WAL is not closed",
           );
-          assert.equal(
-            checkpoint.busy,
-            0,
-            "TEST native snapshot is still busy",
+          assert(
+            !existsSync(nativeFile + "-shm"),
+            "TEST native SHM is not closed",
           );
-          assert.equal(checkpoint.log, 0);
-          assert.equal(checkpoint.checkpointed, 0);
-        } finally {
-          db.close();
         }
-        assert(
-          !existsSync(nativeFile + "-wal"),
-          "TEST native WAL is not closed",
-        );
-        assert(
-          !existsSync(nativeFile + "-shm"),
-          "TEST native SHM is not closed",
-        );
       }
       // Real fixture configuration is part of the copied stopped tuple too.
       // The destination paths are relocated only after its bytes are checked.

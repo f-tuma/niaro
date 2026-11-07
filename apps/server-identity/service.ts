@@ -11,7 +11,7 @@ import {
 } from "./mastra-runtime";
 import { budgetedInferenceTransport } from "./inference-budget";
 import type { PiAgentCore } from "@niaro/server-agent/pi";
-import { agentCoreModelHost } from "./agent-core";
+import { agentCoreFor, closeAgentCore } from "./agent-core-owner";
 import { clientAddress } from "./client-address";
 import { outputVoiceCatalogue } from "../server-integrations/speech-voices";
 import { MeetingStore } from "./meeting-store";
@@ -619,7 +619,7 @@ export async function openIdentity(
       serverSettings,
     );
     await service.initializeMemory();
-    await service.openAgentCore(join(settings.directory, "agent-core.sqlite"));
+    await service.openAgentCore();
     service.attachHosting(hosted);
     service.attachPluginFiles(
       new PluginFiles(pluginsDirectory),
@@ -1037,33 +1037,14 @@ export class IdentityService {
     setTimeout(keep, 60_000).unref();
   }
   /**
-   * Open the agent core over its own node:sqlite file and resume its
+   * Open the agent core beside the identity database and resume its
    * interrupted work under recovery policy A. Every model request it makes
-   * goes through the catalog, the integration transport and the budget ledger.
+   * goes through the catalog, the integration transport and the budget
+   * ledger, under the identity queue.
    */
-  async openAgentCore(file: string) {
-    // Pi is ESM-only; like the native runtime it loads through import().
-    const { PiAgentCore } = await import("@niaro/server-agent/pi");
-    this.agentCore = await PiAgentCore.open({
-      file,
-      host: agentCoreModelHost({
-        catalog: this.catalog.store,
-        transport: this.catalog.transport,
-        serial: (fn) => this.serial(fn),
-      }),
-      // Kinds and error names only; never content or keys.
-      onReport: (report) =>
-        operatorLog(
-          "agent_core",
-          {
-            kind: report.kind,
-            error:
-              report.error instanceof Error
-                ? report.error.name.slice(0, 60)
-                : "unknown",
-          },
-          "warn",
-        ),
+  async openAgentCore() {
+    this.agentCore = await agentCoreFor(this.catalog, {
+      serial: (fn) => this.serial(fn),
     });
     return this.agentCore;
   }
@@ -5151,7 +5132,7 @@ export class IdentityService {
     await this.knowledge.close();
     await this.pending;
     await (await this.knowledgeIndexOpen?.catch(() => undefined))?.close();
-    await this.agentCore?.close();
+    await closeAgentCore(this.catalog);
     await closeNativeCatalogRuntime(this.catalog);
     await this.memory.close();
     this.audit.interrupt();

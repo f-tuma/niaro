@@ -37,6 +37,7 @@ import {
   type NativeTrackedRequest,
 } from "./native-command-requests";
 import { IdentityError } from "./error";
+import { agentCoreFor } from "./agent-core-owner";
 import { finishLoopTrace } from "./loop-trace";
 import { processDigest } from "./process-validation";
 import { projectProcessApproval } from "./process-approval";
@@ -394,23 +395,15 @@ export function createProcessCoordinator(
     )
       return true;
     const definition = value.artifact;
-    const passive = async () => {
-      throw new Error("Passive checkpoint proof cannot execute a boundary");
-    };
-    const proved = await owner.proveWorkflowRetired({
+    const proved = await (
+      await agentCoreFor(controller)
+    ).proveProcessRetired({
       runId: parentRunId,
       resourceId: journal.scopeDigest,
       artifactDigest: journal.artifactDigest,
       compilerVersion: journal.compilerVersion,
       definition: definition.definition,
       input: journal.input,
-      boundary: {
-        authorize: passive,
-        enter: passive,
-        leave: passive,
-        action: passive,
-        agent: passive,
-      },
     });
     await context.serial(async () => {
       if (!ownedCleanup) await actor();

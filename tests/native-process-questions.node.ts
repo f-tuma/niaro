@@ -22,7 +22,7 @@ import {
   type NativeWorkflowBoundary,
   type ProcessBoundaryResult,
 } from "../apps/server-agent/process-workflow";
-import { proveProcessWorkflowCheckpoint } from "../apps/server-agent/process-checkpoint";
+import { proveProcessRunCheckpoint } from "../apps/server-agent/process-checkpoint";
 import {
   inspectNativeAgentCheckpoint,
   proveNativeAgentQuestionCheckpoint,
@@ -101,7 +101,7 @@ function parentBoundary(question: ProcessQuestion) {
       return receipt;
     },
     reconcile: (checkpoint, workflowId) =>
-      proveProcessWorkflowCheckpoint({
+      proveProcessRunCheckpoint({
         checkpoint,
         workflowId,
         definition: agent,
@@ -138,12 +138,32 @@ test("compiler 3 opts in explicitly, preserves synthetic humanInput and legacy s
   );
 });
 
+/** Process runs execute on the Pi agent core (NIAR-303), over one file. */
+async function workflowCore(file: string) {
+  const { PiAgentCore } = await import("@niaro/server-agent/pi");
+  const core = await PiAgentCore.open({
+    file,
+    host: {
+      plan: async () => {
+        throw new Error("TEST no model");
+      },
+    },
+  });
+  return {
+    executeWorkflow: (input: Parameters<typeof core.executeProcess>[0]) =>
+      core.executeProcess(input),
+    proveWorkflowRetired: (input: Parameters<typeof core.executeProcess>[0]) =>
+      core.proveProcessRetired(input),
+    close: () => core.close(),
+  };
+}
+
 test("real persisted native parent suspends, rejects wrong question tuples and resumes typed output", async () => {
   const directory = mkdtempSync(
     join(tmpdir(), "niaro-native-parent-question-"),
   );
-  const url = pathToFileURL(join(directory, "native.sqlite")).href;
-  let runtime = createNativeAgentRuntime(url);
+  const file = join(directory, "native.sqlite");
+  let runtime = await workflowCore(file);
   const question = proof();
   const h = parentBoundary(question);
   const input = {
@@ -163,7 +183,7 @@ test("real persisted native parent suspends, rejects wrong question tuples and r
     });
     assert.equal(h.calls(), 1);
     await runtime.close();
-    runtime = createNativeAgentRuntime(url);
+    runtime = await workflowCore(file);
     assert.deepEqual(
       await runtime.executeWorkflow({ ...input, recordedProgress: true }),
       { status: "waiting", question },
@@ -219,9 +239,7 @@ test("compiler 3 action boundaries keep approval resumes and reject question pro
   const directory = mkdtempSync(
     join(tmpdir(), "niaro-native-question-action-"),
   );
-  const runtime = createNativeAgentRuntime(
-    pathToFileURL(join(directory, "native.sqlite")).href,
-  );
+  const runtime = await workflowCore(join(directory, "native.sqlite"));
   const workflow = processWorkflowDefinition(agent);
   const opted = workflow.steps[0]!;
   assert(opted.type === "agent");

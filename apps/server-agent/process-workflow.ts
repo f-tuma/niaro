@@ -1,4 +1,3 @@
-import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import {
   ProcessQuestionSchema,
@@ -6,7 +5,7 @@ import {
   type ProcessQuestion,
 } from "../../packages/protocol/process-questions";
 import { PROCESS_ROOT_AGENT_NODE_ID } from "./process-agent-tools";
-import type { ProcessWorkflowCheckpoint } from "./process-checkpoint";
+import type { ProcessRunCheckpoint } from "./process-checkpoint";
 import {
   ProcessDefinitionSchema,
   processValueSchema,
@@ -54,9 +53,9 @@ export type NativeWorkflowBoundary = {
   authorize(): Promise<void>;
   enter(node: ProcessStep): Promise<void>;
   leave(node: ProcessStep, status: "succeeded" | "waiting"): Promise<void>;
-  /** Passive domain proof; only this trusted callback can admit native restart. */
+  /** Passive domain proof; only this trusted callback can admit a restart. */
   reconcile?(
-    checkpoint: ProcessWorkflowCheckpoint,
+    checkpoint: ProcessRunCheckpoint,
     workflowId: string,
   ): Promise<boolean>;
   action(
@@ -176,9 +175,8 @@ export const ProcessCarrySchema = z.strictObject({
   next: z.string().nullable(),
   result: z.record(z.string(), z.unknown()).optional(),
 });
-// Preserve the persisted native mapping function for compiler versions 1/2.
-const carrySchema = ProcessCarrySchema;
-type Carry = z.infer<typeof ProcessCarrySchema>;
+export type ProcessCarry = z.infer<typeof ProcessCarrySchema>;
+type Carry = ProcessCarry;
 const successors = (step: ProcessStep) =>
   step.type === "return"
     ? []
@@ -248,281 +246,117 @@ export function processBoundInput(
   );
 }
 
-export function compileProcessWorkflow(
-  id: string,
-  raw: ProcessDefinition,
-  boundary: NativeWorkflowBoundary,
-  signal: AbortSignal,
-  compilerVersion: string,
-) {
-  const original = ProcessDefinitionSchema.parse(raw);
-  assertProcessCompilerSupported(compilerVersion, original);
-  if (compilerVersion === "niaro-native-workflow/3")
-    return compileProcessQuestionWorkflow(id, original, boundary, signal);
-  const definition = processWorkflowDefinition(original);
-  if (definition.steps.some((s) => s.type === "agent") && !boundary.agent)
-    throw new Error("process_agent_runtime_required");
-  const nodes = orderedProcessNodes(definition);
-  const inputSchema = processValueSchema(definition.inputSchema);
-  const outputSchema = processValueSchema(definition.outputSchema);
-  const initialize = createStep({
-    id: "initialize",
-    inputSchema,
-    outputSchema: ProcessCarrySchema,
-    retries: 0,
-    execute: async ({ inputData }) => ({
-      input: inputData as Record<string, unknown>,
-      outputs: {},
-      next: definition.entry,
-    }),
-  });
-  let workflow = createWorkflow({
-    id,
-    inputSchema,
-    outputSchema,
-    options: { validateInputs: true, autoRestartActiveRuns: false },
-  }).then(initialize);
-  for (const node of nodes) {
-    const execute = createStep({
-      id: `execute_${node.id}`,
-      inputSchema: ProcessCarrySchema,
-      outputSchema: ProcessCarrySchema,
-      suspendSchema: ProcessApprovalSchema,
-      resumeSchema: ProcessResumeSchema,
-      retries: 0,
-      execute: async ({ inputData, resumeData, suspend }) => {
-        signal.throwIfAborted();
-        await boundary.authorize();
-        const syntheticReturn =
-          original.kind === "agent" && node.type === "return";
-        if (!syntheticReturn) await boundary.enter(node);
-        const carry = structuredClone(inputData);
-        if (node.type === "action" || node.type === "agent") {
-          const bound = processBoundInput(node.input, carry);
-          const result =
-            node.type === "agent"
-              ? await boundary.agent!(
-                  node,
-                  processValueSchema(node.inputSchema).parse(bound) as Record<
-                    string,
-                    unknown
-                  >,
-                  resumeData,
-                  signal,
-                )
-              : await boundary.action(node, bound, resumeData, signal);
-          if (result.status === "waiting") {
-            if (!("approval" in result))
-              throw new Error("process_question_conflict");
-            if (result.approval.nodeId !== node.id)
-              throw new Error("process_approval_conflict");
-            await boundary.leave(node, "waiting");
-            return suspend(result.approval);
-          }
-          const parsed = processValueSchema(node.outputSchema).safeParse(
-            result.output,
-          );
-          if (!parsed.success) throw new Error("process_output_invalid");
-          carry.outputs[node.id] = parsed.data;
-          carry.next = node.next;
-        } else if (node.type === "branch") {
-          const left = processBindingValue(node.condition.left, carry);
-          const matches =
-            node.condition.operator === "exists"
-              ? left !== undefined
-              : left === node.condition.right;
-          carry.next = matches ? node.whenTrue : node.whenFalse;
-        } else if (node.type === "return") {
-          const parsed = outputSchema.safeParse(
-            processBoundInput(node.output, carry),
-          );
-          if (!parsed.success) throw new Error("process_output_invalid");
-          carry.result = parsed.data as Record<string, unknown>;
-          carry.next = null;
-        }
-        if (!syntheticReturn) await boundary.leave(node, "succeeded");
-        return carry;
-      },
-    });
-    const skip = createStep({
-      id: `skip_${node.id}`,
-      inputSchema: ProcessCarrySchema,
-      outputSchema: ProcessCarrySchema,
-      retries: 0,
-      execute: async ({ inputData }) => inputData,
-    });
-    workflow = workflow
-      .branch([
-        [async ({ inputData }) => inputData.next === node.id, execute],
-        [async ({ inputData }) => inputData.next !== node.id, skip],
-      ])
-      .map(async ({ inputData }) =>
-        carrySchema.parse(inputData[execute.id] ?? inputData[skip.id]),
-      );
-  }
-  return workflow
-    .then(
-      createStep({
-        id: "finish",
-        inputSchema: ProcessCarrySchema,
-        outputSchema,
-        retries: 0,
-        execute: async ({ inputData }) => {
-          signal.throwIfAborted();
-          await boundary.authorize();
-          if (inputData.next !== null || !inputData.result)
-            throw new Error("process_output_invalid");
-          return inputData.result;
-        },
-      }),
-    )
-    .commit();
+/** The carry a run starts with: its input and the entry node. */
+export function initialProcessCarry(
+  definition: Extract<ProcessDefinition, { kind: "workflow" }>,
+  input: Record<string, unknown>,
+): Carry {
+  return { input, outputs: {}, next: definition.entry };
 }
 
-// Compiler /3 has a separate persisted map ABI; legacy carrySchema remains frozen.
-const questionCarrySchema = ProcessCarrySchema;
-function compileProcessQuestionWorkflow(
-  id: string,
-  raw: ProcessDefinition,
-  boundary: NativeWorkflowBoundary,
-  signal: AbortSignal,
-) {
-  const original = ProcessDefinitionSchema.parse(raw);
+export type ProcessNodeOutcome =
+  | { status: "next"; carry: Carry }
+  | { status: "waiting"; pending: ProcessApproval | ProcessQuestion };
+
+/**
+ * Run one node of a frozen process graph through the trusted boundary: an
+ * action or agent call, a branch or the return. The engine (pi/process-engine)
+ * stores the carry before and after; this function holds no state.
+ */
+export async function runProcessNode(args: {
+  original: ProcessDefinition;
+  node: ProcessStep;
+  carry: Carry;
+  resume: ProcessAnyResume | undefined;
+  boundary: NativeWorkflowBoundary;
+  signal: AbortSignal;
+  compilerVersion: string;
+}): Promise<ProcessNodeOutcome> {
+  const { original, node, boundary, signal } = args;
+  const questions = args.compilerVersion === "niaro-native-workflow/3";
   const definition = processWorkflowDefinition(original);
-  if (definition.steps.some((s) => s.type === "agent") && !boundary.agent)
-    throw new Error("process_agent_runtime_required");
-  const nodes = orderedProcessNodes(definition);
-  const inputSchema = processValueSchema(definition.inputSchema);
   const outputSchema = processValueSchema(definition.outputSchema);
-  const initialize = createStep({
-    id: "initialize",
-    inputSchema,
-    outputSchema: ProcessCarrySchema,
-    retries: 0,
-    execute: async ({ inputData }) => ({
-      input: inputData as Record<string, unknown>,
-      outputs: {},
-      next: definition.entry,
-    }),
-  });
-  let workflow = createWorkflow({
-    id,
-    inputSchema,
-    outputSchema,
-    options: { validateInputs: true, autoRestartActiveRuns: false },
-  }).then(initialize);
-  for (const node of nodes) {
-    const execute = createStep({
-      id: `execute_${node.id}`,
-      inputSchema: ProcessCarrySchema,
-      outputSchema: ProcessCarrySchema,
-      suspendSchema: ProcessQuestionSuspendSchema,
-      resumeSchema: ProcessAnyResumeSchema,
-      retries: 0,
-      execute: async ({ inputData, resumeData, suspend }) => {
-        signal.throwIfAborted();
-        await boundary.authorize();
+  let resumeData = args.resume;
+  signal.throwIfAborted();
+  await boundary.authorize();
+  if (questions) {
+    if (
+      resumeData &&
+      (resumeData.nodeId !== node.id ||
+        ("kind" in resumeData &&
+          (node.type !== "agent" || node.humanInput !== "text")))
+    )
+      throw new Error("process_question_conflict");
+  } else if (resumeData) resumeData = ProcessResumeSchema.parse(resumeData);
+  const syntheticReturn = original.kind === "agent" && node.type === "return";
+  if (!syntheticReturn) await boundary.enter(node);
+  const carry = structuredClone(args.carry);
+  if (node.type === "action" || node.type === "agent") {
+    const bound = processBoundInput(node.input, carry);
+    const result =
+      node.type === "agent"
+        ? await boundary.agent!(
+            node,
+            processValueSchema(node.inputSchema).parse(bound) as Record<
+              string,
+              unknown
+            >,
+            resumeData,
+            signal,
+          )
+        : await boundary.action(
+            node,
+            bound,
+            questions
+              ? ProcessResumeSchema.optional().parse(resumeData)
+              : (resumeData as ProcessResume | undefined),
+            signal,
+          );
+    if (result.status === "waiting") {
+      let pending: ProcessApproval | ProcessQuestion;
+      if (questions) {
+        pending =
+          "question" in result
+            ? ProcessQuestionSchema.parse(result.question)
+            : ProcessApprovalSchema.parse(result.approval);
+        if (pending.nodeId !== node.id)
+          throw new Error("process_question_conflict");
         if (
-          resumeData &&
-          (resumeData.nodeId !== node.id ||
-            ("kind" in resumeData &&
-              (node.type !== "agent" || node.humanInput !== "text")))
+          "question" in result &&
+          (node.type !== "agent" || node.humanInput !== "text")
         )
           throw new Error("process_question_conflict");
-        const syntheticReturn =
-          original.kind === "agent" && node.type === "return";
-        if (!syntheticReturn) await boundary.enter(node);
-        const carry = structuredClone(inputData);
-        if (node.type === "action" || node.type === "agent") {
-          const bound = processBoundInput(node.input, carry);
-          const result =
-            node.type === "agent"
-              ? await boundary.agent!(
-                  node,
-                  processValueSchema(node.inputSchema).parse(bound) as Record<
-                    string,
-                    unknown
-                  >,
-                  resumeData,
-                  signal,
-                )
-              : await boundary.action(
-                  node,
-                  bound,
-                  ProcessResumeSchema.optional().parse(resumeData),
-                  signal,
-                );
-          if (result.status === "waiting") {
-            const pending =
-              "question" in result
-                ? ProcessQuestionSchema.parse(result.question)
-                : ProcessApprovalSchema.parse(result.approval);
-            if (pending.nodeId !== node.id)
-              throw new Error("process_question_conflict");
-            if (
-              "question" in result &&
-              (node.type !== "agent" || node.humanInput !== "text")
-            )
-              throw new Error("process_question_conflict");
-            await boundary.leave(node, "waiting");
-            return suspend(pending);
-          }
-          const parsed = processValueSchema(node.outputSchema).safeParse(
-            result.output,
-          );
-          if (!parsed.success) throw new Error("process_output_invalid");
-          carry.outputs[node.id] = parsed.data;
-          carry.next = node.next;
-        } else if (node.type === "branch") {
-          const left = processBindingValue(node.condition.left, carry);
-          const matches =
-            node.condition.operator === "exists"
-              ? left !== undefined
-              : left === node.condition.right;
-          carry.next = matches ? node.whenTrue : node.whenFalse;
-        } else if (node.type === "return") {
-          const parsed = outputSchema.safeParse(
-            processBoundInput(node.output, carry),
-          );
-          if (!parsed.success) throw new Error("process_output_invalid");
-          carry.result = parsed.data as Record<string, unknown>;
-          carry.next = null;
-        }
-        if (!syntheticReturn) await boundary.leave(node, "succeeded");
-        return carry;
-      },
-    });
-    const skip = createStep({
-      id: `skip_${node.id}`,
-      inputSchema: ProcessCarrySchema,
-      outputSchema: ProcessCarrySchema,
-      retries: 0,
-      execute: async ({ inputData }) => inputData,
-    });
-    workflow = workflow
-      .branch([
-        [async ({ inputData }) => inputData.next === node.id, execute],
-        [async ({ inputData }) => inputData.next !== node.id, skip],
-      ])
-      .map(async ({ inputData }) =>
-        questionCarrySchema.parse(inputData[execute.id] ?? inputData[skip.id]),
-      );
+      } else {
+        if (!("approval" in result))
+          throw new Error("process_question_conflict");
+        if (result.approval.nodeId !== node.id)
+          throw new Error("process_approval_conflict");
+        pending = ProcessApprovalSchema.parse(result.approval);
+      }
+      await boundary.leave(node, "waiting");
+      return { status: "waiting", pending };
+    }
+    const parsed = processValueSchema(node.outputSchema).safeParse(
+      result.output,
+    );
+    if (!parsed.success) throw new Error("process_output_invalid");
+    carry.outputs[node.id] = parsed.data;
+    carry.next = node.next;
+  } else if (node.type === "branch") {
+    const left = processBindingValue(node.condition.left, carry);
+    const matches =
+      node.condition.operator === "exists"
+        ? left !== undefined
+        : left === node.condition.right;
+    carry.next = matches ? node.whenTrue : node.whenFalse;
+  } else if (node.type === "return") {
+    const parsed = outputSchema.safeParse(
+      processBoundInput(node.output, carry),
+    );
+    if (!parsed.success) throw new Error("process_output_invalid");
+    carry.result = parsed.data as Record<string, unknown>;
+    carry.next = null;
   }
-  return workflow
-    .then(
-      createStep({
-        id: "finish",
-        inputSchema: ProcessCarrySchema,
-        outputSchema,
-        retries: 0,
-        execute: async ({ inputData }) => {
-          signal.throwIfAborted();
-          await boundary.authorize();
-          if (inputData.next !== null || !inputData.result)
-            throw new Error("process_output_invalid");
-          return inputData.result;
-        },
-      }),
-    )
-    .commit();
+  if (!syntheticReturn) await boundary.leave(node, "succeeded");
+  return { status: "next", carry };
 }

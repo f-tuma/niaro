@@ -57,16 +57,7 @@ import {
   persistNativeAgentRetirement,
   proveNativeAgentRetirement,
 } from "./recovery";
-import {
-  executeNativeWorkflow,
-  proveNativeWorkflowRetirement,
-  type NativeWorkflowInput,
-} from "./process-runtime";
 export { createNativeSavedMemory } from "./saved-memory";
-export type {
-  NativeWorkflowInput,
-  NativeWorkflowResult,
-} from "./process-runtime";
 export {
   assertWorkflowSupported,
   assertProcessCompilerSupported,
@@ -78,10 +69,10 @@ export {
   processCompilerVersion,
 } from "./process-workflow";
 export {
-  proveProcessWorkflowCheckpoint,
+  proveProcessRunCheckpoint,
   sameProcessCheckpointValue,
 } from "./process-checkpoint";
-export type { ProcessWorkflowCheckpoint } from "./process-checkpoint";
+export type { ProcessRunCheckpoint } from "./process-checkpoint";
 export type {
   ProcessAnyResume,
   ProcessBoundaryResult,
@@ -2098,30 +2089,6 @@ export function createNativeAgentRuntime(storageUrl: string) {
         binding.resumeData,
       );
       return proved && !owner.active.has(binding.runId);
-    },
-    async executeWorkflow(input: NativeWorkflowInput) {
-      await ready();
-      if (owner.active.has(input.runId))
-        throw new Error("niaro_native_run_busy");
-      const execution = executeNativeWorkflow(
-        owner.mastra,
-        owner.storage,
-        input,
-      );
-      owner.active.set(input.runId, execution);
-      try {
-        return await execution;
-      } finally {
-        owner.active.delete(input.runId);
-      }
-    },
-    async proveWorkflowRetired(
-      input: Parameters<typeof proveNativeWorkflowRetirement>[1],
-    ) {
-      await ready();
-      if (owner.active.has(input.runId)) return false;
-      const proved = await proveNativeWorkflowRetirement(owner.storage, input);
-      return proved && !owner.active.has(input.runId);
     },
     async execute(input: NativeAgentInput) {
       await ready();

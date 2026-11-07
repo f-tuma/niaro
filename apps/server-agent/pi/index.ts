@@ -35,3 +35,10 @@ export {
   interruptibleWriteTool,
 } from "./tools";
 export { NIARO_PI_API, requestBody, assistantMessage } from "./openai-wire";
+export {
+  processEngineExtension,
+  processWorkflowId,
+  ProcessRunDoc,
+  type NativeWorkflowInput,
+  type NativeWorkflowResult,
+} from "./process-engine";

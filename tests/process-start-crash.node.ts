@@ -139,6 +139,10 @@ for (const mode of ["pin", "seed", "receipt", "committed"] as const) {
             !existsSync(path + ".mastra.sqlite"),
             "passive admission/read must not initialize native persistence",
           );
+          assert(
+            !existsSync(path + ".pi.sqlite"),
+            "passive admission/read must not open the agent core",
+          );
         } finally {
           await h.close();
         }

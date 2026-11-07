@@ -26,6 +26,7 @@ import { ProcessStartStore } from "../apps/server-identity/process-start-store";
 import { IdentityError } from "../apps/server-identity/error";
 import { processAgent, callProcessTool } from "./helpers/service-process-agent";
 import { nativeCatalogOwner } from "../apps/server-identity/mastra-runtime";
+import { agentCoreFor } from "../apps/server-identity/agent-core-owner";
 import { processDigest } from "../apps/server-identity/process-validation";
 import {
   PROCESS_START_PROFILE,
@@ -378,10 +379,10 @@ test("coordinator retirement passes the saved compiler identity to native proof"
     const { command } = h.setup();
     const result = await c.execute(command, signal(), origin);
     assert(result.process);
-    const owner = await nativeCatalogOwner(h.controller);
-    const prove = owner.proveWorkflowRetired;
+    const owner = await agentCoreFor(h.controller);
+    const prove = owner.proveProcessRetired.bind(owner);
     const versions: string[] = [];
-    owner.proveWorkflowRetired = async (input) => {
+    owner.proveProcessRetired = async (input) => {
       versions.push(input.compilerVersion);
       return prove(input);
     };
@@ -395,7 +396,7 @@ test("coordinator retirement passes the saved compiler identity to native proof"
       assert.deepEqual(versions, [journal.compilerVersion]);
       assert.equal(journal.compilerVersion, "niaro-native-workflow/1");
     } finally {
-      owner.proveWorkflowRetired = prove;
+      owner.proveProcessRetired = prove;
     }
   }));
 test("approval A replay cannot approve B or replace its original command; terminal reads remain passive", () =>

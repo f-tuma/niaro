@@ -10,10 +10,9 @@ import { z } from "zod";
 import type { Scope } from "../../packages/protocol";
 import { IdentityId } from "../../packages/protocol/identity";
 import type { ProcessVersion } from "../../packages/protocol/service-processes";
-import {
-  ProcessAnyResumeSchema,
-  type NativeWorkflowInput,
-} from "@niaro/server-agent";
+import { ProcessAnyResumeSchema } from "@niaro/server-agent";
+import type { NativeWorkflowInput } from "@niaro/server-agent/pi";
+import { agentCoreFor } from "./agent-core-owner";
 import {
   type ProcessQuestion,
   type ProcessQuestionAccess,
@@ -582,7 +581,7 @@ export function createServiceProcessRuntime(
               return false;
             }
           }
-          return native.proveProcessWorkflowCheckpoint({
+          return native.proveProcessRunCheckpoint({
             checkpoint,
             workflowId,
             definition: version.definition,
@@ -1283,8 +1282,8 @@ export function createServiceProcessRuntime(
       };
       try {
         executionSignal.throwIfAborted();
-        const runtime = await nativeCatalogOwner(controller);
-        const completed = await runtime.executeWorkflow({
+        const core = await agentCoreFor(controller);
+        const completed = await core.executeProcess({
           runId: id,
           resourceId: scopeDigest,
           artifactDigest: version.digest,

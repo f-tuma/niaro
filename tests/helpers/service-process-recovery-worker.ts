@@ -1,5 +1,5 @@
 // Isolated synthetic SIGKILL fixture. Never imported by application code.
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
@@ -11,7 +11,9 @@ import {
 } from "./service-process-runtime";
 import { processAgent, callProcessTool } from "./service-process-agent";
 import { processDigest } from "../../apps/server-identity/process-validation";
+import { DatabaseSync } from "node:sqlite";
 import { nativeCatalogOwner } from "../../apps/server-identity/mastra-runtime";
+import { processRunRow } from "./pi-process";
 import type { ProcessAgentState } from "../../apps/server-identity/process-agent-runtime";
 import { processCompilerVersion } from "../../apps/server-agent/process-workflow";
 
@@ -142,44 +144,37 @@ async function main() {
     process.kill(process.pid, "SIGKILL");
     throw Error("TEST SIGKILL failed");
   };
-  if (["mapping-gap", "finish-gap"].includes(mode)) {
-    // Observe the actual native ESM storage class. Cut only after its public
-    // persist method has committed a completed entry before pointer advance.
-    const { LibSQLStore } = await import("@mastra/libsql");
-    const observer = new LibSQLStore({
-      id: "TEST-native-checkpoint-observer",
-      url: h.catalog.nativeStorageUrl,
+  // The two gaps between the agent core's checkpoint commits (NIAR-303): a
+  // node ended and the next one is entered but has not run; the return ended
+  // and the run's terminal status is not yet stored. Read the stored
+  // checkpoint at the next identity-queue call, which the engine makes before
+  // anything else happens.
+  let core: DatabaseSync | undefined;
+  const gap = () => {
+    if (!["mapping-gap", "finish-gap"].includes(mode)) return undefined;
+    if (!existsSync(join(directory, "identity.sqlite.pi.sqlite")))
+      return undefined;
+    core ??= new DatabaseSync(join(directory, "identity.sqlite.pi.sqlite"), {
+      readOnly: true,
     });
-    await observer.init();
-    const workflows = await observer.getStore("workflows");
-    if (!workflows) throw Error("TEST native checkpoint store missing");
-    const prototype = Object.getPrototypeOf(workflows) as {
-      persistWorkflowSnapshot: typeof workflows.persistWorkflowSnapshot;
-    };
-    const persist = prototype.persistWorkflowSnapshot;
-    prototype.persistWorkflowSnapshot = async function (args) {
-      const result = await persist.call(this, args);
-      const snapshot = args.snapshot;
-      const key =
-        mode === "mapping-gap" ? `mapping_${workflowName}_0` : "finish";
-      const position = mode === "mapping-gap" ? 2 : 5;
-      if (
-        args.workflowName === workflowName &&
-        args.runId === nativeRunId &&
-        snapshot.status === "running" &&
-        snapshot.context[key]?.status === "success" &&
-        Object.keys(snapshot.activeStepsPath).length === 0 &&
-        JSON.stringify(snapshot.activePaths) === JSON.stringify([position])
-      )
-        kill(
-          mode === "mapping-gap"
-            ? "completed-mapping-before-native-pointer-advance"
-            : "completed-finish-before-native-terminal-status",
-        );
-      return result;
-    };
-    await observer.close();
-  }
+    const run = processRunRow(core, workflowName)?.parsed;
+    if (!run || run.status !== "running") return undefined;
+    const last = run.steps.at(-1);
+    if (
+      mode === "mapping-gap" &&
+      run.steps.length === 2 &&
+      run.steps[0]!.status === "success" &&
+      last?.status === "running"
+    )
+      return "completed-node-before-next-node-runs";
+    if (
+      mode === "finish-gap" &&
+      last?.nodeId === "done" &&
+      last.status === "success"
+    )
+      return "completed-return-before-run-terminal-status";
+    return undefined;
+  };
   const save = h.catalog.saveTurn.bind(h.catalog);
   h.catalog.saveTurn = (...args) => {
     const state = args[3] as CutJournal;
@@ -215,6 +210,8 @@ async function main() {
   const serial = h.context.serial;
   h.context.serial = async (run) => {
     const value = await serial(run);
+    const site = gap();
+    if (site) kill(site);
     if (mode === "agent-second-approval" && h.models().length === 2) {
       const current = journal();
       const child = current?.agents.agent;

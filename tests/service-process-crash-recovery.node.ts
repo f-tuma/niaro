@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
 import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import type { WorkflowRunState } from "@mastra/core/workflows";
-import type { WorkflowsStorage } from "@mastra/core/storage";
+import { DatabaseSync } from "node:sqlite";
+import type { ProcessRunCheckpoint } from "../apps/server-agent/process-checkpoint";
 import type { StoredInvocation } from "../apps/server-identity/service-catalog";
 import { CatalogCommand } from "../packages/protocol/service-catalog";
 import { ProcessDefinitionSchema } from "../packages/protocol/service-processes";
@@ -21,12 +20,7 @@ import {
   scope,
   signal,
 } from "./helpers/service-process-runtime";
-
-const require = createRequire(
-  new URL("../apps/server-agent/package.json", import.meta.url),
-);
-const { LibSQLStore } =
-  require("@mastra/libsql") as typeof import("@mastra/libsql");
+import { processRunRow } from "./helpers/pi-process";
 type Harness = ReturnType<typeof fixture>;
 type Mode =
   | "read-receipt"
@@ -95,8 +89,8 @@ const sites: Record<Mode, string> = {
   "agent-staged": "typed-child-output-before-native-retirement",
   "agent-saved-retired": "retired-typed-child-output-before-parent-ack",
   "parent-terminal": "native-parent-terminal-before-domain-success",
-  "mapping-gap": "completed-mapping-before-native-pointer-advance",
-  "finish-gap": "completed-finish-before-native-terminal-status",
+  "mapping-gap": "completed-node-before-next-node-runs",
+  "finish-gap": "completed-return-before-run-terminal-status",
 };
 
 async function crash(t: TestContext, mode: Mode) {
@@ -160,58 +154,86 @@ async function crash(t: TestContext, mode: Mode) {
 }
 type Crashed = Awaited<ReturnType<typeof crash>>;
 
-async function withNative<T>(
-  c: Crashed,
-  run: (workflows: WorkflowsStorage) => Promise<T>,
-) {
-  const store = new LibSQLStore({
-    id: "TEST-process-crash-native-inspection",
-    url: `file:${c.path}.mastra.sqlite`,
-  });
-  await store.init();
+/** The process run checkpoints live in the agent core beside the identity DB. */
+const coreFile = (c: Crashed) => `${c.path}.pi.sqlite`;
+async function nativeRow(c: Crashed) {
+  const db = new DatabaseSync(coreFile(c), { readOnly: true });
   try {
-    const workflows = await store.getStore("workflows");
-    assert(workflows);
-    return await run(workflows);
+    return processRunRow(db, c.metadata.workflowName);
   } finally {
-    await store.close();
+    db.close();
   }
 }
-const nativeRow = (c: Crashed) =>
-  withNative(c, (store) =>
-    store.getWorkflowRunById({
-      workflowName: c.metadata.workflowName,
-      runId: c.metadata.nativeRunId,
-    }),
-  );
-function jsonSnapshot(snapshot: WorkflowRunState | string) {
-  return (
-    typeof snapshot === "string"
-      ? JSON.parse(snapshot)
-      : structuredClone(snapshot)
-  ) as WorkflowRunState;
+/** Rewrite the stored run checkpoint through a core opened without resuming. */
+async function withCore(
+  c: Crashed,
+  change: (
+    tx: Parameters<
+      Parameters<
+        Awaited<
+          ReturnType<
+            (typeof import("@niaro/server-agent/pi"))["PiAgentCore"]["open"]
+          >
+        >["harness"]["commit"]
+      >[0]
+    >[0],
+    pi: typeof import("@niaro/server-agent/pi"),
+  ) => Promise<void>,
+) {
+  const pi = await import("@niaro/server-agent/pi");
+  const core = await pi.PiAgentCore.open({
+    file: coreFile(c),
+    resume: false,
+    host: {
+      plan: async () => {
+        throw new Error("TEST no model");
+      },
+    },
+  });
+  try {
+    await core.harness.commit((tx) => change(tx, pi), pi.ctx);
+  } finally {
+    await core.close();
+  }
 }
 async function mutateNative(
   c: Crashed,
-  mutate: (snapshot: WorkflowRunState) => void,
+  mutate: (run: ProcessRunCheckpoint) => void,
   resourceId = c.metadata.resourceId,
 ) {
-  await withNative(c, async (store) => {
-    const row = await store.getWorkflowRunById({
-      workflowName: c.metadata.workflowName,
-      runId: c.metadata.nativeRunId,
-    });
-    assert(row);
-    const snapshot = jsonSnapshot(row.snapshot);
-    mutate(snapshot);
-    await store.persistWorkflowSnapshot({
-      workflowName: c.metadata.workflowName,
-      runId: c.metadata.nativeRunId,
-      resourceId,
-      snapshot,
-    });
+  await withCore(c, async (tx, pi) => {
+    const key = c.metadata.workflowName;
+    const draft = await tx.doc(pi.ProcessRunDoc, key, key);
+    const run = JSON.parse(JSON.stringify(draft)) as ProcessRunCheckpoint;
+    mutate(run);
+    run.resourceId = resourceId;
+    for (const name of Object.keys(draft)) delete draft[name];
+    Object.assign(draft, JSON.parse(JSON.stringify(run)));
   });
 }
+/** Drives of process runs the agent core has started (one task each). */
+function drives(c: Crashed) {
+  const db = new DatabaseSync(coreFile(c), { readOnly: true });
+  try {
+    return Number(
+      (
+        db
+          .prepare("SELECT count(*) AS n FROM tasks WHERE kind IN (?,?)")
+          .get(
+            "niaro.process-segment",
+            JSON.stringify("niaro.process-segment"),
+          ) as { n: number }
+      ).n,
+    );
+  } finally {
+    db.close();
+  }
+}
+const step = (run: ProcessRunCheckpoint, nodeId: string) => {
+  const found = run.steps.find((item) => item.nodeId === nodeId);
+  assert(found, `TEST stored run must have entered ${nodeId}`);
+  return found;
+};
 function sameCalls(h: Harness, c: Crashed) {
   assert.equal(h.models().length, c.cut.models);
   assert.deepEqual(h.counts(), c.cut.counts);
@@ -251,28 +273,10 @@ async function deny(h: Harness, c: Crashed) {
   );
 }
 
-async function nativeRecoveryCalls(t: TestContext, runId: string) {
-  // server-agent is loaded through the native ESM boundary; patch that same
-  // Mastra module instead of this test file's CommonJS package instance.
-  const { Run } = await import("@mastra/core/workflows");
-  const original = {
-    start: Run.prototype.start,
-    restart: Run.prototype.restart,
-  };
-  const calls = { starts: 0, restarts: 0 };
-  Run.prototype.start = function (...args) {
-    if (this.runId === runId) calls.starts++;
-    return original.start.apply(this, args);
-  };
-  Run.prototype.restart = function (...args) {
-    if (this.runId === runId) calls.restarts++;
-    return original.restart.apply(this, args);
-  };
-  t.after(() => {
-    Run.prototype.start = original.start;
-    Run.prototype.restart = original.restart;
-  });
-  return calls;
+/** Count the drives a test causes after the crash; a restart is one drive. */
+function nativeRecoveryCalls(_t: TestContext, c: Crashed) {
+  const before = drives(c);
+  return { restarts: () => drives(c) - before };
 }
 
 for (const mode of [
@@ -286,10 +290,10 @@ for (const mode of [
 ] as const) {
   test(`actual SIGKILL ${mode} recovers its native parent from canonical proof once across two reopens`, async (t) => {
     const c = await crash(t, mode);
-    const nativeCalls = await nativeRecoveryCalls(t, c.metadata.nativeRunId);
+    const nativeCalls = nativeRecoveryCalls(t, c);
     const row = await nativeRow(c);
     assert(row);
-    const snapshot = jsonSnapshot(row.snapshot);
+    const snapshot = row.parsed;
     assert.equal(
       snapshot.status,
       mode === "parent-terminal" ? "success" : "running",
@@ -351,18 +355,15 @@ for (const mode of [
         await h.close();
       }
     }
-    assert.deepEqual(nativeCalls, {
-      starts: 0,
-      restarts: mode === "parent-terminal" ? 0 : 1,
-    });
+    assert.equal(nativeCalls.restarts(), mode === "parent-terminal" ? 0 : 1);
   });
 }
 
 test("actual SIGKILL before native suspension restores exactly the original pending approval without dispatch", async (t) => {
   const c = await crash(t, "approval-pending");
-  const nativeCalls = await nativeRecoveryCalls(t, c.metadata.nativeRunId);
+  const nativeCalls = nativeRecoveryCalls(t, c);
   assert(c.cut.journal.pending);
-  assert.equal(jsonSnapshot((await nativeRow(c))!.snapshot).status, "running");
+  assert.equal((await nativeRow(c))!.parsed.status, "running");
   assert.deepEqual(c.cut.counts, [["GET", 1]]);
   for (let reopen = 0; reopen < 2; reopen++) {
     const h = fixture(c.path, c.metadata.ids);
@@ -371,10 +372,7 @@ test("actual SIGKILL before native suspension restores exactly the original pend
       assert.equal(waiting.status, "waiting", JSON.stringify(waiting));
       assert.deepEqual(waiting.approval, c.cut.journal.pending);
       sameCalls(h, c);
-      assert.equal(
-        jsonSnapshot((await nativeRow(c))!.snapshot).status,
-        "suspended",
-      );
+      assert.equal((await nativeRow(c))!.parsed.status, "suspended");
     } finally {
       await h.close();
     }
@@ -401,12 +399,13 @@ test("actual SIGKILL before native suspension restores exactly the original pend
   } finally {
     await h.close();
   }
-  assert.deepEqual(nativeCalls, { starts: 0, restarts: 1 });
+  // One proved restart, then the approval's own drive.
+  assert.equal(nativeCalls.restarts(), 2);
 });
 
 test("actual SIGKILL second child approval preserves consumed first decision and exact pending second write across two reopens", async (t) => {
   const c = await crash(t, "agent-second-approval");
-  const nativeCalls = await nativeRecoveryCalls(t, c.metadata.nativeRunId);
+  const nativeCalls = nativeRecoveryCalls(t, c);
   const child = c.cut.journal.agents.agent!;
   assert.equal(c.cut.childSuspended, true);
   assert.equal(c.cut.models, 2);
@@ -418,11 +417,10 @@ test("actual SIGKILL second child approval preserves consumed first decision and
   assert.equal(first.approved, true);
   assert.notEqual(first.operationId, child.pending.operationId);
   assert.notEqual(first.toolCallId, child.pending.toolCallId);
-  const saved = jsonSnapshot((await nativeRow(c))!.snapshot);
+  const saved = (await nativeRow(c))!.parsed;
   assert.equal(saved.status, "running");
-  const savedAgent = saved.context.execute_agent;
-  assert(savedAgent && "resumePayload" in savedAgent);
-  assert.deepEqual(savedAgent.resumePayload, {
+  const savedAgent = step(saved, "agent");
+  assert.deepEqual(savedAgent.resume, {
     nodeId: "agent",
     operationId: first.operationId,
     approved: true,
@@ -444,10 +442,7 @@ test("actual SIGKILL second child approval preserves consumed first decision and
       assert.equal(waiting.version, c.metadata.version);
       assert.deepEqual(waiting.approval, c.cut.journal.pending);
       sameCalls(h, c);
-      assert.equal(
-        jsonSnapshot((await nativeRow(c))!.snapshot).status,
-        "suspended",
-      );
+      assert.equal((await nativeRow(c))!.parsed.status, "suspended");
     } finally {
       await h.close();
     }
@@ -483,7 +478,8 @@ test("actual SIGKILL second child approval preserves consumed first decision and
   } finally {
     await h.close();
   }
-  assert.deepEqual(nativeCalls, { starts: 0, restarts: 1 });
+  // One proved restart, then the approval's own drive.
+  assert.equal(nativeCalls.restarts(), 2);
 });
 
 test("actual SIGKILL staged Agent output cannot qualify a parent while child execution is unretired", async (t) => {
@@ -522,12 +518,9 @@ test("actual SIGKILL staged Agent output cannot qualify a parent while child exe
 });
 
 const mutations = {
-  "missing parent": async (c: Crashed) =>
-    withNative(c, (store) =>
-      store.deleteWorkflowRunById({
-        workflowName: c.metadata.workflowName,
-        runId: c.metadata.nativeRunId,
-      }),
+  "missing parent": (c: Crashed) =>
+    withCore(c, (tx, pi) =>
+      tx.retireDoc(pi.ProcessRunDoc, c.metadata.workflowName),
     ),
   "foreign resource": (c: Crashed) =>
     mutateNative(c, () => {}, "TEST-foreign-resource"),
@@ -537,15 +530,15 @@ const mutations = {
     }),
   "foreign input": (c: Crashed) =>
     mutateNative(c, (s) => {
-      s.context.input = { name: "TEST-foreign-input" };
+      s.input = { name: "TEST-foreign-input" };
     }),
   "corrupt graph": (c: Crashed) =>
     mutateNative(c, (s) => {
-      s.serializedStepGraph = [];
+      s.graph = "0".repeat(64);
     }),
-  "corrupt active path": (c: Crashed) =>
+  "corrupt step order": (c: Crashed) =>
     mutateNative(c, (s) => {
-      s.activePaths = [-1];
+      s.steps[0]!.nodeId = "TEST-unknown-node";
     }),
   "forged active success": (c: Crashed) =>
     mutateNative(c, (s) => {
@@ -554,7 +547,7 @@ const mutations = {
     }),
   "invalid active carry": (c: Crashed) =>
     mutateNative(c, (s) => {
-      s.context.execute_lookup!.payload = {
+      step(s, "lookup").carry = {
         input: { name: "TEST-changed" },
         outputs: {},
         next: "lookup",
@@ -562,7 +555,7 @@ const mutations = {
     }),
   "invalid predecessor output": (c: Crashed) =>
     mutateNative(c, (s) => {
-      s.context.execute_write!.payload = {
+      step(s, "write").carry = {
         input: c.metadata.input,
         outputs: { lookup: { value: "TEST-forged" } },
         next: "write",
@@ -570,9 +563,7 @@ const mutations = {
     }),
   "foreign resumed operation": (c: Crashed) =>
     mutateNative(c, (s) => {
-      (
-        s.context.execute_write as unknown as { resumePayload: unknown }
-      ).resumePayload = {
+      step(s, "write").resume = {
         nodeId: "write",
         operationId: "TEST-foreign-operation",
         approved: true,
@@ -580,19 +571,12 @@ const mutations = {
     }),
   "changed resumed decision": (c: Crashed) =>
     mutateNative(c, (s) => {
-      const step = s.context.execute_write as unknown as {
-        resumePayload: unknown;
-      };
-      step.resumePayload = {
-        ...(step.resumePayload as object),
-        approved: false,
-      };
+      const write = step(s, "write");
+      write.resume = { ...(write.resume as object), approved: false };
     }),
   "foreign child resumed operation": (c: Crashed) =>
     mutateNative(c, (s) => {
-      (
-        s.context.execute_agent as unknown as { resumePayload: unknown }
-      ).resumePayload = {
+      step(s, "agent").resume = {
         nodeId: "agent",
         operationId: "TEST-foreign-child-operation",
         approved: true,
@@ -600,13 +584,8 @@ const mutations = {
     }),
   "changed child resumed decision": (c: Crashed) =>
     mutateNative(c, (s) => {
-      const step = s.context.execute_agent as unknown as {
-        resumePayload: unknown;
-      };
-      step.resumePayload = {
-        ...(step.resumePayload as object),
-        approved: false,
-      };
+      const agent = step(s, "agent");
+      agent.resume = { ...(agent.resume as object), approved: false };
     }),
   "invalid terminal output": (c: Crashed) =>
     mutateNative(c, (s) => {
@@ -802,17 +781,9 @@ test("a killed retired child's cached output cannot bypass an enforce policy rev
   const c = await crash(t, "agent-retired");
   // Preserve the actual SIGKILL and retired domain child, then test a saved
   // native control point behind that domain commit. Never forge a terminal job.
-  await mutateNative(c, (snapshot) => {
-    for (const key of Object.keys(snapshot.context))
-      if (key !== "input") delete snapshot.context[key];
-    snapshot.context.initialize = {
-      payload: c.metadata.input,
-      status: "running",
-      startedAt: Date.now(),
-    };
-    snapshot.activePaths = [0];
-    snapshot.activeStepsPath = { initialize: [0] };
-    snapshot.stepExecutionPath = [];
+  await mutateNative(c, (run) => {
+    run.steps = [];
+    run.status = "running";
   });
   let expected: Awaited<ReturnType<typeof start>> | undefined;
   for (let reopen = 0; reopen < 2; reopen++) {

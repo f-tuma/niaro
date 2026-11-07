@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { agentCoreFile } from "../apps/server-identity/agent-core-owner";
 import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
@@ -11,7 +12,7 @@ import {
 import { join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { authRequest } from "../packages/client-core/auth";
 import {
   captureProcessResolveTarget,
@@ -92,6 +93,7 @@ function assertCopyBaseline(copy: StoppedCopyProof) {
   assert.notEqual(copy.source, copy.destination);
   assert.deepEqual(copy.copyHashes, copy.sourceHashes);
   assert(copy.copyHashes["identity/identity.sqlite.mastra.sqlite"]);
+  assert(copy.copyHashes["identity/identity.sqlite.pi.sqlite"]);
   assert(copy.copyHashes["workflow/workflow.sqlite"]);
   assert(copy.copyHashes["workflow/auth/server-id"]);
   assert.equal(
@@ -399,11 +401,12 @@ async function waitingApproval() {
       await session.start(false);
       await settle();
     };
+    // Process checkpoints live in the agent core beside the identity database.
     const nativePath = relative(
       h.root,
-      fileURLToPath(h.identity["catalog"].store.nativeStorageUrl),
+      agentCoreFile(h.identity["catalog"].store.nativeStorageUrl)!,
     );
-    assert.equal(nativePath, "identity/identity.sqlite.mastra.sqlite");
+    assert.equal(nativePath, "identity/identity.sqlite.pi.sqlite");
     return {
       h,
       job,

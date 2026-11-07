@@ -10,7 +10,7 @@ import {
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import { ProcessWorkflowCheckpointSchema } from "../../apps/server-agent/process-checkpoint";
+import { processRunRow } from "./pi-process";
 import { JournalSchema } from "../../apps/server-identity/service-process-journal";
 import { authRequest } from "../../packages/client-core/auth";
 import { processStartCommand } from "../../packages/client-core/process-commands";
@@ -235,25 +235,17 @@ async function main() {
         )
         .digest("hex");
     session.stop();
-    const nativeFile = join(
-      h.root,
-      "identity",
-      "identity.sqlite.mastra.sqlite",
-    );
+    const nativeFile = join(h.root, "identity", "identity.sqlite.pi.sqlite");
     const suspended = (db: DatabaseSync) => {
-      const row = db
-        .prepare(
-          "SELECT run_id, workflow_name, json(snapshot) AS snapshot FROM mastra_workflow_snapshot WHERE run_id=? AND workflow_name=?",
-        )
-        .get(parentId, workflowName);
-      assert(row, "TEST exact original parent workflow checkpoint must exist");
-      assert.equal(row.run_id, parentId);
-      assert.equal(row.workflow_name, workflowName);
-      const snapshot = ProcessWorkflowCheckpointSchema.parse(
-        JSON.parse(String(row.snapshot)),
+      const found = processRunRow(db, workflowName);
+      assert(
+        found,
+        "TEST exact original parent workflow checkpoint must exist",
       );
+      const snapshot = found.parsed;
+      assert.equal(snapshot.workflowId, workflowName);
       assert.equal(snapshot.runId, parentId);
-      assert.deepEqual(snapshot.context.input, journal.input);
+      assert.deepEqual(snapshot.input, journal.input);
       return snapshot.status === "suspended";
     };
     const observer = new DatabaseSync(nativeFile);
@@ -285,7 +277,7 @@ async function main() {
       const nativeFile = join(
         proof.source,
         "identity",
-        "identity.sqlite.mastra.sqlite",
+        "identity.sqlite.pi.sqlite",
       );
       assert.equal(existsSync(nativeFile + "-wal"), false);
       assert.equal(existsSync(nativeFile + "-shm"), false);
@@ -326,7 +318,7 @@ async function main() {
         const copiedNative = join(
           root,
           "identity",
-          "identity.sqlite.mastra.sqlite",
+          "identity.sqlite.pi.sqlite",
         );
         rmSync(copiedNative);
         writeFileSync(copiedNative + "-wal", "TEST orphan native WAL", {

@@ -42,6 +42,7 @@ import { ServiceConnectionRequired } from "./service-oauth";
 import { presentServiceAnswer } from "./service-answer";
 import { logSkippedTask, requestLevelFailure } from "./task-projection-guard";
 import type { InferenceRunCaps } from "./inference-budget";
+import { closeAgentCore } from "./agent-core-owner";
 
 /** Model steps for a chat answer: it may read several services and page
  * through records. The last two only answer (see the agent runtime). */
@@ -91,6 +92,7 @@ export function nativeCatalogOwner(controller: NativeOwnerHandle) {
 
 /** Close the native checkpoint and conversation store before the identity DB. */
 export async function closeNativeCatalogRuntime(controller: NativeOwnerHandle) {
+  await closeAgentCore(controller);
   const runtime = owners.get(controller);
   if (!runtime) return;
   owners.delete(controller);

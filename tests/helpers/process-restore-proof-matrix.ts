@@ -12,7 +12,7 @@ import {
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
-import { ProcessWorkflowCheckpointSchema } from "../../apps/server-agent/process-checkpoint";
+import { processRunRow } from "./pi-process";
 import { JournalSchema } from "../../apps/server-identity/service-process-journal";
 import { authRequest } from "../../packages/client-core/auth";
 import {
@@ -39,7 +39,8 @@ import {
 } from "./process-activation-http";
 import type { StoppedCopyProof } from "./process-design-http";
 
-export const proofNativePath = "identity/identity.sqlite.mastra.sqlite";
+/** Process checkpoints live in the agent core beside the identity database. */
+export const proofNativePath = "identity/identity.sqlite.pi.sqlite";
 
 export function proofManifest(root: string) {
   const hashes: Record<string, string> = {};
@@ -536,19 +537,15 @@ export async function proofApprovalFixture() {
         .digest("hex");
     const checkpoint = (root: string) =>
       immutableProofRead(join(root, proofNativePath), (db) => {
-        const row = db
-          .prepare(
-            "SELECT run_id,workflow_name,json(snapshot) AS snapshot FROM mastra_workflow_snapshot WHERE run_id=? AND workflow_name=?",
-          )
-          .get(parentId, workflowName);
-        assert(row, "TEST exact original parent native checkpoint is missing");
-        assert.equal(row.run_id, parentId);
-        assert.equal(row.workflow_name, workflowName);
-        const parsed = ProcessWorkflowCheckpointSchema.parse(
-          JSON.parse(String(row.snapshot)),
+        const found = processRunRow(db, workflowName);
+        assert(
+          found,
+          "TEST exact original parent native checkpoint is missing",
         );
+        const { row, parsed } = found;
+        assert.equal(parsed.workflowId, workflowName);
         assert.equal(parsed.runId, parentId);
-        assert.deepEqual(parsed.context.input, originalJournal.input);
+        assert.deepEqual(parsed.input, originalJournal.input);
         return { row, parsed };
       });
     return {

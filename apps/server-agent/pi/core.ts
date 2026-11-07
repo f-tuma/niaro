@@ -11,14 +11,11 @@
  * writes are never re-run blindly (`tools.ts`).
  */
 import { chmodSync } from "node:fs";
-import {
-  BACKGROUND_CONTEXT,
-  type Context,
-} from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai";
 import {
   createRegistry,
   Harness,
+  MemoryStorage,
   ProviderDoc,
   type Conversation,
   type HarnessSettings,
@@ -27,6 +24,13 @@ import {
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { RouteKey } from "../../../packages/protocol/model-policy";
 import { IntegrationError } from "../../server-integrations/transport";
+import { ctx } from "./context";
+import {
+  executeProcessRun,
+  processEngineExtension,
+  proveProcessRunRetired,
+  type NativeWorkflowInput,
+} from "./process-engine";
 import {
   BASE_ROUTES,
   niaroPiProvider,
@@ -41,7 +45,7 @@ import {
   type NiaroScope,
 } from "./scope";
 
-export const ctx: Context = BACKGROUND_CONTEXT;
+export { ctx };
 
 /** Policy A as Pi settings. A host may tighten them, never drop them. */
 export const RECOVERY_POLICY_A = {
@@ -66,8 +70,8 @@ export type ScopedModelHost = {
 type Extension = Parameters<ReturnType<typeof createRegistry>["install"]>[0];
 
 export type PiAgentCoreOptions = {
-  /** The node:sqlite file of the agent core; created private (0600). */
-  file: string;
+  /** The node:sqlite file of the agent core, created private (0600); absent: memory only. */
+  file?: string;
   host: ScopedModelHost;
   /** Extensions of later waves (processes, chat); the binding one is always installed. */
   extensions?: readonly Extension[];
@@ -107,10 +111,13 @@ export class PiAgentCore {
     models.setProvider(provider);
     const registry = createRegistry();
     registry.install(bindingExtension(bindings));
+    registry.install(processEngineExtension);
     for (const extension of options.extensions ?? [])
       registry.install(extension);
-    const storage = await openNodeSqliteStorage(options.file);
-    chmodSync(options.file, 0o600);
+    const storage = options.file
+      ? await openNodeSqliteStorage(options.file)
+      : new MemoryStorage();
+    if (options.file) chmodSync(options.file, 0o600);
     const settings = options.settings ?? {};
     let harness: Harness;
     try {
@@ -149,6 +156,8 @@ export class PiAgentCore {
       await storage.close(ctx).catch(() => undefined);
       throw error;
     }
+    // Process runs are background tasks of the root conversation.
+    await harness.root(ctx);
     if (options.resume !== false) harness.resume();
     return new PiAgentCore(harness, provider, bindings);
   }
@@ -168,6 +177,16 @@ export class PiAgentCore {
       },
       ctx,
     );
+  }
+
+  /** Drive a service process run until it waits, succeeds or fails (NIAR-303). */
+  executeProcess(input: NativeWorkflowInput) {
+    return executeProcessRun(this.harness, input);
+  }
+
+  /** Passive proof that a process run ended or waits; nothing runs. */
+  proveProcessRetired(input: Parameters<typeof proveProcessRunRetired>[1]) {
+    return proveProcessRunRetired(this.harness, input);
   }
 
   close() {

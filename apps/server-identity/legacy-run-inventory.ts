@@ -414,13 +414,9 @@ export function observeLegacyTuple(
     sqliteFamilies,
   });
 }
-/** `agent-core.sqlite` in the identity database's directory, as a tuple path. */
+/** The agent core database beside the identity database, as a tuple path. */
 function agentCorePath(identityDatabase: string) {
-  const slash = identityDatabase.lastIndexOf("/");
-  return (
-    (slash < 0 ? "" : identityDatabase.slice(0, slash + 1)) +
-    "agent-core.sqlite"
-  );
+  return identityDatabase + ".pi.sqlite";
 }
 function validateManifest(value: unknown) {
   const parsed = LegacyInventoryManifestSchema.safeParse(value);

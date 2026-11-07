@@ -19,10 +19,8 @@ import {
   ProcessVersionSchema,
   type ProcessVersion,
 } from "../../packages/protocol/service-processes";
-import {
-  executeNativeWorkflow,
-  type NativeWorkflowResult,
-} from "./process-runtime";
+import type { PiAgentCore } from "./pi/core";
+import type { NativeWorkflowResult } from "./pi/process-engine";
 import {
   processCompilerVersion,
   processValueSchema,
@@ -33,7 +31,7 @@ import {
 export const PROCESS_CONTRACT_RUNNER_VERSION =
   "niaro-isolated-compiler-contract/1";
 const require = createRequire(import.meta.url);
-export const PROCESS_CONTRACT_RUNTIME_VERSION = `mastra/core@${require("@mastra/core/package.json").version};libsql@${require("@mastra/libsql/package.json").version};zod@${require("zod/package.json").version}`;
+export const PROCESS_CONTRACT_RUNTIME_VERSION = `pi-durable@${require("@earendil-works/pi-durable/package.json").version};mastra/core@${require("@mastra/core/package.json").version};libsql@${require("@mastra/libsql/package.json").version};zod@${require("zod/package.json").version}`;
 /** Kept local to the native package: canonical JSON binds the exact static fixture suite. */
 function digest(value: unknown): string {
   const canonical = (v: unknown): string =>
@@ -100,8 +98,20 @@ async function observe(
     assertions: [],
     passed: false,
   };
-  let owner = store(path),
-    consumed = 0;
+  // Each case runs on its own agent core file; no model is reachable.
+  // Pi is ESM-only; callers may load this module from CommonJS.
+  const { PiAgentCore: Core } = await import("./pi/core");
+  const openCore = () =>
+    Core.open({
+      file: path,
+      host: {
+        plan: async () => {
+          throw new Error("test_models_unavailable");
+        },
+      },
+    });
+  let core: PiAgentCore | undefined;
+  let consumed = 0;
   let failure: FixtureFailure | undefined;
   let pending:
     | { index: number; operationId: string; nodeId: string }
@@ -196,8 +206,8 @@ async function observe(
     if (fixture.outcome === "unknown") fail("test_mock_unknown", "unknown");
     return { status: "complete", output: structuredClone(fixture.output!) };
   }
-  const run = (resume?: ProcessResume) =>
-    executeNativeWorkflow(owner.mastra, owner.storage, {
+  const run = async (resume?: ProcessResume) =>
+    (core ??= await openCore()).executeProcess({
       runId: observation.runId,
       resourceId: "niaro-isolated-contract",
       artifactDigest: artifact.digest,
@@ -209,13 +219,11 @@ async function observe(
       boundary,
     });
   const reopen = async () => {
-    await owner.storage.close();
-    owner = store(path);
-    await owner.storage.init();
+    await core?.close();
+    core = await openCore();
     observation.reopened = true;
   };
   try {
-    await owner.storage.init();
     if (
       !processValueSchema(artifact.definition.inputSchema).safeParse(item.input)
         .success
@@ -275,7 +283,7 @@ async function observe(
         : "test_runner_failed";
     if (signal.aborted) throw error;
   } finally {
-    await owner.storage.close();
+    await core?.close();
   }
   if (observation.observed !== item.expected.outcome)
     observation.assertions.push("outcome_mismatch");
