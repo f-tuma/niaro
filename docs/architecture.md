@@ -67,8 +67,17 @@ the decision, then the reason.
   agent core and one path to models. The core (`apps/server-agent/pi/`) is one
   Pi Harness over `identity.sqlite.pi.sqlite` beside the identity database, opened and
   closed with the identity server. Process graphs run on it as Pi tasks
-  (NIAR-303); chat and process agent steps still run on Mastra until wave 3,
-  and the Mastra notes below describe that code.
+  (NIAR-303). Chat runs on it behind `NIARO_AGENT_CORE=pi` (NIAR-304 step
+  A; default `mastra`); process agent steps still run on Mastra, and the
+  Mastra notes below describe that code.
+- **On Pi the domain session stays the authority over every agent step.** A
+  bridging provider asks the request's session for the model, instructions
+  and context of each step and sends it through the same model code, so the
+  integration transport and the budget ledger stay the only path to a model.
+  Approvals and questions are still decided in `session.invoke`; the Pi tool
+  then waits inside its execution with a durable pending memo, so the wait
+  survives requests and restarts and nothing runs again without the request
+  that resumes it.
 - **Pi reaches models only through Niaro.** Pi models are route keys of the
   model policy; each request resolves the catalog model, key, integration
   transport and budget reservation at that moment. pi-ai's vendor SDKs are not
