@@ -75,6 +75,8 @@ export function createServiceProcessRuntime(
     memory?: AgentMemory;
     source?: "chat" | "console";
     questions?: ProcessQuestionAccess;
+    /** Driven by the server after a restart (policy A), not by a command. */
+    automatic?: boolean;
   } = {},
 ) {
   const target = { organizationId, workspaceId: scope.workspaceId };
@@ -1297,6 +1299,7 @@ export function createServiceProcessRuntime(
               Object.keys(journal.agents).length,
           ),
           ...(resume && !consumedResume ? { resume } : {}),
+          ...(options.automatic ? { automatic: true } : {}),
           signal: executionSignal,
           boundary,
         });

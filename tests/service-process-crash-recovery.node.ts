@@ -21,6 +21,7 @@ import {
   signal,
 } from "./helpers/service-process-runtime";
 import { processRunRow } from "./helpers/pi-process";
+import { resumeInterruptedProcesses } from "../apps/server-identity/process-resumer";
 type Harness = ReturnType<typeof fixture>;
 type Mode =
   | "read-receipt"
@@ -234,6 +235,16 @@ const step = (run: ProcessRunCheckpoint, nodeId: string) => {
   assert(found, `TEST stored run must have entered ${nodeId}`);
   return found;
 };
+/** What the identity server does at start (policy A): resume stopped runs. */
+const resumeAtStart = (h: Harness) =>
+  resumeInterruptedProcesses({
+    db: h.db,
+    serverId: scope.serverId,
+    controller: h.controller,
+    registry: h.registry,
+    access: () => ({ context: h.context, memory: h.memory }),
+    signal: signal(),
+  });
 function sameCalls(h: Harness, c: Crashed) {
   assert.equal(h.models().length, c.cut.models);
   assert.deepEqual(h.counts(), c.cut.counts);
@@ -320,6 +331,13 @@ for (const mode of [
           );
           assert(runtime.isSettled(child.runId));
         }
+        if (reopen === 0)
+          // The restart alone finishes the run; no command is re-sent.
+          assert.deepEqual(
+            (await resumeAtStart(h)).map((outcome) => outcome.status),
+            ["succeeded"],
+          );
+        else assert.deepEqual(await resumeAtStart(h), []);
         const done = await start(h, c);
         assert.equal(done.status, "succeeded", JSON.stringify(done));
         assert.equal(done.version, c.metadata.version);
@@ -368,6 +386,11 @@ test("actual SIGKILL before native suspension restores exactly the original pend
   for (let reopen = 0; reopen < 2; reopen++) {
     const h = fixture(c.path, c.metadata.ids);
     try {
+      // The restart brings the run to its approval; it then waits.
+      assert.deepEqual(
+        (await resumeAtStart(h)).map((outcome) => outcome.status),
+        reopen === 0 ? ["waiting"] : [],
+      );
       const waiting = await start(h, c);
       assert.equal(waiting.status, "waiting", JSON.stringify(waiting));
       assert.deepEqual(waiting.approval, c.cut.journal.pending);
@@ -896,6 +919,50 @@ test("recovery keeps the killed run's immutable version after a different versio
     assert.deepEqual(h.counts(), [["GET", 2]]);
     assert.deepEqual(await start(h, c), old);
     assert.deepEqual(h.counts(), [["GET", 2]]);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a run the server restarted by itself too often fails closed instead of restarting again", async (t) => {
+  const c = await crash(t, "read-receipt");
+  await mutateNative(c, (run) => {
+    run.automaticRestarts = 3;
+  });
+  const h = fixture(c.path, c.metadata.ids);
+  try {
+    assert.deepEqual(
+      (await resumeAtStart(h)).map((outcome) => outcome.status),
+      ["failed"],
+    );
+    const journal = h.catalog.turn(
+      c.metadata.nativeRunId,
+      scope.workspaceId,
+      scope.userId,
+    ) as { status: string; failure?: { code: string } };
+    assert.equal(journal.status, "failed");
+    assert.equal(journal.failure?.code, "process_restart_limit");
+    sameCalls(h, c);
+    assert.deepEqual(await resumeAtStart(h), [], "a failed run is not resumed");
+  } finally {
+    await h.close();
+  }
+});
+
+test("a killed run whose stored checkpoint cannot be proved fails closed when the server restarts", async (t) => {
+  const c = await crash(t, "read-receipt");
+  await mutateNative(c, (run) => {
+    run.input = { name: "TEST-foreign-input" };
+  });
+  const before = await nativeRow(c);
+  const h = fixture(c.path, c.metadata.ids);
+  try {
+    assert.deepEqual(
+      (await resumeAtStart(h)).map((outcome) => outcome.status),
+      ["failed"],
+    );
+    sameCalls(h, c);
+    assert.deepEqual(await nativeRow(c), before);
   } finally {
     await h.close();
   }

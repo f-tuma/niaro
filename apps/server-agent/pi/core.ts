@@ -25,6 +25,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import type { RouteKey } from "../../../packages/protocol/model-policy";
 import { IntegrationError } from "../../server-integrations/transport";
 import { ctx } from "./context";
+import { RECOVERY_POLICY_A } from "./policy";
 import {
   executeProcessRun,
   processEngineExtension,
@@ -45,18 +46,7 @@ import {
   type NiaroScope,
 } from "./scope";
 
-export { ctx };
-
-/** Policy A as Pi settings. A host may tighten them, never drop them. */
-export const RECOVERY_POLICY_A = {
-  retry: {
-    enabled: true,
-    maxRetries: 2,
-    baseDelayMs: 2_000,
-    maxAgentDelayMs: 30_000,
-  },
-  restartLimit: 3,
-} as const satisfies HarnessSettings;
+export { ctx, RECOVERY_POLICY_A };
 
 export type ScopedModelCall = {
   route: string;

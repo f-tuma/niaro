@@ -48,6 +48,8 @@ export const ProcessRunCheckpointSchema = z.strictObject({
   steps: z.array(ProcessRunStepSchema).max(1024),
   result: z.record(z.string(), z.unknown()).optional(),
   failure: z.string().max(80).optional(),
+  /** Restarts the server made by itself after crashes (policy A), bounded. */
+  automaticRestarts: z.number().int().nonnegative().max(1000).optional(),
 });
 export type ProcessRunStep = z.infer<typeof ProcessRunStepSchema>;
 export type ProcessRunCheckpoint = z.infer<typeof ProcessRunCheckpointSchema>;

@@ -127,15 +127,17 @@ async function main() {
     steps: stored?.steps.map((step) => [step.nodeId, step.status]),
   };
   const results: unknown[] = [];
-  const drive = async (resume?: ProcessResume) =>
+  const drive = async (resume?: ProcessResume, automatic = false) =>
     results.push(
       await core.executeProcess({
         ...input,
         recordedProgress: true,
+        ...(automatic ? { automatic: true } : {}),
         ...(resume ? { resume } : {}),
       }),
     );
-  await drive();
+  // What the server does at start (policy A), no command needed.
+  await drive(undefined, true);
   if (approval) {
     await drive();
     await drive({ nodeId: "lookup", operationId: operation, approved: true });
@@ -145,6 +147,7 @@ async function main() {
     before,
     results,
     after: read()?.status,
+    automaticRestarts: read()?.automaticRestarts ?? 0,
     executions: receipt(operation)?.executions ?? 0,
     actions,
   });

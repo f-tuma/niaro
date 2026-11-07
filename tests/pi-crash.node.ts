@@ -80,6 +80,7 @@ type ProcessResult = {
   before: { status?: string; steps?: [string, string][] };
   results: { status: string; output?: unknown; approval?: unknown }[];
   after?: string;
+  automaticRestarts: number;
   executions: number;
   actions: number;
 };
@@ -88,7 +89,7 @@ const done = {
   output: { result: "TEST-result for TEST-input" },
 };
 
-test("killed inside a process node after its effect: the proved restart continues from the node and the effect is not repeated", async () => {
+test("killed inside a process node after its effect: the server continues it by itself from the node after proof and the effect is not repeated", async () => {
   const { result } = await crashAndResume<ProcessResult>(
     processWorker,
     "process-node",
@@ -101,6 +102,7 @@ test("killed inside a process node after its effect: the proved restart continue
   });
   assert.deepEqual(result.results, [done, done]);
   assert.equal(result.after, "success");
+  assert.equal(result.automaticRestarts, 1, "the server restarted it itself");
   assert.equal(result.executions, 1, "the write took effect once");
   // The restart asked the domain once; the stored success answered the replay.
   assert.equal(result.actions, 1);
@@ -123,4 +125,5 @@ test("killed while a process waits for approval: the approval survives the resta
   assert.deepEqual(result.results, [waiting, waiting, done, done]);
   assert.equal(result.executions, 1);
   assert.equal(result.actions, 1, "only the approved drive reached the action");
+  assert.equal(result.automaticRestarts, 0, "a waiting run is not restarted");
 });

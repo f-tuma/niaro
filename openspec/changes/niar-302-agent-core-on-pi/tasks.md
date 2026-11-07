@@ -16,7 +16,8 @@
 
 - [x] 2.1 Process graphs run on Pi tasks: one `niaro.process-segment` task per drive (start, resume after approval or question), each node a phase; the run checkpoint (`niaro.process-run`) stores the carry before and after every node; the Mastra workflow compiler and runner are gone (design D10).
 - [x] 2.2 The passive checkpoint proof replays the stored steps over the frozen graph and asks the domain to prove every action and agent boundary (`proveProcessRunCheckpoint`); retirement proof over the same checkpoint (`proveProcessRetired`).
-- [x] 2.3 Approvals and questions as durable pending entries of the run checkpoint; a restart never resumes a run by itself (abandoned segment), only the original command does after proof (policy A, spec "No implicit execution").
+- [x] 2.3 Approvals and questions as durable pending entries of the run checkpoint.
+- [x] 2.9 Policy A correction (wave 3 start): after a restart the server continues runs stopped mid-run by itself after proof (`process-resumer.ts`), bounded by `restartLimit`; spec "No implicit execution" updated; crash tests prove the restart alone finishes the run.
 - [x] 2.4 Agent core per catalog controller (`agent-core-owner.ts`), file `identity.sqlite.pi.sqlite`; the process console, contract tests (`process-testing.ts`) and native tests drive the same engine.
 - [x] 2.5 Process restore and crash tests read and corrupt the Pi checkpoint instead of Mastra snapshots; Pi-level process crash scenarios (killed inside a node after its effect, killed while waiting for approval) in the crash harness.
 - [x] 2.6 Spec deltas for `process-execution` and `process-qualification`.

@@ -12,6 +12,7 @@ import {
 import { budgetedInferenceTransport } from "./inference-budget";
 import type { PiAgentCore } from "@niaro/server-agent/pi";
 import { agentCoreFor, closeAgentCore } from "./agent-core-owner";
+import { resumeInterruptedProcesses } from "./process-resumer";
 import { clientAddress } from "./client-address";
 import { outputVoiceCatalogue } from "../server-integrations/speech-voices";
 import { MeetingStore } from "./meeting-store";
@@ -746,6 +747,8 @@ export class IdentityService {
   private nativeRequests = new NativeCommandRequests();
   /** The Pi agent core (NIAR-302); processes and chat move onto it next. */
   private agentCore?: PiAgentCore;
+  /** Interrupted process runs continuing after a restart (policy A). */
+  private processResume?: Promise<void>;
   private processDesigns: ProcessDesignStore;
   private processDesignConversation?: ProcessDesignConversation;
   private processTests?: ProcessTestingStore;
@@ -1533,6 +1536,53 @@ export class IdentityService {
       activation: this.processActivation,
       hub: this.hub,
     });
+    this.processResume ??= this.resumeProcesses(serverId);
+  }
+  /**
+   * Policy A: process runs a crash stopped mid-run continue by themselves,
+   * each under its person's current membership and a live sign-in, as
+   * scheduled hub fills do. Runs waiting for a person stay waiting.
+   */
+  private async resumeProcesses(serverId: string) {
+    const controller = new AbortController();
+    this.executions.add(controller);
+    try {
+      await resumeInterruptedProcesses({
+        db: this.db,
+        serverId,
+        controller: this.catalog,
+        registry: this.processes,
+        questions: this.processQuestions,
+        signal: controller.signal,
+        access: (scope, organizationId) => {
+          const owner = {
+            organizationId,
+            workspaceId: scope.workspaceId,
+            userId: scope.userId,
+          };
+          const check = () => {
+            if (this.closing)
+              throw new IdentityError(503, "identity_unavailable");
+            const member = this.hubMember(owner);
+            if (!this.mobile.signedIn(owner.userId, owner.workspaceId))
+              throw new IdentityError(403, "identity_forbidden");
+            return { role: member.role };
+          };
+          const { role } = check();
+          return this.processMemberAccess(
+            organizationId,
+            scope.workspaceId,
+            scope.userId,
+            role,
+            check,
+          );
+        },
+      });
+    } catch {
+      // Each run's outcome is logged; nothing here may stop the server.
+    } finally {
+      this.executions.delete(controller);
+    }
   }
   private catalogEnabled(org: string, workspace: string, voice = false) {
     try {
@@ -3294,7 +3344,6 @@ export class IdentityService {
       throw new IdentityError(503, "identity_unavailable");
     const initial = this.mobile.authenticate(header, workspaceId, serverId);
     const organizationId = initial.grant.organization_id;
-    const settings = this.plugins.read(workspaceId);
     const check = () => {
       if (this.closing) throw new IdentityError(503, "identity_unavailable");
       const current = this.mobile.authenticateDigest(
@@ -3307,8 +3356,31 @@ export class IdentityService {
         current.session.scope.userId !== initial.session.scope.userId
       )
         throw new IdentityError(403, "identity_forbidden");
-      return current;
+      return { role: current.role };
     };
+    return {
+      scope: initial.session.scope,
+      ...this.processMemberAccess(
+        organizationId,
+        workspaceId,
+        initial.session.scope.userId,
+        initial.role,
+        check,
+      ),
+    };
+  }
+  /**
+   * A member's process authority: the catalog context, read-only saved
+   * memory and its observation, every step re-checked through `check`.
+   */
+  private processMemberAccess(
+    organizationId: string,
+    workspaceId: string,
+    userId: string,
+    initialRole: ProcessActor["role"],
+    check: () => { role: ProcessActor["role"] },
+  ) {
+    const settings = this.plugins.read(workspaceId);
     const context: CatalogContext = {
       serial: (fn) => this.serial(fn),
       actor: async (requested) => {
@@ -3318,7 +3390,7 @@ export class IdentityService {
           requested.workspaceId !== workspaceId
         )
           throw new IdentityError(403, "identity_forbidden");
-        return { userId: current.session.scope.userId, role: current.role };
+        return { userId, role: current.role };
       },
       validateRequest: () => {
         check();
@@ -3332,8 +3404,8 @@ export class IdentityService {
     const memoryActor: MemoryActor = {
       organizationId,
       workspaceId,
-      userId: initial.session.scope.userId,
-      canManageShared: initial.role !== "member",
+      userId,
+      canManageShared: initialRole !== "member",
     };
     const memory = settings.settings.enabled.includes("memory")
       ? createMemoryRuntime(
@@ -3367,7 +3439,6 @@ export class IdentityService {
         )
       : undefined;
     return {
-      scope: initial.session.scope,
       organizationId,
       context,
       memory,
@@ -5124,6 +5195,7 @@ export class IdentityService {
     await this.meetings.archive.close();
     await this.hosted?.close();
     for (const controller of this.executions) controller.abort();
+    await this.processResume;
     this.nativeRequests.abortAll();
     await Promise.allSettled(this.catalogRequests);
     await Promise.allSettled(

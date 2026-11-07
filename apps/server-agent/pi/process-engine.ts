@@ -47,6 +47,7 @@ import {
   type ProcessQuestion,
 } from "../process-workflow";
 import { ctx } from "./context";
+import { RECOVERY_POLICY_A } from "./policy";
 
 export type NativeWorkflowInput = {
   runId: string;
@@ -59,6 +60,11 @@ export type NativeWorkflowInput = {
   input: Record<string, unknown>;
   /** A missing checkpoint must not erase recorded domain progress. */
   recordedProgress?: boolean;
+  /**
+   * The server drives the run by itself after a restart (policy A): a run
+   * stopped mid-run restarts at most `restartLimit` times this way.
+   */
+  automatic?: boolean;
   resume?: ProcessAnyResume;
   signal: AbortSignal;
   boundary: NativeWorkflowBoundary;
@@ -495,6 +501,11 @@ export async function executeProcessRun(
       // Missing proof is uncertainty, never permission to start another run.
       if (!input.boundary.reconcile || run.status !== "running")
         return { status: "failed", code: "process_checkpoint_interrupted" };
+      if (
+        input.automatic &&
+        (run.automaticRestarts ?? 0) >= RECOVERY_POLICY_A.restartLimit
+      )
+        return { status: "failed", code: "process_restart_limit" };
     } else if (
       !processValueSchema(definition.inputSchema).safeParse(input.input).success
     )
@@ -519,6 +530,8 @@ export async function executeProcessRun(
               status: "running",
               steps: [],
             };
+        if (input.automatic && run && !input.resume)
+          value.automaticRestarts = (value.automaticRestarts ?? 0) + 1;
         if (input.resume) {
           const resumed = value.steps.at(-1)!;
           resumed.status = "running";

@@ -77,7 +77,10 @@ the decision, then the reason.
   model call may be retried (each attempt reserved against the budget, at most
   2 retries and `restartLimit` 3), and an external write is never re-run
   blindly: it carries an idempotency key, or the model is told it was
-  interrupted.
+  interrupted. A process run stopped mid-run continues by itself under its
+  person's current membership once its stored boundaries are proved; receipts
+  decide whether an action already ran, and a run that cannot be proved, or
+  was restarted three times, fails closed.
 - **Pi packages are pinned to exact versions, and every Pi upgrade starts with
   a review of its changelog and API changes.** Pi's API breaks between
   releases (1.5.0 had 34 breaking changes). Upgrade `pi-durable`, `pi-ai`,
