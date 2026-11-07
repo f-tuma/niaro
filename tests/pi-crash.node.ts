@@ -71,3 +71,56 @@ test("killed after an unkeyed write's side effect: it is not run again and the m
   assert.match(result.toolResults[0]!.text, /interrupted/);
   assert.equal(result.assistants.at(-1)!.text, "Done.");
 });
+
+// ---- process runs on the agent core (NIAR-303) ----
+const processWorker = fileURLToPath(
+  new URL("./helpers/pi-process-crash-worker.ts", import.meta.url),
+);
+type ProcessResult = {
+  before: { status?: string; steps?: [string, string][] };
+  results: { status: string; output?: unknown; approval?: unknown }[];
+  after?: string;
+  executions: number;
+  actions: number;
+};
+const done = {
+  status: "succeeded",
+  output: { result: "TEST-result for TEST-input" },
+};
+
+test("killed inside a process node after its effect: the proved restart continues from the node and the effect is not repeated", async () => {
+  const { result } = await crashAndResume<ProcessResult>(
+    processWorker,
+    "process-node",
+    { killAt: "action_done", delayMs: 200 },
+  );
+  // The checkpoint kept the run inside the node the process died in.
+  assert.deepEqual(result.before, {
+    status: "running",
+    steps: [["lookup", "running"]],
+  });
+  assert.deepEqual(result.results, [done, done]);
+  assert.equal(result.after, "success");
+  assert.equal(result.executions, 1, "the write took effect once");
+  // The restart asked the domain once; the stored success answered the replay.
+  assert.equal(result.actions, 1);
+});
+
+test("killed while a process waits for approval: the approval survives the restart and the write runs once after it", async () => {
+  const { result } = await crashAndResume<ProcessResult>(
+    processWorker,
+    "process-approval",
+    { killAt: "suspended", delayMs: 100 },
+  );
+  assert.deepEqual(result.before, {
+    status: "suspended",
+    steps: [["lookup", "suspended"]],
+  });
+  const waiting = {
+    status: "waiting",
+    approval: { nodeId: "lookup", operationId: "TEST-operation-lookup" },
+  };
+  assert.deepEqual(result.results, [waiting, waiting, done, done]);
+  assert.equal(result.executions, 1);
+  assert.equal(result.actions, 1, "only the approved drive reached the action");
+});

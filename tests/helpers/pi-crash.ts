@@ -127,7 +127,10 @@ export function crashChild() {
     result(value: unknown) {
       console.log(`RESULT ${JSON.stringify(value)}`);
     },
-    /** Hold the process until it is killed. */
-    hang: () => new Promise<never>(() => {}),
+    /** Hold the process (and its event loop) until it is killed. */
+    hang: () =>
+      new Promise<never>(() => {
+        setInterval(() => {}, 1_000);
+      }),
   };
 }
