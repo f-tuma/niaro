@@ -42,11 +42,7 @@ import { ServiceConnectionRequired } from "./service-oauth";
 import { presentServiceAnswer } from "./service-answer";
 import { logSkippedTask, requestLevelFailure } from "./task-projection-guard";
 import type { InferenceRunCaps } from "./inference-budget";
-import {
-  agentCoreFor,
-  agentCoreKind,
-  closeAgentCore,
-} from "./agent-core-owner";
+import { agentCoreFor, closeAgentCore } from "./agent-core-owner";
 
 /** Model steps for a chat answer: it may read several services and page
  * through records. The last two only answer (see the agent runtime). */
@@ -55,25 +51,8 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
     ? (value as Record<string, unknown>)
     : undefined;
 const NATIVE_CHAT_MAX_STEPS = 24;
-type NativeRuntime = Awaited<
-  ReturnType<(typeof import("@niaro/server-agent"))["createNativeAgentRuntime"]>
->;
-type NativeOwnerHandle = { store: { nativeStorageUrl: string } };
-type PiRuntime = import("@niaro/server-agent/pi").PiAgentRuntime;
-/** What chat and processes need of a native runtime; Mastra's and Pi's both answer it. */
-export type AgentRuntime = Pick<
-  NativeRuntime,
-  | "isSettled"
-  | "proveRetired"
-  | "proveSuspended"
-  | "proveQuestionRecovery"
-  | "eraseAttachmentRun"
-  | "forgetThreads"
-> & {
-  execute: NativeRuntime["execute"] | PiRuntime["execute"];
-  inspect: NativeRuntime["inspect"] | PiRuntime["inspect"];
-};
-const owners = new WeakMap<NativeOwnerHandle, Promise<NativeRuntime>>();
+/** What chat and processes need of a native runtime: Pi's (NIAR-304). */
+export type AgentRuntime = import("@niaro/server-agent/pi").PiAgentRuntime;
 /** Only the authenticated command coordinator can create this abort reason. */
 export const REQUEST_INTERRUPTION_REASON = Symbol("request-interruption");
 export class NativeRunUnsettledError extends Error {
@@ -94,40 +73,16 @@ export class NativeRunRetiredPublicationError extends Error {
 }
 const digest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
-export function nativeCatalogOwner(controller: NativeOwnerHandle) {
-  let runtime = owners.get(controller);
-  if (!runtime) {
-    runtime = import("@niaro/server-agent").then((module) =>
-      module.createNativeAgentRuntime(controller.store.nativeStorageUrl),
-    );
-    owners.set(controller, runtime);
-    runtime.catch(() => {
-      if (owners.get(controller) === runtime) owners.delete(controller);
-    });
-  }
-  return runtime;
-}
-
-/**
- * The native agent runtime of a controller: Pi when the server's agent core
- * switch says so (NIAR-304, `NIARO_AGENT_CORE`), Mastra otherwise. Chat,
- * process agent steps and the designer all run on it.
- */
+/** The native agent runtime of a controller: chat, process agent steps and the designer all run on it. */
 export async function nativeAgentOwner(
   controller: CatalogController,
 ): Promise<AgentRuntime> {
-  if (agentCoreKind(controller) === "pi")
-    return (await agentCoreFor(controller)).agentRuntime();
-  return nativeCatalogOwner(controller);
+  return (await agentCoreFor(controller)).agentRuntime();
 }
 
-/** Close the native checkpoint and conversation store before the identity DB. */
-export async function closeNativeCatalogRuntime(controller: NativeOwnerHandle) {
+/** Close the agent core before the identity DB. */
+export async function closeNativeCatalogRuntime(controller: object) {
   await closeAgentCore(controller);
-  const runtime = owners.get(controller);
-  if (!runtime) return;
-  owners.delete(controller);
-  await (await runtime).close();
 }
 
 /** Native memory inspection is scoped by the same server-owned thread/resource ids. */
@@ -137,10 +92,7 @@ export async function inspectNativeCatalogRuntime(
   resourceId: string,
 ) {
   const runtime = await nativeAgentOwner(controller);
-  // Pi projects its entries into the same message shape (a subset of it).
-  return (await runtime.inspect({ threadId, resourceId })) as Awaited<
-    ReturnType<NativeRuntime["inspect"]>
-  >;
+  return runtime.inspect({ threadId, resourceId });
 }
 
 const attachmentTaskOwners = new WeakMap<

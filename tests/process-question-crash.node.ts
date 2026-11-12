@@ -6,9 +6,6 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { LibSQLStore } from "@mastra/libsql";
-import { agentCoreKindFromEnvironment } from "../apps/server-identity/agent-core-owner";
-import type { WorkflowRunState } from "@mastra/core/workflows";
 import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
 import {
   JournalSchema,
@@ -146,49 +143,18 @@ function forbidModel(h: Fixture) {
   });
 }
 async function corruptSuspension(path: string, question: ProcessQuestion) {
-  if (agentCoreKindFromEnvironment() === "pi") {
-    // The waiting tool's proof now names another call, like Mastra's paths below.
-    const db = new DatabaseSync(`${path}.pi.sqlite`);
-    try {
-      const changed = db
-        .prepare(
-          `UPDATE tasks SET record = json_set(record, '$.memos."niaro.pending".toolCallId', 'TEST_unrelated')
-           WHERE json_extract(record, '$.memos."niaro.pending".toolCallId') = ?`,
-        )
-        .run(question.toolCallId);
-      assert.equal(changed.changes, 1);
-    } finally {
-      db.close();
-    }
-    return;
-  }
-  const store = new LibSQLStore({
-    id: "TEST-question-crash-corruption",
-    url: `file:${path}.mastra.sqlite`,
-  });
-  await store.init();
+  // The waiting tool's proof now names another call.
+  const db = new DatabaseSync(`${path}.pi.sqlite`);
   try {
-    const workflows = await store.getStore("workflows");
-    assert(workflows);
-    const row = await workflows.getWorkflowRunById({
-      workflowName: "durable-agentic-execution",
-      runId: question.childRunId,
-    });
-    assert(row);
-    const snapshot: WorkflowRunState =
-      typeof row.snapshot === "string"
-        ? JSON.parse(row.snapshot)
-        : structuredClone(row.snapshot);
-    assert.equal(snapshot.status, "suspended");
-    snapshot.suspendedPaths = { TEST_unrelated: [0] };
-    await workflows.persistWorkflowSnapshot({
-      workflowName: "durable-agentic-execution",
-      runId: question.childRunId,
-      resourceId: question.resourceId,
-      snapshot,
-    });
+    const changed = db
+      .prepare(
+        `UPDATE tasks SET record = json_set(record, '$.memos."niaro.pending".toolCallId', 'TEST_unrelated')
+         WHERE json_extract(record, '$.memos."niaro.pending".toolCallId') = ?`,
+      )
+      .run(question.toolCallId);
+    assert.equal(changed.changes, 1);
   } finally {
-    await store.close();
+    db.close();
   }
 }
 

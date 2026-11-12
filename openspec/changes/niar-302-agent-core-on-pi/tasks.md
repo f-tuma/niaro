@@ -21,7 +21,7 @@
 - [x] 2.4 Agent core per catalog controller (`agent-core-owner.ts`), file `identity.sqlite.pi.sqlite`; the process console, contract tests (`process-testing.ts`) and native tests drive the same engine.
 - [x] 2.5 Process restore and crash tests read and corrupt the Pi checkpoint instead of Mastra snapshots; Pi-level process crash scenarios (killed inside a node after its effect, killed while waiting for approval) in the crash harness.
 - [x] 2.6 Spec deltas for `process-execution` and `process-qualification`.
-- [x] 2.7 Process agents (agent steps) run on the native agent runtime the switch selects (Pi under `NIARO_AGENT_CORE=pi`, step B, design D13); approvals and questions inside an agent step wait inside the Pi tool.
+- [x] 2.7 Process agents (agent steps) run on Pi (step B behind the switch, design D13; the only core since 3.13); approvals and questions inside an agent step wait inside the Pi tool.
 - [x] 2.8 Process agent writes on Pi follow the `interruptibleWriteTool` rule through the native tool (`niaro.started`, receipts per tool call id, D13); action steps keep the domain's receipts, which never re-run a write blindly.
 
 ## 3. Wave 3: chat (NIAR-304)
@@ -30,14 +30,14 @@
 - [ ] 3.2 Checker, answer checks and visible-reply rules as `beforeTool`, `onYield` and `afterResponse` hooks; escalation as a route.
 - [ ] 3.3 Member projection: stream answers to web and phone from Pi's conversation watch; hide failed attempts, interrupted tool results, aborted partials and harness errors; sent text never returns to the composer.
 - [ ] 3.4 Submissions by `requestId` for delivery retries; interruption and cancel through `abortSubmission`.
-- [ ] 3.5 Saved memory, knowledge and attachments re-homed as Pi tools and documents.
+- [x] 3.5 Saved memory leaves Mastra working memory for its own table `niaro_saved_memory`, with a one-time move of existing payloads (D14); knowledge and attachments never lived in Mastra and need no move.
 - [ ] 3.6 Refine route model metadata (context window per route) for compaction.
 - [ ] 3.7 Crash scenarios for chat delivery; spec deltas for `chat`, `chat-delivery` and `agent-runtime`.
 - [ ] 3.9 Old Mastra threads stay readable until wave 4; sending in one starts a Pi conversation in the same entry with a note (design D11).
 - [x] 3.10 The single-call Mastra agents (meeting analysis, profile extraction, widget fill, catalog enrichment, quiet agent) are plain calls to our provider (`model-call.ts`, D13); saved memory is storage and moves with 3.5.
-- [x] 3.11 Step A (D12): `NIARO_AGENT_CORE=mastra|pi` switch (profile `agentCore`); `createPiAgentRuntime` on the core with the `niaro-native` provider bridging every request to the bound session; approvals and questions wait inside the tool with a `niaro.pending` memo, across requests and restarts; one conversation per thread, forked when a suspension keeps it busy; `inspect` projects Pi entries without internal states; chat behaviour tests run on both paths (`test:chat:pi`), Pi runtime tests in `tests/pi-native-agent.node.ts`.
+- [x] 3.11 Step A (D12): `NIARO_AGENT_CORE=mastra|pi` switch (profile `agentCore`); `createPiAgentRuntime` on the core with the `niaro-native` provider bridging every request to the bound session; approvals and questions wait inside the tool with a `niaro.pending` memo, across requests and restarts; one conversation per thread, forked when a suspension keeps it busy; `inspect` projects Pi entries without internal states; Pi runtime tests in `tests/pi-native-agent.node.ts`. The switch was removed in 3.13.
 - [x] 3.12 Step B: process agent steps (`process-agent-runtime.ts`) and the designer on `createPiAgentRuntime`, with saved process agents' question proofs as Pi state; rewrite the child crash tests as Pi scenarios; `test:identity:pi` (D13).
-- [ ] 3.13 Step C: continue chat turns stopped by a restart under policy A (process-resumer pattern, `restartLimit`); a storage-level purge for forgotten threads; then make `pi` the default and drop the switch.
+- [x] 3.13 Step C (D14): a chat turn stopped by a restart waits for its own request and continues on Pi (policy A, `restartLimit` counts crashes, not shutdowns); a storage-level purge of forgotten and deleted threads; Pi is the only agent core and the switch is gone.
 - [ ] 3.8 Port the native agent runtime contract (`NativeAgentInput`: session, tools, approvals as `beforeTool` memos, `ask_user` questions, saved memory, structured output, budget caps via `agentCoreModelHost({ caps })`) onto Pi conversations, for chat and process agent steps together; replace the child proofs (`proveSuspended`, `proveRetired`, `proveQuestionRecovery`) with Pi task and conversation state; rewrite the child crash tests (`process-question-crash`, `process-owner-crash`) as Pi scenarios.
 
 ## 4. Wave 4: remove Mastra and libSQL (NIAR-305)

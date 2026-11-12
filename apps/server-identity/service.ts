@@ -11,12 +11,7 @@ import {
 } from "./mastra-runtime";
 import { budgetedInferenceTransport } from "./inference-budget";
 import type { PiAgentCore } from "@niaro/server-agent/pi";
-import {
-  agentCoreFor,
-  closeAgentCore,
-  setAgentCoreKind,
-  type AgentCoreKind,
-} from "./agent-core-owner";
+import { agentCoreFor, closeAgentCore } from "./agent-core-owner";
 import { resumeInterruptedProcesses } from "./process-resumer";
 import { clientAddress } from "./client-address";
 import { outputVoiceCatalogue } from "../server-integrations/speech-voices";
@@ -625,7 +620,7 @@ export async function openIdentity(
       serverSettings,
     );
     await service.initializeMemory();
-    await service.openAgentCore(settings.agentCore);
+    await service.openAgentCore();
     service.attachHosting(hosted);
     service.attachPluginFiles(
       new PluginFiles(pluginsDirectory),
@@ -1050,8 +1045,7 @@ export class IdentityService {
    * goes through the catalog, the integration transport and the budget
    * ledger, under the identity queue.
    */
-  async openAgentCore(kind?: AgentCoreKind) {
-    if (kind) setAgentCoreKind(this.catalog, kind);
+  async openAgentCore() {
     this.agentCore = await agentCoreFor(this.catalog, {
       serial: (fn) => this.serial(fn),
     });

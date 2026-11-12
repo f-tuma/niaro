@@ -68,8 +68,9 @@ the decision, then the reason.
   Pi Harness over `identity.sqlite.pi.sqlite` beside the identity database, opened and
   closed with the identity server. Process graphs run on it as Pi tasks
   (NIAR-303). Chat, process agent steps and the process designer run on it
-  behind `NIARO_AGENT_CORE=pi` (NIAR-304 steps A and B; default `mastra`),
-  and the Mastra notes below describe the default path.
+  (NIAR-304). A chat turn cut off by a restart continues when its request
+  comes again; deleting or forgetting a thread purges its conversations from
+  the file. Mastra notes below describe code wave 4 (NIAR-305) removes.
 - **Single structured calls need no agent runtime.** Meeting records,
   profile observations, action names and widget data are direct calls to
   Niaro's provider (`apps/server-agent/model-call.ts`): they keep no thread

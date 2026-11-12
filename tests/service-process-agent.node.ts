@@ -5,7 +5,6 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ProcessDefinitionSchema } from "../packages/protocol/service-processes";
-import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import {
   fixture,
@@ -17,7 +16,6 @@ import {
 import { processAgent, callProcessTool } from "./helpers/service-process-agent";
 import { CatalogCommand } from "../packages/protocol/service-catalog";
 import { LoopsStore } from "../apps/server-identity/loops";
-import { agentCoreKind } from "../apps/server-identity/agent-core-owner";
 import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
 import { serviceProcessRunIdentity } from "../apps/server-identity/service-process-journal";
 
@@ -35,46 +33,32 @@ async function isolated(
   }
 }
 
-/** Recalled conversation messages of the process agents, on either core. */
+/** Recalled conversation messages of the process agents. */
 async function conversationCounts(h: ReturnType<typeof fixture>) {
-  if (agentCoreKind(h.controller) === "pi") {
-    const runtime = await nativeAgentOwner(h.controller);
-    let count = 0;
-    let threads = 0;
-    for (const row of h.db
-      .prepare("SELECT data FROM agent_service_turn")
-      .all()) {
-      const agents = Object.values(
-        (JSON.parse(String(row.data)).agents ?? {}) as Record<
-          string,
-          { threadId: string }
-        >,
-      );
-      for (const agent of agents) {
-        const { messages } = await runtime.inspect({
-          threadId: agent.threadId,
-          resourceId: serviceProcessRunIdentity(
-            scope,
-            target.organizationId,
-            "scope",
-          ).scopeDigest,
-        });
-        count += messages.length;
-        if (messages.length) threads++;
-      }
+  const runtime = await nativeAgentOwner(h.controller);
+  let count = 0;
+  let threads = 0;
+  for (const row of h.db.prepare("SELECT data FROM agent_service_turn").all()) {
+    const agents = Object.values(
+      (JSON.parse(String(row.data)).agents ?? {}) as Record<
+        string,
+        { threadId: string }
+      >,
+    );
+    for (const agent of agents) {
+      const { messages } = await runtime.inspect({
+        threadId: agent.threadId,
+        resourceId: serviceProcessRunIdentity(
+          scope,
+          target.organizationId,
+          "scope",
+        ).scopeDigest,
+      });
+      count += messages.length;
+      if (messages.length) threads++;
     }
-    return { count, threads };
   }
-  const db = new DatabaseSync(fileURLToPath(h.catalog.nativeStorageUrl));
-  try {
-    return db
-      .prepare(
-        "SELECT COUNT(*) AS count, COUNT(DISTINCT thread_id) AS threads FROM mastra_messages",
-      )
-      .get()!;
-  } finally {
-    db.close();
-  }
+  return { count, threads };
 }
 
 function journal(h: ReturnType<typeof fixture>) {
@@ -394,7 +378,6 @@ test("process Agent step preserves reserved business fields through approval res
     );
 
     const id = h.activate(processAgent(h, "conversation"));
-    const pi = agentCoreKind(h.controller) === "pi";
     let initialCalls = 0;
     h.onModel((body) => {
       const request = body as {
@@ -409,11 +392,10 @@ test("process Agent step preserves reserved business fields through approval res
         const parameterSchema = writeTool.function?.parameters as {
           properties?: Record<string, unknown>;
         };
-        // Mastra strips reserved keys, so its runtime wraps the business
-        // input; Pi passes the action's schema as it is.
+        // The action's schema reaches the model as it is.
         assert.deepEqual(
           Object.keys(parameterSchema.properties ?? {}),
-          pi ? Object.keys(businessInput) : ["niaroBusinessInput"],
+          Object.keys(businessInput),
         );
         return {
           content: null,
@@ -423,9 +405,7 @@ test("process Agent step preserves reserved business fields through approval res
               type: "function",
               function: {
                 name: "action_process_0",
-                arguments: JSON.stringify(
-                  pi ? businessInput : { niaroBusinessInput: businessInput },
-                ),
+                arguments: JSON.stringify(businessInput),
               },
             },
           ],

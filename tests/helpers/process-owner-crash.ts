@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { agentCoreKindFromEnvironment } from "../../apps/server-identity/agent-core-owner";
 import type { ServerConfig } from "../../apps/reference-server/config";
 import type { ProcessActor } from "../../apps/server-identity/service-processes";
 import type {
@@ -89,29 +88,18 @@ export function nativePersistence(file: string) {
     assert.equal(JSON.parse(String(receipts[0]!.data)).status, "succeeded");
     assert.equal(attempts.length, 1);
     assert.equal(attempts[0]!.status, "settled");
-    const pi = agentCoreKindFromEnvironment() === "pi";
-    const native = new DatabaseSync(
-      file + (pi ? ".pi.sqlite" : ".mastra.sqlite"),
-      { readOnly: true },
-    );
+    const native = new DatabaseSync(file + ".pi.sqlite", { readOnly: true });
     try {
-      // Pi keeps the run's tasks and documents where Mastra kept snapshots;
       // `pi.live` is presentation Pi commits later on its own, not evidence.
       const checkpoints = native
         .prepare(
-          pi
-            ? `SELECT id, status, record FROM tasks UNION ALL
-               SELECT r.document_id, r.seq, r.content FROM document_revisions r
-               JOIN documents d ON d.id = r.document_id WHERE d.kind NOT IN ('pi.live', '"pi.live"')`
-            : "SELECT * FROM mastra_workflow_snapshot ORDER BY rowid",
+          `SELECT id, status, record FROM tasks UNION ALL
+           SELECT r.document_id, r.seq, r.content FROM document_revisions r
+           JOIN documents d ON d.id = r.document_id WHERE d.kind NOT IN ('pi.live', '"pi.live"')`,
         )
         .all();
       const messages = native
-        .prepare(
-          pi
-            ? "SELECT * FROM entries ORDER BY id"
-            : "SELECT * FROM mastra_messages ORDER BY rowid",
-        )
+        .prepare("SELECT * FROM entries ORDER BY id")
         .all();
       assert(checkpoints.length > 0);
       return { receipts, attempts, checkpoints, messages };

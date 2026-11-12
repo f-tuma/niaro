@@ -39,7 +39,6 @@ import { createTrustHarness } from "./agent-trust/harness";
 import { processWorkflow } from "./helpers/service-process";
 import { questionFixture } from "./helpers/process-questions-runtime";
 import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
-import { agentCoreKind } from "../apps/server-identity/agent-core-owner";
 
 const digest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -1538,10 +1537,9 @@ for (const cutRevision of [1, 2])
             cutRevision,
           );
           const native = await nativeAgentOwner(h.controller);
-          if (reopen === 0 && agentCoreKind(h.controller) === "pi") {
-            // The cut came before the answer reached the agent: on Pi the
-            // question still waits inside its tool (the Mastra snapshot
-            // mutations below are Mastra internals, kept for that path).
+          if (reopen === 0) {
+            // The cut came before the answer reached the agent: the
+            // question still waits inside its tool.
             assert.equal(
               await native.proveSuspended({
                 runId: cut.question.childRunId,
@@ -1552,105 +1550,6 @@ for (const cutRevision of [1, 2])
               }),
               true,
             );
-          } else if (reopen === 0) {
-            const frame = {
-              runId: cut.question.childRunId,
-              threadId: cut.question.childThreadId,
-              resourceId: cut.question.resourceId,
-              toolCallId: cut.question.toolCallId,
-              question: cut.question,
-              resumeData: {
-                answer: binding.command.answer,
-                answerId: binding.bindingId,
-                questionId: cut.question.questionId,
-                questionRevision: cut.question.questionRevision,
-              },
-            };
-            assert.equal(await native.proveQuestionRecovery(frame), true);
-            const store = new LibSQLStore({
-              id: "TEST-batch-crash-mutations",
-              url: h.catalog.nativeStorageUrl,
-            });
-            await store.init();
-            try {
-              const workflows = await store.getStore("workflows");
-              assert(workflows);
-              const row: any = await workflows.getWorkflowRunById({
-                workflowName: DurableStepIds.AGENTIC_EXECUTION,
-                runId: cut.question.childRunId,
-              });
-              assert(row);
-              const original: any =
-                typeof row.snapshot === "string"
-                  ? JSON.parse(row.snapshot)
-                  : structuredClone(row.snapshot);
-              const changes = [
-                (tool: any) => {
-                  delete tool.suspendPayload;
-                },
-                (tool: any) => {
-                  tool.suspendPayload.__workflow_meta.foreachIndex =
-                    cutRevision === 1 ? 1 : 0;
-                },
-                (tool: any) => {
-                  tool.suspendPayload.__workflow_meta.resumeLabels = {};
-                },
-                (tool: any) => {
-                  tool.suspendPayload.toolCallId = "TEST-other-call";
-                },
-                (tool: any) => {
-                  tool.suspendPayload.toolCallSuspended.questionProof
-                    .questionRevision++;
-                },
-                (tool: any) => {
-                  tool.suspendPayload.__workflow_meta.foreachOutput.push(
-                    structuredClone(
-                      tool.suspendPayload.__workflow_meta.foreachOutput[
-                        cutRevision - 1
-                      ],
-                    ),
-                  );
-                },
-                (tool: any) => {
-                  delete tool.suspendPayload.__workflow_meta.foreachOutput[
-                    cutRevision - 1
-                  ].suspendOutput;
-                },
-                ...(cutRevision > 1
-                  ? [
-                      (tool: any) => {
-                        tool.suspendPayload.__workflow_meta.foreachOutput[0].status =
-                          "running";
-                      },
-                      (tool: any) => {
-                        tool.suspendPayload.__workflow_meta.foreachOutput[0].output.toolCallId =
-                          "TEST-other-call";
-                      },
-                    ]
-                  : []),
-              ];
-              for (const change of changes) {
-                const snapshot = structuredClone(original);
-                change(snapshot.context[DurableStepIds.TOOL_CALL]);
-                await workflows.persistWorkflowSnapshot({
-                  workflowName: row.workflowName,
-                  runId: row.runId,
-                  resourceId: row.resourceId!,
-                  snapshot,
-                });
-                assert.equal(await native.proveQuestionRecovery(frame), false);
-                assert.equal(h.models().length, 1);
-              }
-              await workflows.persistWorkflowSnapshot({
-                workflowName: row.workflowName,
-                runId: row.runId,
-                resourceId: row.resourceId!,
-                snapshot: original,
-              });
-              assert.equal(await native.proveQuestionRecovery(frame), true);
-            } finally {
-              await store.close();
-            }
           }
           const recovered = await h.runtime.resume(
             cut.admission.runId,

@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { emptyDesignBrief } from "../packages/protocol/process-design";
 import { IdentityError } from "../apps/server-identity/error";
 import { ProcessDesignConversation } from "../apps/server-identity/process-design-conversation";
 import { ProcessDesignConversationStore } from "../apps/server-identity/process-design-conversation-store";
-import { agentCoreKind } from "../apps/server-identity/agent-core-owner";
 import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
 import {
   designConversationFixture,
@@ -71,31 +68,18 @@ const isolated = async (run: (h: Fixture) => Promise<void>) => {
     await h.close();
   }
 };
-/** Stored native messages of the designer threads; memoryless on both cores. */
+/** Stored native messages of the designer threads; the designer is memoryless. */
 const nativeCounts = async (h: Fixture, ...sessionIds: string[]) => {
-  if (agentCoreKind(h.controller) === "pi") {
-    const runtime = await nativeAgentOwner(h.controller);
-    let count = 0;
-    for (const sessionId of sessionIds) {
-      const { threadId, resourceId } = new ProcessDesignConversationStore(
-        h.db,
-        h.scope.serverId,
-      ).ids(h.actor, sessionId);
-      count += (await runtime.inspect({ threadId, resourceId })).messages
-        .length;
-    }
-    return { count };
+  const runtime = await nativeAgentOwner(h.controller);
+  let count = 0;
+  for (const sessionId of sessionIds) {
+    const { threadId, resourceId } = new ProcessDesignConversationStore(
+      h.db,
+      h.scope.serverId,
+    ).ids(h.actor, sessionId);
+    count += (await runtime.inspect({ threadId, resourceId })).messages.length;
   }
-  const db = new DatabaseSync(fileURLToPath(h.catalog.nativeStorageUrl));
-  try {
-    return db
-      .prepare(
-        "SELECT COUNT(*) AS count,COUNT(DISTINCT thread_id) AS threads FROM mastra_messages",
-      )
-      .get()!;
-  } finally {
-    db.close();
-  }
+  return { count };
 };
 
 test("native designer rejects a staged reply when the proposal changes before publication", async () => {

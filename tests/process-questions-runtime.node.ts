@@ -18,10 +18,6 @@ import {
 } from "./helpers/process-questions-runtime";
 import { callProcessTool, processAgent } from "./helpers/service-process-agent";
 import { scope, signal, code } from "./helpers/service-process-runtime";
-import {
-  agentCoreKind,
-  agentCoreKindFromEnvironment,
-} from "../apps/server-identity/agent-core-owner";
 
 async function isolated(
   run: (h: ReturnType<typeof questionFixture>, path: string) => Promise<void>,
@@ -478,20 +474,8 @@ test("actual SIGKILL after committed answer before native ACK proves exact runni
           toolCallId: binding.question.toolCallId,
           question: binding.question,
         };
-        assert(
-          agentCoreKind(h.controller) === "pi"
-            ? // Pi's question tool died inside its resumed call: it still waits.
-              await native.proveSuspended(child)
-            : await native.proveQuestionRecovery({
-                ...child,
-                resumeData: {
-                  answerId: binding.bindingId,
-                  answer: binding.command.answer,
-                  questionId: binding.question.questionId,
-                  questionRevision: binding.question.questionRevision,
-                },
-              }),
-        );
+        // The question tool died inside its resumed call: it still waits.
+        assert(await native.proveSuspended(child));
         h.onModel(() => askQuestion("TEST question B?"));
         expected = await h.runtime.start(
           binding.admission.processId,
@@ -605,28 +589,18 @@ test("a committed answer and journal history cannot recover when the exact nativ
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const cut = await killAfterConsumption(path, cutPath);
   const binding = ProcessAnswerBindingSchema.parse(cut.binding);
-  const pi = agentCoreKindFromEnvironment() === "pi";
-  const nativeDB = new DatabaseSync(
-    path + (pi ? ".pi.sqlite" : ".mastra.sqlite"),
-  );
+  const nativeDB = new DatabaseSync(path + ".pi.sqlite");
   try {
-    if (pi)
-      // The waiting question tool loses its proof.
-      assert.equal(
-        nativeDB
-          .prepare(
-            `UPDATE tasks SET record = json_remove(record, '$.memos."niaro.pending"')
-             WHERE json_extract(record, '$.memos."niaro.pending".toolCallId') = ?`,
-          )
-          .run(binding.question.toolCallId).changes,
-        1,
-      );
-    else
+    // The waiting question tool loses its proof.
+    assert.equal(
       nativeDB
         .prepare(
-          "DELETE FROM mastra_workflow_snapshot WHERE run_id=? AND workflow_name IN ('durable-agentic-loop','durable-agentic-execution')",
+          `UPDATE tasks SET record = json_remove(record, '$.memos."niaro.pending"')
+           WHERE json_extract(record, '$.memos."niaro.pending".toolCallId') = ?`,
         )
-        .run(binding.question.childRunId);
+        .run(binding.question.toolCallId).changes,
+      1,
+    );
   } finally {
     nativeDB.close();
   }
