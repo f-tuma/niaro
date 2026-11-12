@@ -1946,7 +1946,8 @@ export function inventoryLegacyTuple(value: unknown): LegacyInventoryReport {
           .iterate(),
       ] as Record<string, unknown>[];
     };
-    const exactNativeSchema = (db: DatabaseSync) => {
+    /** "none" when the file holds no Mastra table: no legacy run to count. */
+    const exactNativeSchema = (db: DatabaseSync): boolean | "none" => {
       const names = Object.keys(
         NATIVE_MASTRA_TABLE_COLUMNS,
       ) as (keyof typeof NATIVE_MASTRA_TABLE_COLUMNS)[];
@@ -1956,7 +1957,11 @@ export function inventoryLegacyTuple(value: unknown): LegacyInventoryReport {
             "SELECT name FROM sqlite_schema WHERE type='table' AND substr(name,1,7) <> 'sqlite_' ORDER BY name",
           )
           .iterate(),
-      ].map((row) => String(row.name));
+      ]
+        .map((row) => String(row.name))
+        // Saved memory (NIAR-304) has its own table here; it holds no run.
+        .filter((name) => name !== "niaro_saved_memory");
+      if (!tables.length) return "none";
       if (
         names.some((name) => !tables.includes(name)) ||
         tables.some((name) => !NATIVE_MASTRA_KNOWN_TABLES.has(name))
@@ -2145,7 +2150,9 @@ export function inventoryLegacyTuple(value: unknown): LegacyInventoryReport {
     for (const nativeDatabase of manifest.roles.nativeDatabases) {
       try {
         read(nativeDatabase, (db) => {
-          if (!exactNativeSchema(db)) {
+          const schema = exactNativeSchema(db);
+          if (schema === "none") return;
+          if (!schema) {
             nativeSchemaUnrecognized = true;
             return;
           }

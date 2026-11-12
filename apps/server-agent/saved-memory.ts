@@ -43,7 +43,7 @@ export function createNativeSavedMemory(storageUrl: string): NativeSavedMemory {
   let closed = false;
   try {
     db.exec(
-      "PRAGMA busy_timeout=5000; PRAGMA secure_delete=ON; " +
+      "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON; " +
         "CREATE TABLE IF NOT EXISTS niaro_saved_memory (thread_id TEXT PRIMARY KEY, resource_id TEXT NOT NULL, ciphertext TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL) STRICT",
     );
     migrateMastraThreads(db);
