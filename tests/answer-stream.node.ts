@@ -121,6 +121,16 @@ test("the stream turns the growing draft into text deltas, restarts a text after
       failure: { kind: "validation", code: "integration_input_invalid" },
     },
   });
+  listener({
+    type: "step",
+    step: {
+      toolCallId: "call-3",
+      label: "Create task",
+      status: "cancelled",
+      input: [],
+      output: [],
+    },
+  });
   await new Promise((resolve) => setTimeout(resolve, 50));
   assert(
     written.some((chunk) => chunk.startsWith(": keep-alive")),
@@ -155,6 +165,7 @@ test("the stream turns the growing draft into text deltas, restarts a text after
       "tool-input-start",
       "tool-input-available",
       "tool-output-error",
+      "tool-output-available",
       "text-end:text-2",
       "data-niaro-result",
       "finish",
@@ -188,6 +199,14 @@ test("the stream turns the growing draft into text deltas, restarts a text after
       type: "tool-output-error",
       toolCallId: "call-2",
       errorText: "validation: integration_input_invalid",
+    },
+  );
+  assert.deepEqual(
+    typed.filter((chunk) => chunk.type === "tool-output-available").at(-1),
+    {
+      type: "tool-output-available",
+      toolCallId: "call-3",
+      output: { status: "cancelled", fields: [] },
     },
   );
   assert.deepEqual(

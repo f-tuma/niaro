@@ -638,6 +638,16 @@ test("a message.send that accepts an event stream gets the draft, the steps and 
       !declined.some((chunk) => chunk.type === "data-tool-call-approval"),
       "A declined write asks for nothing more",
     );
+    // The declined step streams as cancelled, never as a failure.
+    assert(!declined.some((chunk) => chunk.type === "tool-output-error"));
+    const declinedStep = declined
+      .filter((chunk) => chunk.type === "tool-output-available")
+      .at(-1);
+    assert(declinedStep && declinedStep.type === "tool-output-available");
+    assert.equal(
+      (declinedStep.output as { status: string }).status,
+      "cancelled",
+    );
   } finally {
     app.emit("close");
     await identity.close();

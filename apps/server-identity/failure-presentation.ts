@@ -29,9 +29,13 @@ export function failureToolResult(operation: StoredInvocation) {
               ? "The write may already have happened. Verify the service before any retry; do not automatically repeat this write. Retry guidance is not approval."
               : "The result is not confirmed. Do not claim success.",
         }
-      : !failure && operation.status === "failed"
-        ? { note: "No detailed cause was recorded. Do not invent one." }
-        : {}),
+      : operation.status === "rejected"
+        ? {
+            note: "Declined: not executed and the service was not called. Do not say the service refused it; do not call it again unless the person asks again.",
+          }
+        : !failure && operation.status === "failed"
+          ? { note: "No detailed cause was recorded. Do not invent one." }
+          : {}),
   };
 }
 

@@ -393,6 +393,27 @@ test("a streamed answer publishes the draft and the steps as they arrive and end
     expect(f.session.getSnapshot().activitySteps?.[0]?.output).toEqual([
       { label: "Returned items", value: "71" },
     ]);
+    // A declined step stays cancelled; only a real failure reads as failed.
+    for (const id of ["c2", "c3"])
+      stream.push({
+        type: "tool-input-start",
+        toolCallId: id,
+        toolName: "Create task",
+      });
+    stream.push({
+      type: "tool-output-available",
+      toolCallId: "c2",
+      output: { status: "cancelled", fields: [] },
+    });
+    stream.push({
+      type: "tool-output-error",
+      toolCallId: "c3",
+      errorText: "failed",
+    });
+    await settle();
+    expect(
+      f.session.getSnapshot().activitySteps?.map((step) => step.status),
+    ).toEqual(["succeeded", "cancelled", "failed"]);
     // The checker sent the reply back; the draft stays until the stored message lands.
     stream.push({ type: "text-end", id: "t1" });
     await settle();

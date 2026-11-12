@@ -2492,13 +2492,14 @@ export class ClientSession {
         } else if (chunk.type === "tool-output-available") {
           const step = steps.get(chunk.toolCallId);
           if (step) {
-            const status =
+            const sent =
               chunk.output &&
               typeof chunk.output === "object" &&
-              "status" in chunk.output &&
-              chunk.output.status === "waiting"
-                ? "waiting"
-                : "succeeded";
+              "status" in chunk.output
+                ? chunk.output.status
+                : undefined;
+            const status =
+              sent === "waiting" || sent === "cancelled" ? sent : "succeeded";
             steps.set(chunk.toolCallId, {
               ...step,
               status,
