@@ -57,13 +57,24 @@ function locate(pkg, from) {
   }
 }
 
+// Packages the workspace overrides to "-" are never installed (pi-ai's vendor
+// SDKs, NIAR-302), so a dependency on them is not required at runtime.
+const removed = new Set(
+  [
+    ...readFileSync("pnpm-workspace.yaml", "utf8").matchAll(
+      /^\s+"?([^"\s:]+)"?:\s*"-"\s*$/gm,
+    ),
+  ].map((match) => match[1]),
+);
+
 const packages = new Set();
 const queue = [...roots].map((pkg) => ({ pkg, from: root, required: true }));
 while (queue.length) {
   const { pkg, from, required } = queue.shift();
   const dir = locate(pkg, from);
   if (!dir) {
-    if (required) throw new Error(`Runtime dependency not installed: ${pkg}`);
+    if (required && !removed.has(pkg))
+      throw new Error(`Runtime dependency not installed: ${pkg}`);
     continue;
   }
   if (packages.has(dir)) continue;
