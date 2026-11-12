@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { before, test } from "node:test";
 import type {
   LanguageModelV4,
@@ -298,6 +299,66 @@ test("an approval suspends the request, survives restarts without using up resta
       false,
     );
     await core.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("forgetting a thread deletes its conversations' content from the file, even of a waiting call, and the thread starts again", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-native-"));
+  const file = join(root, "identity.sqlite.pi.sqlite");
+  const stored = () => {
+    const db = new DatabaseSync(file, { readOnly: true });
+    try {
+      return db
+        .prepare(
+          "SELECT record AS text FROM entries UNION ALL SELECT record FROM submissions UNION ALL SELECT record FROM tasks UNION ALL SELECT content FROM document_revisions",
+        )
+        .all()
+        .map((row) => String(row.text))
+        .join("\n");
+    } finally {
+      db.close();
+    }
+  };
+  try {
+    let core = await PiAgentCore.open({ host: noHost, file });
+    const invocations: Invocation[] = [];
+    const suspended = await core
+      .agentRuntime()
+      .execute(
+        input({ text: "TEST secret", session: session({ invocations }) }),
+      );
+    assert.equal(suspended.suspended, true);
+    assert.match(stored(), /TEST secret/);
+    assert.equal(
+      await core.agentRuntime().forgetThreads({
+        threadIds: ["TEST-thread"],
+        resourceId: "TEST-resource",
+      }),
+      1,
+    );
+    assert.doesNotMatch(stored(), /TEST secret|TEST note/);
+    assert.deepEqual((await core.agentRuntime().inspect(binding)).messages, []);
+    await core.close();
+
+    // The file opens again and the thread takes a new turn.
+    core = await PiAgentCore.open({ host: noHost, file });
+    const result = await core.agentRuntime().execute(
+      input({
+        runId: "TEST-run-2",
+        session: session({ invocations, approved: true }),
+      }),
+    );
+    assert.equal(result.answer?.reply, "TEST done");
+    assert.deepEqual(
+      (await core.agentRuntime().inspect(binding)).messages.map(
+        (message) => message.role,
+      ),
+      ["user", "assistant", "assistant"],
+    );
+    await core.close();
+    assert.doesNotMatch(stored(), /TEST secret/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

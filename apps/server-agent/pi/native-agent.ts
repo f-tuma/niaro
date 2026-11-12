@@ -858,6 +858,9 @@ export class NativeAgentHost {
     () => undefined;
   /** Set by the core: the extensions a native conversation selects. */
   extensionsFor: (conversationId: string) => Extension[] = () => [];
+  /** Set by a file-backed core: delete idle conversations' rows (`purgeConversations`). */
+  purge: (conversationIds: readonly string[]) => Promise<string[]> =
+    async () => [];
   readonly bindings = new Map<string, RunBinding>();
   /**
    * Conversations whose run a restart cut off (live at open, no call waiting
@@ -1861,6 +1864,9 @@ export function createPiAgentRuntime(core: NativeCore) {
         current.tools = [];
       }, ctx);
     }
+    // Pi keeps a reset conversation's entries; a forgotten chat's content goes
+    // from the file too. Aborted above, so nothing of it runs any more.
+    await native.purge(ids);
     if (ids.length)
       await harness.commit(async (tx) => {
         await tx.retireDoc(NativeThreadDoc, key);

@@ -22,7 +22,9 @@ import {
   type HarnessSettings,
   type Report,
 } from "@earendil-works/pi-durable";
-import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
+import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
+import { openNodeSqliteDatabase } from "@earendil-works/pi-durable/storage/sqlite/node";
+import type { SqliteDatabase } from "@earendil-works/chord/sqlite";
 import type { RouteKey } from "../../../packages/protocol/model-policy";
 import { IntegrationError } from "../../server-integrations/transport";
 import { ctx } from "./context";
@@ -136,10 +138,22 @@ export class PiAgentCore {
       nativeExtension,
       ...(runTools.has(conversationId) ? [runTools.get(conversationId)!] : []),
     ];
-    const storage = options.file
-      ? await openNodeSqliteStorage(options.file)
+    // The database handle is ours too: Pi 1.5.0 cannot delete a conversation.
+    const database = options.file
+      ? await openNodeSqliteDatabase(options.file)
+      : undefined;
+    const storage = database
+      ? await SqliteStorage.open(database).catch(async (error) => {
+          await database.close().catch(() => undefined);
+          throw error;
+        })
       : new MemoryStorage();
     if (options.file) chmodSync(options.file, 0o600);
+    if (database) {
+      // Deleted content is overwritten in the file, not left in free pages.
+      await database.exec("PRAGMA secure_delete=ON");
+      native.purge = (ids) => purgeConversations(database, ids);
+    }
     const settings = options.settings ?? {};
     let harness: Harness;
     try {
@@ -234,4 +248,44 @@ export class PiAgentCore {
     await this.runtime?.close();
     return this.harness.close(ctx);
   }
+}
+
+/**
+ * Deletes the stored content of conversations nobody will use again (a
+ * forgotten chat's): entries, submissions, tasks and their documents. Pi
+ * 1.5.0 has no delete, so this works on its tables (default schema, no
+ * prefix) through the storage's own handle, which queues it with Pi's writes.
+ * A conversation with a task still live is left alone. Returns the purged ids.
+ */
+export async function purgeConversations(
+  database: SqliteDatabase,
+  conversationIds: readonly string[],
+) {
+  return database.transaction(async (tx) => {
+    const purged: string[] = [];
+    for (const id of new Set(conversationIds)) {
+      const conversation = Number(id);
+      if (
+        await tx.get(
+          "SELECT 1 AS live FROM tasks WHERE conversation_id=? AND status<>'terminal' LIMIT 1",
+          conversation,
+        )
+      )
+        continue;
+      const owned =
+        "(scope_kind='conversation' AND owner_id=?1) OR (scope_kind='task' AND owner_id IN (SELECT id FROM tasks WHERE conversation_id=?1))";
+      await tx.run(
+        `DELETE FROM document_revisions WHERE document_id IN (SELECT id FROM documents WHERE ${owned})`,
+        conversation,
+      );
+      await tx.run(`DELETE FROM documents WHERE ${owned}`, conversation);
+      for (const table of ["entries", "submissions", "tasks"])
+        await tx.run(
+          `DELETE FROM ${table} WHERE conversation_id=?`,
+          conversation,
+        );
+      purged.push(id);
+    }
+    return purged;
+  });
 }
