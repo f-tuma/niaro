@@ -381,6 +381,15 @@ The new image migrates the databases on start. To roll back, restore the
 pre-upgrade backup into a new volume and start the previous image on it. An
 older image may not read data written by a newer one.
 
+The first start of an image with NIAR-305 moves saved memory out of the old
+agent store `identity/identity.sqlite.mastra.sqlite` into
+`identity/identity.sqlite.memory.sqlite`, checks every entry in the copy,
+logs `saved_memory_moved` with the number of entries and deletes the old
+file. The old agent state in it (Mastra threads and process snapshots from
+before the move to Pi) goes with it; the chat history members see is stored
+elsewhere and stays. Take the backup above first: an older image cannot read
+the moved file, so a rollback restores that backup.
+
 ## Moving a non-container install into a volume
 
 Compose a volume from the separate directories of a bare-metal profile. This

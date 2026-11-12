@@ -1,6 +1,6 @@
 # Private memory and observations
 
-The memory plugin keeps explicit notes and private observations in Niaro's existing encrypted Mastra saved-memory store. A workspace must already allow and enable the plugin. Each person's opt-out applies to retrieval and learning. This change does not enable the plugin, configure providers or extract existing account data during deployment.
+The memory plugin keeps explicit notes and private observations in Niaro's existing encrypted saved-memory store. A workspace must already allow and enable the plugin. Each person's opt-out applies to retrieval and learning. This change does not enable the plugin, configure providers or extract existing account data during deployment.
 
 Explicit notes are user assertions. Observations are model inferences about one person in one workspace; their section, personal flag and up to five source references are encrypted with the statement. They become active private records after the learner's guarded commit. They never grant permission, approve a native action or replace current service authorization. Correcting an observation creates an explicit user note in the same lineage. Later extraction cannot revise that explicit note.
 

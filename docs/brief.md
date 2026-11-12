@@ -26,12 +26,12 @@ there.
 ## Shape
 
 - One server image: app API, web app at `/`, administration at `/admin`
-  (owners and administrators only), the Mastra runtime and storage. The
+  (owners and administrators only), the Pi agent core and storage. The
   mobile app is a harness over the same API.
 - The server holds authority, scopes, the inference budget, durable receipts
   and explicit approval for every external effect. Clients render what the
   server decides.
-- Every model and agent operation runs on Mastra and through the budget
+- Every model and agent operation runs through Niaro's provider and the budget
   ledger; speech is billed per audio and stays outside the ledger.
 
 ## Where things are

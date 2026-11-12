@@ -42,8 +42,8 @@
 
 ## 4. Wave 4: remove Mastra and libSQL (NIAR-305)
 
-- [ ] 4.1 Remove `@mastra/core`, `@mastra/memory`, `@mastra/libsql`, `@libsql/client`, `ai` and `@ai-sdk/provider` and the code that adapts them (`apps/server-agent/runtime.ts`, `recovery.ts`, `apps/server-identity/mastra-*.ts`, `apps/server-integrations/mastra-model.ts`), and the Mastra dataset and experiment stores of the contract and native test runners (`process-testing.ts`, `process-native-experiment.ts`).
-- [ ] 4.2 One-time cleanup: drop `identity.sqlite.mastra.sqlite` and conversation and process rows that point into it; the server opens existing data (D9).
-- [ ] 4.3 Backup, restore and legacy inventory know `identity.sqlite.pi.sqlite` instead of the Mastra store.
-- [ ] 4.4 Remove the Mastra crash tests superseded by Pi scenarios; update `docs/architecture.md`, guides and specs.
-- [ ] 4.5 Raise the repository `engines` to Node 22.19 (Pi's minimum).
+- [x] 4.1 Remove `@mastra/core`, `@mastra/memory`, `@mastra/libsql`, `@libsql/client`, `ai` and `@ai-sdk/provider` and the code that adapts them (`apps/server-agent/runtime.ts`, `recovery.ts`, `apps/server-identity/mastra-*.ts`, `apps/server-integrations/mastra-model.ts`), and the Mastra dataset and experiment stores of the contract and native test runners (`process-testing.ts`, `process-native-experiment.ts`). `mastra-*.ts` files stay under their names as Niaro's own code without Mastra (D15); the knowledge index ranks on `node:sqlite` with its own cosine distance.
+- [x] 4.2 One-time cleanup: drop `identity.sqlite.mastra.sqlite` after moving its saved memory into `identity.sqlite.memory.sqlite`, verified and restart-safe; conversation and process rows that pointed into it are kept and fail closed, for no member data loss; the server opens existing data (D9, D15).
+- [x] 4.3 Backup and restore carry `identity.sqlite.pi.sqlite` and `identity.sqlite.memory.sqlite` (they copy every SQLite file); the legacy inventory and the copied-tuple tool are gone with the Mastra store (D15).
+- [x] 4.4 Remove the Mastra crash tests superseded by Pi scenarios; update `docs/architecture.md`, guides and specs.
+- [x] 4.5 Raise the repository `engines` to Node 22.19 (Pi's minimum).

@@ -42,8 +42,8 @@ the decision, then the reason.
 - **An approval binds the reviewed revision.** An edit voids consent; a
   duplicate or late approval never creates a second operation; an ambiguous
   "yes" or a rendered card never approves.
-- **Approval is Niaro's `service.resolve` on its own receipt, not Mastra's
-  tool-call approval.** The receipt binds operation, action revision, sign-in
+- **Approval is Niaro's `service.resolve` on its own receipt, not the agent
+  core's tool-call approval.** The receipt binds operation, action revision, sign-in
   pin and work revision, and is idempotent and audited.
 - **Durable receipts are checked before inference.** A replay never pays for a
   second model call and never repeats a completed action.
@@ -70,7 +70,9 @@ the decision, then the reason.
   (NIAR-303). Chat, process agent steps and the process designer run on it
   (NIAR-304). A chat turn cut off by a restart continues when its request
   comes again; deleting or forgetting a thread purges its conversations from
-  the file. Mastra notes below describe code wave 4 (NIAR-305) removes.
+  the file. Since NIAR-305 the server carries no Mastra, libSQL or AI SDK
+  package; saved memory moved from the old Mastra store into its own file
+  (`identity.sqlite.memory.sqlite`) and the old store was deleted.
 - **Single structured calls need no agent runtime.** Meeting records,
   profile observations, action names and widget data are direct calls to
   Niaro's provider (`apps/server-agent/model-call.ts`): they keep no thread
@@ -100,12 +102,12 @@ the decision, then the reason.
   a review of its changelog and API changes.** Pi's API breaks between
   releases (1.5.0 had 34 breaking changes). Upgrade `pi-durable`, `pi-ai`,
   `chord` and `pi-schema` together and rerun `tests/pi-*.node.ts`.
-- **Mastra owns the loop, history and checkpoints; Niaro owns authority,
-  receipts and approvals.** Native checkpoints and business receipts share no
-  transaction, which is why recovery is explicit.
-- **One execution engine.** Processes compile frozen definitions to native
-  Mastra workflows and agents and share the chat runtime, catalog controller
-  and receipts. No second trust implementation.
+- **Pi owns the loop, history and checkpoints; Niaro owns authority,
+  receipts and approvals.** Agent core checkpoints and business receipts share
+  no transaction, which is why receipts decide what already ran.
+- **One execution engine.** Processes run frozen definitions as Pi tasks and
+  agent steps and share the chat runtime, catalog controller and receipts. No
+  second trust implementation.
 - **Models are chosen by an administrator's policy, never by code.** Roles map
   to ordered catalog models or tiers; workspaces inherit an organization
   default. Fallback moves on only from a call that provably never reached its
@@ -115,8 +117,9 @@ the decision, then the reason.
   checks do not depend on one provider.
 - **The model sees a services listing and loads actions by name.** A full
   catalog in every prompt was too slow and costly.
-- **Mastra semantic recall and working memory stay off** until a retrieval and
-  deletion policy exists.
+- **The agent core keeps no semantic recall or working memory of its own.**
+  Saved memory is Niaro's encrypted store; retrieval waits for a retrieval and
+  deletion policy.
 - **Workspace instructions are data, like skills.** Administrators shape tone
   and conventions; the text is framed as never permission and every authority
   check stays in the server. Prompt variables are filled by the server from
@@ -178,27 +181,27 @@ the decision, then the reason.
   Ordinary erasure covers the whole lineage; personal-only erasure removes
   observed history while preserving an explicit corrected head.
 - **Private learning uses existing source and budget owners.** Transaction-bound
-  minimal chat/meeting references, durable cursors and leases feed a quiet
-  no-tool extraction agent through the normal model SDK and inference ledger.
+  minimal chat/meeting references, durable cursors and leases feed a no-tool
+  extraction call through Niaro's provider and the inference ledger.
   Only current own evidence is eligible. Unknown paid outcomes retain their
   original root/hold across restart; bounded encrypted response checkpoints
   permit replay without a repeated charge. See [memory](guides/memory.md).
-- **Saved memory is encrypted in Mastra Memory** with its lifecycle in identity
-  storage.
-- **Memory and search grow inside Niaro's own storage, on Mastra** (decided
+- **Saved memory is encrypted in its own file** (`identity.sqlite.memory.sqlite`,
+  table `niaro_saved_memory`) with its lifecycle in identity storage.
+- **Memory and search grow inside Niaro's own storage** (decided
   29 Oct 2026, after surveying Mem0, Graphiti, Letta, Cognee, Qdrant, LanceDB
   and pgvector). No separate memory framework or database service: they would
   call models outside the ledger and duplicate encryption, erasure and
   access rules. The memory store stays the source of truth; any vector index
-  (libSQL vectors first, LanceDB if it outgrows them) is derived, rebuildable
+  (SQLite first, LanceDB if it outgrows it) is derived, rebuildable
   and erased with its record. Every indexed item carries its access labels,
   queries filter by them and each hit is re-checked against current identity
   before use (fail closed), and what reaches whom is recorded.
-- **Workspace knowledge is a derived libSQL index next to the identity
-  database** (NIAR-298). `node:sqlite` has no vector functions, so passages
-  and their float32 embeddings live in their own libSQL file ranked with
-  `vector_distance_cos`, filtered by the labels on every passage and
-  re-checked per hit. Never a document store; the embedding model is an
+- **Workspace knowledge is a derived SQLite index next to the identity
+  database** (NIAR-298). Passages and their float32 embeddings live in their
+  own `node:sqlite` file, ranked by our own cosine distance (NIAR-305; the
+  libSQL file it replaced opens unchanged), filtered by the labels on every
+  passage and re-checked per hit. Never a document store; the embedding model is an
   administrator's role choice.
 - **A public chat is separate from native threads** (one chat can span several
   native segments), with a continuation lock per chat. Opening history never
@@ -262,7 +265,8 @@ the decision, then the reason.
   reply; the event table is a durable outbox. WAL with full sync, local disk
   only.
 - **One process owns a data directory** (exclusive lock).
-- **The identity and Mastra stores are not atomic together,** so a backup
-  captures them as one matched set, together with the identity secret.
+- **The identity database, saved memory and the agent core are not atomic
+  together,** so a backup captures them as one matched set, together with the
+  identity secret.
 - **Server extension points take trusted TypeScript,** never code from JSON or
   from a model. Plugins are reviewed like server code.
