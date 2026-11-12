@@ -1737,6 +1737,9 @@ export function createPiAgentRuntime(core: NativeCore) {
     const initial = await session.prepareModel();
     const binding = new RunBinding(input, conversationId, initial, native);
     native.bind(binding);
+    // Removed on every exit: a request's deadline must not abort the run
+    // after the request returned (a waiting approval, a later turn).
+    let onAbort: (() => void) | undefined;
     try {
       let submissionId: string | undefined;
       if (continued)
@@ -1795,6 +1798,7 @@ export function createPiAgentRuntime(core: NativeCore) {
               ),
             );
         };
+        onAbort = fail;
         if (input.signal.aborted) fail();
         else input.signal.addEventListener("abort", fail, { once: true });
       });
@@ -1836,6 +1840,7 @@ export function createPiAgentRuntime(core: NativeCore) {
         answer: binding.finalized,
       };
     } finally {
+      if (onAbort) input.signal.removeEventListener("abort", onAbort);
       if (input.resume && !restarted)
         native.forgetResume(binding, input.resume.toolCallId);
       native.unbind(binding);

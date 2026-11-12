@@ -71,7 +71,10 @@ type Script = (options: LanguageModelV4CallOptions) => {
   call?: { name: string; args: unknown };
 };
 const prompts: LanguageModelV4CallOptions["prompt"][] = [];
-function model(script: Script): NativeAgentInput["createModel"] {
+function model(
+  script: Script,
+  gate?: () => Promise<unknown>,
+): NativeAgentInput["createModel"] {
   return (_selected, guard) =>
     ({
       specificationVersion: "v4",
@@ -82,6 +85,7 @@ function model(script: Script): NativeAgentInput["createModel"] {
         throw new Error("TEST stream only");
       },
       doStream: async (options: LanguageModelV4CallOptions) => {
+        await gate?.();
         await guard(() => undefined);
         prompts.push(options.prompt);
         const reply = script(options);
@@ -301,6 +305,64 @@ test("an approval suspends the request, survives restarts without using up resta
     await core.close();
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a request's abort after it returned reaches neither its suspended run nor a later run", async () => {
+  const core = await PiAgentCore.open({ host: noHost });
+  try {
+    const runtime = core.agentRuntime();
+    const invocations: Invocation[] = [];
+    // The approval waits; the request that started it ends (its deadline).
+    const first = new AbortController();
+    const waiting = session({ invocations });
+    assert.equal(
+      (await runtime.execute(input({ session: waiting, signal: first.signal })))
+        .suspended,
+      true,
+    );
+    const toolCallId = waiting.state.pending!.toolCallId;
+    first.abort(new Error("TEST request deadline"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert(await runtime.proveSuspended({ ...binding, toolCallId }));
+    const resume = new AbortController();
+    const resumed = await runtime.execute(
+      input({
+        text: undefined,
+        signal: resume.signal,
+        resume: { toolCallId, data: { resolved: true } },
+        session: session({ invocations, approved: true }),
+      }),
+    );
+    assert.equal(resumed.answer?.reply, "TEST done");
+    assert.deepEqual(
+      invocations.map((call) => call.toolCallId),
+      [toolCallId, toolCallId],
+    );
+
+    // The resuming request's own deadline fires during the next turn.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let started!: () => void;
+    const inFlight = new Promise<void>((resolve) => (started = resolve));
+    const later = runtime.execute(
+      input({
+        runId: "TEST-run-2",
+        text: "Say hi",
+        session: session({ invocations, approved: true }),
+        createModel: model(
+          () => ({ text: "TEST hi" }),
+          () => (started(), gate),
+        ),
+      }),
+    );
+    await Promise.race([inFlight, later]);
+    resume.abort(new Error("TEST request deadline"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+    assert.equal((await later).answer?.reply, "TEST hi");
+  } finally {
+    await core.close();
   }
 });
 
