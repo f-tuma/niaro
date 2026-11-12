@@ -95,7 +95,7 @@ export const AnswerStreamChunkSchema = z.discriminatedUnion("type", [
   }),
   /** The answer's program once its fence is complete; admission still follows. */
   chunk("data-openui", { data: z.strictObject({ program: z.string() }) }),
-  /** A write awaiting the person's decision, in the shape `@mastra/ai-sdk` emits. */
+  /** A write awaiting the person's decision, in the stream part shape the answer stream has always carried. */
   chunk("data-tool-call-approval", { data: AnswerStreamApprovalSchema }),
   /**
    * What the JSON response would have been: its HTTP status and body (the

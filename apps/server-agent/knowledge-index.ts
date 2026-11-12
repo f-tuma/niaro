@@ -1,13 +1,14 @@
-import { chmodSync } from "node:fs";
+import { chmodSync, existsSync } from "node:fs";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { createClient, type Client, type InValue } from "@libsql/client";
 
 /**
- * The workspace knowledge index (NIAR-298) in its own libSQL file next to
- * the identity database. The identity database runs on `node:sqlite`, which
- * has no vector functions; libSQL stores each passage's embedding as a
- * float32 blob and ranks with its native `vector_distance_cos`. The index
- * is derived: dropping the file loses nothing a rebuild cannot restore.
+ * The workspace knowledge index (NIAR-298) in its own SQLite file next to
+ * the identity database. Each passage's embedding is a float32 blob; search
+ * ranks by cosine distance computed in our own SQL function. Until NIAR-305
+ * the file was written by libSQL, whose files and blobs are the same, so an
+ * existing index opens as it is. The index is derived: dropping the file
+ * loses nothing a rebuild cannot restore.
  *
  * Every passage carries its access labels (workspace, kind, the person who
  * sent the file, the service and action of a source) and every query
@@ -87,6 +88,29 @@ export interface KnowledgeIndex {
 
 const blob = (vector: Float32Array) =>
   new Uint8Array(vector.buffer, vector.byteOffset, vector.byteLength);
+const floats = (value: Uint8Array) =>
+  new Float32Array(
+    value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength),
+  );
+
+/**
+ * 1 − cosine similarity of two float32 vectors (0 same direction, 2
+ * opposite); null when the widths differ or either vector has no length.
+ */
+export function cosineDistance(a: Float32Array, b: Float32Array) {
+  if (a.length !== b.length || !a.length) return null;
+  let dot = 0,
+    left = 0,
+    right = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i]! * b[i]!;
+    left += a[i]! * a[i]!;
+    right += b[i]! * b[i]!;
+  }
+  if (!left || !right) return null;
+  return 1 - dot / Math.sqrt(left * right);
+}
+
 const text = (value: unknown) => (value === null ? null : String(value));
 const hit = (row: Record<string, unknown>): KnowledgeHit => ({
   id: String(row.id),
@@ -105,14 +129,25 @@ const hit = (row: Record<string, unknown>): KnowledgeHit => ({
       : null,
 });
 
-class LibsqlKnowledgeIndex implements KnowledgeIndex {
-  constructor(private readonly client: Client) {}
+class SqliteKnowledgeIndex implements KnowledgeIndex {
+  constructor(private readonly db: DatabaseSync) {}
+  private write(run: () => void) {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      run();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   async documents(workspaceId: string) {
-    const result = await this.client.execute({
-      sql: "SELECT * FROM knowledge_documents WHERE workspace_id=? ORDER BY indexed_at",
-      args: [workspaceId],
-    });
-    return result.rows.map(
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM knowledge_documents WHERE workspace_id=? ORDER BY indexed_at",
+      )
+      .all(workspaceId);
+    return rows.map(
       (row): KnowledgeDocument => ({
         id: String(row.id),
         workspaceId: String(row.workspace_id),
@@ -135,7 +170,7 @@ class LibsqlKnowledgeIndex implements KnowledgeIndex {
     const width = passages[0]?.vector.length;
     if (passages.some((passage) => passage.vector.length !== width))
       throw new Error("knowledge_dimensions_mismatch");
-    const labels: InValue[] = [
+    const labels: SQLInputValue[] = [
       document.workspaceId,
       document.sourceKey,
       document.kind,
@@ -145,90 +180,82 @@ class LibsqlKnowledgeIndex implements KnowledgeIndex {
       document.actionId,
       document.modelKey,
     ];
-    await this.client.batch(
-      [
-        {
-          sql: "DELETE FROM knowledge_chunks WHERE document_id=?",
-          args: [document.id],
-        },
-        {
-          sql: "DELETE FROM knowledge_documents WHERE id=?",
-          args: [document.id],
-        },
-        {
-          sql: "INSERT INTO knowledge_documents(id,workspace_id,source_key,kind,name,owner_user_id,service_id,action_id,content_hash,model_key,indexed_at,chunk_count) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-          args: [
-            document.id,
-            document.workspaceId,
-            document.sourceKey,
-            document.kind,
-            document.name,
-            document.ownerUserId,
-            document.serviceId,
-            document.actionId,
-            document.contentHash,
-            document.modelKey,
-            document.indexedAt,
-            passages.length,
-          ],
-        },
-        ...passages.map((passage) => ({
-          sql: "INSERT INTO knowledge_chunks(id,document_id,ordinal,text,embedding,dimensions,workspace_id,source_key,kind,name,owner_user_id,service_id,action_id,model_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-          args: [
-            passage.id,
-            document.id,
-            passage.ordinal,
-            passage.text,
-            blob(passage.vector),
-            passage.vector.length,
-            ...labels,
-          ],
-        })),
-      ],
-      "write",
-    );
+    this.write(() => {
+      this.db
+        .prepare("DELETE FROM knowledge_chunks WHERE document_id=?")
+        .run(document.id);
+      this.db
+        .prepare("DELETE FROM knowledge_documents WHERE id=?")
+        .run(document.id);
+      this.db
+        .prepare(
+          "INSERT INTO knowledge_documents(id,workspace_id,source_key,kind,name,owner_user_id,service_id,action_id,content_hash,model_key,indexed_at,chunk_count) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        )
+        .run(
+          document.id,
+          document.workspaceId,
+          document.sourceKey,
+          document.kind,
+          document.name,
+          document.ownerUserId,
+          document.serviceId,
+          document.actionId,
+          document.contentHash,
+          document.modelKey,
+          document.indexedAt,
+          passages.length,
+        );
+      const insert = this.db.prepare(
+        "INSERT INTO knowledge_chunks(id,document_id,ordinal,text,embedding,dimensions,workspace_id,source_key,kind,name,owner_user_id,service_id,action_id,model_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      );
+      for (const passage of passages)
+        insert.run(
+          passage.id,
+          document.id,
+          passage.ordinal,
+          passage.text,
+          blob(passage.vector),
+          passage.vector.length,
+          ...labels,
+        );
+    });
   }
   async remove(workspaceId: string, documentIds: readonly string[]) {
     if (!documentIds.length) return;
-    await this.client.batch(
-      documentIds.flatMap((id) => [
-        {
-          sql: "DELETE FROM knowledge_chunks WHERE document_id=? AND workspace_id=?",
-          args: [id, workspaceId],
-        },
-        {
-          sql: "DELETE FROM knowledge_documents WHERE id=? AND workspace_id=?",
-          args: [id, workspaceId],
-        },
-      ]),
-      "write",
-    );
+    this.write(() => {
+      for (const id of documentIds) {
+        this.db
+          .prepare(
+            "DELETE FROM knowledge_chunks WHERE document_id=? AND workspace_id=?",
+          )
+          .run(id, workspaceId);
+        this.db
+          .prepare(
+            "DELETE FROM knowledge_documents WHERE id=? AND workspace_id=?",
+          )
+          .run(id, workspaceId);
+      }
+    });
   }
   async clear(workspaceId: string) {
-    await this.client.batch(
-      [
-        {
-          sql: "DELETE FROM knowledge_chunks WHERE workspace_id=?",
-          args: [workspaceId],
-        },
-        {
-          sql: "DELETE FROM knowledge_documents WHERE workspace_id=?",
-          args: [workspaceId],
-        },
-      ],
-      "write",
-    );
+    this.write(() => {
+      this.db
+        .prepare("DELETE FROM knowledge_chunks WHERE workspace_id=?")
+        .run(workspaceId);
+      this.db
+        .prepare("DELETE FROM knowledge_documents WHERE workspace_id=?")
+        .run(workspaceId);
+    });
   }
   async counts(workspaceId: string, modelKey: string | null) {
-    const row = (
-      await this.client.execute({
-        sql: `SELECT
+    const row = this.db
+      .prepare(
+        `SELECT
           (SELECT count(*) FROM knowledge_documents WHERE workspace_id=?1) AS documents,
           (SELECT count(*) FROM knowledge_chunks WHERE workspace_id=?1 AND model_key IS ?2) AS chunks,
           (SELECT count(*) FROM knowledge_chunks WHERE workspace_id=?1 AND model_key IS NOT ?2) AS stale`,
-        args: [workspaceId, modelKey],
-      })
-    ).rows[0]!;
+      )
+      .get(workspaceId, modelKey)!;
     return {
       documents: Number(row.documents),
       chunks: Number(row.chunks),
@@ -248,13 +275,16 @@ class LibsqlKnowledgeIndex implements KnowledgeIndex {
           ]
         : []),
     ].join(" OR ");
-    const result = await this.client.execute({
-      sql: `SELECT id,document_id,workspace_id,source_key,kind,name,owner_user_id,service_id,action_id,text,
-          vector_distance_cos(embedding, ?) AS distance
+    // A vector without direction has no distance and ranks last.
+    const rows = this.db
+      .prepare(
+        `SELECT id,document_id,workspace_id,source_key,kind,name,owner_user_id,service_id,action_id,text,
+          niaro_cosine_distance(embedding, ?) AS distance
         FROM knowledge_chunks
         WHERE workspace_id=? AND model_key=? AND dimensions=? AND (${visible})
-        ORDER BY distance ASC LIMIT ?`,
-      args: [
+        ORDER BY distance IS NULL, distance ASC, id LIMIT ?`,
+      )
+      .all(
         blob(query.vector),
         query.workspaceId,
         query.modelKey,
@@ -262,40 +292,54 @@ class LibsqlKnowledgeIndex implements KnowledgeIndex {
         ...(query.files ? [query.userId] : []),
         ...sources,
         Math.max(1, Math.min(50, query.limit)),
-      ],
-    });
-    return result.rows.map((row) => hit(row as Record<string, unknown>));
+      );
+    return rows.map((row) => hit(row));
   }
   async passages(workspaceId: string, ids: readonly string[]) {
     const wanted = [...new Set(ids)].slice(0, 100);
     if (!wanted.length) return [];
-    const result = await this.client.execute({
-      sql: `SELECT id,document_id,workspace_id,source_key,kind,name,owner_user_id,service_id,action_id,text,NULL AS distance
+    const rows = this.db
+      .prepare(
+        `SELECT id,document_id,workspace_id,source_key,kind,name,owner_user_id,service_id,action_id,text,NULL AS distance
         FROM knowledge_chunks WHERE workspace_id=? AND id IN (${wanted.map(() => "?").join(",")})`,
-      args: [workspaceId, ...wanted],
-    });
-    return result.rows.map((row) => hit(row as Record<string, unknown>));
+      )
+      .all(workspaceId, ...wanted);
+    return rows.map((row) => hit(row));
   }
   async close() {
-    this.client.close();
+    this.db.close();
   }
 }
 
 /**
- * Opens (and creates) the index at a libSQL URL: `file:` next to the
- * identity database, `:memory:` in tests. The file is private to this user.
+ * Opens (and creates) the index at a `file:` URL next to the identity
+ * database, or `:memory:` in tests. The file is private to this user.
  */
 export async function openKnowledgeIndex(url: string): Promise<KnowledgeIndex> {
-  const client = createClient({ url });
-  await client.batch(
-    [
-      "CREATE TABLE IF NOT EXISTS knowledge_documents(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,source_key TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('file','service')),name TEXT NOT NULL,owner_user_id TEXT,service_id TEXT,action_id TEXT,content_hash TEXT NOT NULL,model_key TEXT NOT NULL,indexed_at INTEGER NOT NULL,chunk_count INTEGER NOT NULL,UNIQUE(workspace_id,source_key))",
-      "CREATE TABLE IF NOT EXISTS knowledge_chunks(id TEXT PRIMARY KEY,document_id TEXT NOT NULL,ordinal INTEGER NOT NULL,text TEXT NOT NULL,embedding BLOB NOT NULL,dimensions INTEGER NOT NULL,workspace_id TEXT NOT NULL,source_key TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('file','service')),name TEXT NOT NULL,owner_user_id TEXT,service_id TEXT,action_id TEXT,model_key TEXT NOT NULL)",
-      "CREATE INDEX IF NOT EXISTS knowledge_chunks_scope ON knowledge_chunks(workspace_id,model_key,kind)",
-      "CREATE INDEX IF NOT EXISTS knowledge_chunks_document ON knowledge_chunks(document_id)",
-    ],
-    "write",
-  );
-  if (url.startsWith("file:")) chmodSync(fileURLToPath(url), 0o600);
-  return new LibsqlKnowledgeIndex(client);
+  const file = url.startsWith("file:") ? fileURLToPath(url) : undefined;
+  const db = new DatabaseSync(file ?? ":memory:");
+  try {
+    db.function(
+      "niaro_cosine_distance",
+      { deterministic: true },
+      (stored, asked) =>
+        stored instanceof Uint8Array && asked instanceof Uint8Array
+          ? cosineDistance(floats(stored), floats(asked))
+          : null,
+    );
+    db.exec(
+      "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA secure_delete=ON; " +
+        "CREATE TABLE IF NOT EXISTS knowledge_documents(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,source_key TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('file','service')),name TEXT NOT NULL,owner_user_id TEXT,service_id TEXT,action_id TEXT,content_hash TEXT NOT NULL,model_key TEXT NOT NULL,indexed_at INTEGER NOT NULL,chunk_count INTEGER NOT NULL,UNIQUE(workspace_id,source_key));" +
+        "CREATE TABLE IF NOT EXISTS knowledge_chunks(id TEXT PRIMARY KEY,document_id TEXT NOT NULL,ordinal INTEGER NOT NULL,text TEXT NOT NULL,embedding BLOB NOT NULL,dimensions INTEGER NOT NULL,workspace_id TEXT NOT NULL,source_key TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('file','service')),name TEXT NOT NULL,owner_user_id TEXT,service_id TEXT,action_id TEXT,model_key TEXT NOT NULL);" +
+        "CREATE INDEX IF NOT EXISTS knowledge_chunks_scope ON knowledge_chunks(workspace_id,model_key,kind);" +
+        "CREATE INDEX IF NOT EXISTS knowledge_chunks_document ON knowledge_chunks(document_id);",
+    );
+    if (file)
+      for (const path of [file, file + "-wal", file + "-shm"])
+        if (existsSync(path)) chmodSync(path, 0o600);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  return new SqliteKnowledgeIndex(db);
 }

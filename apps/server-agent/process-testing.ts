@@ -3,8 +3,6 @@ import { mkdtempSync, rmSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { Mastra } from "@mastra/core/mastra";
-import { LibSQLStore } from "@mastra/libsql";
 import {
   PROCESS_TEST_PROFILE,
   ProcessTestSuiteSchema,
@@ -31,7 +29,7 @@ import {
 export const PROCESS_CONTRACT_RUNNER_VERSION =
   "niaro-isolated-compiler-contract/1";
 const require = createRequire(import.meta.url);
-export const PROCESS_CONTRACT_RUNTIME_VERSION = `pi-durable@${require("@earendil-works/pi-durable/package.json").version};mastra/core@${require("@mastra/core/package.json").version};libsql@${require("@mastra/libsql/package.json").version};zod@${require("zod/package.json").version}`;
+export const PROCESS_CONTRACT_RUNTIME_VERSION = `pi-durable@${require("@earendil-works/pi-durable/package.json").version};zod@${require("zod/package.json").version}`;
 /** Kept local to the native package: canonical JSON binds the exact static fixture suite. */
 function digest(value: unknown): string {
   const canonical = (v: unknown): string =>
@@ -68,13 +66,6 @@ class FixtureFailure extends Error {
   ) {
     super(code);
   }
-}
-function store(path: string) {
-  const storage = new LibSQLStore({
-    id: `niaro-contract-${randomUUID()}`,
-    url: `file:${path}`,
-  });
-  return { storage, mastra: new Mastra({ storage, logger: false }) };
 }
 
 /** No catalog, provider, transport, credential or production memory is reachable here. */
@@ -333,99 +324,35 @@ export async function runProcessContractExperiment(
   const stamp = processContractStamp(artifact, suite);
   const root = mkdtempSync(join(tmpdir(), "niaro-process-contract-"));
   chmodSync(root, 0o700);
-  const owner = store(join(root, "experiments.sqlite"));
   try {
-    await owner.storage.init();
-    const dataset = await owner.mastra.datasets.create({
-      name: "Niaro isolated compiler contract",
-      metadata: { ...stamp },
-      scorerIds: [],
-    });
-    const items = await dataset.addItems({
-      items: suite.cases.map((item) => ({
-        externalId: item.id,
-        input: item,
-        groundTruth: item.expected,
-        scorerIds: [],
-      })),
-    });
-    const version = (await dataset.getDetails()).version;
-    const snapshot = await dataset.listItems({ version });
-    if (
-      !Array.isArray(snapshot) ||
-      snapshot.length !== suite.cases.length ||
-      items.length !== snapshot.length
-    )
-      throw Error("test_dataset_incomplete");
-    const summary = await dataset.startExperiment<
-      ProcessTestCase,
-      ProcessTestObservation
-    >({
-      version,
-      name: "Closed static adapter qualification",
-      maxConcurrency: 1,
-      maxRetries: 0,
-      signal,
-      // Custom-task toolMocks are not a sandbox. Only our closed boundary executes.
-      scorers: [],
-      unmockedToolPolicy: "deny",
-      task: async ({ input, signal: itemSignal }) => {
-        await authorize();
-        return observe(
-          artifact,
-          ProcessTestSuiteSchema.parse({ cases: [input] }).cases[0]!,
-          join(root, `${input.id}.sqlite`),
-          AbortSignal.any([
-            signal,
-            ...(itemSignal ? [itemSignal] : []),
-            AbortSignal.timeout(
-              Math.min(artifact.definition.limits.maxDurationMs, 30000),
-            ),
-          ]),
-          authorize,
+    // Cases run one at a time in suite order; a case that cannot be
+    // observed fails the whole run, after authorization is checked again.
+    const observations: ProcessTestObservation[] = [];
+    for (const item of suite.cases) {
+      await authorize();
+      try {
+        observations.push(
+          await observe(
+            artifact,
+            item,
+            join(root, `${item.id}.sqlite`),
+            AbortSignal.any([
+              signal,
+              AbortSignal.timeout(
+                Math.min(artifact.definition.limits.maxDurationMs, 30000),
+              ),
+            ]),
+            authorize,
+          ),
         );
-      },
-    });
+      } catch (error) {
+        signal.throwIfAborted();
+        await authorize();
+        throw Error("test_experiment_incomplete", { cause: error });
+      }
+    }
     signal.throwIfAborted();
     await authorize();
-    const persisted = await dataset.getExperiment({
-      experimentId: summary.experimentId,
-    });
-    const rows = await dataset.listExperimentResults({
-      experimentId: summary.experimentId,
-      perPage: 100,
-    });
-    if (
-      !persisted ||
-      persisted.status !== "completed" ||
-      summary.status !== "completed" ||
-      summary.skippedCount ||
-      summary.failedCount ||
-      summary.persistenceFailures ||
-      summary.results.some((r) => r.error || r.persistenceError) ||
-      rows.results.length !== suite.cases.length ||
-      summary.results.length !== suite.cases.length
-    )
-      throw Error("test_experiment_incomplete");
-    const observations = summary.results.map(
-      (r) => r.output as ProcessTestObservation,
-    );
-    // Experiment terminal callbacks precede persistence. Read and verify the
-    // actual rows before copying the report out of this ephemeral test store.
-    for (const result of summary.results) {
-      const row = rows.results.find((v) => v.itemId === result.itemId);
-      if (
-        !row ||
-        row.error ||
-        row.attempt !== 0 ||
-        row.retryCount !== 0 ||
-        row.itemDatasetVersion !== result.itemVersion ||
-        digest(row.input) !== digest(result.input) ||
-        digest(row.groundTruth) !== digest(result.groundTruth) ||
-        digest(row.output) !== digest(result.output)
-      )
-        throw Error("test_persisted_result_conflict");
-    }
     if (
       digest(observations.map((v) => v.caseId).sort()) !==
       digest(suite.cases.map((v) => v.id).sort())
@@ -442,14 +369,13 @@ export async function runProcessContractExperiment(
           : "absent",
       activationEligible: false,
       stamp,
-      datasetId: dataset.id,
-      datasetVersion: version,
-      experimentId: summary.experimentId,
+      datasetId: randomUUID(),
+      datasetVersion: 1,
+      experimentId: randomUUID(),
       observations,
       status: observations.every((v) => v.passed) ? "passed" : "failed",
     });
   } finally {
-    await owner.storage.close();
     rmSync(root, { recursive: true, force: true });
   }
 }

@@ -525,7 +525,11 @@ test("two-stage production publication appends one assistant with no new receipt
     const id = String(row.id),
       text = "TEST source-addressable prepared fixture";
     const acceptedSources = store.profileRefs(scope, 0);
-    assert.equal(acceptedSources.length, 1, "attachment acceptance indexes its user source in the workflow transaction");
+    assert.equal(
+      acceptedSources.length,
+      1,
+      "attachment acceptance indexes its user source in the workflow transaction",
+    );
     const context = {
       conversationId: command.conversationId,
       conversationSession: sha("TEST publication session"),
@@ -617,7 +621,11 @@ test("two-stage production publication appends one assistant with no new receipt
       1,
     );
     assert.equal(h.requests.length, count);
-    assert.deepEqual(store.profileRefs(scope, 0), acceptedSources, "assistant-only publication and replay never create a memory source");
+    assert.deepEqual(
+      store.profileRefs(scope, 0),
+      acceptedSources,
+      "assistant-only publication and replay never create a memory source",
+    );
     store.execute(scope, {
       type: "conversation.delete",
       conversationId: "conversation-1",
@@ -696,25 +704,23 @@ test("erase-only native retirement removes a suspended question checkpoint witho
       "UTC",
       b.context,
     );
-    const state = h.commandState(b.input.commandId),
-      calls = h.requests.length;
-    const before = new DatabaseSync(
-      join(h.root, "identity.sqlite.mastra.sqlite"),
-      { readOnly: true },
-    );
-    try {
-      assert.ok(
-        Number(
-          before
-            .prepare(
-              "SELECT count(*) AS n FROM mastra_workflow_snapshot WHERE run_id=?",
-            )
-            .get(state.runId)!.n,
-        ) > 0,
-      );
-    } finally {
-      before.close();
-    }
+    const calls = h.requests.length;
+    // Everything the Pi core file holds for this run, as text.
+    const piContent = () => {
+      const db = new DatabaseSync(join(h.root, "identity.sqlite.pi.sqlite"), {
+        readOnly: true,
+      });
+      try {
+        return JSON.stringify(
+          ["tasks", "document_revisions", "entries"].map((table) =>
+            db.prepare(`SELECT * FROM ${table}`).all(),
+          ),
+        );
+      } finally {
+        db.close();
+      }
+    };
+    assert.ok(piContent().includes("TEST PAUSED"));
     allowed = false;
     await purgeNativeAttachmentGeneration(
       h.controller,
@@ -725,23 +731,7 @@ test("erase-only native retirement removes a suspended question checkpoint witho
       (fn) => h.context.serial(async () => fn()),
       () => [b.input.commandId],
     );
-    const after = new DatabaseSync(
-      join(h.root, "identity.sqlite.mastra.sqlite"),
-      { readOnly: true },
-    );
-    try {
-      const rows = after
-        .prepare(
-          "SELECT workflow_name,snapshot FROM mastra_workflow_snapshot WHERE run_id=?",
-        )
-        .all(state.runId);
-      assert.ok(
-        rows.every((row) => row.workflow_name === "niaro-native-retirement-v1"),
-      );
-      assert.ok(!JSON.stringify(rows).includes("TEST PAUSED"));
-    } finally {
-      after.close();
-    }
+    assert.ok(!piContent().includes("TEST PAUSED"));
     assert.equal(h.requests.length, calls);
     assert.equal(
       h.serviceRequests.filter((r) => r.method === "POST").length,

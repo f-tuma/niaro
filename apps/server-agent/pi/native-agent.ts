@@ -1489,10 +1489,7 @@ type NativeCore = {
 };
 type ThreadBinding = { runId: string; threadId: string; resourceId: string };
 
-/**
- * The runtime the chat drives on Pi; answers the calls of the Mastra
- * runtime (`createNativeAgentRuntime`).
- */
+/** The runtime the chat, process agents and the designer drive on Pi. */
 export function createPiAgentRuntime(core: NativeCore) {
   const { harness, native } = core;
   const active = new Map<string, Promise<unknown>>();

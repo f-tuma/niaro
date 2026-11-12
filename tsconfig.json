@@ -28,7 +28,6 @@
     "node_modules",
     "dist",
     "dist-storybook",
-    "spikes/mastra",
     "spikes/pi-durable"
   ]
 }

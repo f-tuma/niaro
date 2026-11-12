@@ -32,7 +32,7 @@ import {
   processCompilerVersion,
   processValueSchema,
 } from "../server-agent/process-workflow";
-import { runNativeComparisonDataset } from "../server-agent/process-native-experiment";
+import { nativeComparison } from "../server-agent/process-native-experiment";
 import { NativeTestDiagnosticError } from "../server-agent/process-native-diagnostic";
 import { CatalogController, type CatalogContext } from "./catalog-controller";
 import { ServiceCatalogStore, type StoredInvocation } from "./service-catalog";
@@ -1326,10 +1326,8 @@ export async function runProcessNativeComparison(
   chmodSync(root, 0o700);
   const stamp = processNativeStamp(artifact, catalog, suite);
   try {
-    const native = await runNativeComparisonDataset(
-      root,
+    const native = await nativeComparison.run(
       suite,
-      stamp,
       signal,
       processDigest,
       async (strategy, item, itemSignal, capture) => {

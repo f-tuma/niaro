@@ -1,16 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { test } from "node:test";
-import {
-  createNativeAgentRuntime,
-  type NativeAgentInput,
-  type NativeAgentSession,
-} from "@niaro/server-agent";
+import type { NativeAgentInput, NativeAgentSession } from "@niaro/server-agent";
 import type { LanguageModelV4StreamPart } from "@niaro/server-agent/model-types";
 import {
   completionBody,
@@ -391,10 +383,11 @@ test("the transport reports each server-sent event while the response is still o
 /** A native run whose provider streams: a step that calls a tool, then an
  * answer the checker sends back once, then the accepted answer. */
 test("the draft follows only the step that can become the answer and ends with the settled answer", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "niaro-answer-draft-"));
-  const runtime = createNativeAgentRuntime(
-    pathToFileURL(join(directory, "native.sqlite")).href,
-  );
+  const { PiAgentCore } = await import("@niaro/server-agent/pi");
+  const core = await PiAgentCore.open({
+    host: { plan: async () => Promise.reject(Error("TEST no route")) },
+  });
+  const runtime = core.agentRuntime();
   const drafts: (string | null)[] = [];
   let calls = 0;
   let finalizations = 0;
@@ -477,16 +470,16 @@ test("the draft follows only the step that can become the answer and ends with t
       "TEST accepted\n\n```openui-lang\n" + program + "\n```",
     ]);
   } finally {
-    await runtime.close();
-    rmSync(directory, { recursive: true, force: true });
+    await core.close();
   }
 });
 
 test("a run without a draft observer never asks the provider to stream", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "niaro-answer-nodraft-"));
-  const runtime = createNativeAgentRuntime(
-    pathToFileURL(join(directory, "native.sqlite")).href,
-  );
+  const { PiAgentCore } = await import("@niaro/server-agent/pi");
+  const core = await PiAgentCore.open({
+    host: { plan: async () => Promise.reject(Error("TEST no route")) },
+  });
+  const runtime = core.agentRuntime();
   const bodies: Record<string, unknown>[] = [];
   const provider = streamingTransport(async (request) => {
     bodies.push(request.body as Record<string, unknown>);
@@ -530,7 +523,6 @@ test("a run without a draft observer never asks the provider to stream", async (
     assert.equal(bodies.length, 1);
     assert.equal(bodies[0]!.stream, undefined);
   } finally {
-    await runtime.close();
-    rmSync(directory, { recursive: true, force: true });
+    await core.close();
   }
 });

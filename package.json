@@ -6,7 +6,7 @@
   "private": true,
   "main": "index.js",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.19.0"
   },
   "scripts": {
     "assets:pull": "node scripts/pull-brand-assets.mjs",

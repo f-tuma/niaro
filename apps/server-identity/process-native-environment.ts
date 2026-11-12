@@ -7,7 +7,7 @@ import type { ProcessTestCatalog } from "./process-test-catalog";
 import { processDigest } from "./process-validation";
 import { processCompilerVersion } from "../server-agent/process-workflow";
 import { PROCESS_NATIVE_TEST_RUNTIME_VERSION } from "../server-agent/process-native-experiment";
-import { NATIVE_AGENT_MAX_STEPS } from "../server-agent/runtime";
+import { NATIVE_AGENT_MAX_STEPS } from "../server-agent/native-contract";
 import { NATIVE_DOMAIN_SAFETY_LIMITS } from "./mastra-domain";
 
 /** Passive authoritative environment shared by comparison and qualification. */

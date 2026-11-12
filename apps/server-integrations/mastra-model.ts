@@ -389,7 +389,7 @@ function completion(response: TransportResponse, key: string) {
   return body;
 }
 
-/** A single provider invocation. Mastra owns the model/tool loop and all retries are disabled by its caller. */
+/** A single provider invocation. The Pi agent loop owns the model/tool loop; this call never retries on its own. */
 export function createNiaroMastraModel(
   selected: NiaroModelSelection,
   transport: IntegrationTransport,

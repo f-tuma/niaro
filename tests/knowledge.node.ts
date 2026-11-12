@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { CatalogCommand } from "../packages/protocol/service-catalog";
@@ -20,7 +24,10 @@ import {
   type KnowledgeFile,
   type KnowledgeTarget,
 } from "../apps/server-identity/knowledge";
-import { openKnowledgeIndex } from "../apps/server-agent/knowledge-index";
+import {
+  cosineDistance,
+  openKnowledgeIndex,
+} from "../apps/server-agent/knowledge-index";
 import { answerReceipts } from "../apps/server-identity/answer-receipts";
 import { AnswerReceiptSchema } from "../packages/protocol/answer-receipts";
 import { knowledgeSection } from "../apps/server-identity/config-bundle/sections/knowledge";
@@ -725,5 +732,103 @@ test("the configuration bundle carries what is indexed, by name, never the index
     assert.equal(outcome.conflicts[0]!.reason, "reference_missing");
   } finally {
     await h.close();
+  }
+});
+
+test("search ranks by cosine distance within the asker's labels, nearest first", async () => {
+  assert.equal(cosineDistance(Float32Array.of(1, 0), Float32Array.of(2, 0)), 0);
+  assert.equal(
+    cosineDistance(Float32Array.of(1, 0), Float32Array.of(-1, 0)),
+    2,
+  );
+  assert.equal(
+    cosineDistance(Float32Array.of(0, 0), Float32Array.of(1, 0)),
+    null,
+  );
+  assert.equal(cosineDistance(Float32Array.of(1), Float32Array.of(1, 0)), null);
+  const dir = mkdtempSync(join(tmpdir(), "niaro-knowledge-"));
+  const url = pathToFileURL(join(dir, "identity.sqlite.knowledge.sqlite")).href;
+  try {
+    let index = await openKnowledgeIndex(url);
+    const document = (
+      id: string,
+      ownerUserId: string | null,
+      service?: [string, string],
+      modelKey = "m1",
+    ) => ({
+      id,
+      workspaceId,
+      sourceKey: service ? `service:${service.join("/")}` : `file:${id}`,
+      kind: service ? ("service" as const) : ("file" as const),
+      name: id,
+      ownerUserId,
+      serviceId: service?.[0] ?? null,
+      actionId: service?.[1] ?? null,
+      contentHash: id,
+      modelKey,
+      indexedAt: 1,
+    });
+    const passage = (id: string, ...vector: number[]) => ({
+      id,
+      ordinal: 0,
+      text: id,
+      vector: Float32Array.from(vector),
+    });
+    await index.replace(document("alice-file", "alice"), [
+      passage("same", 1, 0, 0),
+      passage("near", 0.9, 0.1, 0),
+      passage("flat", 0, 0, 0),
+      passage("opposite", -1, 0, 0),
+    ]);
+    await index.replace(document("bob-file", "bob"), [passage("bob", 1, 0, 0)]);
+    await index.replace(document("wiki", null, ["svc", "read"]), [
+      passage("wiki", 0, 1, 0),
+    ]);
+    await index.replace(document("old-model", "alice", undefined, "m0"), [
+      passage("old", 1, 0, 0),
+    ]);
+    await index.replace(document("narrow", "alice", undefined, "m1"), [
+      passage("narrow", 1, 0),
+    ]);
+    const search = (sources: string[], limit = 10) =>
+      index.search({
+        workspaceId,
+        modelKey: "m1",
+        vector: Float32Array.of(1, 0, 0),
+        userId: "alice",
+        files: true,
+        sources,
+        limit,
+      });
+    const ranked = await search(["svc/read"]);
+    assert.deepEqual(
+      ranked.map((hit) => hit.id),
+      ["same", "near", "wiki", "opposite", "flat"],
+    );
+    assert.equal(ranked[0]!.distance, 0);
+    assert.ok(Math.abs(ranked[2]!.distance! - 1) < 1e-9);
+    assert.equal(ranked[3]!.distance, 2);
+    assert.equal(ranked.at(-1)!.distance, null);
+    assert.deepEqual(
+      (await search([], 2)).map((hit) => hit.id),
+      ["same", "near"],
+    );
+    await index.close();
+    // The file is reopened as it was left (an index written by libSQL before
+    // NIAR-305 has the same tables and float32 blobs).
+    index = await openKnowledgeIndex(url);
+    assert.deepEqual(await index.counts(workspaceId, "m1"), {
+      documents: 5,
+      chunks: 7,
+      stale: 1,
+    });
+    assert.equal((await search(["svc/read"]))[0]!.id, "same");
+    await index.close();
+    assert.equal(
+      statSync(join(dir, "identity.sqlite.knowledge.sqlite")).mode & 0o777,
+      0o600,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

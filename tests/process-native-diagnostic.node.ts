@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { Dataset } from "@mastra/core/datasets";
-import { ExperimentsLibSQL, LibSQLStore } from "@mastra/libsql";
 import {
   PROCESS_NATIVE_TEST_DETAIL_PROFILE as detailProfile,
   NativeTestRequestSchema,
@@ -18,6 +16,7 @@ import { ProcessVersionSchema } from "../packages/protocol/service-processes";
 import { PROCESS_VERSION_PROFILE } from "../packages/protocol/process-versions";
 import { processDigest } from "../apps/server-identity/process-validation";
 import { NativeTestDiagnosticError } from "../apps/server-agent/process-native-diagnostic";
+import { nativeComparison } from "../apps/server-agent/process-native-experiment";
 import {
   nativeHttpFixture,
   nativeHttpPath as base,
@@ -217,15 +216,11 @@ async function incomplete(h: Fixture, request: NativeTestRequest) {
 
 test("configured approval-always without a decision persists truthful incomplete diagnostics and passive /1 and /2 recovery", async (t) => {
   let experiments = 0;
-  const start = Dataset.prototype.startExperiment;
-  t.mock.method(
-    Dataset.prototype,
-    "startExperiment",
-    function (this: Dataset, config: Parameters<typeof start>[0]) {
-      experiments++;
-      return start.call(this, config);
-    },
-  );
+  const run = nativeComparison.run;
+  t.mock.method(nativeComparison, "run", (...args: Parameters<typeof run>) => {
+    experiments++;
+    return run(...args);
+  });
   const h = await fixture(),
     request = await fresh(h, "approval");
   const result = await incomplete(h, request);
@@ -400,51 +395,7 @@ test("unknown write, invalid output after a completed write and domain denial re
   }
 });
 
-test("actual succeeded write plus Mastra result persistence failure carries bounded persistence evidence without raw error strings", async (t) => {
-  const h = await fixture(),
-    request = approved(await fresh(h, "persistence"));
-  t.mock.method(
-    ExperimentsLibSQL.prototype,
-    "addExperimentResult",
-    async () => {
-      throw Error("TEST PRIVATE RAW password=DO-NOT-EXPOSE SQL payload");
-    },
-  );
-  const result = await incomplete(h, request);
-  assert.equal(result.diagnostic!.category, "persistence");
-  assert.equal(
-    result.diagnostic!.code,
-    "native_test_result_persistence_failed",
-  );
-  assert.equal(result.diagnostic!.evidence!.receipts![0]!.status, "succeeded");
-  assert.equal(result.diagnostic!.evidence!.businessDispatches, 1);
-  assert(!JSON.stringify(result).includes("DO-NOT-EXPOSE"));
-  assert(!JSON.stringify(result.diagnostic).includes("input"));
-});
-
-test("actual succeeded native task with malformed persisted result is interrupted without repairing the experiment", async (t) => {
-  const h = await fixture(),
-    request = approved(await fresh(h, "malformed"));
-  const list = Dataset.prototype.listExperimentResults;
-  t.mock.method(
-    Dataset.prototype,
-    "listExperimentResults",
-    async function (this: Dataset, ...args: Parameters<typeof list>) {
-      const results = await list.apply(this, args);
-      results.results[0]!.output = { private: "TEST DO-NOT-EXPOSE" };
-      return results;
-    },
-  );
-  const result = await incomplete(h, request);
-  assert.equal(
-    result.diagnostic!.code,
-    "native_test_experiment_result_invalid",
-  );
-  assert.equal(result.diagnostic!.evidence!.receipts![0]!.status, "succeeded");
-  assert(!JSON.stringify(result).includes("DO-NOT-EXPOSE"));
-});
-
-test("first native boundary survives later case failures, Mastra orchestration throw and cleanup overlay", async (t) => {
+test("first native boundary in suite order survives a later case failure", async () => {
   const h = await fixture(),
     request = await fresh(h, "first_primary", true);
   const second = structuredClone(request.suite.cases[0]!);
@@ -453,24 +404,6 @@ test("first native boundary survives later case failures, Mastra orchestration t
   second.expected.receipts = [];
   second.models.configured = [question(h, "TEST-second-question")];
   request.suite.cases.push(second);
-  const start = Dataset.prototype.startExperiment;
-  t.mock.method(
-    Dataset.prototype,
-    "startExperiment",
-    async function (this: Dataset, ...args: Parameters<typeof start>) {
-      await start.apply(this, args);
-      throw Error("TEST PRIVATE orchestration error");
-    },
-  );
-  const close = LibSQLStore.prototype.close;
-  t.mock.method(
-    LibSQLStore.prototype,
-    "close",
-    async function (this: LibSQLStore) {
-      await close.call(this);
-      throw Error("TEST PRIVATE cleanup error");
-    },
-  );
   const result = await incomplete(h, request);
   assert.equal(result.diagnostic!.code, "native_test_approval_unexpected");
   assert.equal(result.diagnostic!.evidence!.caseId, "first_primary");
@@ -478,34 +411,6 @@ test("first native boundary survives later case failures, Mastra orchestration t
     result.diagnostic!.evidence!.receipts![0]!.status,
     "awaiting_approval",
   );
-  assert(
-    result.diagnostic!.secondaryCodes.includes("native_test_cleanup_failed"),
-  );
-});
-
-test("generic orchestration failure after real native tasks retains only current strategy evidence", async (t) => {
-  const h = await fixture(),
-    request = approved(await fresh(h, "generic_orchestration"));
-  const start = Dataset.prototype.startExperiment;
-  let experiments = 0;
-  t.mock.method(
-    Dataset.prototype,
-    "startExperiment",
-    async function (this: Dataset, config: Parameters<typeof start>[0]) {
-      experiments++;
-      const result = await start.call(this, config);
-      if (config.name === "generic")
-        throw Error("TEST PRIVATE generic orchestration error");
-      return result;
-    },
-  );
-  const result = await incomplete(h, request);
-  assert.equal(experiments, 2);
-  assert.equal(result.diagnostic!.code, "native_test_experiment_incomplete");
-  assert.equal(result.diagnostic!.evidence!.strategy, "generic");
-  assert.equal(result.diagnostic!.evidence!.receipts![0]!.status, "succeeded");
-  assert.equal(result.diagnostic!.evidence!.businessDispatches, 1);
-  assert(!JSON.stringify(result).includes("PRIVATE"));
 });
 
 test("specific question boundary and succeeded receipt survive unavailable budget evidence without invented counters", async (t) => {
@@ -642,104 +547,46 @@ test("generic capture rejects cross-owner, cross-conversation and foreign canoni
   assert.equal(guardedReads, 3);
 });
 
-test("task input conflict is preserved before Mastra serialization and does not execute a native case", async (t) => {
-  const h = await fixture(),
-    request = await fresh(h, "input_conflict");
-  const start = Dataset.prototype.startExperiment;
-  t.mock.method(
-    Dataset.prototype,
-    "startExperiment",
-    function (this: Dataset, config: Parameters<typeof start>[0]) {
-      const task = config.task!;
-      return start.call(this, {
-        ...config,
-        task: (context) =>
-          task({
-            ...context,
-            input: { ...(context.input as object), id: "TEST-forged-case" },
-          }),
-      });
-    },
-  );
-  const result = await incomplete(h, request);
-  assert.equal(result.diagnostic!.code, "native_test_experiment_conflict");
-  assert.equal(result.diagnostic!.evidence, undefined);
-});
-
-test("a later unidentifiable task input cannot replace the first actual native approval boundary", async (t) => {
-  const h = await fixture(),
-    request = await fresh(h, "first_before_unidentifiable");
-  const second = structuredClone(request.suite.cases[0]!);
-  second.id = "second_unidentifiable";
-  request.suite.cases.push(second);
-  const start = Dataset.prototype.startExperiment;
-  let callbacks = 0;
-  t.mock.method(
-    Dataset.prototype,
-    "startExperiment",
-    function (this: Dataset, config: Parameters<typeof start>[0]) {
-      const task = config.task!;
-      return start.call(this, {
-        ...config,
-        task: (context) => {
-          callbacks++;
-          return task(
-            (context.input as { id: string }).id === "second_unidentifiable"
-              ? { ...context, input: { id: "TEST-unidentifiable" } }
-              : context,
-          );
-        },
-      });
-    },
-  );
-  const result = await incomplete(h, request);
-  assert.equal(callbacks, 2);
-  assert.equal(result.diagnostic!.code, "native_test_approval_unexpected");
-  assert.equal(
-    result.diagnostic!.evidence!.caseId,
-    "first_before_unidentifiable",
-  );
-  assert.equal(result.diagnostic!.evidence!.modelCalls, 1);
-  assert.equal(
-    result.diagnostic!.evidence!.receipts![0]!.status,
-    "awaiting_approval",
-  );
-});
-
 for (const change of ["source", "authority"] as const)
   test(`${change} loss before retirement discards staged native diagnostics`, async (t) => {
     const h = await fixture(),
       request = await fresh(h, "discard_" + change);
-    const start = Dataset.prototype.startExperiment;
+    const run = nativeComparison.run;
     t.mock.method(
-      Dataset.prototype,
-      "startExperiment",
-      async function (this: Dataset, ...args: Parameters<typeof start>) {
-        const summary = await start.apply(this, args);
-        if (change === "authority")
-          h.mutateNativeHeader("cookie", "TEST-replaced-session");
-        else {
-          const service = h.identity["catalog"].store.service(
-              h.target.workspaceId,
-              h.serviceId,
-            ),
-            action = service.actions.find((a) => a.id === h.actionId)!;
-          const { id, revision, sourceKey: _sourceKey, ...settings } = action;
-          await h.catalog({
-            type: "saveAction",
-            id,
-            revision,
-            serviceId: service.id,
-            serviceRevision: service.revision,
-            settings: {
-              ...settings,
-              description: "TEST drift after native boundary",
-            },
-          });
+      nativeComparison,
+      "run",
+      async (...args: Parameters<typeof run>) => {
+        // The case fails with a staged diagnostic; the loss lands before retirement either way.
+        try {
+          return await run(...args);
+        } finally {
+          await lose();
         }
-        return summary;
       },
     );
+    async function lose() {
+      if (change === "authority")
+        h.mutateNativeHeader("cookie", "TEST-replaced-session");
+      else {
+        const service = h.identity["catalog"].store.service(
+            h.target.workspaceId,
+            h.serviceId,
+          ),
+          action = service.actions.find((a) => a.id === h.actionId)!;
+        const { id, revision, sourceKey: _sourceKey, ...settings } = action;
+        await h.catalog({
+          type: "saveAction",
+          id,
+          revision,
+          serviceId: service.id,
+          serviceRevision: service.revision,
+          settings: {
+            ...settings,
+            description: "TEST drift after native boundary",
+          },
+        });
+      }
+    }
     const response = await h.request("owner", base, request);
     assert([401, 403, 409].includes(response.status));
     const row = JSON.parse(
@@ -830,14 +677,16 @@ test("abort during fresh retirement after an actual boundary interrupts without 
   const h = await fixture(),
     request = await fresh(h, "discard_abort");
   let armed = false;
-  const start = Dataset.prototype.startExperiment;
+  const run = nativeComparison.run;
   t.mock.method(
-    Dataset.prototype,
-    "startExperiment",
-    async function (this: Dataset, ...args: Parameters<typeof start>) {
-      const summary = await start.apply(this, args);
-      armed = true;
-      return summary;
+    nativeComparison,
+    "run",
+    async (...args: Parameters<typeof run>) => {
+      try {
+        return await run(...args);
+      } finally {
+        armed = true;
+      }
     },
   );
   const testing = h.identity["processNativeTesting"]!,
@@ -874,15 +723,11 @@ test("genuine lost HTTP response after terminal diagnostic commit recovers by or
   const h = await fixture(),
     request = await fresh(h, "lost_response");
   let experiments = 0;
-  const start = Dataset.prototype.startExperiment;
-  t.mock.method(
-    Dataset.prototype,
-    "startExperiment",
-    function (this: Dataset, ...args: Parameters<typeof start>) {
-      experiments++;
-      return start.apply(this, args);
-    },
-  );
+  const run = nativeComparison.run;
+  t.mock.method(nativeComparison, "run", (...args: Parameters<typeof run>) => {
+    experiments++;
+    return run(...args);
+  });
   const journal = h.identity["processTests"]!,
     interrupt = journal.interrupt;
   const abort = new AbortController();
@@ -976,33 +821,29 @@ test("controller discards malformed or foreign attachment after an actual native
   let mutation: "malformed" | "foreign" = "malformed",
     experiments = 0,
     nativeBoundaries = 0;
-  const start = Dataset.prototype.startExperiment;
+  const run = nativeComparison.run;
   t.mock.method(
-    Dataset.prototype,
-    "startExperiment",
-    function (this: Dataset, config: Parameters<typeof start>[0]) {
+    nativeComparison,
+    "run",
+    (...[suite, signal, digest, task]: Parameters<typeof run>) => {
       experiments++;
-      const task = config.task!;
-      return start.call(this, {
-        ...config,
-        task: async (context) => {
-          try {
-            return await task(context);
-          } catch (error) {
-            assert(error instanceof NativeTestDiagnosticError);
-            assert.equal(
-              error.diagnostic.code,
-              "native_test_approval_unexpected",
-            );
-            nativeBoundaries++;
-            if (mutation === "malformed")
-              Object.assign(error.diagnostic, {
-                code: "TEST PRIVATE invalid code",
-              });
-            else error.diagnostic.evidence!.receipts![0]!.actionRevision++;
-            throw error;
-          }
-        },
+      return run(suite, signal, digest, async (...input) => {
+        try {
+          return await task(...input);
+        } catch (error) {
+          assert(error instanceof NativeTestDiagnosticError);
+          assert.equal(
+            error.diagnostic.code,
+            "native_test_approval_unexpected",
+          );
+          nativeBoundaries++;
+          if (mutation === "malformed")
+            Object.assign(error.diagnostic, {
+              code: "TEST PRIVATE invalid code",
+            });
+          else error.diagnostic.evidence!.receipts![0]!.actionRevision++;
+          throw error;
+        }
       });
     },
   );
@@ -1031,15 +872,11 @@ test("historical detail stays null and malformed or foreign persisted diagnostic
   const h = await fixture(),
     request = await fresh(h, "persisted_guards");
   let experiments = 0;
-  const start = Dataset.prototype.startExperiment;
-  t.mock.method(
-    Dataset.prototype,
-    "startExperiment",
-    function (this: Dataset, ...args: Parameters<typeof start>) {
-      experiments++;
-      return start.apply(this, args);
-    },
-  );
+  const run = nativeComparison.run;
+  t.mock.method(nativeComparison, "run", (...args: Parameters<typeof run>) => {
+    experiments++;
+    return run(...args);
+  });
   const result = await incomplete(h, request);
   const db = h.identity["db"],
     journal = h.identity["processTests"]!,

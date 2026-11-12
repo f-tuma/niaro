@@ -1,14 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { test } from "node:test";
-import {
-  createNativeAgentRuntime,
-  type NativeAgentEvent,
-  type NativeAgentSession,
-} from "@niaro/server-agent";
+import type { NativeAgentEvent, NativeAgentSession } from "@niaro/server-agent";
 import {
   createNiaroMastraModel,
   type NiaroModelSelection,
@@ -63,10 +55,11 @@ const second = selection("second", 1, "fallback: pending");
  * timeout after the request left.
  */
 async function run(failFirst: "limit" | "unsent" | "timeout") {
-  const directory = mkdtempSync(join(tmpdir(), "niaro-fallback-"));
-  const runtime = createNativeAgentRuntime(
-    pathToFileURL(join(directory, "native.sqlite")).href,
-  );
+  const { PiAgentCore } = await import("@niaro/server-agent/pi");
+  const core = await PiAgentCore.open({
+    host: { plan: async () => Promise.reject(Error("TEST no route")) },
+  });
+  const runtime = core.agentRuntime();
   const sent: string[] = [];
   const events: NativeAgentEvent[] = [];
   const asked: unknown[] = [];
@@ -141,8 +134,7 @@ async function run(failFirst: "limit" | "unsent" | "timeout") {
       );
     return { result, sent, events, asked };
   } finally {
-    await runtime.close();
-    rmSync(directory, { recursive: true, force: true });
+    await core.close();
   }
 }
 
@@ -156,6 +148,7 @@ test("a model refused by its provider's daily limit before dispatch moves to the
     {
       type: "model-start",
       model: "test/first",
+      modelId: first.model.id,
       role: "chat",
       reason: "primary",
     },
@@ -163,6 +156,7 @@ test("a model refused by its provider's daily limit before dispatch moves to the
     {
       type: "model-start",
       model: "test/second",
+      modelId: second.model.id,
       role: "chat",
       reason: "fallback: provider_limit",
     },
