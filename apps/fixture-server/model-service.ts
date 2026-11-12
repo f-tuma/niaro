@@ -14,6 +14,7 @@ import {
   type Command,
   type CommandResult,
   type WorkItem,
+  clipMessageText,
 } from "../../packages/protocol";
 import {
   REQUEST_INTERRUPTION_PROFILE,
@@ -190,7 +191,7 @@ export class ModelService {
         timeZone: "UTC",
         nativeWork: window.items,
         nativeWorkAuthoritative: true,
-        nativeReply: result.reply.slice(0, 2000),
+        nativeReply: clipMessageText(result.reply),
         workItemId: result.workItemId,
         serviceResult: result.result,
         connectionResult: result.connection,
@@ -504,7 +505,7 @@ export class ModelService {
                   timeZone: "UTC",
                   nativeWork,
                   nativeWorkAuthoritative: !!nativeWindow,
-                  nativeReply: result.reply.slice(0, 2000),
+                  nativeReply: clipMessageText(result.reply),
                   expectedConversationRevision: conversation?.revision,
                   workItemId: result.workItemId,
                   serviceResult: result.result,
@@ -1382,7 +1383,7 @@ export class ModelService {
               timeZone: "UTC",
               nativeWork,
               nativeWorkAuthoritative: !!nativeWindow,
-              nativeReply: result.reply.slice(0, 2000),
+              nativeReply: clipMessageText(result.reply),
               ...(originalCommand.type === "message.send" &&
               originalCommand.retryOf
                 ? { nativeRetryAuthorized: true }

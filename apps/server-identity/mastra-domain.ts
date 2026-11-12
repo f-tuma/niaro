@@ -1,5 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { ScopeSchema } from "../../packages/protocol";
+import {
+  ScopeSchema,
+  MESSAGE_TEXT_MAX,
+  clipMessageText,
+} from "../../packages/protocol";
 import {
   AttachmentIdSchema as NativeAttachmentId,
   AttachmentUuidSchema as NativeAttachmentUuid,
@@ -427,7 +431,7 @@ const ThreadAuthority = z.strictObject({
   memoryMetadata: MemoryPin.optional(),
 });
 const Answer = z.strictObject({
-  reply: z.string().max(2000),
+  reply: z.string().max(MESSAGE_TEXT_MAX),
   result: ServiceResultSchema.optional(),
   /** Retired: a model-composed card of an earlier version; never shown. */
   card: z.unknown().optional(),
@@ -4338,7 +4342,9 @@ export function createMastraDomain(
         return state.answer;
       }
       if (state.pending?.kind === "question") {
-        state.answer = { reply: state.pending.question ?? reply };
+        state.answer = {
+          reply: clipMessageText(state.pending.question ?? reply),
+        };
         finishLoopTrace(state, "waiting");
         await save();
         return state.answer;
@@ -4347,12 +4353,12 @@ export function createMastraDomain(
       // request is sent again once the person has connected.
       if (state.connection) {
         state.answer = {
-          reply: (
+          reply: clipMessageText(
             reply.trim() ||
-            (state.language === "cs"
-              ? `Pro ${state.connection.service} se nejdřív přihlas svým účtem.`
-              : `Sign in to ${state.connection.service} with your account first.`)
-          ).slice(0, 2000),
+              (state.language === "cs"
+                ? `Pro ${state.connection.service} se nejdřív přihlas svým účtem.`
+                : `Sign in to ${state.connection.service} with your account first.`),
+          ),
           connection: state.connection,
         };
         finishLoopTrace(state, "waiting");
@@ -4365,12 +4371,12 @@ export function createMastraDomain(
         !(await receipts()).some((receipt) => receipt.effect === "write")
       ) {
         state.answer = {
-          reply: (
+          reply: clipMessageText(
             reply.trim() ||
-            (state.language === "cs"
-              ? `Skill „${state.skillProposal.name}“ je připravený, ulož si ho níž.`
-              : `The skill "${state.skillProposal.name}" is ready to save below.`)
-          ).slice(0, 2000),
+              (state.language === "cs"
+                ? `Skill „${state.skillProposal.name}“ je připravený, ulož si ho níž.`
+                : `The skill "${state.skillProposal.name}" is ready to save below.`),
+          ),
           skillProposal: state.skillProposal,
         };
         finishLoopTrace(state, "succeeded");
@@ -4385,20 +4391,20 @@ export function createMastraDomain(
       ) {
         const proposal = state.processProposal;
         state.answer = {
-          reply: (
+          reply: clipMessageText(
             reply.trim() ||
-            (state.language === "cs"
-              ? proposal.status === "budget"
-                ? "AI rozpočet ještě není nastavený, takže proces teď nenavrhnu. Požádej správce."
-                : proposal.status === "questions"
-                  ? `Návrh procesu „${proposal.name}“ potřebuje ještě upřesnit.`
-                  : `Navrhl jsem proces „${proposal.name}“. Projdi si ho níž.`
-              : proposal.status === "budget"
-                ? "The AI budget isn't set up yet, so I can't design a process now. Ask an administrator."
-                : proposal.status === "questions"
-                  ? `The draft of "${proposal.name}" needs a few answers first.`
-                  : `I drafted the process "${proposal.name}". Review it below.`)
-          ).slice(0, 2000),
+              (state.language === "cs"
+                ? proposal.status === "budget"
+                  ? "AI rozpočet ještě není nastavený, takže proces teď nenavrhnu. Požádej správce."
+                  : proposal.status === "questions"
+                    ? `Návrh procesu „${proposal.name}“ potřebuje ještě upřesnit.`
+                    : `Navrhl jsem proces „${proposal.name}“. Projdi si ho níž.`
+                : proposal.status === "budget"
+                  ? "The AI budget isn't set up yet, so I can't design a process now. Ask an administrator."
+                  : proposal.status === "questions"
+                    ? `The draft of "${proposal.name}" needs a few answers first.`
+                    : `I drafted the process "${proposal.name}". Review it below.`),
+          ),
           processProposal: proposal,
         };
         finishLoopTrace(state, "succeeded");
@@ -4409,12 +4415,12 @@ export function createMastraDomain(
       // decides whether to run it, so there is no service result to check.
       if (state.processOffer && !(await receipts()).length) {
         state.answer = {
-          reply: (
+          reply: clipMessageText(
             reply.trim() ||
-            (state.language === "cs"
-              ? `Na tohle se hodí uložený proces „${state.processOffer.name}“.`
-              : `The saved process "${state.processOffer.name}" fits this.`)
-          ).slice(0, 2000),
+              (state.language === "cs"
+                ? `Na tohle se hodí uložený proces „${state.processOffer.name}“.`
+                : `The saved process "${state.processOffer.name}" fits this.`),
+          ),
           processOffer: state.processOffer,
         };
         finishLoopTrace(state, "succeeded");
@@ -4704,7 +4710,7 @@ export function createMastraDomain(
       // was written before the outcome was known.
       const shownUi = !failedWrite && !partialWrite ? ui : undefined;
       state.answer = {
-        reply: (partialWrite ?? reply).slice(0, 2000),
+        reply: clipMessageText(partialWrite ?? reply),
         ...(offer ? { processOffer: offer } : {}),
         ...(!partialWrite && serviceResult?.result
           ? { result: serviceResult.result }
@@ -6080,20 +6086,21 @@ export function createMastraDomain(
         if (state.pending?.kind === "question") state.pending = undefined;
         state.taskTracked = true;
         state.answer = {
-          reply: [
-            translate(state.language)("requestInterrupted"),
-            partialWrite,
-            summary,
-            card?.reply,
-            hasSavedHumanTaskChanges()
-              ? state.language === "cs"
-                ? "Změny v Úlohách zůstaly uložené."
-                : "Changes in Tasks were kept."
-              : undefined,
-          ]
-            .filter(Boolean)
-            .join("\n\n")
-            .slice(0, 2000),
+          reply: clipMessageText(
+            [
+              translate(state.language)("requestInterrupted"),
+              partialWrite,
+              summary,
+              card?.reply,
+              hasSavedHumanTaskChanges()
+                ? state.language === "cs"
+                  ? "Změny v Úlohách zůstaly uložené."
+                  : "Changes in Tasks were kept."
+                : undefined,
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+          ),
           ...(card?.result ? { result: card.result } : {}),
         };
         finishLoopTrace(state, uncertain ? "unknown" : "cancelled");
@@ -6188,26 +6195,27 @@ export function createMastraDomain(
           )
           .join("\n");
         state.answer = {
-          reply: [
-            explanation,
-            partialWrite,
-            completedSummary,
-            !partialWrite || diagnosis ? recordedOutcome?.reply : undefined,
-            state.memoryReceipts.length
-              ? state.language === "cs"
-                ? "Potvrzené změny paměti byly zachovány."
-                : "Confirmed memory changes were preserved."
-              : undefined,
-            hasSavedHumanTaskChanges()
-              ? state.language === "cs"
-                ? "Změny v Úlohách zůstaly uložené."
-                : "Changes in Tasks were kept."
-              : undefined,
-            problems,
-          ]
-            .filter(Boolean)
-            .join("\n\n")
-            .slice(0, 2000),
+          reply: clipMessageText(
+            [
+              explanation,
+              partialWrite,
+              completedSummary,
+              !partialWrite || diagnosis ? recordedOutcome?.reply : undefined,
+              state.memoryReceipts.length
+                ? state.language === "cs"
+                  ? "Potvrzené změny paměti byly zachovány."
+                  : "Confirmed memory changes were preserved."
+                : undefined,
+              hasSavedHumanTaskChanges()
+                ? state.language === "cs"
+                  ? "Změny v Úlohách zůstaly uložené."
+                  : "Changes in Tasks were kept."
+                : undefined,
+              problems,
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+          ),
           ...(recordedOutcome?.result && (!partialWrite || diagnosis)
             ? { result: recordedOutcome.result }
             : {}),

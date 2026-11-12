@@ -31,6 +31,7 @@ import {
   type CalendarTarget,
   type OpenWork,
   sameScope,
+  MESSAGE_TEXT_MAX,
 } from "../../packages/protocol";
 import {
   choosePeter,
@@ -987,7 +988,7 @@ export class FixtureEngine {
     message.processing = processing;
     this.appendNativeAnswer(
       command.commandId,
-      z.string().max(2000).parse(interpretation.nativeReply),
+      z.string().max(MESSAGE_TEXT_MAX).parse(interpretation.nativeReply),
       interpretation,
     );
     this.commit();
@@ -1291,7 +1292,7 @@ export class FixtureEngine {
   ): CommandResult {
     const replyText =
       interpretation?.nativeReply !== undefined
-        ? z.string().max(2000).parse(interpretation.nativeReply)
+        ? z.string().max(MESSAGE_TEXT_MAX).parse(interpretation.nativeReply)
         : interpretation?.decision.reply;
     if (command.type === "conversation.create") {
       if (

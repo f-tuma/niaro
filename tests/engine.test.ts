@@ -1,5 +1,9 @@
 import { FixtureEngine } from "../apps/fixture-server/engine";
-import { CommandSchema, type Command } from "../packages/protocol";
+import {
+  CommandSchema,
+  MESSAGE_TEXT_MAX,
+  type Command,
+} from "../packages/protocol";
 import {
   answerCommand,
   messageCommand,
@@ -283,7 +287,7 @@ test("a native final answer preserves its bounded explanation beyond the model d
         durationMinutes: null,
         reply: "TEST short",
       },
-      nativeReply: "x".repeat(2001),
+      nativeReply: "x".repeat(MESSAGE_TEXT_MAX + 1),
       expectedCursor: engine.snapshot().cursor,
       timeZone: "UTC",
     }),

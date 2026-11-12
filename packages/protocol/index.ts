@@ -22,7 +22,24 @@ const id = z
   .min(1)
   .max(160)
   .regex(/^[a-zA-Z0-9._:-]+$/);
-const text = z.string().min(1).max(4000);
+/** The longest stored chat message, also the longest assistant reply. */
+export const MESSAGE_TEXT_MAX = 4000;
+/**
+ * A reply that fits a message: longer text ends at the last word that fits,
+ * followed by "…". Clipping clipped text changes nothing.
+ */
+export function clipMessageText(value: string) {
+  const max = MESSAGE_TEXT_MAX;
+  if (value.length <= max) return value;
+  const space = value.slice(0, max).search(/\s\S*$/);
+  return (
+    (space > max / 2
+      ? value.slice(0, space)
+      : value.slice(0, max - 1)
+    ).trimEnd() + "…"
+  );
+}
+const text = z.string().min(1).max(MESSAGE_TEXT_MAX);
 const revision = z.number().int().positive();
 const sequence = z.number().int().nonnegative();
 export const LanguageSchema = z.enum(["en", "cs"]);
@@ -86,7 +103,7 @@ export const MessageSchema = z
   .strictObject({
     id,
     role: z.enum(["user", "assistant"]),
-    text: z.string().max(4000),
+    text: z.string().max(MESSAGE_TEXT_MAX),
     attachments: z.array(AttachmentPublicFileSchema).min(1).max(10).optional(),
     processing: AttachmentProcessingSchema.optional(),
     /** Stable identity across an explicitly retried logical chat message. */

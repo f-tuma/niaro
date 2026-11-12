@@ -17,6 +17,7 @@ import {
   CredentialSchema,
   PROFILE,
   type Command,
+  MESSAGE_TEXT_MAX,
 } from "../packages/protocol";
 import {
   ANSWER_STREAM_MEDIA_TYPE,
@@ -61,6 +62,12 @@ async function readStream(response: Response) {
   }
   return chunks;
 }
+
+/** Whole words of seven to nine characters, exactly `length` characters long. */
+const words = (length: number) =>
+  Array.from({ length }, (_, i) => `slovo${i}`)
+    .join(" ")
+    .slice(0, length);
 
 /** Real authenticated HTTP and native execution; providers and services are offline fixtures. */
 test("a message.send that accepts an event stream gets the draft, the steps and the JSON result as chunks", async () => {
@@ -135,17 +142,20 @@ test("a message.send that accepts an event stream gets the draft, the steps and 
       .filter((entry) => entry.role === "tool");
     const last = results.at(-1)?.content ?? "";
     const creating = /create/i.test(messages[lastUser]?.content ?? "");
-    const message = !results.length
-      ? creating
-        ? call(writeActionName, { name: "TEST-new" })
-        : call(actionName, {})
-      : creating
-        ? {
-            content: last.includes('"status":"succeeded"')
-              ? "TEST item created"
-              : "TEST item not created",
-          }
-        : { content: "TEST two items found" };
+    const long = /TEST long (\d+)/.exec(messages[lastUser]?.content ?? "");
+    const message = long
+      ? { content: words(Number(long[1])) }
+      : !results.length
+        ? creating
+          ? call(writeActionName, { name: "TEST-new" })
+          : call(actionName, {})
+        : creating
+          ? {
+              content: last.includes('"status":"succeeded"')
+                ? "TEST item created"
+                : "TEST item not created",
+            }
+          : { content: "TEST two items found" };
     return {
       status: 200,
       headers: {},
@@ -638,6 +648,26 @@ test("a message.send that accepts an event stream gets the draft, the steps and 
       !declined.some((chunk) => chunk.type === "data-tool-call-approval"),
       "A declined write asks for nothing more",
     );
+    // A long answer is stored whole up to the message limit, and a longer
+    // one ends on a whole word instead of being refused or cut mid-word.
+    for (const [id, length] of [
+      ["TEST-long-1", 2400],
+      ["TEST-long-2", 5000],
+    ] as const) {
+      const response = await send(command(id, `TEST long ${length}`));
+      assert.equal(response.status, 202);
+      const stored = CommandResultSchema.parse(
+        await response.json(),
+      ).snapshot.conversations[0]!.messages.at(-1)!;
+      assert.equal(stored.role, "assistant");
+      if (length === 2400) assert.equal(stored.text, words(2400));
+      else {
+        assert(stored.text.length <= MESSAGE_TEXT_MAX);
+        assert(stored.text.endsWith("…"));
+        const kept = stored.text.slice(0, -1);
+        assert(words(5000).startsWith(kept + " "));
+      }
+    }
     // The declined step streams as cancelled, never as a failure.
     assert(!declined.some((chunk) => chunk.type === "tool-output-error"));
     const declinedStep = declined
