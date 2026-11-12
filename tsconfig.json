@@ -24,10 +24,5 @@
     ".rnstorybook/**/*.tsx",
     "app.config.ts"
   ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "dist-storybook",
-    "spikes/pi-durable"
-  ]
+  "exclude": ["node_modules", "dist", "dist-storybook", "spikes/pi-durable"]
 }
