@@ -20,6 +20,7 @@ import { nativeToolValidator } from "./mastra-domain";
 import { boundedPreview } from "./bounded-preview";
 import { resolvePromptVariables } from "./prompt-variables";
 import { processAgentToolName } from "../server-agent/process-agent-tools";
+import { processValueSchema } from "../server-agent/process-workflow";
 import { createNiaroMastraModel } from "../server-integrations/mastra-model";
 import {
   budgetedInferenceTransport,
@@ -209,9 +210,6 @@ export function createProcessAgentBoundary(input: {
     >[2],
     signal: AbortSignal,
   ) => {
-    const native: typeof import("@niaro/server-agent") = await import(
-      "@niaro/server-agent"
-    );
     const fingerprint = processDigest(bound);
     const state = await context.serial(async () => {
       await input.authorizeHeld();
@@ -251,9 +249,7 @@ export function createProcessAgentBoundary(input: {
       });
       return {
         status: "complete" as const,
-        output: native
-          .processValueSchema(node.outputSchema)
-          .parse(state.output),
+        output: processValueSchema(node.outputSchema).parse(state.output),
       };
     }
     const runtime = await nativeAgentOwner(controller);
@@ -866,9 +862,7 @@ export function createProcessAgentBoundary(input: {
         } catch {
           throw new IdentityError(400, "process_output_invalid");
         }
-        const parsed = native
-          .processValueSchema(node.outputSchema)
-          .safeParse(output);
+        const parsed = processValueSchema(node.outputSchema).safeParse(output);
         if (!parsed.success || Buffer.byteLength(reply) > 65536)
           throw new IdentityError(400, "process_output_invalid");
         await context.serial(async () => {

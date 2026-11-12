@@ -11,6 +11,15 @@ import type { Scope } from "../../packages/protocol";
 import { IdentityId } from "../../packages/protocol/identity";
 import type { ProcessVersion } from "../../packages/protocol/service-processes";
 import { ProcessAnyResumeSchema } from "@niaro/server-agent";
+import {
+  assertProcessCompilerSupported,
+  assertWorkflowSupported,
+  processValueSchema,
+} from "../server-agent/process-workflow";
+import {
+  proveProcessRunCheckpoint,
+  sameProcessCheckpointValue,
+} from "../server-agent/process-checkpoint";
 import type { NativeWorkflowInput } from "@niaro/server-agent/pi";
 import { agentCoreFor } from "./agent-core-owner";
 import {
@@ -121,9 +130,6 @@ export function createServiceProcessRuntime(
     const id = key(runId);
     return controller.withTurn(`process-${id}`, async () => {
       signal.throwIfAborted();
-      const native: typeof import("@niaro/server-agent") = await import(
-        "@niaro/server-agent"
-      );
       let artifact: ProcessVersion;
       let state: Journal;
       await context.serial(async () => {
@@ -131,7 +137,7 @@ export function createServiceProcessRuntime(
         artifact = start
           ? registry.pinRun(current, IdentityId.parse(start.processId), id)
           : registry.resolveRun(current, id);
-        native.assertWorkflowSupported(artifact.definition);
+        assertWorkflowSupported(artifact.definition);
         const saved = controller.store.turn(
           id,
           scope.workspaceId,
@@ -185,7 +191,7 @@ export function createServiceProcessRuntime(
           )
             throw new IdentityError(409, "process_conflict");
           try {
-            native.assertProcessCompilerSupported(
+            assertProcessCompilerSupported(
               state.compilerVersion,
               artifact.definition,
             );
@@ -193,9 +199,9 @@ export function createServiceProcessRuntime(
             throw new IdentityError(409, "process_conflict");
           }
           if (start) {
-            const parsed = native
-              .processValueSchema(artifact.definition.inputSchema)
-              .safeParse(start.input);
+            const parsed = processValueSchema(
+              artifact.definition.inputSchema,
+            ).safeParse(start.input);
             if (
               !parsed.success ||
               state.inputDigest !== processDigest(parsed.data)
@@ -204,9 +210,9 @@ export function createServiceProcessRuntime(
           }
         } else {
           if (!start) throw new IdentityError(404, "process_not_found");
-          const parsed = native
-            .processValueSchema(artifact.definition.inputSchema)
-            .safeParse(start.input);
+          const parsed = processValueSchema(
+            artifact.definition.inputSchema,
+          ).safeParse(start.input);
           if (
             !parsed.success ||
             Buffer.byteLength(JSON.stringify(parsed.data), "utf8") > 65536
@@ -583,7 +589,7 @@ export function createServiceProcessRuntime(
               return false;
             }
           }
-          return native.proveProcessRunCheckpoint({
+          return proveProcessRunCheckpoint({
             checkpoint,
             workflowId,
             definition: version.definition,
@@ -835,7 +841,7 @@ export function createServiceProcessRuntime(
                   receipt.userId !== scope.userId ||
                   receipt.serviceId !== node.serviceId ||
                   receipt.actionId !== node.actionId ||
-                  !native.sameProcessCheckpointValue(receipt.input, bound) ||
+                  !sameProcessCheckpointValue(receipt.input, bound) ||
                   (decision &&
                     (decision.nodeId !== node.id ||
                       decision.operationId !== operationId ||
@@ -1021,7 +1027,7 @@ export function createServiceProcessRuntime(
               old.actionId !== request.actionId ||
               old.serviceRevision !== request.serviceRevision ||
               old.actionRevision !== request.revision ||
-              !native.sameProcessCheckpointValue(old.input, input)
+              !sameProcessCheckpointValue(old.input, input)
             )
               throw new IdentityError(409, "process_conflict");
             const permitted = controller.store.authorize(
