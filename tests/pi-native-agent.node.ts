@@ -17,8 +17,10 @@ import type {
 
 type Pi = typeof import("@niaro/server-agent/pi");
 let PiAgentCore: Pi["PiAgentCore"];
+let pi: Pi;
 before(async () => {
-  ({ PiAgentCore } = await import("@niaro/server-agent/pi"));
+  pi = await import("@niaro/server-agent/pi");
+  ({ PiAgentCore } = pi);
 });
 
 const selected = {
@@ -238,7 +240,7 @@ test("a turn answers through the bound session's model, and history shows only t
   }
 });
 
-test("an approval suspends the request, survives a restart and finishes under the resuming session", async () => {
+test("an approval suspends the request, survives restarts without using up restartLimit and finishes under the resuming session", async () => {
   const root = mkdtempSync(join(tmpdir(), "pi-native-"));
   const file = join(root, "identity.sqlite.pi.sqlite");
   try {
@@ -257,6 +259,19 @@ test("an approval suspends the request, survives a restart and finishes under th
     assert.equal(await core.agentRuntime().proveRetired(binding), false);
     await core.close();
 
+    // A shutdown stops the waiting call, and Pi runs it again at the next
+    // open; more shutdowns than `restartLimit` still leave it waiting.
+    for (let open = 0; open <= pi.RECOVERY_POLICY_A.restartLimit; open++) {
+      core = await PiAgentCore.open({ host: noHost, file });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const tasks = (await core.harness.inspect(pi.ctx)).tasks.filter(
+        (task) => task.record.state.status !== "terminal",
+      );
+      assert(tasks.length > 0);
+      for (const task of tasks)
+        assert.equal(task.record.restarts, undefined, "no restart counted");
+      await core.close();
+    }
     core = await PiAgentCore.open({ host: noHost, file });
     const runtime = core.agentRuntime();
     assert(await runtime.proveSuspended({ ...binding, toolCallId }));

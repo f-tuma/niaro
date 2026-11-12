@@ -137,6 +137,7 @@ type NativeResult = {
   settled: boolean;
   retired: boolean;
   suspended: boolean;
+  continued?: { reply: string; retired: boolean };
   roles: string[];
 };
 
@@ -153,15 +154,19 @@ test("killed after a native run failed for good: the restart proves it retired a
   assert.deepEqual(result.roles, ["user"]);
 });
 
-test("killed while the domain runs a native write: the restart neither runs the write again nor calls a model", async () => {
+test("killed while the domain runs a native write: the run waits for its request, which continues it without a second write", async () => {
   const { result } = await crashAndResume<NativeResult>(
     nativeWorker,
     "native-tool",
     { killAt: "invoked", delayMs: 100 },
   );
-  assert.deepEqual(result.events, ["model", "invoke"]);
-  assert.equal(result.settled, true);
+  // Nothing ran by itself after the restart: no model, no write.
+  assert.deepEqual(result.events.slice(0, 2), ["model", "invoke TEST-call-1"]);
+  assert.equal(result.retired, false, "the cut-off run waits for its request");
   assert.equal(result.suspended, false);
-  // The cut-off call is not shown to members as a pending or failed step.
-  assert(!result.roles.includes("tool"), JSON.stringify(result.roles));
+  // The same request continued it: the call id went to the domain again,
+  // whose receipt answers it, and the model wrote the reply.
+  assert.deepEqual(result.events.slice(2), ["invoke TEST-call-1", "model"]);
+  assert.deepEqual(result.continued, { reply: "TEST noted", retired: true });
+  assert.deepEqual(result.roles, ["user", "assistant", "assistant"]);
 });

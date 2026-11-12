@@ -859,6 +859,13 @@ export class NativeAgentHost {
   /** Set by the core: the extensions a native conversation selects. */
   extensionsFor: (conversationId: string) => Extension[] = () => [];
   readonly bindings = new Map<string, RunBinding>();
+  /**
+   * Conversations whose run a restart cut off (live at open, no call waiting
+   * for a person): their model request and tool call wait for the request
+   * that continues the run (recovery policy A) instead of failing it.
+   */
+  readonly interrupted = new Set<string>();
+  private readonly continuing = new Map<string, Set<Waiter>>();
   private readonly sessions = new Map<string, string>();
   private readonly resumes = new Map<string, RunBinding>();
   private readonly waiters = new Map<string, Waiter>();
@@ -894,12 +901,47 @@ export class NativeAgentHost {
       PROCESS_EPOCH,
       context,
     );
-    const binding = this.bindings.get(conversationId);
-    // Cut off while it executed in a process that died: never run it again
-    // without a request (recovery policy A); the model is told.
-    if (started !== PROCESS_EPOCH || !binding)
-      return jsonResult({ error: "tool_interrupted" }, true);
+    let binding = this.bindings.get(conversationId);
+    // Cut off while it executed in a process that died: it runs again only
+    // under the request that continues the run (recovery policy A), where
+    // session.invoke answers the call id from its receipts and never resends
+    // a write of unknown outcome.
+    if (started !== PROCESS_EPOCH && this.interrupted.has(conversationId))
+      binding ??= await this.continued(
+        conversationId,
+        (context as { abortSignal?: AbortSignal }).abortSignal,
+      );
+    if (!binding) return jsonResult({ error: "tool_interrupted" }, true);
     return binding.tool(name, args, api, context);
+  }
+
+  /** Bind a request to its conversation; a cut-off run waiting for it goes on. */
+  bind(binding: RunBinding) {
+    const id = binding.conversationId;
+    if (this.bindings.has(id)) throw new Error("niaro_native_run_busy");
+    this.bindings.set(id, binding);
+    for (const waiter of this.continuing.get(id) ?? []) waiter.resolve(binding);
+    this.continuing.delete(id);
+  }
+  unbind(binding: RunBinding) {
+    if (this.bindings.get(binding.conversationId) === binding)
+      this.bindings.delete(binding.conversationId);
+  }
+  /** Wait for the request that continues a cut-off run; ends with a close or abort. */
+  private async continued(conversationId: string, signal?: AbortSignal) {
+    const wait = deferred<RunBinding>();
+    const waiters = this.continuing.get(conversationId) ?? new Set();
+    this.continuing.set(conversationId, waiters);
+    waiters.add(wait);
+    const abort = () => wait.reject(new Error("niaro_native_wait_aborted"));
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
+    try {
+      return await wait.promise;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      waiters.delete(wait);
+    }
   }
 
   async suspend(
@@ -1132,10 +1174,12 @@ export class NativeAgentHost {
         out.push({ type: "start", partial });
         try {
           const conversationId = this.sessions.get(options?.sessionId ?? "");
-          const binding =
+          let binding =
             conversationId === undefined
               ? undefined
               : this.bindings.get(conversationId);
+          if (!binding && this.interrupted.has(conversationId!))
+            binding = await this.continued(conversationId!, options?.signal);
           if (!binding) throw new Error("niaro_native_run_unbound");
           const content = await binding.step(context.messages, options?.signal);
           for (const [index, part] of content.entries()) {
@@ -1282,9 +1326,19 @@ export class NativeAgentHost {
   async restore(harness: Harness) {
     this.harness = harness;
     const suspended = await harness.snapshot(NativeSuspendedDoc, ctx);
-    for (const id of suspended?.conversations ?? []) {
+    const live = new Set<string>();
+    const waiting = new Set<string>();
+    for (const task of (await harness.inspect(ctx)).tasks) {
+      if (task.record.conversationId === undefined) continue;
+      const id = String(task.record.conversationId);
+      live.add(id);
+      if (task.record.memos?.[PENDING_MEMO]) waiting.add(id);
+    }
+    for (const id of new Set([...(suspended?.conversations ?? []), ...live])) {
       const doc = await harness.snapshot(NativeConversationDoc, cid(id), ctx);
-      if (doc?.tools.length) this.installTools(id, doc.tools);
+      if (!doc?.resourceId) continue;
+      if (doc.tools.length) this.installTools(id, doc.tools);
+      if (live.has(id) && !waiting.has(id)) this.interrupted.add(id);
     }
   }
 }
@@ -1571,24 +1625,29 @@ export function createPiAgentRuntime(core: NativeCore) {
       const run = existing ? await live(String(existing.id)) : undefined;
       if (existing && !run) conversation = existing;
       else if (existing && run) {
-        if (doc?.runId === input.runId)
-          throw new Error("niaro_native_run_busy");
-        // Busy with another run's suspension: continue the chat in a fork
-        // before that run, so the waiting call stays resumable.
-        const first = run.first;
-        const before = first
-          ? (
-              await existing.entries(
-                { maxEntryId: first, order: "descending" },
-                2,
-                undefined,
-                ctx,
-              )
-            ).items.find((entry) => entry.id !== first)
-          : undefined;
-        conversation = await create(
-          before ? { conversation: existing, entry: before.id } : undefined,
-        );
+        if (doc?.runId === input.runId) {
+          // This run, cut off by a restart: its request continues it.
+          if (!native.interrupted.has(String(existing.id)))
+            throw new Error("niaro_native_run_busy");
+          conversation = existing;
+        } else {
+          // Busy with another run's suspension: continue the chat in a fork
+          // before that run, so the waiting call stays resumable.
+          const first = run.first;
+          const before = first
+            ? (
+                await existing.entries(
+                  { maxEntryId: first, order: "descending" },
+                  2,
+                  undefined,
+                  ctx,
+                )
+              ).items.find((entry) => entry.id !== first)
+            : undefined;
+          conversation = await create(
+            before ? { conversation: existing, entry: before.id } : undefined,
+          );
+        }
       }
     }
     conversation ??= await create();
@@ -1615,6 +1674,8 @@ export function createPiAgentRuntime(core: NativeCore) {
     let conversation: Conversation | undefined;
     // Continue this run on its transcript: a restart cut it off (policy A).
     let restarted = false;
+    // Still live, waiting for this request: binding it continues the run.
+    let continued = false;
     if (input.resume) {
       const { toolCallId, data } = input.resume;
       const id = await runConversation(input);
@@ -1652,9 +1713,12 @@ export function createPiAgentRuntime(core: NativeCore) {
         throw new Error("niaro_native_pending_run_not_found");
     } else {
       conversation = await openConversation(input);
-      const doc = await conversationDoc(String(conversation.id));
-      restarted =
+      const id = String(conversation.id);
+      const doc = await conversationDoc(id);
+      const submitted =
         doc?.runId === input.runId && !!doc.runs[input.runId]?.submissionId;
+      continued = submitted && native.interrupted.has(id) && !!(await live(id));
+      restarted = submitted && !continued;
     }
     const conversationId = String(conversation.id);
     const names = input.definitions.map((definition) => definition.name);
@@ -1672,12 +1736,14 @@ export function createPiAgentRuntime(core: NativeCore) {
     );
     const initial = await session.prepareModel();
     const binding = new RunBinding(input, conversationId, initial, native);
-    if (native.bindings.has(conversationId))
-      throw new Error("niaro_native_run_busy");
-    native.bindings.set(conversationId, binding);
+    native.bind(binding);
     try {
       let submissionId: string | undefined;
-      if (restarted) {
+      if (continued)
+        submissionId = (await conversationDoc(conversationId))?.runs[
+          input.runId
+        ]?.submissionId;
+      else if (restarted) {
         const submission = await conversation.submit({ type: "continue" }, ctx);
         submissionId = String(submission.id);
       } else if (input.resume) {
@@ -1772,8 +1838,9 @@ export function createPiAgentRuntime(core: NativeCore) {
     } finally {
       if (input.resume && !restarted)
         native.forgetResume(binding, input.resume.toolCallId);
-      if (native.bindings.get(conversationId) === binding)
-        native.bindings.delete(conversationId);
+      native.unbind(binding);
+      // Continued (or ended) by this request; nothing waits for another.
+      native.interrupted.delete(conversationId);
     }
   }
 

@@ -4,10 +4,11 @@
  *
  * Scenarios:
  * - native-fatal: the run's model call fails for good; killed after that.
- * - native-tool: killed while the domain runs a write of the run.
+ * - native-tool: killed while the domain runs a write of the run; after the
+ *   restart the run waits until its request comes again and continues it.
  *
- * The resumed process only reopens the core and reports what it proves; no
- * request continues the run (continuing chat turns is wave 3 step C).
+ * The resumed process reopens the core and reports what it proves; in
+ * native-tool the same request then continues the run (recovery policy A).
  */
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -49,21 +50,35 @@ const createModel: NativeAgentInput["createModel"] = () =>
     doGenerate: async () => {
       throw new Error("TEST stream only");
     },
-    doStream: async () => {
+    doStream: async (options: { prompt: { role: string }[] }) => {
       event("model");
       if (child.scenario === "native-fatal")
         throw Object.assign(new Error("integration_provider_failed"), {
           code: "integration_provider_failed",
         });
-      const parts: LanguageModelV4StreamPart[] = [
-        {
-          type: "tool-call",
-          toolCallId: "TEST-call-1",
-          toolName: "write_note",
-          input: JSON.stringify({ text: "TEST note" }),
-        },
-        finish,
-      ];
+      // After the write's result, the run answers.
+      const answered = options.prompt.some(
+        (message) => message.role === "tool",
+      );
+      const parts: LanguageModelV4StreamPart[] = answered
+        ? [
+            { type: "text-start", id: "TEST-text" },
+            { type: "text-delta", id: "TEST-text", delta: "TEST noted" },
+            { type: "text-end", id: "TEST-text" },
+            {
+              ...finish,
+              finishReason: { unified: "stop", raw: undefined },
+            } as LanguageModelV4StreamPart,
+          ]
+        : [
+            {
+              type: "tool-call",
+              toolCallId: "TEST-call-1",
+              toolName: "write_note",
+              input: JSON.stringify({ text: "TEST note" }),
+            },
+            finish,
+          ];
       return {
         stream: new ReadableStream({
           start(controller) {
@@ -88,10 +103,14 @@ const session: NativeAgentSession = {
     privateContext: false,
   }),
   allowance: async (_provider, _revision, start) => start(),
-  invoke: async () => {
-    event("invoke");
-    child.mark("invoked");
-    return child.hang();
+  invoke: async (_name, _args, metadata) => {
+    event(`invoke ${metadata.toolCallId}`);
+    if (child.step === "start") {
+      child.mark("invoked");
+      return child.hang();
+    }
+    // The domain's receipt for the call id answers the repeated call.
+    return { status: "succeeded" };
   },
   finalize: async (reply) => ({ reply }) as never,
   save: async () => undefined,
@@ -108,45 +127,56 @@ async function main() {
     },
   });
   const runtime = core.agentRuntime();
-  if (child.step === "start") {
-    const failed = await runtime
-      .execute({
-        ...binding,
-        text: "Write a note",
-        signal: new AbortController().signal,
-        definitions: [
-          {
-            name: "write_note",
-            description: "Write a note",
-            parameters: {
-              type: "object",
-              properties: { text: { type: "string" } },
-              required: ["text"],
-            },
-            validate: () => ({ valid: true }),
+  const request = () =>
+    runtime.execute({
+      ...binding,
+      text: "Write a note",
+      signal: new AbortController().signal,
+      definitions: [
+        {
+          name: "write_note",
+          description: "Write a note",
+          parameters: {
+            type: "object",
+            properties: { text: { type: "string" } },
+            required: ["text"],
           },
-        ],
-        createModel,
-        session,
-      })
-      .then(
-        () => "",
-        (error: unknown) => String((error as Error).message),
-      );
+          validate: () => ({ valid: true }),
+        },
+      ],
+      createModel,
+      session,
+    });
+  if (child.step === "start") {
+    const failed = await request().then(
+      () => "",
+      (error: unknown) => String((error as Error).message),
+    );
     child.mark("failed", { failed });
     await child.hang();
   }
   // Let anything Pi resumes by itself run before reading the state.
   await new Promise((resolve) => setTimeout(resolve, 500));
-  const { messages } = await runtime.inspect(binding);
-  child.result({
-    events: events(),
+  const proofs = {
     settled: runtime.isSettled(binding.runId),
     retired: await runtime.proveRetired(binding),
     suspended: await runtime.proveSuspended({
       ...binding,
       toolCallId: "TEST-call-1",
     }),
+  };
+  const continued =
+    child.scenario === "native-tool"
+      ? {
+          reply: (await request()).text,
+          retired: await runtime.proveRetired(binding),
+        }
+      : undefined;
+  const { messages } = await runtime.inspect(binding);
+  child.result({
+    events: events(),
+    ...proofs,
+    continued,
     roles: messages.map((message) => message.role),
   });
   await core.close();
