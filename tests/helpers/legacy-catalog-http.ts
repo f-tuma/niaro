@@ -609,8 +609,8 @@ export async function runHistoricalHttpCase(
       join(copy.destination, "identity"),
     );
     assert.equal(
-      fileURLToPath(h.identity["catalog"].store.nativeStorageUrl),
-      join(copy.destination, "identity", "identity.sqlite.mastra.sqlite"),
+      fileURLToPath(h.identity["catalog"].store.savedMemoryUrl),
+      join(copy.destination, "identity", "identity.sqlite.memory.sqlite"),
     );
     installTransport();
     assert.notEqual(h.identity.mobileAccess, historicalAccess);

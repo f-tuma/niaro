@@ -388,30 +388,3 @@ test("requests are strict", () => {
   });
 });
 
-test("database vetting accepts the search index exactly as created, and no other virtual table", () => {
-  const { ordinarySchema } = jest.requireActual<
-    typeof import("../apps/server-identity/legacy-run-inventory")
-  >("../apps/server-identity/legacy-run-inventory");
-  const { db, save } = setup();
-  save(alice, "chat-1", [user("u1", "obsah")]);
-  expect(() =>
-    ordinarySchema(db, { public_conversation: ["id"] }),
-  ).not.toThrow();
-  // The index's own tables are not ordinary tables to read data from.
-  expect(() => ordinarySchema(db, { chat_search_fts_data: ["block"] })).toThrow(
-    "database_invalid",
-  );
-  const other = new DatabaseSync(":memory:");
-  other.exec(
-    "CREATE VIRTUAL TABLE chat_search_fts USING fts5(scope, body, tokenize='porter')",
-  );
-  expect(() => ordinarySchema(other, {})).toThrow("database_invalid");
-  const foreign = new DatabaseSync(":memory:");
-  foreign.exec("CREATE VIRTUAL TABLE notes USING fts5(body)");
-  expect(() => ordinarySchema(foreign, {})).toThrow("database_invalid");
-  const orphan = new DatabaseSync(":memory:");
-  orphan.exec(
-    "CREATE TABLE 'chat_search_fts_data'(id INTEGER PRIMARY KEY, block BLOB)",
-  );
-  expect(() => ordinarySchema(orphan, {})).toThrow("database_invalid");
-});

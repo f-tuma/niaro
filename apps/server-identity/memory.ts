@@ -29,6 +29,7 @@ import {
 } from "../../packages/protocol/work-pet";
 import { IdentityId } from "../../packages/protocol/identity";
 import { IdentityError } from "./error";
+import { operatorLog } from "../fixture-server/operator-log";
 import { pathToFileURL } from "node:url";
 import type { NativeSavedMemory } from "../server-agent/saved-memory";
 import {
@@ -215,7 +216,7 @@ type MemoryOptions = {
   sourceTtlMs?: number;
   secret?: string;
   native?: NativeSavedMemory;
-  nativeStorageUrl?: string;
+  savedMemoryUrl?: string;
   onMutation?: (
     actor: MemoryActor,
     action: "remember" | "revise" | "forget" | "preference",
@@ -230,6 +231,7 @@ const requestOwners = new WeakMap<
   DatabaseSync,
   Map<string, Promise<unknown>>
 >();
+/** Saved memory from before encrypted payloads (plain `content`) has no migration any more; it refuses to open instead of being dropped. */
 export function assertNativeMemoryFormat(db: DatabaseSync) {
   if (
     db
@@ -240,7 +242,7 @@ export function assertNativeMemoryFormat(db: DatabaseSync) {
       db.prepare("SELECT count(*) AS count FROM agent_memory").get()?.count,
     )
   )
-    throw Error("memory_copied_tuple_migration_required");
+    throw Error("memory_legacy_format_unsupported");
 }
 const nativeOwners = new WeakMap<DatabaseSync, Promise<NativeSavedMemory>>();
 
@@ -254,13 +256,15 @@ export class MemoryStore {
   private sourceTtlMs: number;
   private crypto: MemoryPayloadCrypto;
   private nativePromise?: Promise<NativeSavedMemory>;
-  private nativeStorageUrl: string;
+  private savedMemoryUrl: string;
   private get native(): Promise<NativeSavedMemory> {
     if (!this.nativePromise) {
       this.nativePromise =
         nativeOwners.get(this.db) ??
         import("@niaro/server-agent/saved-memory").then((module) =>
-          module.createNativeSavedMemory(this.nativeStorageUrl),
+          module.createNativeSavedMemory(this.savedMemoryUrl, (payloads) =>
+            operatorLog("saved_memory_moved", { payloads }),
+          ),
         );
       nativeOwners.set(this.db, this.nativePromise);
     }
@@ -280,22 +284,19 @@ export class MemoryStore {
       .find((row) => row.name === "main")?.file;
     if (file && !options.secret) throw Error("memory_original_secret_required");
     assertNativeMemoryFormat(db);
-    const columns = db.prepare("PRAGMA table_info(agent_memory)").all();
-    if (columns.some((column) => column.name === "content")) {
-      if (
-        Number(
-          db.prepare("SELECT count(*) AS count FROM agent_memory").get()?.count,
-        )
-      )
-        throw Error("memory_copied_tuple_migration_required");
+    if (
+      db
+        .prepare("PRAGMA table_info(agent_memory)")
+        .all()
+        .some((column) => column.name === "content")
+    )
       db.exec("DROP TABLE agent_memory");
-    }
     this.crypto = new MemoryPayloadCrypto(
       options.secret ?? "NIARO TEST in-memory saved-memory key",
     );
-    this.nativeStorageUrl =
-      options.nativeStorageUrl ??
-      (file ? pathToFileURL(`${file}.mastra.sqlite`).href : ":memory:");
+    this.savedMemoryUrl =
+      options.savedMemoryUrl ??
+      (file ? pathToFileURL(`${file}.memory.sqlite`).href : ":memory:");
     if (options.native) {
       this.nativePromise = Promise.resolve(options.native);
       nativeOwners.set(db, this.nativePromise);

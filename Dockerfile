@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# One image for the whole server: app API, web app, administration, Mastra
-# runtime and local metadata. Local data lives in one volume at /data; optional
+# One image for the whole server: app API, web app, administration, Pi
+# agent core and local metadata. Local data lives in one volume at /data; optional
 # attachment objects live in the separately configured private S3 service. Without a server
 # profile the server builds its own from the environment (NIARO_PUBLIC_URL and
 # friends); a profile mounted read-only at /config/server.json (or at

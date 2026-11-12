@@ -186,7 +186,7 @@ export class ServiceCatalogStore {
   readonly workspaceRoles: WorkspaceRoleStore;
   /** Each person's own choices for services they use with their own account. */
   readonly personalPolicy: PersonalActionPolicyStore;
-  readonly nativeStorageUrl: string;
+  readonly savedMemoryUrl: string;
   readonly inferenceBudget: InferenceBudgetStore;
   readonly outputVoice: OutputVoiceStore;
   constructor(
@@ -223,9 +223,9 @@ export class ServiceCatalogStore {
       .prepare("PRAGMA database_list")
       .all()
       .find((row) => row.name === "main")?.file;
-    this.nativeStorageUrl =
+    this.savedMemoryUrl =
       typeof file === "string" && file
-        ? pathToFileURL(`${file}.mastra.sqlite`).href
+        ? pathToFileURL(`${file}.memory.sqlite`).href
         : ":memory:";
     this.workspaceRoles = new WorkspaceRoleStore(db);
     this.personalPolicy = new PersonalActionPolicyStore(db);
@@ -2790,7 +2790,7 @@ export class ServiceCatalogStore {
     db: DatabaseSync,
   ): Pick<
     ServiceCatalogStore,
-    | "nativeStorageUrl"
+    | "savedMemoryUrl"
     | "nativeAttachmentGeneration"
     | "nativeAttachmentRoots"
     | "foreignAttachmentThread"
@@ -2810,8 +2810,8 @@ export class ServiceCatalogStore {
       .find((row) => row.name === "main")?.file;
     if (typeof file !== "string" || !file)
       throw new IdentityError(409, "catalog_conflict");
-    Object.defineProperty(view, "nativeStorageUrl", {
-      value: pathToFileURL(`${file}.mastra.sqlite`).href,
+    Object.defineProperty(view, "savedMemoryUrl", {
+      value: pathToFileURL(`${file}.memory.sqlite`).href,
     });
     return view;
   }

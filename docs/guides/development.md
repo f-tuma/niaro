@@ -280,7 +280,7 @@ Server suites (`node --test`):
 | `test:meetings`                                   | Meeting upload, transcription pipeline, record, diarization |
 | `test:deployment`                                 | Container environment, probes, logs, backup and restore     |
 | `test:global-processes`                           | Workspace and personal processes                            |
-| `test:legacy-inventory`, `test:legacy-continuity` | Legacy run inventory and continuity                         |
+| `test:legacy-continuity`                          | Legacy run continuity                                       |
 
 Process subsets, for faster loops:
 

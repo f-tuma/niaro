@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
   rmSync,
-  symlinkSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -30,11 +29,6 @@ import {
 } from "../apps/server-identity/catalog-controller";
 import { IdentityError } from "../apps/server-identity/error";
 import { MemorySettingsSchema } from "../packages/protocol/memory";
-import { observeLegacyTuple } from "../apps/server-identity/legacy-run-inventory";
-import {
-  checkCopiedMemoryTuple,
-  convertCopiedMemoryTuple,
-} from "../apps/server-identity/memory-copied-tuple";
 const secret = "T".repeat(64),
   actor = {
     organizationId: "org",
@@ -57,7 +51,7 @@ function fixture(
   let now = Date.parse("2026-10-07T12:00:00.000Z"),
     audits = 0;
   const native = createNativeSavedMemory(
-    pathToFileURL(file + ".mastra.sqlite").href,
+    pathToFileURL(file + ".memory.sqlite").href,
   );
   const store = new MemoryStore(db, {
     secret,
@@ -99,47 +93,69 @@ function latch() {
   });
   return { wait, release };
 }
-test("saved memory kept as Mastra working-memory threads moves to its own table once and stays readable", async () => {
+/** An old Mastra store file as servers left it: one payload from before NIAR-304 (a JSONB thread), one after. */
+function mastraStore(directory: string) {
+  const legacy = join(directory, "identity.sqlite.mastra.sqlite");
+  const db = new DatabaseSync(legacy);
+  db.exec(
+    'CREATE TABLE mastra_threads ("id" TEXT NOT NULL PRIMARY KEY, "resourceId" TEXT NOT NULL, "title" TEXT NOT NULL, "metadata" TEXT, "createdAt" TEXT NOT NULL, "updatedAt" TEXT NOT NULL);' +
+      "CREATE TABLE mastra_messages (id TEXT PRIMARY KEY, content TEXT);" +
+      "INSERT INTO mastra_messages VALUES ('TEST-message', 'TEST old chat content');" +
+      "CREATE TABLE niaro_saved_memory (thread_id TEXT PRIMARY KEY, resource_id TEXT NOT NULL, ciphertext TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL) STRICT;" +
+      "INSERT INTO niaro_saved_memory VALUES ('TEST-later', 'TEST-resource', 'TEST-later-ciphertext', '2026-02-01T00:00:00.000Z', '2026-02-02T00:00:00.000Z')",
+  );
+  const insert = db.prepare(
+    "INSERT INTO mastra_threads VALUES (?,?,?,jsonb(?),?,?)",
+  );
+  insert.run(
+    "TEST-saved",
+    "TEST-resource",
+    "Saved memory payload",
+    JSON.stringify({
+      niaroSavedMemory: "niaro-saved-memory/1",
+      workingMemory: "TEST-ciphertext",
+    }),
+    "2026-01-01T00:00:00.000Z",
+    "2026-01-02T00:00:00.000Z",
+  );
+  insert.run(
+    "TEST-chat",
+    "TEST-resource",
+    "A chat",
+    JSON.stringify({}),
+    "2026-01-01T00:00:00.000Z",
+    "2026-01-01T00:00:00.000Z",
+  );
+  db.close();
+  return {
+    legacy,
+    file: join(directory, "identity.sqlite.memory.sqlite"),
+  };
+}
+const movedPayloads = [
+  { threadId: "TEST-later", resourceId: "TEST-resource" },
+  { threadId: "TEST-saved", resourceId: "TEST-resource" },
+];
+
+test("saved memory in the old Mastra store moves to its own file once, then the old file is deleted", async () => {
   const directory = mkdtempSync(join(tmpdir(), "niaro-saved-mastra-"));
-  const file = join(directory, "identity.sqlite.mastra.sqlite");
+  const { legacy, file } = mastraStore(directory);
+  writeFileSync(legacy + "-shm", "TEST stale side file");
   try {
-    // The shape Mastra wrote before NIAR-304: metadata as JSONB.
-    const legacy = new DatabaseSync(file);
-    legacy.exec(
-      'CREATE TABLE mastra_threads ("id" TEXT NOT NULL PRIMARY KEY, "resourceId" TEXT NOT NULL, "title" TEXT NOT NULL, "metadata" TEXT, "createdAt" TEXT NOT NULL, "updatedAt" TEXT NOT NULL)',
-    );
-    const insert = legacy.prepare(
-      "INSERT INTO mastra_threads VALUES (?,?,?,jsonb(?),?,?)",
-    );
-    insert.run(
-      "TEST-saved",
-      "TEST-resource",
-      "Saved memory payload",
-      JSON.stringify({
-        niaroSavedMemory: "niaro-saved-memory/1",
-        workingMemory: "TEST-ciphertext",
-      }),
-      "2026-01-01T00:00:00.000Z",
-      "2026-01-02T00:00:00.000Z",
-    );
-    insert.run(
-      "TEST-chat",
-      "TEST-resource",
-      "A chat",
-      JSON.stringify({}),
-      "2026-01-01T00:00:00.000Z",
-      "2026-01-01T00:00:00.000Z",
-    );
-    legacy.close();
+    const moved: number[] = [];
     for (let open = 0; open < 2; open++) {
-      const native = createNativeSavedMemory(pathToFileURL(file).href);
+      const native = createNativeSavedMemory(pathToFileURL(file).href, (n) =>
+        moved.push(n),
+      );
       assert.equal(
         await native.read("TEST-saved", "TEST-resource"),
         "TEST-ciphertext",
       );
-      assert.deepEqual(await native.list(), [
-        { threadId: "TEST-saved", resourceId: "TEST-resource" },
-      ]);
+      assert.equal(
+        await native.read("TEST-later", "TEST-resource"),
+        "TEST-later-ciphertext",
+      );
+      assert.deepEqual(await native.list(), movedPayloads);
       // The same document again is no conflict: timestamps moved exactly.
       await native.put({
         threadId: "TEST-saved",
@@ -150,15 +166,47 @@ test("saved memory kept as Mastra working-memory threads moves to its own table 
       });
       await native.close();
     }
-    const db = new DatabaseSync(file, { readOnly: true });
+    assert.deepEqual(moved, [2]);
+    assert.deepEqual(readdirSync(directory), ["identity.sqlite.memory.sqlite"]);
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a restart during the move repeats or finishes it, and a copy that differs keeps the old file", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "niaro-saved-move-"));
+  try {
+    // Stopped while copying: a partial temporary file is replaced.
+    let { legacy, file } = mastraStore(directory);
+    writeFileSync(file + ".tmp", "TEST partial copy");
+    let native = createNativeSavedMemory(pathToFileURL(file).href);
+    assert.deepEqual(await native.list(), movedPayloads);
+    await native.close();
     assert.deepEqual(
-      db
-        .prepare("SELECT id FROM mastra_threads")
-        .all()
-        .map((row) => row.id),
-      ["TEST-chat"],
+      readdirSync(directory).filter(
+        (n) => n.includes("mastra") || n.endsWith(".tmp"),
+      ),
+      [],
     );
-    db.close();
+
+    // Stopped after the copy was in place: the old file is verified and deleted.
+    ({ legacy } = mastraStore(directory));
+    native = createNativeSavedMemory(pathToFileURL(file).href);
+    assert.deepEqual(await native.list(), movedPayloads);
+    await native.close();
+    assert.equal(existsSync(legacy), false);
+
+    // A payload missing from the copy refuses to open and keeps the old file.
+    const changed = new DatabaseSync(file);
+    changed.exec("DELETE FROM niaro_saved_memory WHERE thread_id='TEST-later'");
+    changed.close();
+    ({ legacy } = mastraStore(directory));
+    assert.throws(
+      () => createNativeSavedMemory(pathToFileURL(file).href),
+      /memory_native_move_unverified/,
+    );
+    assert.equal(existsSync(legacy), true);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -784,81 +832,13 @@ function legacyTuple() {
     );
   return f;
 }
-test("copied tuple: verified native migration and current reverse export preserve IDs, timestamps, source, exact generation and original receipts", async () => {
-  const f = legacyTuple(),
-    output = f.directory + "-native",
-    reverse = f.directory + "-reverse";
-  try {
-    await f.store.close();
-    f.db.close();
-    const roles = {
-      identityDatabase: "identity.sqlite",
-      workflowDatabase: "workflow.sqlite",
-      workflowServerId: "server-id",
-      originalSecret: "secret",
-      configuration: "config.json",
-      administrationKey: "key",
-      nativeDatabases: ["identity.sqlite.mastra.sqlite"],
-      ownerLocks: ["owner.lock"],
-    };
-    const manifest = observeLegacyTuple(f.directory, roles),
-      input = { manifest, sourceIsDisposableCopy: true as const };
-    const bytes = readFileSync(f.file);
-    const before = await checkCopiedMemoryTuple(input);
-    assert.equal(before.format, "legacy");
-    const migrated = await convertCopiedMemoryTuple(input, output, "migrate");
-    assert.equal(migrated.format, "native");
-    assert.deepEqual(readFileSync(f.file), bytes);
-    assert.equal(migrated.generationDigest, before.generationDigest);
-    assert.equal(migrated.receiptDigest, before.receiptDigest);
-    const copied = {
-      manifest: observeLegacyTuple(output, roles),
-      sourceIsDisposableCopy: true as const,
-    };
-    const checked = await checkCopiedMemoryTuple(copied);
-    assert.equal(checked.format, "native");
-    const db = new DatabaseSync(join(output, "identity.sqlite")),
-      store = new MemoryStore(db, {
-        secret,
-        now: () => Date.parse("2026-10-07T12:00:00.000Z"),
-      });
-    const item = await store.find(actor, "memory-old");
-    assert.equal(item?.content, "TEST migration exact saved fact");
-    assert.equal(item.createdAt, "2026-10-01T01:02:03.004Z");
-    assert.equal(item.updatedAt, "2026-10-02T02:03:04.005Z");
-    assert.equal(item.revision, 3);
-    assert.equal(store.version(actor), 17);
-    await store.close();
-    db.close();
-    const exported = await convertCopiedMemoryTuple(
-      {
-        manifest: observeLegacyTuple(output, roles),
-        sourceIsDisposableCopy: true,
-      },
-      reverse,
-      "reverse",
-    );
-    assert.equal(exported.receiptDigest, before.receiptDigest);
-    const restored = new DatabaseSync(join(reverse, "identity.sqlite"));
-    const row = restored.prepare("SELECT * FROM agent_memory").get()!;
-    assert.equal(row.content, item.content);
-    assert.equal(row.created_at, item.createdAt);
-    assert.equal(row.updated_at, item.updatedAt);
-    restored.close();
-    assert.deepEqual(readFileSync(f.file), bytes);
-  } finally {
-    rmSync(f.directory, { recursive: true, force: true });
-    rmSync(output, { recursive: true, force: true });
-    rmSync(reverse, { recursive: true, force: true });
-  }
-});
 test("legacy startup: populated table refuses ordinary open without changing its bytes", async () => {
   const f = legacyTuple();
   try {
     const before = f.db.prepare("SELECT * FROM agent_memory").all();
     assert.throws(
       () => new MemoryStore(f.db, { secret }),
-      /memory_copied_tuple_migration_required/,
+      /memory_legacy_format_unsupported/,
     );
     assert.deepEqual(f.db.prepare("SELECT * FROM agent_memory").all(), before);
   } finally {
@@ -935,169 +915,6 @@ test("native erasure serializes with an in-flight revision payload and verifies 
   } finally {
     resume.release();
     await f.close();
-  }
-});
-
-test("copied tuple CLI: check/migrate/check/reverse use fresh outputs and preserve source bytes", async () => {
-  const f = legacyTuple(),
-    output = f.directory + "-cli-native",
-    reverse = f.directory + "-cli-reverse",
-    manifestFile = f.directory + "-manifest.json";
-  try {
-    await f.store.close();
-    f.db.close();
-    const roles = {
-      identityDatabase: "identity.sqlite",
-      workflowDatabase: "workflow.sqlite",
-      workflowServerId: "server-id",
-      originalSecret: "secret",
-      configuration: "config.json",
-      administrationKey: "key",
-      nativeDatabases: ["identity.sqlite.mastra.sqlite"],
-      ownerLocks: ["owner.lock"],
-    };
-    const before = readFileSync(f.file);
-    const invoke = (action: string, source: string, destination?: string) => {
-      writeFileSync(
-        manifestFile,
-        JSON.stringify(observeLegacyTuple(source, roles)),
-        { mode: 0o600 },
-      );
-      const args = [
-        "--import",
-        "tsx",
-        join(process.cwd(), "scripts/memory-copied-tuple.ts"),
-        action,
-        "--disposable-copy-manifest",
-        manifestFile,
-        ...(destination ? ["--output", destination] : []),
-      ];
-      const result = spawnSync(process.execPath, args, {
-        encoding: "utf8",
-        timeout: 20000,
-      });
-      assert.equal(result.error, undefined, String(result.error));
-      assert.equal(result.status, 0, result.stdout + result.stderr);
-      return JSON.parse(result.stdout);
-    };
-    const checked = invoke("check", f.directory);
-    assert.equal(checked.format, "legacy");
-    const migrated = invoke("migrate", f.directory, output);
-    assert.equal(migrated.format, "native");
-    const verified = invoke("check", output);
-    assert.equal(verified.receiptDigest, checked.receiptDigest);
-    const exported = invoke("reverse", output, reverse);
-    assert.equal(exported.format, "legacy");
-    assert.equal(exported.generationDigest, checked.generationDigest);
-    assert.deepEqual(readFileSync(f.file), before);
-  } finally {
-    for (const path of [f.directory, output, reverse, manifestFile])
-      rmSync(path, { recursive: true, force: true });
-  }
-});
-
-test("copied tuple schema gate rejects an unused view before reading canonical rows", async () => {
-  const f = legacyTuple();
-  try {
-    f.db.exec(
-      "CREATE VIEW unused_saved_memory_view AS SELECT content FROM agent_memory",
-    );
-    await f.store.close();
-    f.db.close();
-    const roles = {
-      identityDatabase: "identity.sqlite",
-      workflowDatabase: "workflow.sqlite",
-      workflowServerId: "server-id",
-      originalSecret: "secret",
-      configuration: "config.json",
-      administrationKey: "key",
-      nativeDatabases: ["identity.sqlite.mastra.sqlite"],
-      ownerLocks: ["owner.lock"],
-    };
-    await assert.rejects(
-      checkCopiedMemoryTuple({
-        manifest: observeLegacyTuple(f.directory, roles),
-        sourceIsDisposableCopy: true,
-      }),
-      /database_invalid/,
-    );
-  } finally {
-    rmSync(f.directory, { recursive: true, force: true });
-  }
-});
-test("copied tuple destination: symlinked parent is rejected before writing into source", async () => {
-  const f = legacyTuple(),
-    alias = f.directory + "-alias";
-  try {
-    await f.store.close();
-    f.db.close();
-    const roles = {
-      identityDatabase: "identity.sqlite",
-      workflowDatabase: "workflow.sqlite",
-      workflowServerId: "server-id",
-      originalSecret: "secret",
-      configuration: "config.json",
-      administrationKey: "key",
-      nativeDatabases: ["identity.sqlite.mastra.sqlite"],
-      ownerLocks: ["owner.lock"],
-    };
-    const manifest = observeLegacyTuple(f.directory, roles),
-      before = readdirSync(f.directory);
-    symlinkSync(f.directory, alias);
-    await assert.rejects(
-      convertCopiedMemoryTuple(
-        { manifest, sourceIsDisposableCopy: true },
-        join(alias, "output"),
-        "migrate",
-      ),
-      /memory_copy_destination_parent_alias/,
-    );
-    assert.deepEqual(readdirSync(f.directory), before);
-    assert.deepEqual(observeLegacyTuple(f.directory, roles), manifest);
-  } finally {
-    rmSync(alias, { force: true });
-    rmSync(f.directory, { recursive: true, force: true });
-  }
-});
-test("copied native metadata gate rejects oversized thread metadata before native JSON parsing", async () => {
-  const f = legacyTuple(),
-    output = f.directory + "-oversize-native";
-  try {
-    await f.store.close();
-    f.db.close();
-    const roles = {
-      identityDatabase: "identity.sqlite",
-      workflowDatabase: "workflow.sqlite",
-      workflowServerId: "server-id",
-      originalSecret: "secret",
-      configuration: "config.json",
-      administrationKey: "key",
-      nativeDatabases: ["identity.sqlite.mastra.sqlite"],
-      ownerLocks: ["owner.lock"],
-    };
-    await convertCopiedMemoryTuple(
-      {
-        manifest: observeLegacyTuple(f.directory, roles),
-        sourceIsDisposableCopy: true,
-      },
-      output,
-      "migrate",
-    );
-    const db = new DatabaseSync(join(output, "identity.sqlite.mastra.sqlite"));
-    db.prepare("UPDATE niaro_saved_memory SET ciphertext=?").run(
-      "x".repeat(129 * 1024),
-    );
-    db.close();
-    await assert.rejects(
-      checkCopiedMemoryTuple({
-        manifest: observeLegacyTuple(output, roles),
-        sourceIsDisposableCopy: true,
-      }),
-      /memory_copy_row_limit/,
-    );
-  } finally {
-    rmSync(f.directory, { recursive: true, force: true });
-    rmSync(output, { recursive: true, force: true });
   }
 });
 
@@ -1432,87 +1249,5 @@ test("native additive upgrade preserves populated explicit records and preferenc
     if (reopened) reopened.close();
     if (!closed) await f.close();
     else rmSync(f.directory, { recursive: true, force: true });
-  }
-});
-
-test("copied tuple observed reverse refuses before changing any copied payload or original tuple", async () => {
-  const f = legacyTuple(),
-    output = f.directory + "-observed-migrate",
-    reverse = f.directory + "-observed-reverse";
-  try {
-    await f.store.close();
-    f.db.close();
-    const roles = {
-      identityDatabase: "identity.sqlite",
-      workflowDatabase: "workflow.sqlite",
-      workflowServerId: "server-id",
-      originalSecret: "secret",
-      configuration: "config.json",
-      administrationKey: "key",
-      nativeDatabases: ["identity.sqlite.mastra.sqlite"],
-      ownerLocks: ["owner.lock"],
-    };
-    await convertCopiedMemoryTuple(
-      {
-        manifest: observeLegacyTuple(f.directory, roles),
-        sourceIsDisposableCopy: true,
-      },
-      output,
-      "migrate",
-    );
-    const db = new DatabaseSync(join(output, "identity.sqlite")),
-      store = new MemoryStore(db, {
-        secret,
-        now: () => Date.parse("2026-10-07T12:00:00Z"),
-      });
-    try {
-      await store.observe(
-        actor,
-        {
-          batchId: randomUUID(),
-          expectedVersion: store.version(actor),
-          deadline: Date.parse("2026-10-07T12:02:00Z"),
-          settings,
-          add: [
-            {
-              statement: "TEST green delivery",
-              section: "work",
-              personal: false,
-              sources: [
-                {
-                  type: "chat",
-                  sourceId: randomUUID(),
-                  messageId: "TEST-message",
-                  at: "2026-10-07T12:00:00Z",
-                  digest: "a".repeat(64),
-                },
-              ],
-            },
-          ],
-          refresh: [],
-          update: [],
-        },
-        { observationSourceAccess: () => true },
-      );
-    } finally {
-      await store.close();
-      db.close();
-    }
-    const before = readFileSync(join(output, "identity.sqlite"));
-    await assert.rejects(
-      convertCopiedMemoryTuple(
-        {
-          manifest: observeLegacyTuple(output, roles),
-          sourceIsDisposableCopy: true,
-        },
-        reverse,
-        "reverse",
-      ),
-      /memory_copy_observed_reverse_unsupported/,
-    );
-    assert.deepEqual(readFileSync(join(output, "identity.sqlite")), before);
-  } finally {
-    for (const path of [f.directory, output, reverse])
-      rmSync(path, { recursive: true, force: true });
   }
 });

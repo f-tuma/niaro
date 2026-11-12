@@ -136,7 +136,7 @@ for (const mode of ["pin", "seed", "receipt", "committed"] as const) {
             0,
           );
           assert(
-            !existsSync(path + ".mastra.sqlite"),
+            !existsSync(path + ".memory.sqlite"),
             "passive admission/read must not initialize native persistence",
           );
           assert(

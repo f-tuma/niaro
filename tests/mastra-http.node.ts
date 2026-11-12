@@ -484,7 +484,7 @@ test("native HTTP binds forms and approval to paired scope and replays after res
     assert.equal(state.kind, "mastra-1");
     assert.equal(state.pending?.operationId, operationId);
     assert.equal(
-      statSync(fileURLToPath(identity["catalog"].store.nativeStorageUrl)).mode &
+      statSync(fileURLToPath(identity["catalog"].store.savedMemoryUrl)).mode &
         0o777,
       0o600,
     );

@@ -97,7 +97,7 @@ function assertPassive(h: ReturnType<typeof startFixture>, path: string) {
   assert.deepEqual(executionRows(h), [0, 0, 0, 0, 0]);
   assert.deepEqual(h.counts(), []);
   assert.deepEqual(h.models(), []);
-  assert.equal(existsSync(path + ".mastra.sqlite"), false);
+  assert.equal(existsSync(path + ".memory.sqlite"), false);
 }
 
 test("execution users see active v1 without draft/creator reports and all reads are passive", () =>

@@ -280,9 +280,9 @@ test("a copied stopped identity/workflow/native tuple preserves public pinned ap
     );
     assert(
       Object.keys(restored.copyHashes).some((path) =>
-        path.endsWith("identity.sqlite.mastra.sqlite"),
+        path.endsWith("identity.sqlite.memory.sqlite"),
       ),
-      "TEST copied tuple must contain the native Mastra storage",
+      "TEST copied tuple must contain the saved-memory file",
     );
     assert(restored.copyHashes["TEST-server-config.json"]);
     assert.equal(

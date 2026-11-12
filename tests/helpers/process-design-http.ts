@@ -512,19 +512,17 @@ export async function designHttpFixture(
         assert.deepEqual(stoppedTupleManifest(source), registered);
         assert.deepEqual(registered.hashes, original.sourceHashes);
       }
-      // libsql can defer native statement finalization beyond awaited close(),
-      // leaving a WAL that a later GC checkpoints. Establish the stopped TEST
-      // snapshot before capturing any baseline: a separate WAL-aware SQLite
-      // connection must checkpoint completely and close all physical sidecars.
-      // Production backups instead require the owner process to have exited.
-      // Both native stores: the Mastra one and the Pi agent core (process
-      // checkpoints, NIAR-303), which sits beside it.
-      const mastraFile = fileURLToPath(
-        identity["catalog"].store.nativeStorageUrl,
+      // Establish the stopped TEST snapshot before capturing any baseline: a
+      // separate WAL-aware SQLite connection must checkpoint completely and
+      // close all physical sidecars. Production backups instead require the
+      // owner process to have exited. Both native stores: saved memory and the
+      // Pi agent core (process checkpoints, NIAR-303), which sits beside it.
+      const memoryFile = fileURLToPath(
+        identity["catalog"].store.savedMemoryUrl,
       );
       for (const nativeFile of [
-        mastraFile,
-        mastraFile.replace(/\.mastra\.sqlite$/, ".pi.sqlite"),
+        memoryFile,
+        memoryFile.replace(/\.memory\.sqlite$/, ".pi.sqlite"),
       ]) {
         assert(
           existsSync(nativeFile) ||

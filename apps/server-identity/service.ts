@@ -945,7 +945,7 @@ export class IdentityService {
     this.memory = new MemoryStore(db, {
       secret: memorySecret,
       run: (fn) => this.serial(async () => fn()),
-      nativeStorageUrl: catalog.store.nativeStorageUrl,
+      savedMemoryUrl: catalog.store.savedMemoryUrl,
       onMutation: (actor, action, source) => {
         this.profileCursor.privacyMutation(actor);
         // A save or deletion in chat shows at once in the chat's "Saved to

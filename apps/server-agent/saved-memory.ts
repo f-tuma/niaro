@@ -1,4 +1,4 @@
-import { chmodSync, existsSync } from "node:fs";
+import { chmodSync, existsSync, renameSync, rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
@@ -29,24 +29,32 @@ type Row = {
   updated_at: string;
 };
 
+const TABLE =
+  "CREATE TABLE IF NOT EXISTS niaro_saved_memory (thread_id TEXT PRIMARY KEY, resource_id TEXT NOT NULL, ciphertext TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL) STRICT";
+
 /**
- * Saved memory payloads in their own table (`niaro_saved_memory`) of the
- * native store file. A file that still holds them as Mastra working-memory
- * threads (before NIAR-304) moves them here once, in one transaction, and
- * those threads are deleted.
+ * Saved memory payloads in the table `niaro_saved_memory` of their own file
+ * (`identity.sqlite.memory.sqlite`). Payloads still in the old Mastra store
+ * file move here once at open (`moveFromMastraStore`).
  */
-export function createNativeSavedMemory(storageUrl: string): NativeSavedMemory {
+export function createNativeSavedMemory(
+  storageUrl: string,
+  onMoved?: (payloads: number) => void,
+): NativeSavedMemory {
   const file = storageUrl.startsWith("file:")
     ? fileURLToPath(storageUrl)
     : undefined;
+  if (file) {
+    const moved = moveFromMastraStore(file);
+    if (moved !== undefined) onMoved?.(moved);
+  }
   const db = new DatabaseSync(file ?? ":memory:");
   let closed = false;
   try {
     db.exec(
       "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA secure_delete=ON; " +
-        "CREATE TABLE IF NOT EXISTS niaro_saved_memory (thread_id TEXT PRIMARY KEY, resource_id TEXT NOT NULL, ciphertext TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL) STRICT",
+        TABLE,
     );
-    migrateMastraThreads(db);
     if (file)
       for (const path of [file, file + "-wal", file + "-shm"])
         if (existsSync(path)) chmodSync(path, 0o600);
@@ -123,6 +131,74 @@ export function createNativeSavedMemory(storageUrl: string): NativeSavedMemory {
       db.close();
     },
   };
+}
+
+type Payload = Record<keyof Row, string>;
+const same = (a: Payload | undefined, b: Payload) =>
+  !!a && (Object.keys(b) as (keyof Row)[]).every((k) => a[k] === b[k]);
+
+/**
+ * One-time move (NIAR-305) of saved memory out of the old Mastra store file
+ * `<identity>.mastra.sqlite` into `file`, then the old file goes with the rest
+ * of Mastra's tables, which nothing reads any more. The copy is written to
+ * `file.tmp` and renamed into place, then every payload is compared with the
+ * old file before that is deleted. A restart at any step repeats the move from
+ * the old file, or only verifies and deletes it. A payload missing or changed
+ * in `file` keeps the old file and refuses to open. Returns the number of
+ * payloads when an old file was found.
+ */
+function moveFromMastraStore(file: string) {
+  const legacy = file.replace(/\.memory\.sqlite$/, ".mastra.sqlite");
+  if (legacy === file || !existsSync(legacy)) return undefined;
+  const old = new DatabaseSync(legacy);
+  let payloads: Payload[];
+  try {
+    old.exec("PRAGMA busy_timeout=5000; " + TABLE);
+    migrateMastraThreads(old);
+    payloads = old
+      .prepare("SELECT * FROM niaro_saved_memory ORDER BY thread_id")
+      .all() as Payload[];
+  } finally {
+    old.close();
+  }
+  if (!existsSync(file)) {
+    const temp = file + ".tmp";
+    for (const path of [temp, temp + "-journal"]) rmSync(path, { force: true });
+    const copy = new DatabaseSync(temp);
+    try {
+      copy.exec("PRAGMA synchronous=FULL; " + TABLE + "; BEGIN IMMEDIATE");
+      const insert = copy.prepare(
+        "INSERT INTO niaro_saved_memory VALUES (?,?,?,?,?)",
+      );
+      for (const p of payloads)
+        insert.run(
+          p.thread_id,
+          p.resource_id,
+          p.ciphertext,
+          p.created_at,
+          p.updated_at,
+        );
+      copy.exec("COMMIT");
+    } finally {
+      copy.close();
+    }
+    chmodSync(temp, 0o600);
+    renameSync(temp, file);
+  }
+  const moved = new DatabaseSync(file);
+  try {
+    const find = moved.prepare(
+      "SELECT * FROM niaro_saved_memory WHERE thread_id=?",
+    );
+    for (const p of payloads)
+      if (!same(find.get(p.thread_id) as Payload | undefined, p))
+        throw Error("memory_native_move_unverified");
+  } finally {
+    moved.close();
+  }
+  for (const suffix of ["", "-wal", "-shm", "-journal"])
+    rmSync(legacy + suffix, { force: true });
+  return payloads.length;
 }
 
 /** One-time move of saved memory out of Mastra working-memory threads. */

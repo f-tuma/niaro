@@ -263,7 +263,7 @@ async function readProductionMemory(directory: string) {
     const saved = db.prepare("SELECT data FROM agent_service_turn").all();
     assert.equal(saved.length, 1);
     const native = createNativeSavedMemory(
-      pathToFileURL(join(directory, "production.sqlite.mastra.sqlite")).href,
+      pathToFileURL(join(directory, "production.sqlite.memory.sqlite")).href,
     );
     const crypto = new MemoryPayloadCrypto("TEST-memory-crash-secret");
     const items: (Record<string, import("node:sqlite").SQLOutputValue> & {

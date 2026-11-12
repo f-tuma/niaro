@@ -92,7 +92,7 @@ function assertStoppedCopyModes(copy: StoppedCopyProof) {
 function assertCopyBaseline(copy: StoppedCopyProof) {
   assert.notEqual(copy.source, copy.destination);
   assert.deepEqual(copy.copyHashes, copy.sourceHashes);
-  assert(copy.copyHashes["identity/identity.sqlite.mastra.sqlite"]);
+  assert(copy.copyHashes["identity/identity.sqlite.memory.sqlite"]);
   assert(copy.copyHashes["identity/identity.sqlite.pi.sqlite"]);
   assert(copy.copyHashes["workflow/workflow.sqlite"]);
   assert(copy.copyHashes["workflow/auth/server-id"]);
@@ -404,7 +404,7 @@ async function waitingApproval() {
     // Process checkpoints live in the agent core beside the identity database.
     const nativePath = relative(
       h.root,
-      agentCoreFile(h.identity["catalog"].store.nativeStorageUrl)!,
+      agentCoreFile(h.identity["catalog"].store.savedMemoryUrl)!,
     );
     assert.equal(nativePath, "identity/identity.sqlite.pi.sqlite");
     return {

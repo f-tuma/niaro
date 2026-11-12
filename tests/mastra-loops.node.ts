@@ -376,21 +376,21 @@ test("native storage stays adjacent to the same persistent identity database", (
   const file = join(directory, "identity with spaces.sqlite");
   try {
     const first = fixture(file);
-    const expected = pathToFileURL(`${file}.mastra.sqlite`).href;
-    assert.equal(first.catalog.nativeStorageUrl, expected);
+    const expected = pathToFileURL(`${file}.memory.sqlite`).href;
+    assert.equal(first.catalog.savedMemoryUrl, expected);
     const saved = first.save("retained", nativeTurn());
     first.db.close();
 
     const reopened = fixture(file);
     try {
-      assert.equal(reopened.catalog.nativeStorageUrl, expected);
+      assert.equal(reopened.catalog.savedMemoryUrl, expected);
       assert.equal(reopened.loops.detail("org-a", saved)?.run.id, saved);
     } finally {
       reopened.db.close();
     }
     const memory = fixture();
     try {
-      assert.equal(memory.catalog.nativeStorageUrl, ":memory:");
+      assert.equal(memory.catalog.savedMemoryUrl, ":memory:");
     } finally {
       memory.db.close();
     }

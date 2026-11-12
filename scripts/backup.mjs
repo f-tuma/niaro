@@ -6,12 +6,13 @@
 // <output> is a new directory, a file ending in .tar.gz, or "-" for a .tar.gz
 // on stdout (`docker compose exec -T niaro niaro backup - > backup.tar.gz`).
 //
-// Every SQLite database (identity, its Mastra store, workflow, budgets, …) is
-// copied with SQLite's online backup API from a read-only connection, so the
-// server may keep running: each database is a consistent point-in-time copy.
-// For one consistent point across all databases, stop the server first. Other
-// files are copied as they are; WAL/SHM side files, the single-owner lock and
-// npm caches are left out. Every copied database must pass integrity_check.
+// Every SQLite database (identity, saved memory, the agent core, workflow,
+// budgets, …) is copied with SQLite's online backup API from a read-only
+// connection, so the server may keep running: each database is a consistent
+// point-in-time copy. For one consistent point across all databases, stop the
+// server first. Other files are copied as they are; WAL/SHM side files, the
+// single-owner lock and npm caches are left out. Every copied database must
+// pass integrity_check.
 import {
   chmodSync,
   copyFileSync,

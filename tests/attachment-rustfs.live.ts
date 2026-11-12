@@ -197,7 +197,7 @@ async function main() {
         )
         .get(a.generation)!.conversation_id,
     );
-    const b = await add("TEST-fresh");
+    await add("TEST-fresh");
     const calls = h.requests.length;
     await h.close();
     h = undefined;
@@ -318,31 +318,6 @@ async function main() {
       );
     } finally {
       identityDB.close();
-    }
-    const nativeDB = new DatabaseSync(
-      join(target, "identity", "identity.sqlite.mastra.sqlite"),
-      { readOnly: true },
-    );
-    try {
-      assert.equal(
-        nativeDB
-          .prepare(
-            "SELECT count(*) AS n FROM mastra_messages WHERE thread_id=?",
-          )
-          .get(a.native.threadId)!.n,
-        0,
-      );
-      assert.ok(
-        Number(
-          nativeDB
-            .prepare(
-              "SELECT count(*) AS n FROM mastra_messages WHERE thread_id=?",
-            )
-            .get(b.native.threadId)!.n,
-        ) > 0,
-      );
-    } finally {
-      nativeDB.close();
     }
     const resourceMeasurement = await measureAttachmentResources(
       config.application,

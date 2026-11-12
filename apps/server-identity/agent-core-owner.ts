@@ -12,16 +12,16 @@ import type { IntegrationTransport } from "../server-integrations/transport";
 import { agentCoreModelHost, type AgentCoreCatalog } from "./agent-core";
 
 type Owner = {
-  store: AgentCoreCatalog & { nativeStorageUrl: string };
+  store: AgentCoreCatalog & { savedMemoryUrl: string };
   transport: IntegrationTransport;
 };
 const cores = new WeakMap<object, Promise<PiAgentCore>>();
 
-/** The agent core file of an identity database, from its native store URL. */
-export function agentCoreFile(nativeStorageUrl: string) {
-  if (!nativeStorageUrl.startsWith("file:")) return undefined;
-  return fileURLToPath(nativeStorageUrl).replace(
-    /\.mastra\.sqlite$/,
+/** The agent core file of an identity database, beside its saved-memory file. */
+export function agentCoreFile(savedMemoryUrl: string) {
+  if (!savedMemoryUrl.startsWith("file:")) return undefined;
+  return fileURLToPath(savedMemoryUrl).replace(
+    /\.memory\.sqlite$/,
     ".pi.sqlite",
   );
 }
@@ -47,7 +47,7 @@ export function agentCoreFor(
   if (!core) {
     core = import("@niaro/server-agent/pi").then(({ PiAgentCore }) =>
       PiAgentCore.open({
-        file: agentCoreFile(controller.store.nativeStorageUrl),
+        file: agentCoreFile(controller.store.savedMemoryUrl),
         host: agentCoreModelHost({
           catalog: controller.store,
           transport: controller.transport,
