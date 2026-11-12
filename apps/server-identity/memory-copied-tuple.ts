@@ -156,11 +156,29 @@ function preflightNative(path: string) {
           "metadata",
         ],
       });
-      // Native getThread parses metadata JSON before the adapter can inspect workingMemory.
+      // Saved memory still in Mastra threads moves out on open, which parses their metadata.
       boundedTable(
         db,
         "mastra_threads",
         ["id", "resourceId", "title", "createdAt", "updatedAt", "metadata"],
+        100000,
+        128 * 1024,
+        limits.payloadBytes,
+      );
+    }
+    if (tables.has("niaro_saved_memory")) {
+      const columns = [
+        "thread_id",
+        "resource_id",
+        "ciphertext",
+        "created_at",
+        "updated_at",
+      ];
+      ordinarySchema(db, { niaro_saved_memory: columns });
+      boundedTable(
+        db,
+        "niaro_saved_memory",
+        columns,
         100000,
         128 * 1024,
         limits.payloadBytes,
@@ -334,7 +352,7 @@ async function operate(
   let native:
     | Awaited<
         ReturnType<
-          (typeof import("@niaro/server-agent"))["createNativeSavedMemory"]
+          (typeof import("@niaro/server-agent/saved-memory"))["createNativeSavedMemory"]
         >
       >
     | undefined;
@@ -360,7 +378,9 @@ async function operate(
     let bytes = 0;
     if (!legacy || action === "migrate") {
       preflightNative(join(manifest.tupleRoot, nativePath));
-      native = (await import("@niaro/server-agent")).createNativeSavedMemory(
+      native = (
+        await import("@niaro/server-agent/saved-memory")
+      ).createNativeSavedMemory(
         pathToFileURL(join(manifest.tupleRoot, nativePath)).href,
       );
       for (const row of original) {

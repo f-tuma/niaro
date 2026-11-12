@@ -99,6 +99,71 @@ function latch() {
   });
   return { wait, release };
 }
+test("saved memory kept as Mastra working-memory threads moves to its own table once and stays readable", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "niaro-saved-mastra-"));
+  const file = join(directory, "identity.sqlite.mastra.sqlite");
+  try {
+    // The shape Mastra wrote before NIAR-304: metadata as JSONB.
+    const legacy = new DatabaseSync(file);
+    legacy.exec(
+      'CREATE TABLE mastra_threads ("id" TEXT NOT NULL PRIMARY KEY, "resourceId" TEXT NOT NULL, "title" TEXT NOT NULL, "metadata" TEXT, "createdAt" TEXT NOT NULL, "updatedAt" TEXT NOT NULL)',
+    );
+    const insert = legacy.prepare(
+      "INSERT INTO mastra_threads VALUES (?,?,?,jsonb(?),?,?)",
+    );
+    insert.run(
+      "TEST-saved",
+      "TEST-resource",
+      "Saved memory payload",
+      JSON.stringify({
+        niaroSavedMemory: "niaro-saved-memory/1",
+        workingMemory: "TEST-ciphertext",
+      }),
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-02T00:00:00.000Z",
+    );
+    insert.run(
+      "TEST-chat",
+      "TEST-resource",
+      "A chat",
+      JSON.stringify({}),
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+    );
+    legacy.close();
+    for (let open = 0; open < 2; open++) {
+      const native = createNativeSavedMemory(pathToFileURL(file).href);
+      assert.equal(
+        await native.read("TEST-saved", "TEST-resource"),
+        "TEST-ciphertext",
+      );
+      assert.deepEqual(await native.list(), [
+        { threadId: "TEST-saved", resourceId: "TEST-resource" },
+      ]);
+      // The same document again is no conflict: timestamps moved exactly.
+      await native.put({
+        threadId: "TEST-saved",
+        resourceId: "TEST-resource",
+        ciphertext: "TEST-ciphertext",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      });
+      await native.close();
+    }
+    const db = new DatabaseSync(file, { readOnly: true });
+    assert.deepEqual(
+      db
+        .prepare("SELECT id FROM mastra_threads")
+        .all()
+        .map((row) => row.id),
+      ["TEST-chat"],
+    );
+    db.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("native payload: authoritative ciphertext, exact concurrent retry publishes once", async () => {
   const f = fixture();
   try {
@@ -1019,7 +1084,7 @@ test("copied native metadata gate rejects oversized thread metadata before nativ
       "migrate",
     );
     const db = new DatabaseSync(join(output, "identity.sqlite.mastra.sqlite"));
-    db.prepare("UPDATE mastra_threads SET metadata=?").run(
+    db.prepare("UPDATE niaro_saved_memory SET ciphertext=?").run(
       "x".repeat(129 * 1024),
     );
     db.close();

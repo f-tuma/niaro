@@ -259,7 +259,7 @@ export class MemoryStore {
     if (!this.nativePromise) {
       this.nativePromise =
         nativeOwners.get(this.db) ??
-        import("@niaro/server-agent").then((module) =>
+        import("@niaro/server-agent/saved-memory").then((module) =>
           module.createNativeSavedMemory(this.nativeStorageUrl),
         );
       nativeOwners.set(this.db, this.nativePromise);

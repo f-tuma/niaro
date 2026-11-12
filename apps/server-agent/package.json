@@ -8,7 +8,8 @@
     "./model-types": "./model-types.ts",
     "./process-contract": "./process-contract.ts",
     "./knowledge-index": "./knowledge-index.ts",
-    "./pi": "./pi/index.ts"
+    "./pi": "./pi/index.ts",
+    "./saved-memory": "./saved-memory.ts"
   },
   "engines": {
     "node": ">=22.13.0"
