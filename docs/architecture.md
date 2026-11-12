@@ -67,9 +67,14 @@ the decision, then the reason.
   agent core and one path to models. The core (`apps/server-agent/pi/`) is one
   Pi Harness over `identity.sqlite.pi.sqlite` beside the identity database, opened and
   closed with the identity server. Process graphs run on it as Pi tasks
-  (NIAR-303). Chat runs on it behind `NIARO_AGENT_CORE=pi` (NIAR-304 step
-  A; default `mastra`); process agent steps still run on Mastra, and the
-  Mastra notes below describe that code.
+  (NIAR-303). Chat, process agent steps and the process designer run on it
+  behind `NIARO_AGENT_CORE=pi` (NIAR-304 steps A and B; default `mastra`),
+  and the Mastra notes below describe the default path.
+- **Single structured calls need no agent runtime.** Meeting records,
+  profile observations, action names and widget data are direct calls to
+  Niaro's provider (`apps/server-agent/model-call.ts`): they keep no thread
+  and nothing in them can continue after a restart, so they store nothing in
+  the agent core. They still pass the integration transport and the ledger.
 - **On Pi the domain session stays the authority over every agent step.** A
   bridging provider asks the request's session for the model, instructions
   and context of each step and sends it through the same model code, so the

@@ -1,21 +1,14 @@
-import { Agent } from "@mastra/core/agent";
-import { quiet } from "./quiet-agent";
-import { createTool } from "@mastra/core/tools";
+import { generateObject, runTools, type ModelTool } from "./model-call";
 import type { z } from "zod";
 import type { LanguageModelV4 } from "./model-types";
 
 /**
- * The two closed Mastra agents behind an AI-filled overview widget. Neither
+ * The two closed model calls behind an AI-filled overview widget. Neither
  * has memory, a shared thread or any tool beyond the ones passed in; the
  * caller decides which reads exist, executes them under the person's current
  * authority and validates everything that comes back.
  */
-export type WidgetFillTool = {
-  name: string;
-  description: string;
-  input: z.ZodType<Record<string, unknown>>;
-  run: (input: Record<string, unknown>) => Promise<unknown>;
-};
+export type WidgetFillTool = ModelTool;
 
 /**
  * Collects data for a widget: the model decides which services, read actions
@@ -32,34 +25,7 @@ export async function collectWidgetData(
   },
   signal: AbortSignal,
 ) {
-  const agent = quiet(
-    new Agent({
-      id: "niaro-widget-collect-v1",
-      name: "Widget data collection",
-      model,
-      instructions: input.instructions,
-      tools: Object.fromEntries(
-        input.tools.map((tool) => [
-          tool.name,
-          createTool({
-            id: tool.name,
-            description: tool.description,
-            inputSchema: tool.input,
-            execute: async (args) => {
-              signal.throwIfAborted();
-              return tool.run(args as Record<string, unknown>);
-            },
-          }),
-        ]),
-      ),
-    }),
-  );
-  await agent.generate(input.prompt, {
-    abortSignal: signal,
-    maxSteps: input.maxSteps,
-    modelSettings: { maxRetries: 0 },
-  });
-  signal.throwIfAborted();
+  await runTools(model, input, signal);
 }
 
 /**
@@ -76,25 +42,13 @@ export async function assembleWidgetData<S extends z.ZodType>(
   },
   signal: AbortSignal,
 ): Promise<unknown> {
-  const agent = quiet(
-    new Agent({
-      id: "niaro-widget-assemble-v1",
-      name: "Widget data",
-      model,
-      tools: {},
+  return generateObject(
+    model,
+    {
       instructions: input.instructions,
-    }),
-  );
-  const result = await agent.generate(input.payload, {
-    abortSignal: signal,
-    maxSteps: 1,
-    modelSettings: { maxRetries: 0 },
-    structuredOutput: {
+      prompt: input.payload,
       schema: input.schema,
-      jsonPromptInjection: true,
-      errorStrategy: "strict",
     },
-  });
-  signal.throwIfAborted();
-  return result.object;
+    signal,
+  );
 }
