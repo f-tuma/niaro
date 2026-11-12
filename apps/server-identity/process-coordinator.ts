@@ -24,7 +24,7 @@ import type { AgentMemory } from "./agent-memory";
 import { createServiceProcessRuntime } from "./service-process-runtime";
 import { JournalSchema } from "./service-process-journal";
 import {
-  nativeCatalogOwner,
+  nativeAgentOwner,
   REQUEST_INTERRUPTION_REASON,
 } from "./mastra-runtime";
 import { ProcessStartStore } from "./process-start-store";
@@ -344,7 +344,7 @@ export function createProcessCoordinator(
       );
       return { ...proof, journal };
     });
-    const owner = await nativeCatalogOwner(controller);
+    const owner = await nativeAgentOwner(controller);
     if (!owner.isSettled(parentRunId)) return false;
     for (const child of Object.values(value.journal.agents)) {
       const binding = {

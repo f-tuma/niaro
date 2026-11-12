@@ -38,7 +38,8 @@ import { nativeToolValidator } from "../apps/server-identity/mastra-domain";
 import { createTrustHarness } from "./agent-trust/harness";
 import { processWorkflow } from "./helpers/service-process";
 import { questionFixture } from "./helpers/process-questions-runtime";
-import { nativeCatalogOwner } from "../apps/server-identity/mastra-runtime";
+import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
+import { agentCoreKind } from "../apps/server-identity/agent-core-owner";
 
 const digest = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -1536,8 +1537,22 @@ for (const cutRevision of [1, 2])
             h.journal(cut.admission.parentRunId).agents.agent!.answers!.length,
             cutRevision,
           );
-          const native = await nativeCatalogOwner(h.controller);
-          if (reopen === 0) {
+          const native = await nativeAgentOwner(h.controller);
+          if (reopen === 0 && agentCoreKind(h.controller) === "pi") {
+            // The cut came before the answer reached the agent: on Pi the
+            // question still waits inside its tool (the Mastra snapshot
+            // mutations below are Mastra internals, kept for that path).
+            assert.equal(
+              await native.proveSuspended({
+                runId: cut.question.childRunId,
+                threadId: cut.question.childThreadId,
+                resourceId: cut.question.resourceId,
+                toolCallId: cut.question.toolCallId,
+                question: cut.question,
+              }),
+              true,
+            );
+          } else if (reopen === 0) {
             const frame = {
               runId: cut.question.childRunId,
               threadId: cut.question.childThreadId,

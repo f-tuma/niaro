@@ -17,6 +17,7 @@
  *   resumes it with a new session.
  */
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { Context } from "@earendil-works/chord/context";
 import {
   createAssistantMessageEventStream,
@@ -109,7 +110,12 @@ export const NativeThreadDoc = defineDocFamily<
   initial: () => ({ resourceId: "", threadId: "", conversations: [] }),
   checkpointWhen: () => true,
 });
-type RunRecord = { submissionId?: string; privateContext?: boolean };
+type RunRecord = {
+  submissionId?: string;
+  privateContext?: boolean;
+  /** Saved process agents' question proofs by tool call, kept after the call ends. */
+  questions?: Record<string, JsonObject>;
+};
 /** What a native conversation holds for the runtime. */
 export const NativeConversationDoc = defineDoc<{
   resourceId: string;
@@ -119,6 +125,8 @@ export const NativeConversationDoc = defineDoc<{
   runs: Record<string, RunRecord>;
   /** The run tools' names, so a waiting tool resolves again after a restart. */
   tools: string[];
+  /** A run without conversation memory: never the thread's recall. */
+  memoryless?: boolean;
 }>({
   kind: "niaro.native-conversation",
   version: 1,
@@ -148,7 +156,52 @@ type PendingMemo = {
   toolCallId: string;
   runId: string;
   operationId?: string;
+  /** A saved process agent's question proof (`ProcessQuestion`). */
+  question?: JsonObject;
 };
+/** The memo of a pending call; a question proof must name this very call. */
+
+/**
+ * A transport that ignores the abort signal must not hold the run: the call
+ * is abandoned (its own budget settlement still runs) and the step fails now,
+ * so shutdown and cancel never wait on a stuck provider.
+ */
+function settledOrAborted<T>(work: PromiseLike<T>, signal: AbortSignal) {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+    Promise.resolve(work)
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+function pendingMemo(
+  pending: NonNullable<NativeAgentInput["session"]["state"]["pending"]>,
+  toolCallId: string,
+  input: NativeAgentInput,
+  args: JsonObject,
+): PendingMemo {
+  const proof = pending.questionProof;
+  if (
+    proof &&
+    (pending.kind !== "question" ||
+      proof.toolCallId !== toolCallId ||
+      proof.childRunId !== input.runId ||
+      proof.childThreadId !== input.threadId ||
+      proof.resourceId !== input.resourceId ||
+      proof.question !== args.question)
+  )
+    throw new Error("niaro_native_pending_tool_mismatch");
+  return {
+    kind: pending.kind,
+    toolCallId,
+    runId: input.runId,
+    ...(pending.operationId ? { operationId: pending.operationId } : {}),
+    ...(proof ? { question: proof as unknown as JsonObject } : {}),
+  };
+}
 type Prepared = Awaited<
   ReturnType<NativeAgentInput["session"]["prepareModel"]>
 >;
@@ -442,14 +495,14 @@ class RunBinding {
             ),
           this.textObserver,
         );
-        const result = await model.doStream({
-          ...options,
-          abortSignal: signal,
-        });
+        const result = await settledOrAborted(
+          model.doStream({ ...options, abortSignal: signal }),
+          signal,
+        );
         const parts: LanguageModelV4StreamPart[] = [];
         const reader = result.stream.getReader();
         for (;;) {
-          const { done, value } = await reader.read();
+          const { done, value } = await settledOrAborted(reader.read(), signal);
           if (done) break;
           if (value.type === "error") throw value.error;
           if (value.type === "tool-call") this.showDraft(null);
@@ -695,12 +748,12 @@ class RunBinding {
       if (pending.toolCallId !== toolCallId)
         throw new Error("niaro_native_pending_tool_mismatch");
       await session.save(false);
-      await this.host.suspend(this, api, context, {
-        kind: pending.kind,
-        toolCallId,
-        runId: this.runId,
-        ...(pending.operationId ? { operationId: pending.operationId } : {}),
-      });
+      await this.host.suspend(
+        this,
+        api,
+        context,
+        pendingMemo(pending, toolCallId, input, args),
+      );
       suspended = true;
     } catch (error) {
       const rejection = this.fail(error);
@@ -764,12 +817,12 @@ class RunBinding {
       const pending = session.state.pending;
       if (pending?.toolCallId === toolCallId) {
         await session.save(false);
-        await this.host.suspend(this, api, context, {
-          kind: pending.kind,
-          toolCallId,
-          runId: this.runId,
-          ...(pending.operationId ? { operationId: pending.operationId } : {}),
-        });
+        await this.host.suspend(
+          this,
+          api,
+          context,
+          pendingMemo(pending, toolCallId, input, args),
+        );
         suspended = true;
       } else return jsonResult(output);
     } catch (error) {
@@ -861,6 +914,17 @@ export class NativeAgentHost {
       const doc = await tx.doc(NativeSuspendedDoc);
       if (!doc.conversations.includes(binding.conversationId))
         doc.conversations.push(binding.conversationId);
+      if (pending.question !== undefined) {
+        const conversation = await tx.doc(
+          NativeConversationDoc,
+          cid(binding.conversationId),
+        );
+        const run = (conversation.runs[pending.runId] ??= {});
+        run.questions = {
+          ...run.questions,
+          [pending.toolCallId]: pending.question,
+        };
+      }
     }, ctx);
     binding.suspended.resolve(pending.toolCallId);
   }
@@ -879,7 +943,9 @@ export class NativeAgentHost {
       this.waiters.set(key, wait);
       const abort = () => wait.reject(new Error("niaro_native_wait_aborted"));
       const signal = (context as { abortSignal?: AbortSignal }).abortSignal;
-      signal?.addEventListener("abort", abort, { once: true });
+      // A retry may start while the core is already closing.
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
       try {
         binding = await wait.promise;
       } finally {
@@ -888,13 +954,15 @@ export class NativeAgentHost {
       }
     }
     this.resumes.delete(key);
+    const result = await binding.resumeTool(name, args, api, context);
+    // Only now: a restart during the resumed call must find its tools again.
     await this.harness!.commit(async (tx) => {
       const doc = await tx.doc(NativeSuspendedDoc);
       doc.conversations = doc.conversations.filter(
         (id) => id !== conversationId,
       );
     }, ctx);
-    return binding.resumeTool(name, args, api, context);
+    return result;
   }
   /** Hand a resuming request's binding to the waiting call. */
   resume(binding: RunBinding, toolCallId: string) {
@@ -1387,6 +1455,14 @@ export function createPiAgentRuntime(core: NativeCore) {
   async function conversationDoc(id: string) {
     return harness.snapshot(NativeConversationDoc, cid(id), ctx);
   }
+  /** The thread's latest conversation with memory: its recall. */
+  async function recallConversation(resourceId: string, threadId: string) {
+    for (const id of (
+      await threadConversations(resourceId, threadId)
+    ).reverse())
+      if (!(await conversationDoc(id))?.memoryless) return id;
+    return undefined;
+  }
   async function live(id: string) {
     return (await harness.snapshot(LiveDoc, cid(id), ctx))?.run;
   }
@@ -1411,6 +1487,52 @@ export function createPiAgentRuntime(core: NativeCore) {
     return undefined;
   }
 
+  /**
+   * A saved process agent's question answered in this run, with no answer of
+   * the run after it: a restart cut the run off between the answer and its
+   * final reply. Passive; the conversation must not be live.
+   */
+  async function answeredBeforeRestart(
+    id: string,
+    binding: ThreadBinding & { toolCallId: string; question: unknown },
+    answer: unknown,
+  ) {
+    const doc = await conversationDoc(id);
+    if (
+      binding.question === undefined ||
+      !isDeepStrictEqual(
+        doc?.runs[binding.runId]?.questions?.[binding.toolCallId],
+        binding.question,
+      )
+    )
+      return false;
+    const view = await (await harness.conversation(cid(id), ctx))!.context(ctx);
+    let inRun = false;
+    let answered = false;
+    for (const entry of view.entries) {
+      if (entry.kind === "niaro.user")
+        inRun =
+          (entry.data as { runId?: unknown } | undefined)?.runId ===
+          binding.runId;
+      if (!inRun) continue;
+      for (const message of entry.model ?? [])
+        if (
+          message.role === "toolResult" &&
+          message.toolCallId === binding.toolCallId
+        )
+          answered =
+            !message.isError &&
+            isDeepStrictEqual(parseResult(message), { answered: true, answer });
+        else if (
+          answered &&
+          message.role === "assistant" &&
+          message.stopReason === "stop"
+        )
+          return false;
+    }
+    return answered;
+  }
+
   async function openConversation(input: NativeAgentInput) {
     const key = threadKey(input.resourceId, input.threadId);
     const create = (at?: { conversation: Conversation; entry: EntryId }) => {
@@ -1428,6 +1550,7 @@ export function createPiAgentRuntime(core: NativeCore) {
           const doc = await tx.doc(NativeConversationDoc, id);
           doc.resourceId = input.resourceId;
           doc.threadId = input.threadId;
+          if (input.memoryMode === "none") doc.memoryless = true;
         },
       };
       return at
@@ -1436,9 +1559,7 @@ export function createPiAgentRuntime(core: NativeCore) {
     };
     let conversation: Conversation | undefined;
     if (input.memoryMode !== "none") {
-      const latest = (
-        await threadConversations(input.resourceId, input.threadId)
-      ).at(-1);
+      const latest = await recallConversation(input.resourceId, input.threadId);
       const existing = latest
         ? await harness.conversation(cid(latest), ctx)
         : undefined;
@@ -1492,18 +1613,49 @@ export function createPiAgentRuntime(core: NativeCore) {
     )
       throw new Error("niaro_native_input_invalid");
     let conversation: Conversation | undefined;
+    // Continue this run on its transcript: a restart cut it off (policy A).
+    let restarted = false;
     if (input.resume) {
+      const { toolCallId, data } = input.resume;
       const id = await runConversation(input);
       conversation = id ? await harness.conversation(cid(id), ctx) : undefined;
-      const pending = id ? await pendingCall(id) : undefined;
+      const running = !!conversation && !!(await live(id!));
+      const pending = running ? await pendingCall(id!) : undefined;
+      if (
+        conversation &&
+        !running &&
+        session.consumeQuestionAnswer &&
+        data &&
+        typeof data === "object" &&
+        "answer" in data
+      ) {
+        const answer = await session.consumeQuestionAnswer(
+          { toolCallId, runId: input.runId },
+          data,
+        );
+        restarted = await answeredBeforeRestart(
+          id!,
+          {
+            ...input,
+            toolCallId,
+            question: (await conversationDoc(id!))?.runs[input.runId]
+              ?.questions?.[toolCallId],
+          },
+          answer,
+        );
+      }
       if (
         !conversation ||
-        !(await live(id!)) ||
-        pending?.toolCallId !== input.resume.toolCallId ||
-        pending.runId !== input.runId
+        (!restarted &&
+          (pending?.toolCallId !== toolCallId || pending.runId !== input.runId))
       )
         throw new Error("niaro_native_pending_run_not_found");
-    } else conversation = await openConversation(input);
+    } else {
+      conversation = await openConversation(input);
+      const doc = await conversationDoc(String(conversation.id));
+      restarted =
+        doc?.runId === input.runId && !!doc.runs[input.runId]?.submissionId;
+    }
     const conversationId = String(conversation.id);
     const names = input.definitions.map((definition) => definition.name);
     native.installTools(conversationId, names);
@@ -1525,7 +1677,10 @@ export function createPiAgentRuntime(core: NativeCore) {
     native.bindings.set(conversationId, binding);
     try {
       let submissionId: string | undefined;
-      if (input.resume) {
+      if (restarted) {
+        const submission = await conversation.submit({ type: "continue" }, ctx);
+        submissionId = String(submission.id);
+      } else if (input.resume) {
         submissionId = (await conversationDoc(conversationId))?.runs[
           input.runId
         ]?.submissionId;
@@ -1615,7 +1770,8 @@ export function createPiAgentRuntime(core: NativeCore) {
         answer: binding.finalized,
       };
     } finally {
-      if (input.resume) native.forgetResume(binding, input.resume.toolCallId);
+      if (input.resume && !restarted)
+        native.forgetResume(binding, input.resume.toolCallId);
       if (native.bindings.get(conversationId) === binding)
         native.bindings.delete(conversationId);
     }
@@ -1668,19 +1824,42 @@ export function createPiAgentRuntime(core: NativeCore) {
     ) {
       ready();
       if (active.has(binding.runId)) return false;
-      // Saved process agents' question proofs stay on the Mastra runtime.
-      if (Object.hasOwn(binding, "question")) return false;
       const id = await runConversation(binding);
       if (!id || !(await live(id))) return false;
       const pending = await pendingCall(id);
       return (
         pending?.toolCallId === binding.toolCallId &&
         pending.runId === binding.runId &&
+        (!Object.hasOwn(binding, "question") ||
+          (binding.question !== undefined &&
+            isDeepStrictEqual(pending.question, binding.question))) &&
         !active.has(binding.runId)
       );
     },
-    async proveQuestionRecovery() {
-      return false;
+    /** A question answered before a restart cut the run off; passive. */
+    async proveQuestionRecovery(
+      binding: ThreadBinding & {
+        toolCallId: string;
+        question: unknown;
+        resumeData: unknown;
+      },
+    ) {
+      ready();
+      if (active.has(binding.runId)) return false;
+      const id = await runConversation(binding);
+      const data = binding.resumeData;
+      if (
+        !id ||
+        (await live(id)) ||
+        !data ||
+        typeof data !== "object" ||
+        !("answer" in data)
+      )
+        return false;
+      return (
+        (await answeredBeforeRestart(id, binding, data.answer)) &&
+        !active.has(binding.runId)
+      );
     },
     async execute(input: NativeAgentInput) {
       ready();
@@ -1702,8 +1881,7 @@ export function createPiAgentRuntime(core: NativeCore) {
       resourceId: string;
     }) {
       ready();
-      const ids = await threadConversations(resourceId, threadId);
-      const id = ids.at(-1);
+      const id = await recallConversation(resourceId, threadId);
       if (!id) return { messages: [] };
       const doc = await conversationDoc(id);
       if (doc?.resourceId !== resourceId)

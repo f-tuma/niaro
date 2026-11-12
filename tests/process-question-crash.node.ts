@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
+import { DatabaseSync } from "node:sqlite";
 import { LibSQLStore } from "@mastra/libsql";
+import { agentCoreKindFromEnvironment } from "../apps/server-identity/agent-core-owner";
 import type { WorkflowRunState } from "@mastra/core/workflows";
-import { nativeCatalogOwner } from "../apps/server-identity/mastra-runtime";
+import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
 import {
   JournalSchema,
   type Journal,
@@ -144,6 +146,22 @@ function forbidModel(h: Fixture) {
   });
 }
 async function corruptSuspension(path: string, question: ProcessQuestion) {
+  if (agentCoreKindFromEnvironment() === "pi") {
+    // The waiting tool's proof now names another call, like Mastra's paths below.
+    const db = new DatabaseSync(`${path}.pi.sqlite`);
+    try {
+      const changed = db
+        .prepare(
+          `UPDATE tasks SET record = json_set(record, '$.memos."niaro.pending".toolCallId', 'TEST_unrelated')
+           WHERE json_extract(record, '$.memos."niaro.pending".toolCallId') = ?`,
+        )
+        .run(question.toolCallId);
+      assert.equal(changed.changes, 1);
+    } finally {
+      db.close();
+    }
+    return;
+  }
   const store = new LibSQLStore({
     id: "TEST-question-crash-corruption",
     url: `file:${path}.mastra.sqlite`,
@@ -191,7 +209,7 @@ test("SIGKILL after question issue before pending save preserves the orphan issu
       );
       assert.equal(
         await (
-          await nativeCatalogOwner(h.controller)
+          await nativeAgentOwner(h.controller)
         ).proveSuspended(nativeBinding(cut.question)),
         false,
       );
@@ -231,7 +249,7 @@ test("SIGKILL after actual child suspend before parent waiting save recovers the
     const h = questionFixture(path, cut.ids);
     try {
       forbidModel(h);
-      const native = await nativeCatalogOwner(h.controller);
+      const native = await nativeAgentOwner(h.controller);
       assert.equal(
         await native.proveSuspended(nativeBinding(cut.question)),
         true,
@@ -269,7 +287,7 @@ test("SIGKILL after native B suspension before parent publication preserves cons
     const h = questionFixture(path, cut.ids);
     try {
       forbidModel(h);
-      const native = await nativeCatalogOwner(h.controller);
+      const native = await nativeAgentOwner(h.controller);
       assert.equal(
         await native.proveSuspended(nativeBinding(cut.question)),
         true,
@@ -337,7 +355,7 @@ test("SIGKILL after immutable answer binding resumes canonical A once; exact A r
         );
         assert.equal(
           await (
-            await nativeCatalogOwner(h.controller)
+            await nativeAgentOwner(h.controller)
           ).proveSuspended(nativeBinding(binding.question)),
           true,
         );
@@ -417,7 +435,7 @@ test("SIGKILL after B publication before response returns exact B for lost-respo
     const h = questionFixture(path, cut.ids);
     try {
       forbidModel(h);
-      const native = await nativeCatalogOwner(h.controller);
+      const native = await nativeAgentOwner(h.controller);
       assert.equal(
         await native.proveSuspended(nativeBinding(cut.question)),
         true,
@@ -485,7 +503,7 @@ for (const mode of ["output", "terminal"] as const) {
       const h = questionFixture(path, cut.ids);
       try {
         forbidModel(h);
-        const native = await nativeCatalogOwner(h.controller);
+        const native = await nativeAgentOwner(h.controller);
         assert.equal(
           await native.proveRetired(retirementBinding(cut.question)),
           mode === "terminal",
@@ -565,7 +583,7 @@ for (const mode of ["bound", "published"] as const) {
         forbidModel(h);
         assert.equal(
           await (
-            await nativeCatalogOwner(h.controller)
+            await nativeAgentOwner(h.controller)
           ).proveSuspended(nativeBinding(cut.question)),
           false,
         );

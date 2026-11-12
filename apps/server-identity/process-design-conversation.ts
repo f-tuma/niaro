@@ -38,7 +38,7 @@ import {
   type DesignTurnState,
 } from "./process-design-conversation-store";
 import { processDigest } from "./process-validation";
-import { nativeCatalogOwner } from "./mastra-runtime";
+import { nativeAgentOwner } from "./mastra-runtime";
 import {
   createNiaroMastraModel,
   MODEL_CALL_LIMITS,
@@ -391,7 +391,7 @@ export class ProcessDesignConversation {
     turn: DesignTurnState,
   ) {
     try {
-      const owner = await nativeCatalogOwner(this.controller);
+      const owner = await nativeAgentOwner(this.controller);
       return (
         (await owner.proveRetired({
           runId: turn.turnId,
@@ -902,7 +902,7 @@ export class ProcessDesignConversation {
     };
     let failure: unknown;
     try {
-      const owner = await nativeCatalogOwner(this.controller);
+      const owner = await nativeAgentOwner(this.controller);
       const started = await context.serial(async () => {
         const { actor, turn } = await authorizeHeld();
         turn.nativeStarted = true;

@@ -18,7 +18,7 @@ import { IdentityError } from "../../apps/server-identity/error";
 import {
   closeNativeCatalogRuntime,
   inspectNativeCatalogRuntime,
-  nativeCatalogOwner,
+  nativeAgentOwner,
 } from "../../apps/server-identity/mastra-runtime";
 import { DEFAULT_PROCESS_LIMITS } from "../../apps/server-identity/process-validation";
 import type { InferenceBudgetSettings } from "../../packages/protocol/inference-budget";
@@ -390,7 +390,7 @@ export function designConversationFixture(
       role = next;
       epoch++;
     },
-    nativeOwner: () => nativeCatalogOwner(controller),
+    nativeOwner: () => nativeAgentOwner(controller),
     nativeMessages: async (threadId: string, resourceId: string) =>
       (await inspectNativeCatalogRuntime(controller, threadId, resourceId))
         .messages,

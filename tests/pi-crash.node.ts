@@ -127,3 +127,41 @@ test("killed while a process waits for approval: the approval survives the resta
   assert.equal(result.actions, 1, "only the approved drive reached the action");
   assert.equal(result.automaticRestarts, 0, "a waiting run is not restarted");
 });
+
+// ---- native agent runs on the agent core (NIAR-304 step B) ----
+const nativeWorker = fileURLToPath(
+  new URL("./helpers/pi-native-crash-worker.ts", import.meta.url),
+);
+type NativeResult = {
+  events: string[];
+  settled: boolean;
+  retired: boolean;
+  suspended: boolean;
+  roles: string[];
+};
+
+test("killed after a native run failed for good: the restart proves it retired and calls no model again", async () => {
+  const { result } = await crashAndResume<NativeResult>(
+    nativeWorker,
+    "native-fatal",
+    { killAt: "failed", delayMs: 100 },
+  );
+  assert.deepEqual(result.events, ["model"]);
+  assert.equal(result.retired, true);
+  assert.equal(result.suspended, false);
+  // Members never see the failed attempt.
+  assert.deepEqual(result.roles, ["user"]);
+});
+
+test("killed while the domain runs a native write: the restart neither runs the write again nor calls a model", async () => {
+  const { result } = await crashAndResume<NativeResult>(
+    nativeWorker,
+    "native-tool",
+    { killAt: "invoked", delayMs: 100 },
+  );
+  assert.deepEqual(result.events, ["model", "invoke"]);
+  assert.equal(result.settled, true);
+  assert.equal(result.suspended, false);
+  // The cut-off call is not shown to members as a pending or failed step.
+  assert(!result.roles.includes("tool"), JSON.stringify(result.roles));
+});

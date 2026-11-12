@@ -5,6 +5,9 @@ import { test } from "node:test";
 import { emptyDesignBrief } from "../packages/protocol/process-design";
 import { IdentityError } from "../apps/server-identity/error";
 import { ProcessDesignConversation } from "../apps/server-identity/process-design-conversation";
+import { ProcessDesignConversationStore } from "../apps/server-identity/process-design-conversation-store";
+import { agentCoreKind } from "../apps/server-identity/agent-core-owner";
+import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
 import {
   designConversationFixture,
   conversationSignal as signal,
@@ -68,7 +71,21 @@ const isolated = async (run: (h: Fixture) => Promise<void>) => {
     await h.close();
   }
 };
-const nativeCounts = (h: Fixture) => {
+/** Stored native messages of the designer threads; memoryless on both cores. */
+const nativeCounts = async (h: Fixture, ...sessionIds: string[]) => {
+  if (agentCoreKind(h.controller) === "pi") {
+    const runtime = await nativeAgentOwner(h.controller);
+    let count = 0;
+    for (const sessionId of sessionIds) {
+      const { threadId, resourceId } = new ProcessDesignConversationStore(
+        h.db,
+        h.scope.serverId,
+      ).ids(h.actor, sessionId);
+      count += (await runtime.inspect({ threadId, resourceId })).messages
+        .length;
+    }
+    return { count };
+  }
   const db = new DatabaseSync(fileURLToPath(h.catalog.nativeStorageUrl));
   try {
     return db
@@ -515,7 +532,7 @@ test("native designer clarifies, drafts, corrects, and retains one isolated conv
     assert.equal(model, 9);
     assert.equal(h.modelCount(), 9);
     // The journal projection is the only history; native Memory stays empty.
-    assert.equal(Number(nativeCounts(h).count), 0);
+    assert.equal(Number((await nativeCounts(h, sessionId)).count), 0);
     assert.equal(count(h, "agent_inference_run"), 1);
     assert.equal(count(h, "agent_inference_attempt"), 9);
     assert.equal(
@@ -639,7 +656,7 @@ test("native designer reprojects private domain history under fresh authority an
         ),
       "Prior user turns are not repeated as native messages",
     );
-    assert.equal(Number(nativeCounts(h).count), 0);
+    assert.equal(Number((await nativeCounts(h, sessionId)).count), 0);
     h.switchActor();
     await assert.rejects(
       runtime.get(h.context, read(sessionId, "TEST-private-first")),
@@ -1030,7 +1047,10 @@ test("native designer binds sessions to separate native threads and budget roots
     );
     assert.equal(first.status, "completed", JSON.stringify(first));
     assert.equal(second.status, "completed", JSON.stringify(second));
-    assert.equal(Number(nativeCounts(h).count), 0);
+    assert.equal(
+      Number((await nativeCounts(h, firstSession, secondSession)).count),
+      0,
+    );
     assert.equal(count(h, "agent_inference_run"), 2);
     assert.equal(h.modelCount(), 2);
     await assert.rejects(

@@ -15,7 +15,7 @@ import type { AgentMemory } from "./agent-memory";
 import type { CatalogController, CatalogContext } from "./catalog-controller";
 import { IdentityError } from "./error";
 import { processDigest } from "./process-validation";
-import { nativeCatalogOwner } from "./mastra-runtime";
+import { nativeAgentOwner } from "./mastra-runtime";
 import { nativeToolValidator } from "./mastra-domain";
 import { boundedPreview } from "./bounded-preview";
 import { resolvePromptVariables } from "./prompt-variables";
@@ -236,7 +236,7 @@ export function createProcessAgentBoundary(input: {
     const authorize = () => context.serial(input.authorizeHeld);
     await authorize();
     if (state.output) {
-      const runtime = await nativeCatalogOwner(controller);
+      const runtime = await nativeAgentOwner(controller);
       const retired = await runtime.proveRetired({
         runId: state.runId,
         threadId: state.threadId,
@@ -256,7 +256,7 @@ export function createProcessAgentBoundary(input: {
           .parse(state.output),
       };
     }
-    const runtime = await nativeCatalogOwner(controller);
+    const runtime = await nativeAgentOwner(controller);
     const questionEnabled =
       node.humanInput === "text" &&
       input.parent.compilerVersion === "niaro-native-workflow/3";

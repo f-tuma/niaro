@@ -20,7 +20,7 @@ import {
 import type { CatalogController, CatalogContext } from "./catalog-controller";
 import type { ServiceProcessStore, ProcessActor } from "./service-processes";
 import { processDigest } from "./process-validation";
-import { nativeCatalogOwner } from "./mastra-runtime";
+import { nativeAgentOwner } from "./mastra-runtime";
 import { IdentityError } from "./error";
 import { CONTACT_CONTEXT_TTL } from "./contact-context";
 import type { AgentMemory } from "./agent-memory";
@@ -309,7 +309,7 @@ export function createServiceProcessRuntime(
         compilerVersion: journal.compilerVersion,
       };
       const proveConsumedQuestion = async (
-        runtime: Awaited<ReturnType<typeof nativeCatalogOwner>>,
+        runtime: Awaited<ReturnType<typeof nativeAgentOwner>>,
         child: Journal["agents"][string],
         answer: NonNullable<Journal["agents"][string]["answers"]>[number],
       ) => {
@@ -397,7 +397,7 @@ export function createServiceProcessRuntime(
             processDigest([id, scopeDigest, "agent-thread", resume.nodeId])
         )
           throw new IdentityError(409, "process_question_conflict");
-        const owner = await nativeCatalogOwner(controller);
+        const owner = await nativeAgentOwner(controller);
         const binding = {
           runId: child.runId,
           threadId: child.threadId,
@@ -498,7 +498,7 @@ export function createServiceProcessRuntime(
       };
       const boundary: NativeWorkflowInput["boundary"] = {
         reconcile: async (checkpoint, workflowId) => {
-          const runtime = await nativeCatalogOwner(controller);
+          const runtime = await nativeAgentOwner(controller);
           // A saved parent can lag behind its child. Prove all recorded child
           // boundaries before attaching the parent, even at an earlier control step.
           for (const [nodeId, child] of Object.entries(journal.agents)) {

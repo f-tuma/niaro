@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath } from "node:url";
 import { CatalogController } from "../../apps/server-identity/catalog-controller";
 import { openIdentity } from "../../apps/server-identity/service";
 import { NativeTestRequestSchema } from "../../packages/protocol/process-native-testing";
@@ -152,16 +151,7 @@ async function own(cut: OwnerCrashMode) {
           console.error("TEST durable native receipt cut failed:", error);
           process.exit(1);
         }
-        const native = new DatabaseSync(
-          fileURLToPath(this.store.nativeStorageUrl),
-          { readOnly: true },
-        );
-        const checkpoints = Number(
-          native
-            .prepare("SELECT COUNT(*) AS n FROM mastra_workflow_snapshot")
-            .get()!.n,
-        );
-        native.close();
+        const checkpoints = durable.checkpoints.length;
         assert(
           checkpoints > 0,
           "Actual native execution must have persisted its checkpoint",

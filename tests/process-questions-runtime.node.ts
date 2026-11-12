@@ -10,7 +10,7 @@ import { ProcessDefinitionSchema } from "../packages/protocol/service-processes"
 import { IdentityError } from "../apps/server-identity/error";
 import { ProcessAnswerBindingSchema } from "../packages/protocol/process-questions";
 import { JournalSchema } from "../apps/server-identity/service-process-journal";
-import { nativeCatalogOwner } from "../apps/server-identity/mastra-runtime";
+import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
 import { processDigest } from "../apps/server-identity/process-validation";
 import {
   questionFixture,
@@ -18,6 +18,10 @@ import {
 } from "./helpers/process-questions-runtime";
 import { callProcessTool, processAgent } from "./helpers/service-process-agent";
 import { scope, signal, code } from "./helpers/service-process-runtime";
+import {
+  agentCoreKind,
+  agentCoreKindFromEnvironment,
+} from "../apps/server-identity/agent-core-owner";
 
 async function isolated(
   run: (h: ReturnType<typeof questionFixture>, path: string) => Promise<void>,
@@ -466,21 +470,27 @@ test("actual SIGKILL after committed answer before native ACK proves exact runni
     try {
       assert(h.questions.consumed(binding.bindingId, binding.question));
       if (i === 0) {
-        const native = await nativeCatalogOwner(h.controller);
+        const native = await nativeAgentOwner(h.controller);
+        const child = {
+          runId: binding.question.childRunId,
+          threadId: binding.question.childThreadId,
+          resourceId: binding.question.resourceId,
+          toolCallId: binding.question.toolCallId,
+          question: binding.question,
+        };
         assert(
-          await native.proveQuestionRecovery({
-            runId: binding.question.childRunId,
-            threadId: binding.question.childThreadId,
-            resourceId: binding.question.resourceId,
-            toolCallId: binding.question.toolCallId,
-            question: binding.question,
-            resumeData: {
-              answerId: binding.bindingId,
-              answer: binding.command.answer,
-              questionId: binding.question.questionId,
-              questionRevision: binding.question.questionRevision,
-            },
-          }),
+          agentCoreKind(h.controller) === "pi"
+            ? // Pi's question tool died inside its resumed call: it still waits.
+              await native.proveSuspended(child)
+            : await native.proveQuestionRecovery({
+                ...child,
+                resumeData: {
+                  answerId: binding.bindingId,
+                  answer: binding.command.answer,
+                  questionId: binding.question.questionId,
+                  questionRevision: binding.question.questionRevision,
+                },
+              }),
         );
         h.onModel(() => askQuestion("TEST question B?"));
         expected = await h.runtime.start(
@@ -595,13 +605,28 @@ test("a committed answer and journal history cannot recover when the exact nativ
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const cut = await killAfterConsumption(path, cutPath);
   const binding = ProcessAnswerBindingSchema.parse(cut.binding);
-  const nativeDB = new DatabaseSync(path + ".mastra.sqlite");
+  const pi = agentCoreKindFromEnvironment() === "pi";
+  const nativeDB = new DatabaseSync(
+    path + (pi ? ".pi.sqlite" : ".mastra.sqlite"),
+  );
   try {
-    nativeDB
-      .prepare(
-        "DELETE FROM mastra_workflow_snapshot WHERE run_id=? AND workflow_name IN ('durable-agentic-loop','durable-agentic-execution')",
-      )
-      .run(binding.question.childRunId);
+    if (pi)
+      // The waiting question tool loses its proof.
+      assert.equal(
+        nativeDB
+          .prepare(
+            `UPDATE tasks SET record = json_remove(record, '$.memos."niaro.pending"')
+             WHERE json_extract(record, '$.memos."niaro.pending".toolCallId') = ?`,
+          )
+          .run(binding.question.toolCallId).changes,
+        1,
+      );
+    else
+      nativeDB
+        .prepare(
+          "DELETE FROM mastra_workflow_snapshot WHERE run_id=? AND workflow_name IN ('durable-agentic-loop','durable-agentic-execution')",
+        )
+        .run(binding.question.childRunId);
   } finally {
     nativeDB.close();
   }

@@ -12,7 +12,7 @@ import {
 import { processAgent, callProcessTool } from "./service-process-agent";
 import { processDigest } from "../../apps/server-identity/process-validation";
 import { DatabaseSync } from "node:sqlite";
-import { nativeCatalogOwner } from "../../apps/server-identity/mastra-runtime";
+import { nativeAgentOwner } from "../../apps/server-identity/mastra-runtime";
 import { processRunRow } from "./pi-process";
 import type { ProcessAgentState } from "../../apps/server-identity/process-agent-runtime";
 import { processCompilerVersion } from "../../apps/server-agent/process-workflow";
@@ -222,7 +222,7 @@ async function main() {
         current.trace.steps.findLast((step) => step.callId === "agent")
           ?.status === "waiting"
       ) {
-        const native = await nativeCatalogOwner(h.controller);
+        const native = await nativeAgentOwner(h.controller);
         if (
           !(await native.proveSuspended({
             runId: child.runId,
@@ -250,7 +250,7 @@ async function main() {
           (step) => step.callId === "agent" && step.status === "succeeded",
         )
       ) {
-        const native = await nativeCatalogOwner(h.controller);
+        const native = await nativeAgentOwner(h.controller);
         const proved = await native.proveRetired({
           runId: child.runId,
           threadId: child.threadId,

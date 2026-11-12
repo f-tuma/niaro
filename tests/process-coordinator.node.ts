@@ -25,8 +25,11 @@ import { processObject } from "./helpers/service-process";
 import { ProcessStartStore } from "../apps/server-identity/process-start-store";
 import { IdentityError } from "../apps/server-identity/error";
 import { processAgent, callProcessTool } from "./helpers/service-process-agent";
-import { nativeCatalogOwner } from "../apps/server-identity/mastra-runtime";
-import { agentCoreFor } from "../apps/server-identity/agent-core-owner";
+import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
+import {
+  agentCoreFor,
+  agentCoreKindFromEnvironment,
+} from "../apps/server-identity/agent-core-owner";
 import { processDigest } from "../apps/server-identity/process-validation";
 import {
   PROCESS_START_PROFILE,
@@ -1173,59 +1176,64 @@ test("abandoned revoked connections release global permits when owned native pro
     assert.deepEqual(h.counts(), [["GET", 2]]);
   }));
 
-test("a suspended checkpoint cannot retire a failed persistence tail until native memory settles", () =>
-  isolated(async (h, c, tracker) => {
-    const require = createRequire(
-      join(process.cwd(), "apps/server-agent/package.json"),
-    );
-    const { Memory } = await import(
-      require.resolve("@mastra/memory").replace(/\.cjs$/, ".js")
-    );
-    const settled = Memory.prototype.settled;
-    const { command } = h.setup(processAgent(h));
-    h.onModel(() => callProcessTool());
-    Memory.prototype.settled = async () => {
-      throw Error("TEST-persistence-tail");
-    };
-    try {
-      const failed = await c.execute(command, signal(), origin);
-      assert.equal(failed.process?.status, "failed");
-      const admission = h.starts.read(
-        admin,
-        scope,
-        command.commandId,
-        command.idempotencyKey,
+test(
+  "a suspended checkpoint cannot retire a failed persistence tail until native memory settles",
+  // Mastra Memory internals, until wave 4 removes it.
+  { skip: agentCoreKindFromEnvironment() === "pi" && "Mastra path only" },
+  () =>
+    isolated(async (h, c, tracker) => {
+      const require = createRequire(
+        join(process.cwd(), "apps/server-agent/package.json"),
       );
-      assert(admission.status === "admitted");
-      const j = h.catalog.turn(
-        admission.parentRunId,
-        scope.workspaceId,
-        scope.userId,
-      ) as { agents: Record<string, { runId: string }> };
-      const owner = await nativeCatalogOwner(h.controller);
-      const child = Object.values(j.agents)[0];
-      assert(child);
-      assert.equal(owner.isSettled(child.runId), false);
-      await assert.rejects(
-        c.retired(admission.parentRunId),
-        /TEST-persistence-tail/,
+      const { Memory } = await import(
+        require.resolve("@mastra/memory").replace(/\.cjs$/, ".js")
       );
-      await tracker.retireOwned();
-      assert.equal(tracker.activeScopes.size, 1);
-      Memory.prototype.settled = settled;
-      assert.equal(await c.retired(admission.parentRunId), true);
-      assert.equal(owner.isSettled(child.runId), true);
-      assert.equal(
-        (await c.execute(command, signal(), origin)).process?.status,
-        "failed",
-      );
-      assert.equal(tracker.activeScopes.size, 0);
-      assert.equal(h.models().length, 1);
-      assert.deepEqual(h.counts(), []);
-    } finally {
-      Memory.prototype.settled = settled;
-    }
-  }));
+      const settled = Memory.prototype.settled;
+      const { command } = h.setup(processAgent(h));
+      h.onModel(() => callProcessTool());
+      Memory.prototype.settled = async () => {
+        throw Error("TEST-persistence-tail");
+      };
+      try {
+        const failed = await c.execute(command, signal(), origin);
+        assert.equal(failed.process?.status, "failed");
+        const admission = h.starts.read(
+          admin,
+          scope,
+          command.commandId,
+          command.idempotencyKey,
+        );
+        assert(admission.status === "admitted");
+        const j = h.catalog.turn(
+          admission.parentRunId,
+          scope.workspaceId,
+          scope.userId,
+        ) as { agents: Record<string, { runId: string }> };
+        const owner = await nativeAgentOwner(h.controller);
+        const child = Object.values(j.agents)[0];
+        assert(child);
+        assert.equal(owner.isSettled(child.runId), false);
+        await assert.rejects(
+          c.retired(admission.parentRunId),
+          /TEST-persistence-tail/,
+        );
+        await tracker.retireOwned();
+        assert.equal(tracker.activeScopes.size, 1);
+        Memory.prototype.settled = settled;
+        assert.equal(await c.retired(admission.parentRunId), true);
+        assert.equal(owner.isSettled(child.runId), true);
+        assert.equal(
+          (await c.execute(command, signal(), origin)).process?.status,
+          "failed",
+        );
+        assert.equal(tracker.activeScopes.size, 0);
+        assert.equal(h.models().length, 1);
+        assert.deepEqual(h.counts(), []);
+      } finally {
+        Memory.prototype.settled = settled;
+      }
+    }),
+);
 
 test("one person's web and app credentials share one lane per kind", () => {
   const web = { ...scope, connectionId: "TEST-web" };

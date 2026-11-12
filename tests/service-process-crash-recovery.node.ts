@@ -12,7 +12,7 @@ import { CatalogCommand } from "../packages/protocol/service-catalog";
 import { ProcessDefinitionSchema } from "../packages/protocol/service-processes";
 import { PROCESS_TEST_SCENARIOS } from "../apps/server-identity/service-processes";
 import { processDigest } from "../apps/server-identity/process-validation";
-import { nativeCatalogOwner } from "../apps/server-identity/mastra-runtime";
+import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
 import {
   fixture,
   admin,
@@ -321,7 +321,7 @@ for (const mode of [
       try {
         if (["agent-retired", "agent-approved-retired"].includes(mode)) {
           const child = c.cut.journal.agents.agent!;
-          const runtime = await nativeCatalogOwner(h.controller);
+          const runtime = await nativeAgentOwner(h.controller);
           assert(
             await runtime.proveRetired({
               runId: child.runId,
@@ -451,7 +451,7 @@ test("actual SIGKILL second child approval preserves consumed first decision and
   for (let reopen = 0; reopen < 2; reopen++) {
     const h = fixture(c.path, c.metadata.ids);
     try {
-      const native = await nativeCatalogOwner(h.controller);
+      const native = await nativeAgentOwner(h.controller);
       assert(
         await native.proveSuspended({
           runId: child.runId,
@@ -513,7 +513,7 @@ test("actual SIGKILL staged Agent output cannot qualify a parent while child exe
   for (let reopen = 0; reopen < 2; reopen++) {
     const h = fixture(c.path, c.metadata.ids);
     try {
-      const runtime = await nativeCatalogOwner(h.controller);
+      const runtime = await nativeAgentOwner(h.controller);
       assert.equal(
         await runtime.proveRetired({
           runId: child.runId,

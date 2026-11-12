@@ -16,6 +16,12 @@ import {
   correctedPreference,
   previousPreference,
 } from "./helpers/mastra-domain-crash";
+import { agentCoreKindFromEnvironment } from "../apps/server-identity/agent-core-owner";
+
+/** Mastra runtime internals, until wave 4 removes it (chat turns cut off by a restart continue in step C; Pi: tests/pi-crash.node.ts). */
+const mastraOnly = {
+  skip: agentCoreKindFromEnvironment() === "pi" && "Mastra path only",
+};
 
 const worker = fileURLToPath(
   new URL("./helpers/mastra-crash-worker.ts", import.meta.url),
@@ -80,81 +86,89 @@ function readNativeCheckpointData(directory: string) {
 }
 
 for (const erasure of ["forget", "opt-out"] as const) {
-  test(`Niaro committed correction cannot hydrate its native checkpoint after ${erasure}`, async (t) => {
-    const directory = mkdtempSync(join(tmpdir(), `niaro-erasure-${erasure}-`));
-    t.after(() => rmSync(directory, { recursive: true, force: true }));
-    const crashed = await runWorker(directory, "memory-after");
-    assert.equal(crashed.signal, "SIGKILL", crashed.stdout + crashed.stderr);
-    const committed = await readProductionMemory(directory);
-    assert.equal(committed.state.memoryReceipts.length, 1);
-    assert.equal(committed.version, 2);
-    const nativeBefore = readNativeCheckpointData(directory);
-    assert.equal(
-      nativeBefore.checkpoints.filter((row) =>
-        [
-          DurableStepIds.AGENTIC_LOOP,
-          DurableStepIds.AGENTIC_EXECUTION,
-        ].includes(
-          String(row.workflow_name) as typeof DurableStepIds.AGENTIC_LOOP,
-        ),
-      ).length,
-      2,
-    );
+  test(
+    `Niaro committed correction cannot hydrate its native checkpoint after ${erasure}`,
+    mastraOnly,
+    async (t) => {
+      const directory = mkdtempSync(
+        join(tmpdir(), `niaro-erasure-${erasure}-`),
+      );
+      t.after(() => rmSync(directory, { recursive: true, force: true }));
+      const crashed = await runWorker(directory, "memory-after");
+      assert.equal(crashed.signal, "SIGKILL", crashed.stdout + crashed.stderr);
+      const committed = await readProductionMemory(directory);
+      assert.equal(committed.state.memoryReceipts.length, 1);
+      assert.equal(committed.version, 2);
+      const nativeBefore = readNativeCheckpointData(directory);
+      assert.equal(
+        nativeBefore.checkpoints.filter((row) =>
+          [
+            DurableStepIds.AGENTIC_LOOP,
+            DurableStepIds.AGENTIC_EXECUTION,
+          ].includes(
+            String(row.workflow_name) as typeof DurableStepIds.AGENTIC_LOOP,
+          ),
+        ).length,
+        2,
+      );
 
-    const db = new DatabaseSync(join(directory, "production.sqlite"));
-    const memory = new MemoryStore(db, {
-      secret: "TEST-memory-crash-secret",
-    });
-    if (erasure === "forget") {
-      const active = committed.items.find((item) => item.status === "active")!;
-      await memory.forget(crashMemoryActor, {
-        requestId: "TEST-forget-committed-correction",
-        id: String(active.id),
-        revision: Number(active.revision),
+      const db = new DatabaseSync(join(directory, "production.sqlite"));
+      const memory = new MemoryStore(db, {
+        secret: "TEST-memory-crash-secret",
       });
-    } else {
-      memory.setOptOut(crashMemoryActor, {
-        requestId: "TEST-opt-out-committed-correction",
-        optOut: true,
-      });
-    }
-    await memory.close();
-    db.close();
-    const erased = await readProductionMemory(directory);
-    assert(erased.version > committed.version);
-    if (erasure === "forget") {
-      assert(erased.items.every((item) => item.status === "deleted"));
-      assert(erased.items.every((item) => item.content === null));
-    }
+      if (erasure === "forget") {
+        const active = committed.items.find(
+          (item) => item.status === "active",
+        )!;
+        await memory.forget(crashMemoryActor, {
+          requestId: "TEST-forget-committed-correction",
+          id: String(active.id),
+          revision: Number(active.revision),
+        });
+      } else {
+        memory.setOptOut(crashMemoryActor, {
+          requestId: "TEST-opt-out-committed-correction",
+          optOut: true,
+        });
+      }
+      await memory.close();
+      db.close();
+      const erased = await readProductionMemory(directory);
+      assert(erased.version > committed.version);
+      if (erasure === "forget") {
+        assert(erased.items.every((item) => item.status === "deleted"));
+        assert(erased.items.every((item) => item.content === null));
+      }
 
-    const rejected = await runWorker(directory, "memory-recover");
-    assert.equal(rejected.code, 1, rejected.stdout + rejected.stderr);
-    assert.match(rejected.stdout, /memory_context_changed/);
-    assert(!rejected.stdout.includes(previousPreference));
-    assert(!rejected.stdout.includes(correctedPreference));
-    const after = await readProductionMemory(directory);
-    assert.deepEqual(
-      after.models,
-      erased.models,
-      "no model receives forgotten or opted-out data",
-    );
-    assert.deepEqual(
-      after.calls,
-      erased.calls,
-      "the stale mutation is never replayed",
-    );
-    assert.equal(after.version, erased.version);
-    assert.deepEqual(after.items, erased.items);
-    assert.deepEqual(
-      after.state.memoryReceipts,
-      committed.state.memoryReceipts,
-    );
-    assert.deepEqual(
-      readNativeCheckpointData(directory),
-      nativeBefore,
-      "authorization denies before native recovery changes its checkpoint or messages",
-    );
-  });
+      const rejected = await runWorker(directory, "memory-recover");
+      assert.equal(rejected.code, 1, rejected.stdout + rejected.stderr);
+      assert.match(rejected.stdout, /memory_context_changed/);
+      assert(!rejected.stdout.includes(previousPreference));
+      assert(!rejected.stdout.includes(correctedPreference));
+      const after = await readProductionMemory(directory);
+      assert.deepEqual(
+        after.models,
+        erased.models,
+        "no model receives forgotten or opted-out data",
+      );
+      assert.deepEqual(
+        after.calls,
+        erased.calls,
+        "the stale mutation is never replayed",
+      );
+      assert.equal(after.version, erased.version);
+      assert.deepEqual(after.items, erased.items);
+      assert.deepEqual(
+        after.state.memoryReceipts,
+        committed.state.memoryReceipts,
+      );
+      assert.deepEqual(
+        readNativeCheckpointData(directory),
+        nativeBefore,
+        "authorization denies before native recovery changes its checkpoint or messages",
+      );
+    },
+  );
 }
 
 function readBusiness(directory: string) {
@@ -258,74 +272,81 @@ function readProductionAction(directory: string) {
 }
 
 for (const stage of ["before", "succeeded-after", "unknown-after"] as const) {
-  test(`Niaro service action survives SIGKILL ${stage} its receipt without duplicating a provider write`, async (t) => {
-    const directory = mkdtempSync(join(tmpdir(), `niaro-action-${stage}-`));
-    t.after(() => rmSync(directory, { recursive: true, force: true }));
-    const crashed = await runWorker(directory, `action-${stage}`);
-    assert.equal(crashed.signal, "SIGKILL", crashed.stdout + crashed.stderr);
-    const prior = readProductionAction(directory);
-    assert.equal(prior.models.length, 3);
-    assert.equal(prior.calls.length, 1);
-    assert.equal(prior.state.receipts.length, 1);
-    assert.equal(prior.state.operations.length, 1);
-    const originalCallId = String(prior.calls[0]!.call_id);
-    const operationId = String(prior.calls[0]!.operation_id);
-    assert.equal(prior.state.receipts[0]!.callId, originalCallId);
-    assert.equal(prior.state.operations[0], operationId);
-    assert.equal(prior.effects.length, stage === "before" ? 0 : 1);
-    assert.equal(prior.receipts.length, stage === "before" ? 0 : 1);
-    if (stage !== "before")
-      assert.equal(
-        prior.receipts[0]!.status,
-        stage === "unknown-after" ? "unknown" : "succeeded",
-      );
+  test(
+    `Niaro service action survives SIGKILL ${stage} its receipt without duplicating a provider write`,
+    mastraOnly,
+    async (t) => {
+      const directory = mkdtempSync(join(tmpdir(), `niaro-action-${stage}-`));
+      t.after(() => rmSync(directory, { recursive: true, force: true }));
+      const crashed = await runWorker(directory, `action-${stage}`);
+      assert.equal(crashed.signal, "SIGKILL", crashed.stdout + crashed.stderr);
+      const prior = readProductionAction(directory);
+      assert.equal(prior.models.length, 3);
+      assert.equal(prior.calls.length, 1);
+      assert.equal(prior.state.receipts.length, 1);
+      assert.equal(prior.state.operations.length, 1);
+      const originalCallId = String(prior.calls[0]!.call_id);
+      const operationId = String(prior.calls[0]!.operation_id);
+      assert.equal(prior.state.receipts[0]!.callId, originalCallId);
+      assert.equal(prior.state.operations[0], operationId);
+      assert.equal(prior.effects.length, stage === "before" ? 0 : 1);
+      assert.equal(prior.receipts.length, stage === "before" ? 0 : 1);
+      if (stage !== "before")
+        assert.equal(
+          prior.receipts[0]!.status,
+          stage === "unknown-after" ? "unknown" : "succeeded",
+        );
 
-    const recovered = await runWorker(directory, "action-recover");
-    assert.equal(recovered.code, 0, recovered.stdout + recovered.stderr);
-    assert.doesNotMatch(recovered.stderr, /CLIENT_CLOSED|unsettled top-level/);
-    const output = JSON.parse(recovered.stdout) as {
-      answer: {
-        reply: string;
-        result: { status: string; operationId: string };
+      const recovered = await runWorker(directory, "action-recover");
+      assert.equal(recovered.code, 0, recovered.stdout + recovered.stderr);
+      assert.doesNotMatch(
+        recovered.stderr,
+        /CLIENT_CLOSED|unsettled top-level/,
+      );
+      const output = JSON.parse(recovered.stdout) as {
+        answer: {
+          reply: string;
+          result: { status: string; operationId: string };
+        };
+        runId: string;
+        threadId: string;
+        nativeCalls: { toolName: string; toolCallId: string; state: string }[];
       };
-      runId: string;
-      threadId: string;
-      nativeCalls: { toolName: string; toolCallId: string; state: string }[];
-    };
-    const status = stage === "unknown-after" ? "unknown" : "succeeded";
-    assert.equal(output.answer.result.status, status);
-    assert.equal(output.answer.result.operationId, operationId);
-    assert.equal(output.runId, prior.state.runId);
-    assert.equal(output.threadId, prior.state.threadId);
-    if (status === "unknown") assert.match(output.answer.reply, /unknown/i);
-    const actual = readProductionAction(directory);
-    assert.equal(
-      actual.effects.length,
-      1,
-      "provider write must execute exactly once",
-    );
-    assert.equal(actual.receipts.length, 1);
-    assert.equal(actual.receipts[0]!.id, operationId);
-    assert.equal(actual.receipts[0]!.status, status);
-    assert.deepEqual(actual.state.receipts, prior.state.receipts);
-    assert.deepEqual(actual.state.operations, prior.state.operations);
-    assert.deepEqual(
-      actual.calls.map((row) => row.call_id),
-      [originalCallId, originalCallId],
-    );
-    assert.deepEqual(
-      actual.calls.map((row) => row.operation_id),
-      [operationId, operationId],
-    );
-    const actionCalls = output.nativeCalls.filter((call) =>
-      call.toolName.startsWith("action_"),
-    );
-    assert.equal(actionCalls.length, 1);
-    assert.equal(actionCalls[0]!.toolCallId, originalCallId);
-    assert.equal(actionCalls[0]!.state, "result");
-    assert.equal(actual.models.length, 4);
-    assert.equal(actual.models[3]!.has_receipt, 1);
-  });
+      const status = stage === "unknown-after" ? "unknown" : "succeeded";
+      assert.equal(output.answer.result.status, status);
+      assert.equal(output.answer.result.operationId, operationId);
+      assert.equal(output.runId, prior.state.runId);
+      assert.equal(output.threadId, prior.state.threadId);
+      if (status === "unknown") assert.match(output.answer.reply, /unknown/i);
+      const actual = readProductionAction(directory);
+      assert.equal(
+        actual.effects.length,
+        1,
+        "provider write must execute exactly once",
+      );
+      assert.equal(actual.receipts.length, 1);
+      assert.equal(actual.receipts[0]!.id, operationId);
+      assert.equal(actual.receipts[0]!.status, status);
+      assert.deepEqual(actual.state.receipts, prior.state.receipts);
+      assert.deepEqual(actual.state.operations, prior.state.operations);
+      assert.deepEqual(
+        actual.calls.map((row) => row.call_id),
+        [originalCallId, originalCallId],
+      );
+      assert.deepEqual(
+        actual.calls.map((row) => row.operation_id),
+        [operationId, operationId],
+      );
+      const actionCalls = output.nativeCalls.filter((call) =>
+        call.toolName.startsWith("action_"),
+      );
+      assert.equal(actionCalls.length, 1);
+      assert.equal(actionCalls[0]!.toolCallId, originalCallId);
+      assert.equal(actionCalls[0]!.state, "result");
+      assert.equal(actual.models.length, 4);
+      assert.equal(actual.models[3]!.has_receipt, 1);
+    },
+  );
 }
 
 for (const wrongBinding of ["foreign-resource", "foreign-thread"] as const) {
@@ -427,88 +448,106 @@ async function readProductionMemory(directory: string) {
 }
 
 for (const stage of ["before", "after"] as const) {
-  test(`Niaro memory correction survives SIGKILL ${stage} its atomic domain checkpoint without resampling the native call`, async (t) => {
-    const directory = mkdtempSync(join(tmpdir(), `niaro-memory-${stage}-`));
-    t.after(() => rmSync(directory, { recursive: true, force: true }));
-    const crashed = await runWorker(directory, `memory-${stage}`);
-    assert.equal(crashed.signal, "SIGKILL", crashed.stdout + crashed.stderr);
-    const prior = await readProductionMemory(directory);
-    const originalCallId = String(prior.calls[0]!.call_id);
-    assert.equal(prior.calls.length, 1);
-    assert.equal(prior.models.length, 2);
-    assert.equal(prior.version, stage === "before" ? 1 : 2);
-    assert.equal(prior.items.length, stage === "before" ? 1 : 2);
-    assert.equal(prior.state.memoryReceipts.length, stage === "before" ? 0 : 1);
-    if (stage === "before") {
-      assert.equal(prior.items[0]!.content, previousPreference);
-      assert.equal(prior.items[0]!.status, "active");
-    } else {
-      assert.equal(prior.state.memoryReceipts[0]!.toolCallId, originalCallId);
-      assert.equal(prior.state.memoryVersion, 2);
-      // The thread keeps a pin of the saved items it used; the corrected
-      // item is the person's own change, so nothing remains pinned.
-      assert.deepEqual(prior.state.memoryMetadata, { items: [] });
-      assert.equal(prior.state.memoryChanged, true);
-      assert.deepEqual(prior.state.memoryReads, []);
-    }
+  test(
+    `Niaro memory correction survives SIGKILL ${stage} its atomic domain checkpoint without resampling the native call`,
+    mastraOnly,
+    async (t) => {
+      const directory = mkdtempSync(join(tmpdir(), `niaro-memory-${stage}-`));
+      t.after(() => rmSync(directory, { recursive: true, force: true }));
+      const crashed = await runWorker(directory, `memory-${stage}`);
+      assert.equal(crashed.signal, "SIGKILL", crashed.stdout + crashed.stderr);
+      const prior = await readProductionMemory(directory);
+      const originalCallId = String(prior.calls[0]!.call_id);
+      assert.equal(prior.calls.length, 1);
+      assert.equal(prior.models.length, 2);
+      assert.equal(prior.version, stage === "before" ? 1 : 2);
+      assert.equal(prior.items.length, stage === "before" ? 1 : 2);
+      assert.equal(
+        prior.state.memoryReceipts.length,
+        stage === "before" ? 0 : 1,
+      );
+      if (stage === "before") {
+        assert.equal(prior.items[0]!.content, previousPreference);
+        assert.equal(prior.items[0]!.status, "active");
+      } else {
+        assert.equal(prior.state.memoryReceipts[0]!.toolCallId, originalCallId);
+        assert.equal(prior.state.memoryVersion, 2);
+        // The thread keeps a pin of the saved items it used; the corrected
+        // item is the person's own change, so nothing remains pinned.
+        assert.deepEqual(prior.state.memoryMetadata, { items: [] });
+        assert.equal(prior.state.memoryChanged, true);
+        assert.deepEqual(prior.state.memoryReads, []);
+      }
 
-    const recovered = await runWorker(directory, "memory-recover");
-    assert.equal(recovered.code, 0, recovered.stdout + recovered.stderr);
-    assert.doesNotMatch(recovered.stderr, /CLIENT_CLOSED|unsettled top-level/);
-    const output = JSON.parse(recovered.stdout) as {
-      answer: { reply: string };
-      runId: string;
-      threadId: string;
-      nativeCalls: {
-        toolName: string;
-        toolCallId: string;
-        state: string;
-        args: unknown;
-      }[];
-    };
-    assert.equal(output.answer.reply, "TEST corrected preference saved");
-    assert.equal(output.runId, prior.state.runId);
-    assert.equal(output.threadId, prior.state.threadId);
-    const actual = await readProductionMemory(directory);
-    assert.equal(actual.version, 2, "replay cannot bump memory a second time");
-    assert.equal(actual.items.length, 2, "there is exactly one replacement");
-    const active = actual.items.filter((item) => item.status === "active");
-    const superseded = actual.items.filter(
-      (item) => item.status === "superseded",
-    );
-    assert.equal(active.length, 1);
-    assert.equal(superseded.length, 1);
-    assert.equal(active[0]!.content, correctedPreference);
-    assert.equal(superseded[0]!.content, previousPreference);
-    assert.equal(active[0]!.supersedes_id, superseded[0]!.id);
-    assert.equal(active[0]!.lineage_id, superseded[0]!.lineage_id);
-    assert.equal(
-      actual.requests.filter((row) => row.kind === "revise").length,
-      1,
-    );
-    assert.equal(actual.state.memoryReceipts.length, 1);
-    assert.equal(actual.state.memoryReceipts[0]!.toolCallId, originalCallId);
-    assert.equal(actual.state.memoryReceipts[0]!.result.id, active[0]!.id);
-    assert.deepEqual(
-      actual.calls.map((row) => row.call_id),
-      [originalCallId, originalCallId],
-    );
-    const calls = output.nativeCalls.filter(
-      (call) => call.toolName === "memory_revise",
-    );
-    assert.equal(calls.length, 1, "native memory has one paired mutation call");
-    assert.equal(calls[0]!.toolCallId, originalCallId);
-    assert.equal(calls[0]!.state, "result");
-    assert.deepEqual(
-      calls[0]!.args,
-      {},
-      "native transcript redacts private input",
-    );
-    assert.equal(actual.models.length, 3);
-    assert.equal(
-      actual.models[2]!.has_receipt,
-      1,
-      "the recovered model sees the committed mutation receipt before any new call",
-    );
-  });
+      const recovered = await runWorker(directory, "memory-recover");
+      assert.equal(recovered.code, 0, recovered.stdout + recovered.stderr);
+      assert.doesNotMatch(
+        recovered.stderr,
+        /CLIENT_CLOSED|unsettled top-level/,
+      );
+      const output = JSON.parse(recovered.stdout) as {
+        answer: { reply: string };
+        runId: string;
+        threadId: string;
+        nativeCalls: {
+          toolName: string;
+          toolCallId: string;
+          state: string;
+          args: unknown;
+        }[];
+      };
+      assert.equal(output.answer.reply, "TEST corrected preference saved");
+      assert.equal(output.runId, prior.state.runId);
+      assert.equal(output.threadId, prior.state.threadId);
+      const actual = await readProductionMemory(directory);
+      assert.equal(
+        actual.version,
+        2,
+        "replay cannot bump memory a second time",
+      );
+      assert.equal(actual.items.length, 2, "there is exactly one replacement");
+      const active = actual.items.filter((item) => item.status === "active");
+      const superseded = actual.items.filter(
+        (item) => item.status === "superseded",
+      );
+      assert.equal(active.length, 1);
+      assert.equal(superseded.length, 1);
+      assert.equal(active[0]!.content, correctedPreference);
+      assert.equal(superseded[0]!.content, previousPreference);
+      assert.equal(active[0]!.supersedes_id, superseded[0]!.id);
+      assert.equal(active[0]!.lineage_id, superseded[0]!.lineage_id);
+      assert.equal(
+        actual.requests.filter((row) => row.kind === "revise").length,
+        1,
+      );
+      assert.equal(actual.state.memoryReceipts.length, 1);
+      assert.equal(actual.state.memoryReceipts[0]!.toolCallId, originalCallId);
+      assert.equal(actual.state.memoryReceipts[0]!.result.id, active[0]!.id);
+      assert.deepEqual(
+        actual.calls.map((row) => row.call_id),
+        [originalCallId, originalCallId],
+      );
+      const calls = output.nativeCalls.filter(
+        (call) => call.toolName === "memory_revise",
+      );
+      assert.equal(
+        calls.length,
+        1,
+        "native memory has one paired mutation call",
+      );
+      assert.equal(calls[0]!.toolCallId, originalCallId);
+      assert.equal(calls[0]!.state, "result");
+      assert.deepEqual(
+        calls[0]!.args,
+        {},
+        "native transcript redacts private input",
+      );
+      assert.equal(actual.models.length, 3);
+      assert.equal(
+        actual.models[2]!.has_receipt,
+        1,
+        "the recovered model sees the committed mutation receipt before any new call",
+      );
+    },
+  );
 }

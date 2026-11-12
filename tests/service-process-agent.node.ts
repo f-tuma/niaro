@@ -17,6 +17,9 @@ import {
 import { processAgent, callProcessTool } from "./helpers/service-process-agent";
 import { CatalogCommand } from "../packages/protocol/service-catalog";
 import { LoopsStore } from "../apps/server-identity/loops";
+import { agentCoreKind } from "../apps/server-identity/agent-core-owner";
+import { nativeAgentOwner } from "../apps/server-identity/mastra-runtime";
+import { serviceProcessRunIdentity } from "../apps/server-identity/service-process-journal";
 
 async function isolated(
   run: (h: ReturnType<typeof fixture>, path: string) => Promise<void>,
@@ -32,7 +35,36 @@ async function isolated(
   }
 }
 
-function conversationCounts(h: ReturnType<typeof fixture>) {
+/** Recalled conversation messages of the process agents, on either core. */
+async function conversationCounts(h: ReturnType<typeof fixture>) {
+  if (agentCoreKind(h.controller) === "pi") {
+    const runtime = await nativeAgentOwner(h.controller);
+    let count = 0;
+    let threads = 0;
+    for (const row of h.db
+      .prepare("SELECT data FROM agent_service_turn")
+      .all()) {
+      const agents = Object.values(
+        (JSON.parse(String(row.data)).agents ?? {}) as Record<
+          string,
+          { threadId: string }
+        >,
+      );
+      for (const agent of agents) {
+        const { messages } = await runtime.inspect({
+          threadId: agent.threadId,
+          resourceId: serviceProcessRunIdentity(
+            scope,
+            target.organizationId,
+            "scope",
+          ).scopeDigest,
+        });
+        count += messages.length;
+        if (messages.length) threads++;
+      }
+    }
+    return { count, threads };
+  }
   const db = new DatabaseSync(fileURLToPath(h.catalog.nativeStorageUrl));
   try {
     return db
@@ -80,7 +112,7 @@ test("custom agent executes the native Agent with typed output and passive repla
       "settled",
     );
     assert.equal(
-      conversationCounts(h).count,
+      (await conversationCounts(h)).count,
       0,
       "none disables conversation recall; execution checkpoints still exist",
     );
@@ -171,7 +203,7 @@ test("native agent steps share one root ledger and isolate conversation threads"
     );
     assert.equal(settings.maxTokens, definition.limits.maxTokens);
     assert.equal(settings.maxCostMicros, definition.limits.maxCostMicros);
-    assert.equal(conversationCounts(h).threads, 2);
+    assert.equal((await conversationCounts(h)).threads, 2);
   }));
 
 /** A floor call: 2,048 input tokens plus the fixture price's 1,000 output
@@ -362,6 +394,7 @@ test("process Agent step preserves reserved business fields through approval res
     );
 
     const id = h.activate(processAgent(h, "conversation"));
+    const pi = agentCoreKind(h.controller) === "pi";
     let initialCalls = 0;
     h.onModel((body) => {
       const request = body as {
@@ -376,9 +409,12 @@ test("process Agent step preserves reserved business fields through approval res
         const parameterSchema = writeTool.function?.parameters as {
           properties?: Record<string, unknown>;
         };
-        assert.deepEqual(Object.keys(parameterSchema.properties ?? {}), [
-          "niaroBusinessInput",
-        ]);
+        // Mastra strips reserved keys, so its runtime wraps the business
+        // input; Pi passes the action's schema as it is.
+        assert.deepEqual(
+          Object.keys(parameterSchema.properties ?? {}),
+          pi ? Object.keys(businessInput) : ["niaroBusinessInput"],
+        );
         return {
           content: null,
           tool_calls: [
@@ -387,9 +423,9 @@ test("process Agent step preserves reserved business fields through approval res
               type: "function",
               function: {
                 name: "action_process_0",
-                arguments: JSON.stringify({
-                  niaroBusinessInput: businessInput,
-                }),
+                arguments: JSON.stringify(
+                  pi ? businessInput : { niaroBusinessInput: businessInput },
+                ),
               },
             },
           ],
@@ -465,7 +501,7 @@ test("memory none also supports durable approval without conversation recall", (
       );
       assert.equal(done.status, "succeeded", JSON.stringify(done));
       assert.deepEqual(restarted.counts(), [["POST", 1]]);
-      assert.equal(conversationCounts(restarted).count, 0);
+      assert.equal((await conversationCounts(restarted)).count, 0);
     } finally {
       await restarted.close();
     }

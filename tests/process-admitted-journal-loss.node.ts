@@ -46,6 +46,28 @@ function executionRows(db: DatabaseSync) {
   );
 }
 
+/**
+ * The agent core's rows as recovery evidence. Pi re-enters a waiting native
+ * tool on every open (its task turns running, a commit counts up); that is
+ * scheduler bookkeeping, not work or proof.
+ */
+function nativeEvidence(rows: ReturnType<typeof databaseRows>) {
+  const waiting = (record: unknown) =>
+    typeof record === "string" && record.includes('"niaro.pending"');
+  return Object.fromEntries(
+    Object.entries(rows).map(([table, list]) => [
+      table,
+      list.map((row) => {
+        const { next_seq: _seq, ...rest } = row;
+        if (table !== "tasks" || !waiting(row.record)) return rest;
+        const record = JSON.parse(String(row.record));
+        record.state.status = "pending";
+        return { ...rest, status: "pending", record: JSON.stringify(record) };
+      }),
+    ]),
+  );
+}
+
 function nativeRows(root: string) {
   // An active native owner may have committed WAL frames. A normal read-only
   // transaction includes them; immutable main-only inspection would not.
@@ -59,7 +81,7 @@ function nativeRows(root: string) {
         .map((row) => row.integrity_check),
       ["ok"],
     );
-    return databaseRows(db);
+    return nativeEvidence(databaseRows(db));
   } finally {
     db.exec("ROLLBACK");
     db.close();
@@ -157,9 +179,8 @@ test("precise loss of the original admitted parent journal blocks both public co
         originalManifest = beforeManifest;
         originalCheckpoint = f.checkpoint(proof.source);
         assert.equal(originalCheckpoint.parsed.status, "suspended");
-        originalNative = immutableProofRead(
-          join(proof.source, proofNativePath),
-          databaseRows,
+        originalNative = nativeEvidence(
+          immutableProofRead(join(proof.source, proofNativePath), databaseRows),
         );
       } else {
         assert.equal(proof.source, originalProof.source);

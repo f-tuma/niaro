@@ -23,6 +23,12 @@ import {
   toolResults,
   type TrustHarness,
 } from "./agent-trust/harness";
+import { agentCoreKindFromEnvironment } from "../apps/server-identity/agent-core-owner";
+
+/** Mastra runtime internals, until wave 4 removes it (Mastra retirement markers and snapshots; Pi: tests/pi-native-agent.node.ts, tests/pi-crash.node.ts). */
+const mastraOnly = {
+  skip: agentCoreKindFromEnvironment() === "pi" && "Mastra path only",
+};
 
 const sentinel = "TEST_PRIVATE_FATAL_PROVIDER_CREDENTIAL";
 const malformed = (h: TrustHarness) => {
@@ -64,7 +70,9 @@ for (const language of ["en", "cs"] as const) {
           ? "TEST původní cíl: najdi v CRM správný kontakt a vysvětli výsledek.\n" +
             "Prosím zachovej celé zadání v podrobnostech běhu. ".repeat(12)
           : "TEST original human goal: find the right CRM contact and explain the result.\n" +
-            "Please preserve this complete request in the run details. ".repeat(12);
+            "Please preserve this complete request in the run details. ".repeat(
+              12,
+            );
       const original = CommandSchema.parse({
         ...command("TEST-fatal-" + language, language),
         text: request,
@@ -232,132 +240,144 @@ for (const mixed of [false, true]) {
   });
 }
 
-test("unproved fatal retirement retains the gate; exact retry and interruption share one passive finalization", async () => {
-  const h = createTrustHarness();
-  try {
-    h.onChat(() => malformed(h));
-    const runtime = await nativeCatalogOwner(h.controller);
-    const proof = runtime.isSettled;
-    runtime.isSettled = () => false;
-    const original = command("TEST-fatal-held");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    assert.equal(h.workflow.replay(h.scope, original), undefined);
-    assert.equal(h.commandState().answer, undefined);
-    assert.equal((await h.runtime().tasks!())[0]?.status, "waiting_system");
-    await assert.rejects(h.execute(command("TEST-next-held")), /model_busy/);
-    const requests = h.requests.length,
-      effects = h.network.length;
-    runtime.isSettled = proof;
-    const [replayed, interrupted] = await Promise.all([
-      h.execute(original),
-      h.model.interrupt(h.scope, original, async (fn) => fn()),
-    ]);
-    assert.equal(replayed.status, "accepted");
-    assert.equal(interrupted.status, "settled");
-    assert.match(
-      replayed.snapshot.conversations[0]!.messages.at(-1)!.text,
-      /invalid response/,
-    );
-    assert.doesNotMatch(
-      replayed.snapshot.conversations[0]!.messages.at(-1)!.text,
-      /interrupted/i,
-    );
-    assert.equal(replayed.snapshot.conversations[0]!.messages.length, 2);
-    assert.equal(h.requests.length, requests);
-    assert.equal(h.network.length, effects);
-    h.onChat(() => ({ content: "TEST next request" }));
-    assert.equal(
-      (await h.execute(command("TEST-next-ready"))).status,
-      "accepted",
-    );
-  } finally {
-    await h.close();
-  }
-});
+test(
+  "unproved fatal retirement retains the gate; exact retry and interruption share one passive finalization",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    try {
+      h.onChat(() => malformed(h));
+      const runtime = await nativeCatalogOwner(h.controller);
+      const proof = runtime.isSettled;
+      runtime.isSettled = () => false;
+      const original = command("TEST-fatal-held");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      assert.equal(h.workflow.replay(h.scope, original), undefined);
+      assert.equal(h.commandState().answer, undefined);
+      assert.equal((await h.runtime().tasks!())[0]?.status, "waiting_system");
+      await assert.rejects(h.execute(command("TEST-next-held")), /model_busy/);
+      const requests = h.requests.length,
+        effects = h.network.length;
+      runtime.isSettled = proof;
+      const [replayed, interrupted] = await Promise.all([
+        h.execute(original),
+        h.model.interrupt(h.scope, original, async (fn) => fn()),
+      ]);
+      assert.equal(replayed.status, "accepted");
+      assert.equal(interrupted.status, "settled");
+      assert.match(
+        replayed.snapshot.conversations[0]!.messages.at(-1)!.text,
+        /invalid response/,
+      );
+      assert.doesNotMatch(
+        replayed.snapshot.conversations[0]!.messages.at(-1)!.text,
+        /interrupted/i,
+      );
+      assert.equal(replayed.snapshot.conversations[0]!.messages.length, 2);
+      assert.equal(h.requests.length, requests);
+      assert.equal(h.network.length, effects);
+      h.onChat(() => ({ content: "TEST next request" }));
+      assert.equal(
+        (await h.execute(command("TEST-next-ready"))).status,
+        "accepted",
+      );
+    } finally {
+      await h.close();
+    }
+  },
+);
 
-test("a generic native settlement timeout has no retirement proof and blocks fresh messages after reopen", async () => {
-  const h = createTrustHarness();
-  try {
-    const runtime = await nativeCatalogOwner(h.controller);
-    const execute = runtime.execute;
-    runtime.execute = async () => {
-      throw Error("niaro_native_checkpoint_settlement_timeout");
-    };
-    const original = command("TEST-no-retirement-proof");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    assert.equal(h.commandState().terminalCandidate, "execution");
-    await assert.rejects(
-      h.execute(command("TEST-next-no-proof")),
-      /model_busy/,
-    );
-    runtime.execute = execute;
-    await h.restart();
-    const before = h.workflow.snapshot(h.scope);
-    const requests = h.requests.length;
-    const explicitRetry = CommandSchema.parse({
-      ...command("TEST-new-retry-internal-key"),
-      commandId: "TEST-new-retry-public-command",
-      logicalMessageId: original.commandId,
-      retryOf: original.commandId,
-    });
-    await assert.rejects(h.execute(explicitRetry), /model_busy/);
-    assert.deepEqual(h.workflow.snapshot(h.scope), before);
-    assert.equal(h.requests.length, requests);
-    assert.equal(h.network.length, 0);
-    await assert.rejects(
-      h.execute({
-        ...command("TEST-new-session-no-proof"),
-        session: "new",
-      } as Command),
-      /model_busy/,
-    );
-    assert.deepEqual(h.workflow.snapshot(h.scope), before);
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    assert.equal(h.requests.length, 0);
-    const reopened = await nativeCatalogOwner(h.controller);
-    assert.equal(
-      await reopened.proveRetired({
-        runId: h.commandState().runId,
-        threadId: h.commandState().threadId,
-        resourceId: resource(h),
-      }),
-      false,
-    );
-  } finally {
-    await h.close();
-  }
-});
+test(
+  "a generic native settlement timeout has no retirement proof and blocks fresh messages after reopen",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    try {
+      const runtime = await nativeCatalogOwner(h.controller);
+      const execute = runtime.execute;
+      runtime.execute = async () => {
+        throw Error("niaro_native_checkpoint_settlement_timeout");
+      };
+      const original = command("TEST-no-retirement-proof");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      assert.equal(h.commandState().terminalCandidate, "execution");
+      await assert.rejects(
+        h.execute(command("TEST-next-no-proof")),
+        /model_busy/,
+      );
+      runtime.execute = execute;
+      await h.restart();
+      const before = h.workflow.snapshot(h.scope);
+      const requests = h.requests.length;
+      const explicitRetry = CommandSchema.parse({
+        ...command("TEST-new-retry-internal-key"),
+        commandId: "TEST-new-retry-public-command",
+        logicalMessageId: original.commandId,
+        retryOf: original.commandId,
+      });
+      await assert.rejects(h.execute(explicitRetry), /model_busy/);
+      assert.deepEqual(h.workflow.snapshot(h.scope), before);
+      assert.equal(h.requests.length, requests);
+      assert.equal(h.network.length, 0);
+      await assert.rejects(
+        h.execute({
+          ...command("TEST-new-session-no-proof"),
+          session: "new",
+        } as Command),
+        /model_busy/,
+      );
+      assert.deepEqual(h.workflow.snapshot(h.scope), before);
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      assert.equal(h.requests.length, 0);
+      const reopened = await nativeCatalogOwner(h.controller);
+      assert.equal(
+        await reopened.proveRetired({
+          runId: h.commandState().runId,
+          threadId: h.commandState().threadId,
+          resourceId: resource(h),
+        }),
+        false,
+      );
+    } finally {
+      await h.close();
+    }
+  },
+);
 
-test("an answer prepared before fatal native retirement cannot publish success on restart", async () => {
-  const h = createTrustHarness();
-  try {
-    const runtime = await nativeCatalogOwner(h.controller);
-    const execute = runtime.execute;
-    runtime.execute = async (input) => {
-      await input.session.finalize("TEST pre-tail success");
-      throw Error(sentinel);
-    };
-    const original = command("TEST-pre-tail-answer");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    assert.equal(h.commandState().answer, undefined);
-    assert.equal((await h.runtime().tasks!())[0]?.status, "waiting_system");
-    runtime.execute = execute;
-    await h.restart();
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    await assert.rejects(
-      h.execute(command("TEST-next-after-prepared")),
-      /model_busy/,
-    );
-    assert.equal(
-      h.workflow.snapshot(h.scope).conversations[0]!.messages.length,
-      0,
-    );
-    // No model call: a read-only answer is no longer checked (NIAR-229).
-    assert.equal(h.requests.length, 0);
-  } finally {
-    await h.close();
-  }
-});
+test(
+  "an answer prepared before fatal native retirement cannot publish success on restart",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    try {
+      const runtime = await nativeCatalogOwner(h.controller);
+      const execute = runtime.execute;
+      runtime.execute = async (input) => {
+        await input.session.finalize("TEST pre-tail success");
+        throw Error(sentinel);
+      };
+      const original = command("TEST-pre-tail-answer");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      assert.equal(h.commandState().answer, undefined);
+      assert.equal((await h.runtime().tasks!())[0]?.status, "waiting_system");
+      runtime.execute = execute;
+      await h.restart();
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      await assert.rejects(
+        h.execute(command("TEST-next-after-prepared")),
+        /model_busy/,
+      );
+      assert.equal(
+        h.workflow.snapshot(h.scope).conversations[0]!.messages.length,
+        0,
+      );
+      // No model call: a read-only answer is no longer checked (NIAR-229).
+      assert.equal(h.requests.length, 0);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
 test("domain failure survives loss before workflow commit and replay performs no model work", async () => {
   let lost = true;
@@ -391,113 +411,128 @@ test("domain failure survives loss before workflow commit and replay performs no
   }
 });
 
-test("a revoked fatal candidate stays reserved across restart without publishing an answer", async () => {
-  const h = createTrustHarness();
-  try {
-    h.onChat(() => {
-      h.context.change(h.target.organizationId);
-      return malformed(h);
-    });
-    const runtime = await nativeCatalogOwner(h.controller);
-    const proof = runtime.isSettled;
-    runtime.isSettled = () => false;
-    const original = command("TEST-revoked-fatal");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    assert.equal(h.commandState().terminalCandidate, "protocol");
-    assert.equal(h.commandState().answer, undefined);
-    await assert.rejects(h.execute(command("TEST-revoked-next")), /model_busy/);
-    runtime.isSettled = proof;
-    // Storage proof is available after reopen; publication still validates epoch.
-    await h.restart();
-    const retry = await h.execute(original);
-    assert.equal(retry.status, "rejected");
-    assert.equal(h.commandState().answer, undefined);
-    assert.equal(h.requests.length, 1);
-  } finally {
-    await h.close();
-  }
-});
-
-test("a fatal missing suspension checkpoint never projects a resumable question", async () => {
-  const h = createTrustHarness();
-  try {
-    const runtime = await nativeCatalogOwner(h.controller);
-    const execute = runtime.execute;
-    runtime.execute = async (input) => {
-      await input.session.invoke(
-        "ask_user",
-        { question: "TEST missing checkpoint question" },
-        { toolCallId: "TEST-missing-suspension", runId: input.runId },
+test(
+  "a revoked fatal candidate stays reserved across restart without publishing an answer",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    try {
+      h.onChat(() => {
+        h.context.change(h.target.organizationId);
+        return malformed(h);
+      });
+      const runtime = await nativeCatalogOwner(h.controller);
+      const proof = runtime.isSettled;
+      runtime.isSettled = () => false;
+      const original = command("TEST-revoked-fatal");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      assert.equal(h.commandState().terminalCandidate, "protocol");
+      assert.equal(h.commandState().answer, undefined);
+      await assert.rejects(
+        h.execute(command("TEST-revoked-next")),
+        /model_busy/,
       );
-      throw Error("niaro_native_checkpoint_settlement_timeout");
-    };
-    const original = command("TEST-fatal-suspension");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    const task = (await h.runtime().tasks!())[0]!;
-    assert.equal(task.status, "waiting_system");
-    assert.equal(task.native?.question, undefined);
-    runtime.execute = execute;
-  } finally {
-    await h.close();
-  }
-});
+      runtime.isSettled = proof;
+      // Storage proof is available after reopen; publication still validates epoch.
+      await h.restart();
+      const retry = await h.execute(original);
+      assert.equal(retry.status, "rejected");
+      assert.equal(h.commandState().answer, undefined);
+      assert.equal(h.requests.length, 1);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
-test("native storage retirement proof is exact and cannot substitute an unrelated thread", async () => {
-  const h = createTrustHarness();
-  let storage: LibSQLStore | undefined;
-  try {
-    h.onChat(() => malformed(h));
-    await h.execute(command("TEST-bound-native-proof"));
-    const state = h.commandState();
-    const owner = await nativeCatalogOwner(h.controller);
-    assert.equal(
-      await owner.proveRetired({
+test(
+  "a fatal missing suspension checkpoint never projects a resumable question",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    try {
+      const runtime = await nativeCatalogOwner(h.controller);
+      const execute = runtime.execute;
+      runtime.execute = async (input) => {
+        await input.session.invoke(
+          "ask_user",
+          { question: "TEST missing checkpoint question" },
+          { toolCallId: "TEST-missing-suspension", runId: input.runId },
+        );
+        throw Error("niaro_native_checkpoint_settlement_timeout");
+      };
+      const original = command("TEST-fatal-suspension");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      const task = (await h.runtime().tasks!())[0]!;
+      assert.equal(task.status, "waiting_system");
+      assert.equal(task.native?.question, undefined);
+      runtime.execute = execute;
+    } finally {
+      await h.close();
+    }
+  },
+);
+
+test(
+  "native storage retirement proof is exact and cannot substitute an unrelated thread",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    let storage: LibSQLStore | undefined;
+    try {
+      h.onChat(() => malformed(h));
+      await h.execute(command("TEST-bound-native-proof"));
+      const state = h.commandState();
+      const owner = await nativeCatalogOwner(h.controller);
+      assert.equal(
+        await owner.proveRetired({
+          runId: state.runId,
+          threadId: state.threadId,
+          resourceId: resource(h),
+        }),
+        true,
+      );
+      assert.equal(
+        await owner.proveRetired({
+          runId: state.runId,
+          threadId: "TEST-foreign-thread",
+          resourceId: resource(h),
+        }),
+        false,
+      );
+      assert.equal(
+        await owner.proveRetired({
+          runId: "TEST-absent-run",
+          threadId: state.threadId,
+          resourceId: resource(h),
+        }),
+        false,
+      );
+      storage = new LibSQLStore({
+        id: "TEST-fatal-marker-inspector",
+        url: h.catalog.nativeStorageUrl,
+      });
+      await storage.init();
+      const workflows = await storage.getStore("workflows");
+      assert.equal(
+        await workflows!.getWorkflowRunById({
+          workflowName: DurableStepIds.AGENTIC_LOOP,
+          runId: state.runId,
+        }),
+        null,
+      );
+      const marker = await workflows!.getWorkflowRunById({
+        workflowName: "niaro-native-retirement-v1",
         runId: state.runId,
-        threadId: state.threadId,
-        resourceId: resource(h),
-      }),
-      true,
-    );
-    assert.equal(
-      await owner.proveRetired({
-        runId: state.runId,
-        threadId: "TEST-foreign-thread",
-        resourceId: resource(h),
-      }),
-      false,
-    );
-    assert.equal(
-      await owner.proveRetired({
-        runId: "TEST-absent-run",
-        threadId: state.threadId,
-        resourceId: resource(h),
-      }),
-      false,
-    );
-    storage = new LibSQLStore({
-      id: "TEST-fatal-marker-inspector",
-      url: h.catalog.nativeStorageUrl,
-    });
-    await storage.init();
-    const workflows = await storage.getStore("workflows");
-    assert.equal(
-      await workflows!.getWorkflowRunById({
-        workflowName: DurableStepIds.AGENTIC_LOOP,
-        runId: state.runId,
-      }),
-      null,
-    );
-    const marker = await workflows!.getWorkflowRunById({
-      workflowName: "niaro-native-retirement-v1",
-      runId: state.runId,
-    });
-    assert(marker);
-    assert(!JSON.stringify(marker).includes(sentinel));
-  } finally {
-    await storage?.close();
-    await h.close();
-  }
-});
+      });
+      assert(marker);
+      assert(!JSON.stringify(marker).includes(sentinel));
+    } finally {
+      await storage?.close();
+      await h.close();
+    }
+  },
+);
 
 test("a committed memory correction with a lost return is preserved by the safe native failure", async () => {
   const h = createTrustHarness();
@@ -559,145 +594,157 @@ test("a committed memory correction with a lost return is preserved by the safe 
   }
 });
 
-test("an invalid native approval suspension hides its approve action while preserving the canonical proposal", async () => {
-  const h = createTrustHarness();
-  try {
-    const owner = await nativeCatalogOwner(h.controller),
-      execute = owner.execute;
-    owner.execute = async (input) => {
-      await input.session.invoke(
-        "find_actions",
-        { service: "TEST Calendar and contacts", need: "create meeting" },
-        { toolCallId: "TEST-expose-fatal-approval", runId: input.runId },
-      );
-      await input.session.invoke(
-        h.tool("Create meeting"),
-        {
-          body: {
-            attendee: "jane@example.test",
-            start: "2026-10-02T12:00:00Z",
-            end: "2026-10-02T12:30:00Z",
-          },
-        },
-        { toolCallId: "TEST-invalid-fatal-approval", runId: input.runId },
-      );
-      throw Error("niaro_native_checkpoint_settlement_timeout");
-    };
-    await assert.rejects(
-      h.execute(command("TEST-invalid-approval-checkpoint")),
-      NativeRunUnsettledError,
-    );
-    const state = h.commandState();
-    assert.equal(state.pending?.kind, "approval");
-    assert.equal(
-      h.catalog.invocation(
-        state.operations[0]!,
-        h.scope.workspaceId,
-        h.scope.userId,
-      )?.status,
-      "awaiting_approval",
-    );
-    const task = (await h.runtime().tasks!())[0]!;
-    assert.equal(task.status, "waiting_system");
-    assert.equal(task.native?.action, undefined);
-    await assert.rejects(
-      h.execute(
-        CommandSchema.parse({
-          type: "service.resolve",
-          commandId: "TEST-invalid-approval-decision",
-          idempotencyKey: "TEST-invalid-approval-decision",
-          conversationId: "conversation-1",
-          operationId: state.operations[0],
-          approved: true,
-          language: "en",
-        }),
-      ),
-      /model_busy/,
-    );
-    assert.equal(h.network.length, 0);
-    owner.execute = execute;
-  } finally {
-    await h.close();
-  }
-});
-
-for (const changed of ["payload", "idempotency"] as const) {
-  test(`a changed ${changed} after restart cannot poison the exact native failure receipt`, async () => {
+test(
+  "an invalid native approval suspension hides its approve action while preserving the canonical proposal",
+  mastraOnly,
+  async () => {
     const h = createTrustHarness();
     try {
-      h.onChat(() => malformed(h));
       const owner = await nativeCatalogOwner(h.controller),
-        proof = owner.isSettled;
-      owner.isSettled = () => false;
-      const original = CommandSchema.parse({
-        ...command("TEST-distinct-idempotency"),
-        commandId: "TEST-distinct-outer",
-      });
-      await assert.rejects(h.execute(original), NativeRunUnsettledError);
-      owner.isSettled = proof;
-      await h.restart();
-      const before = h.workflow.snapshot(h.scope),
-        requests = h.requests.length;
-      const altered = CommandSchema.parse(
-        changed === "payload"
-          ? { ...original, text: "TEST changed text" }
-          : { ...original, idempotencyKey: "TEST-altered-idempotency" },
-      );
+        execute = owner.execute;
+      owner.execute = async (input) => {
+        await input.session.invoke(
+          "find_actions",
+          { service: "TEST Calendar and contacts", need: "create meeting" },
+          { toolCallId: "TEST-expose-fatal-approval", runId: input.runId },
+        );
+        await input.session.invoke(
+          h.tool("Create meeting"),
+          {
+            body: {
+              attendee: "jane@example.test",
+              start: "2026-10-02T12:00:00Z",
+              end: "2026-10-02T12:30:00Z",
+            },
+          },
+          { toolCallId: "TEST-invalid-fatal-approval", runId: input.runId },
+        );
+        throw Error("niaro_native_checkpoint_settlement_timeout");
+      };
       await assert.rejects(
-        h.execute(altered),
-        (error: unknown) =>
-          error instanceof IdentityError &&
-          error.code === "idempotency_conflict",
+        h.execute(command("TEST-invalid-approval-checkpoint")),
+        NativeRunUnsettledError,
       );
-      assert.deepEqual(h.workflow.snapshot(h.scope), before);
-      assert.equal(h.workflow.replay(h.scope, altered), undefined);
-      const result = await h.execute(original);
-      assert.equal(result.status, "accepted");
+      const state = h.commandState();
+      assert.equal(state.pending?.kind, "approval");
       assert.equal(
-        result.snapshot.conversations[0]!.messages.at(-1)!.replyToCommandId,
-        original.commandId,
+        h.catalog.invocation(
+          state.operations[0]!,
+          h.scope.workspaceId,
+          h.scope.userId,
+        )?.status,
+        "awaiting_approval",
       );
-      assert.equal(h.requests.length, requests);
+      const task = (await h.runtime().tasks!())[0]!;
+      assert.equal(task.status, "waiting_system");
+      assert.equal(task.native?.action, undefined);
+      await assert.rejects(
+        h.execute(
+          CommandSchema.parse({
+            type: "service.resolve",
+            commandId: "TEST-invalid-approval-decision",
+            idempotencyKey: "TEST-invalid-approval-decision",
+            conversationId: "conversation-1",
+            operationId: state.operations[0],
+            approved: true,
+            language: "en",
+          }),
+        ),
+        /model_busy/,
+      );
       assert.equal(h.network.length, 0);
+      owner.execute = execute;
     } finally {
       await h.close();
     }
-  });
+  },
+);
+
+for (const changed of ["payload", "idempotency"] as const) {
+  test(
+    `a changed ${changed} after restart cannot poison the exact native failure receipt`,
+    mastraOnly,
+    async () => {
+      const h = createTrustHarness();
+      try {
+        h.onChat(() => malformed(h));
+        const owner = await nativeCatalogOwner(h.controller),
+          proof = owner.isSettled;
+        owner.isSettled = () => false;
+        const original = CommandSchema.parse({
+          ...command("TEST-distinct-idempotency"),
+          commandId: "TEST-distinct-outer",
+        });
+        await assert.rejects(h.execute(original), NativeRunUnsettledError);
+        owner.isSettled = proof;
+        await h.restart();
+        const before = h.workflow.snapshot(h.scope),
+          requests = h.requests.length;
+        const altered = CommandSchema.parse(
+          changed === "payload"
+            ? { ...original, text: "TEST changed text" }
+            : { ...original, idempotencyKey: "TEST-altered-idempotency" },
+        );
+        await assert.rejects(
+          h.execute(altered),
+          (error: unknown) =>
+            error instanceof IdentityError &&
+            error.code === "idempotency_conflict",
+        );
+        assert.deepEqual(h.workflow.snapshot(h.scope), before);
+        assert.equal(h.workflow.replay(h.scope, altered), undefined);
+        const result = await h.execute(original);
+        assert.equal(result.status, "accepted");
+        assert.equal(
+          result.snapshot.conversations[0]!.messages.at(-1)!.replyToCommandId,
+          original.commandId,
+        );
+        assert.equal(h.requests.length, requests);
+        assert.equal(h.network.length, 0);
+      } finally {
+        await h.close();
+      }
+    },
+  );
 }
 
-test("a memory persistence tail failure keeps the native reservation until passive proof succeeds", async () => {
-  const h = createTrustHarness();
-  const { Memory } = await import("@mastra/memory");
-  const settled = Memory.prototype.settled;
-  try {
-    h.onChat(() => ({ content: "TEST prepared ordinary reply" }));
-    Memory.prototype.settled = async () => {
-      throw Error(sentinel);
-    };
-    const original = command("TEST-memory-tail-fatal");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    assert.equal(h.commandState().terminalCandidate, "execution");
-    assert.equal(h.commandState().answer, undefined);
-    assert.equal((await h.runtime().tasks!())[0]?.status, "waiting_system");
-    await assert.rejects(
-      h.execute(command("TEST-memory-tail-next")),
-      /model_busy/,
-    );
-    assert(!JSON.stringify(h.commandState()).includes(sentinel));
-    const requests = h.requests.length;
-    Memory.prototype.settled = settled;
-    const result = await h.execute(original);
-    assert.equal(result.status, "accepted");
-    assert.match(
-      result.snapshot.conversations[0]!.messages.at(-1)!.text,
-      /agent run failed/,
-    );
-    assert.equal(h.requests.length, requests);
-  } finally {
-    Memory.prototype.settled = settled;
-    await h.close();
-  }
-});
+test(
+  "a memory persistence tail failure keeps the native reservation until passive proof succeeds",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    const { Memory } = await import("@mastra/memory");
+    const settled = Memory.prototype.settled;
+    try {
+      h.onChat(() => ({ content: "TEST prepared ordinary reply" }));
+      Memory.prototype.settled = async () => {
+        throw Error(sentinel);
+      };
+      const original = command("TEST-memory-tail-fatal");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      assert.equal(h.commandState().terminalCandidate, "execution");
+      assert.equal(h.commandState().answer, undefined);
+      assert.equal((await h.runtime().tasks!())[0]?.status, "waiting_system");
+      await assert.rejects(
+        h.execute(command("TEST-memory-tail-next")),
+        /model_busy/,
+      );
+      assert(!JSON.stringify(h.commandState()).includes(sentinel));
+      const requests = h.requests.length;
+      Memory.prototype.settled = settled;
+      const result = await h.execute(original);
+      assert.equal(result.status, "accepted");
+      assert.match(
+        result.snapshot.conversations[0]!.messages.at(-1)!.text,
+        /agent run failed/,
+      );
+      assert.equal(h.requests.length, requests);
+    } finally {
+      Memory.prototype.settled = settled;
+      await h.close();
+    }
+  },
+);
 
 test("native same-run reservation precedes asynchronous retirement marker persistence", async () => {
   const h = createTrustHarness();
@@ -754,130 +801,147 @@ test("native same-run reservation precedes asynchronous retirement marker persis
   }
 });
 
-test("a reopened fatal candidate wins interruption during its passive finalization", async () => {
-  const h = createTrustHarness();
-  let release!: () => void;
-  try {
-    h.onChat(() => malformed(h));
-    const owner = await nativeCatalogOwner(h.controller),
-      settled = owner.isSettled;
-    owner.isSettled = () => false;
-    const original = command("TEST-reopened-fatal-race");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    owner.isSettled = settled;
-    await h.restart();
-    const reopened = await nativeCatalogOwner(h.controller),
-      proof = reopened.proveRetired;
-    let reached!: () => void;
-    const started = new Promise<void>((resolve) => {
-      reached = resolve;
-    });
-    const hold = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    reopened.proveRetired = async (...args) => {
-      reached();
-      await hold;
-      return proof(...args);
-    };
-    const requests = h.requests.length;
-    const delivery = h.execute(original);
-    await started;
-    const interruption = h.model.interrupt(h.scope, original, async (fn) =>
-      fn(),
-    );
-    release();
-    const [result, acknowledgment] = await Promise.all([
-      delivery,
-      interruption,
-    ]);
-    assert.equal(result.status, "accepted");
-    assert.equal(acknowledgment.status, "settled");
-    assert.equal(h.commandState().trace?.status, "failed");
-    assert.match(
-      result.snapshot.conversations[0]!.messages.at(-1)!.text,
-      /invalid response/,
-    );
-    assert.doesNotMatch(
-      result.snapshot.conversations[0]!.messages.at(-1)!.text,
-      /interrupted/i,
-    );
-    assert.equal(result.snapshot.conversations[0]!.messages.length, 2);
-    assert.equal(h.requests.length, requests);
-  } finally {
-    release?.();
-    await h.close();
-  }
-});
+test(
+  "a reopened fatal candidate wins interruption during its passive finalization",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    let release!: () => void;
+    try {
+      h.onChat(() => malformed(h));
+      const owner = await nativeCatalogOwner(h.controller),
+        settled = owner.isSettled;
+      owner.isSettled = () => false;
+      const original = command("TEST-reopened-fatal-race");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      owner.isSettled = settled;
+      await h.restart();
+      const reopened = await nativeCatalogOwner(h.controller),
+        proof = reopened.proveRetired;
+      let reached!: () => void;
+      const started = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      reopened.proveRetired = async (...args) => {
+        reached();
+        await hold;
+        return proof(...args);
+      };
+      const requests = h.requests.length;
+      const delivery = h.execute(original);
+      await started;
+      const interruption = h.model.interrupt(h.scope, original, async (fn) =>
+        fn(),
+      );
+      release();
+      const [result, acknowledgment] = await Promise.all([
+        delivery,
+        interruption,
+      ]);
+      assert.equal(result.status, "accepted");
+      assert.equal(acknowledgment.status, "settled");
+      assert.equal(h.commandState().trace?.status, "failed");
+      assert.match(
+        result.snapshot.conversations[0]!.messages.at(-1)!.text,
+        /invalid response/,
+      );
+      assert.doesNotMatch(
+        result.snapshot.conversations[0]!.messages.at(-1)!.text,
+        /interrupted/i,
+      );
+      assert.equal(result.snapshot.conversations[0]!.messages.length, 2);
+      assert.equal(h.requests.length, requests);
+    } finally {
+      release?.();
+      await h.close();
+    }
+  },
+);
 
-test("an immediate interruption of an unproved reopened retry cannot manufacture cancellation", async () => {
-  const h = createTrustHarness();
-  try {
-    const owner = await nativeCatalogOwner(h.controller),
-      execute = owner.execute;
-    owner.execute = async () => {
-      throw Error("niaro_native_checkpoint_settlement_timeout");
-    };
-    const original = command("TEST-early-reopened-interruption");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    owner.execute = execute;
-    await h.restart();
-    const before = h.workflow.snapshot(h.scope);
-    const delivery = h.execute(original);
-    void delivery.catch(() => {});
-    const interrupted = await h.model.interrupt(h.scope, original, async (fn) =>
-      fn(),
-    );
-    assert.equal(interrupted.status, "unknown");
-    await assert.rejects(delivery, NativeRunUnsettledError);
-    assert.deepEqual(h.workflow.snapshot(h.scope), before);
-    assert.equal(h.workflow.replay(h.scope, original), undefined);
-    assert.equal(h.commandState().answer, undefined);
-    assert.equal(h.requests.length, 0);
-  } finally {
-    await h.close();
-  }
-});
+test(
+  "an immediate interruption of an unproved reopened retry cannot manufacture cancellation",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    try {
+      const owner = await nativeCatalogOwner(h.controller),
+        execute = owner.execute;
+      owner.execute = async () => {
+        throw Error("niaro_native_checkpoint_settlement_timeout");
+      };
+      const original = command("TEST-early-reopened-interruption");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      owner.execute = execute;
+      await h.restart();
+      const before = h.workflow.snapshot(h.scope);
+      const delivery = h.execute(original);
+      void delivery.catch(() => {});
+      const interrupted = await h.model.interrupt(
+        h.scope,
+        original,
+        async (fn) => fn(),
+      );
+      assert.equal(interrupted.status, "unknown");
+      await assert.rejects(delivery, NativeRunUnsettledError);
+      assert.deepEqual(h.workflow.snapshot(h.scope), before);
+      assert.equal(h.workflow.replay(h.scope, original), undefined);
+      assert.equal(h.commandState().answer, undefined);
+      assert.equal(h.requests.length, 0);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
-test("an immediate interruption cannot accept a changed durable outer command identity", async () => {
-  const h = createTrustHarness();
-  try {
-    h.onChat(() => malformed(h));
-    const owner = await nativeCatalogOwner(h.controller),
-      settled = owner.isSettled;
-    owner.isSettled = () => false;
-    const original = CommandSchema.parse({
-      ...command("TEST-early-original-idem"),
-      commandId: "TEST-early-original-outer",
-    });
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    owner.isSettled = settled;
-    await h.restart();
-    const before = h.workflow.snapshot(h.scope),
-      requests = h.requests.length;
-    const altered = CommandSchema.parse({
-      ...original,
-      idempotencyKey: "TEST-early-altered-idem",
-    });
-    const delivery = h.execute(altered);
-    void delivery.catch(() => {});
-    const interrupted = await h.model.interrupt(h.scope, altered, async (fn) =>
-      fn(),
-    );
-    assert.equal(interrupted.status, "unknown");
-    await assert.rejects(
-      delivery,
-      (error: unknown) =>
-        error instanceof IdentityError && error.code === "idempotency_conflict",
-    );
-    assert.deepEqual(h.workflow.snapshot(h.scope), before);
-    const exact = await h.execute(original);
-    assert.equal(exact.status, "accepted");
-    assert.equal(h.requests.length, requests);
-  } finally {
-    await h.close();
-  }
-});
+test(
+  "an immediate interruption cannot accept a changed durable outer command identity",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    try {
+      h.onChat(() => malformed(h));
+      const owner = await nativeCatalogOwner(h.controller),
+        settled = owner.isSettled;
+      owner.isSettled = () => false;
+      const original = CommandSchema.parse({
+        ...command("TEST-early-original-idem"),
+        commandId: "TEST-early-original-outer",
+      });
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      owner.isSettled = settled;
+      await h.restart();
+      const before = h.workflow.snapshot(h.scope),
+        requests = h.requests.length;
+      const altered = CommandSchema.parse({
+        ...original,
+        idempotencyKey: "TEST-early-altered-idem",
+      });
+      const delivery = h.execute(altered);
+      void delivery.catch(() => {});
+      const interrupted = await h.model.interrupt(
+        h.scope,
+        altered,
+        async (fn) => fn(),
+      );
+      assert.equal(interrupted.status, "unknown");
+      await assert.rejects(
+        delivery,
+        (error: unknown) =>
+          error instanceof IdentityError &&
+          error.code === "idempotency_conflict",
+      );
+      assert.deepEqual(h.workflow.snapshot(h.scope), before);
+      const exact = await h.execute(original);
+      assert.equal(exact.status, "accepted");
+      assert.equal(h.requests.length, requests);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
 test("fatal approval continuation replay restores the exact decision after task revisions advance", async () => {
   let failCommit = false;
@@ -1037,141 +1101,157 @@ test("legacy proof task window forwards a later owner guard at final publication
   }
 });
 
-test("proven retirement releases a reopened early-abort gate when old publication is revoked", async () => {
-  const h = createTrustHarness();
-  try {
-    h.onChat(() => {
-      h.context.change(h.target.organizationId);
-      return malformed(h);
-    });
-    const owner = await nativeCatalogOwner(h.controller),
-      settled = owner.isSettled;
-    owner.isSettled = () => false;
-    const original = command("TEST-retired-revoked-early-abort");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    owner.isSettled = settled;
-    await h.restart();
-    const requests = h.requests.length;
-    const delivery = h.execute(original);
-    void delivery.catch(() => {});
-    const ack = await h.model.interrupt(h.scope, original, async (fn) => fn());
-    assert.equal(ack.status, "settled");
-    const result = await delivery;
-    assert.equal(result.status, "accepted");
-    const reply = result.snapshot.conversations[0]!.messages.at(-1)!;
-    assert.match(reply.text, /work context changed|permissions or/i);
-    assert.match(reply.text, /unverified/);
-    assert.doesNotMatch(reply.text, /stale success/);
-    assert.equal(h.requests.length, requests);
-    h.onChat(() => ({ content: "TEST current authorized request" }));
-    assert.equal(
-      (await h.execute(command("TEST-current-after-revoked-retirement")))
-        .status,
-      "accepted",
-    );
-    assert.equal(h.network.length, 0);
-  } finally {
-    await h.close();
-  }
-});
+test(
+  "proven retirement releases a reopened early-abort gate when old publication is revoked",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    try {
+      h.onChat(() => {
+        h.context.change(h.target.organizationId);
+        return malformed(h);
+      });
+      const owner = await nativeCatalogOwner(h.controller),
+        settled = owner.isSettled;
+      owner.isSettled = () => false;
+      const original = command("TEST-retired-revoked-early-abort");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      owner.isSettled = settled;
+      await h.restart();
+      const requests = h.requests.length;
+      const delivery = h.execute(original);
+      void delivery.catch(() => {});
+      const ack = await h.model.interrupt(h.scope, original, async (fn) =>
+        fn(),
+      );
+      assert.equal(ack.status, "settled");
+      const result = await delivery;
+      assert.equal(result.status, "accepted");
+      const reply = result.snapshot.conversations[0]!.messages.at(-1)!;
+      assert.match(reply.text, /work context changed|permissions or/i);
+      assert.match(reply.text, /unverified/);
+      assert.doesNotMatch(reply.text, /stale success/);
+      assert.equal(h.requests.length, requests);
+      h.onChat(() => ({ content: "TEST current authorized request" }));
+      assert.equal(
+        (await h.execute(command("TEST-current-after-revoked-retirement")))
+          .status,
+        "accepted",
+      );
+      assert.equal(h.network.length, 0);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
-test("an authority-only native rejection cannot release an unproved worker across reopen", async () => {
-  const h = createTrustHarness();
-  try {
-    h.onChat(() => {
-      h.context.change(h.target.organizationId);
-      return { content: "TEST reply blocked by current epoch" };
-    });
-    const owner = await nativeCatalogOwner(h.controller),
-      proof = owner.proveRetired;
-    owner.proveRetired = async () => false;
-    const original = command("TEST-authority-only-held");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    assert.equal(h.commandState().answer, undefined);
-    assert.equal(h.commandState().terminalCandidate, "execution");
-    assert.equal(h.workflow.replay(h.scope, original), undefined);
-    await assert.rejects(
-      h.execute(command("TEST-authority-only-next")),
-      /model_busy/,
-    );
-    owner.proveRetired = proof;
-    await h.restart();
-    const reopened = await nativeCatalogOwner(h.controller),
-      reopenedProof = reopened.proveRetired;
-    reopened.proveRetired = async () => false;
-    const before = h.workflow.snapshot(h.scope),
-      requests = h.requests.length;
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    await assert.rejects(
-      h.execute({
-        ...command("TEST-authority-held-new-session"),
-        session: "new",
-      } as Command),
-      /model_busy/,
-    );
-    assert.deepEqual(h.workflow.snapshot(h.scope), before);
-    assert.equal(h.requests.length, requests);
-    reopened.proveRetired = reopenedProof;
-    const recovered = await h.execute(original);
-    assert.equal(recovered.status, "accepted");
-    const reply = recovered.snapshot.conversations[0]!.messages.at(-1)!;
-    assert.match(reply.text, /work context changed|permissions or/i);
-    assert.match(reply.text, /unverified/);
-    assert.doesNotMatch(reply.text, /TEST reply blocked by current epoch/);
-    h.onChat(() => ({
-      content: "TEST current authority is valid for a new task",
-    }));
-    assert.equal(
-      (await h.execute(command("TEST-authority-only-current-task"))).status,
-      "accepted",
-    );
-    assert.match(
-      h.commandState(original.commandId).answer?.reply ?? "",
-      /work context changed|permissions or/i,
-    );
-    assert.equal(h.network.length, 0);
-  } finally {
-    await h.close();
-  }
-});
+test(
+  "an authority-only native rejection cannot release an unproved worker across reopen",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    try {
+      h.onChat(() => {
+        h.context.change(h.target.organizationId);
+        return { content: "TEST reply blocked by current epoch" };
+      });
+      const owner = await nativeCatalogOwner(h.controller),
+        proof = owner.proveRetired;
+      owner.proveRetired = async () => false;
+      const original = command("TEST-authority-only-held");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      assert.equal(h.commandState().answer, undefined);
+      assert.equal(h.commandState().terminalCandidate, "execution");
+      assert.equal(h.workflow.replay(h.scope, original), undefined);
+      await assert.rejects(
+        h.execute(command("TEST-authority-only-next")),
+        /model_busy/,
+      );
+      owner.proveRetired = proof;
+      await h.restart();
+      const reopened = await nativeCatalogOwner(h.controller),
+        reopenedProof = reopened.proveRetired;
+      reopened.proveRetired = async () => false;
+      const before = h.workflow.snapshot(h.scope),
+        requests = h.requests.length;
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      await assert.rejects(
+        h.execute({
+          ...command("TEST-authority-held-new-session"),
+          session: "new",
+        } as Command),
+        /model_busy/,
+      );
+      assert.deepEqual(h.workflow.snapshot(h.scope), before);
+      assert.equal(h.requests.length, requests);
+      reopened.proveRetired = reopenedProof;
+      const recovered = await h.execute(original);
+      assert.equal(recovered.status, "accepted");
+      const reply = recovered.snapshot.conversations[0]!.messages.at(-1)!;
+      assert.match(reply.text, /work context changed|permissions or/i);
+      assert.match(reply.text, /unverified/);
+      assert.doesNotMatch(reply.text, /TEST reply blocked by current epoch/);
+      h.onChat(() => ({
+        content: "TEST current authority is valid for a new task",
+      }));
+      assert.equal(
+        (await h.execute(command("TEST-authority-only-current-task"))).status,
+        "accepted",
+      );
+      assert.match(
+        h.commandState(original.commandId).answer?.reply ?? "",
+        /work context changed|permissions or/i,
+      );
+      assert.equal(h.network.length, 0);
+    } finally {
+      await h.close();
+    }
+  },
+);
 
-test("workflow publication rejection after passive retirement also releases the scope gate", async () => {
-  const h = createTrustHarness();
-  try {
-    h.onChat(() => malformed(h));
-    const owner = await nativeCatalogOwner(h.controller),
-      settled = owner.isSettled;
-    owner.isSettled = () => false;
-    const original = command("TEST-publication-after-retired");
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    owner.isSettled = settled;
-    let guards = 0;
-    h.context.validateRequest = () => {
-      if (++guards >= 4) throw new IdentityError(409, "card_context_changed");
-    };
-    await assert.rejects(
-      h.execute(original),
-      (error: unknown) =>
-        error instanceof IdentityError && error.code === "card_context_changed",
-    );
-    assert.equal(h.workflow.replay(h.scope, original), undefined);
-    assert(
-      h.commandState().answer,
-      "The domain answer was saved before workflow publication was refused",
-    );
-    assert.equal(guards, 4);
-    h.context.validateRequest = undefined;
-    h.onChat(() => ({ content: "TEST next current request" }));
-    assert.equal(
-      (await h.execute(command("TEST-next-after-publication-rejected"))).status,
-      "accepted",
-    );
-    assert.equal(h.network.length, 0);
-  } finally {
-    h.context.validateRequest = undefined;
-    await h.close();
-  }
-});
+test(
+  "workflow publication rejection after passive retirement also releases the scope gate",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    try {
+      h.onChat(() => malformed(h));
+      const owner = await nativeCatalogOwner(h.controller),
+        settled = owner.isSettled;
+      owner.isSettled = () => false;
+      const original = command("TEST-publication-after-retired");
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      owner.isSettled = settled;
+      let guards = 0;
+      h.context.validateRequest = () => {
+        if (++guards >= 4) throw new IdentityError(409, "card_context_changed");
+      };
+      await assert.rejects(
+        h.execute(original),
+        (error: unknown) =>
+          error instanceof IdentityError &&
+          error.code === "card_context_changed",
+      );
+      assert.equal(h.workflow.replay(h.scope, original), undefined);
+      assert(
+        h.commandState().answer,
+        "The domain answer was saved before workflow publication was refused",
+      );
+      assert.equal(guards, 4);
+      h.context.validateRequest = undefined;
+      h.onChat(() => ({ content: "TEST next current request" }));
+      assert.equal(
+        (await h.execute(command("TEST-next-after-publication-rejected")))
+          .status,
+        "accepted",
+      );
+      assert.equal(h.network.length, 0);
+    } finally {
+      h.context.validateRequest = undefined;
+      await h.close();
+    }
+  },
+);
 
 test("routing epoch change returns one safe terminal explanation after native retirement", async () => {
   const h = createTrustHarness();
@@ -1205,146 +1285,13 @@ test("routing epoch change returns one safe terminal explanation after native re
   }
 });
 
-test("revoked actor records only a terminal diagnostic and later replay explains without inference", async () => {
-  const h = createTrustHarness();
-  let revoked = false;
-  try {
-    const validActor = h.context.actor;
-    const oldRuntime = h.runtime({
-      ...h.context,
-      actor: async (target) => {
-        if (revoked) throw new IdentityError(403, "identity_forbidden");
-        return validActor(target);
-      },
-    });
-    const original = command("TEST-revoked-actor-terminal");
-    h.onChat(() => {
-      revoked = true;
-      return malformed(h);
-    });
-    const owner = await nativeCatalogOwner(h.controller);
-    owner.isSettled = () => false;
-    await assert.rejects(
-      h.model.execute(
-        h.scope,
-        original,
-        () => {},
-        new AbortController().signal,
-        {
-          tools: {
-            has: () => false,
-            invoke: async () => {
-              throw Error("Unexpected legacy tool");
-            },
-          },
-          run: (fn) => h.context.serial(async () => fn()),
-          integrations: oldRuntime,
-        },
-      ),
-      NativeRunUnsettledError,
-    );
-    assert.equal(h.commandState(original.commandId).trace?.status, "running");
-    owner.isSettled = () => true;
-    const ack = await h.model.interrupt(h.scope, original, async (fn) => fn());
-    assert.equal(ack.status, "unknown");
-    const state = h.commandState(original.commandId);
-    assert.equal(state.answer, undefined);
-    assert.notEqual(state.trace?.status, "running");
-    assert(state.trace?.finishedAt);
-    assert(state.trace?.steps.every((step) => step.status !== "running"));
-    const requests = h.requests.length;
-    revoked = false;
-    const replay = await h.execute(original);
-    assert.equal(replay.status, "accepted");
-    assert.match(
-      replay.snapshot.conversations[0]!.messages.at(-1)!.text,
-      /could not be completed/,
-    );
-    assert.equal(h.requests.length, requests, "Recovery must be passive");
-    assert.equal(h.network.length, 0);
-  } finally {
-    await h.close();
-  }
-});
-
-test("actor-denied restoration preserves committed memory in a scoped diagnostic hold", async () => {
-  const h = createTrustHarness();
-  const actor = h.context.actor;
-  try {
-    const old = "TEST actor-held early meetings",
-      replacement = "TEST actor-held afternoon meetings";
-    const saved = await h.memoryStore.remember(h.memoryActor, {
-      requestId: "TEST-actor-held-memory-seed",
-      content: old,
-      kind: "preference",
-      scope: "private",
-      source: { type: "user_note" },
-      explicitIntent: true,
-      settings: h.memorySettings,
-    });
-    const revise = h.memoryStore.revise.bind(h.memoryStore);
-    h.memoryStore.revise = async (...args) => {
-      await revise(...args);
-      h.context.actor = async () => {
-        throw new IdentityError(403, "identity_forbidden");
-      };
-      throw Error(sentinel);
-    };
-    h.onChat((body) =>
-      toolResults(body).some((value) => Array.isArray(value.items))
-        ? h.call("memory_revise", {
-            id: saved.id,
-            revision: saved.revision,
-            content: replacement,
-          })
-        : h.call("memory_search", { query: old }),
-    );
-    const owner = await nativeCatalogOwner(h.controller),
-      proof = owner.proveRetired;
-    owner.proveRetired = async () => false;
-    const original = CommandSchema.parse({
-      ...command("TEST-actor-held-memory"),
-      text: `Revise memory: ${JSON.stringify(old)} -> ${JSON.stringify(replacement)}`,
-    });
-    await assert.rejects(h.execute(original), NativeRunUnsettledError);
-    const state = h.commandState();
-    assert.equal(state.terminalCandidate, "execution");
-    assert.equal(state.answer, undefined);
-    assert.equal(state.memoryChanged, true);
-    assert.equal(state.memoryReceipts.length, 1);
-    assert.equal(state.memoryReceipts[0]!.result.status, "active");
-    assert(!JSON.stringify(state).includes(sentinel));
-    assert.equal(h.workflow.replay(h.scope, original), undefined);
-    h.context.actor = actor;
-    owner.proveRetired = proof;
-    await h.restart();
-    const reopened = await nativeCatalogOwner(h.controller),
-      reopenedProof = reopened.proveRetired;
-    reopened.proveRetired = async () => false;
-    const before = h.workflow.snapshot(h.scope),
-      requests = h.requests.length;
-    await assert.rejects(
-      h.execute(command("TEST-actor-held-fresh")),
-      /model_busy/,
-    );
-    assert.deepEqual(h.workflow.snapshot(h.scope), before);
-    assert.equal(h.requests.length, requests);
-    assert.deepEqual(h.commandState().memoryReceipts, state.memoryReceipts);
-    reopened.proveRetired = reopenedProof;
-    assert.equal((await h.execute(original)).status, "accepted");
-    assert.equal(h.requests.length, requests);
-    assert.equal(h.network.length, 0);
-  } finally {
-    h.context.actor = actor;
-    await h.close();
-  }
-});
-
-for (const cleanup of ["interrupt", "fresh-access"] as const) {
-  test(`proven native retirement releases a permanently revoked captured actor through ${cleanup}`, async () => {
+test(
+  "revoked actor records only a terminal diagnostic and later replay explains without inference",
+  mastraOnly,
+  async () => {
     const h = createTrustHarness();
+    let revoked = false;
     try {
-      let revoked = false;
       const validActor = h.context.actor;
       const oldRuntime = h.runtime({
         ...h.context,
@@ -1353,13 +1300,12 @@ for (const cleanup of ["interrupt", "fresh-access"] as const) {
           return validActor(target);
         },
       });
-      const original = command("TEST-captured-actor-" + cleanup);
+      const original = command("TEST-revoked-actor-terminal");
       h.onChat(() => {
         revoked = true;
         return malformed(h);
       });
-      const owner = await nativeCatalogOwner(h.controller),
-        settled = owner.isSettled;
+      const owner = await nativeCatalogOwner(h.controller);
       owner.isSettled = () => false;
       await assert.rejects(
         h.model.execute(
@@ -1380,30 +1326,178 @@ for (const cleanup of ["interrupt", "fresh-access"] as const) {
         ),
         NativeRunUnsettledError,
       );
-      owner.isSettled = settled;
-      const requests = h.requests.length,
-        before = h.workflow.snapshot(h.scope),
-        inference = h.commandState(original.commandId).inference;
-      if (cleanup === "interrupt") {
-        const ack = await h.model.interrupt(h.scope, original, async (fn) =>
-          fn(),
-        );
-        assert.equal(ack.status, "unknown");
-        assert.deepEqual(h.workflow.snapshot(h.scope), before);
-      }
-      h.onChat(() => ({ content: "TEST new actor-authorized request" }));
-      assert.equal(
-        (await h.execute(command("TEST-current-captured-" + cleanup))).status,
-        "accepted",
+      assert.equal(h.commandState(original.commandId).trace?.status, "running");
+      owner.isSettled = () => true;
+      const ack = await h.model.interrupt(h.scope, original, async (fn) =>
+        fn(),
       );
-      assert.equal(h.commandState(original.commandId).answer, undefined);
-      assert.equal(h.commandState(original.commandId).inference, inference);
-      assert.equal(h.workflow.replay(h.scope, original), undefined);
-      // The new request's answer; a read-only answer gets no checker call.
-      assert.equal(h.requests.length, requests + 1);
+      assert.equal(ack.status, "unknown");
+      const state = h.commandState(original.commandId);
+      assert.equal(state.answer, undefined);
+      assert.notEqual(state.trace?.status, "running");
+      assert(state.trace?.finishedAt);
+      assert(state.trace?.steps.every((step) => step.status !== "running"));
+      const requests = h.requests.length;
+      revoked = false;
+      const replay = await h.execute(original);
+      assert.equal(replay.status, "accepted");
+      assert.match(
+        replay.snapshot.conversations[0]!.messages.at(-1)!.text,
+        /could not be completed/,
+      );
+      assert.equal(h.requests.length, requests, "Recovery must be passive");
       assert.equal(h.network.length, 0);
     } finally {
       await h.close();
     }
-  });
+  },
+);
+
+test(
+  "actor-denied restoration preserves committed memory in a scoped diagnostic hold",
+  mastraOnly,
+  async () => {
+    const h = createTrustHarness();
+    const actor = h.context.actor;
+    try {
+      const old = "TEST actor-held early meetings",
+        replacement = "TEST actor-held afternoon meetings";
+      const saved = await h.memoryStore.remember(h.memoryActor, {
+        requestId: "TEST-actor-held-memory-seed",
+        content: old,
+        kind: "preference",
+        scope: "private",
+        source: { type: "user_note" },
+        explicitIntent: true,
+        settings: h.memorySettings,
+      });
+      const revise = h.memoryStore.revise.bind(h.memoryStore);
+      h.memoryStore.revise = async (...args) => {
+        await revise(...args);
+        h.context.actor = async () => {
+          throw new IdentityError(403, "identity_forbidden");
+        };
+        throw Error(sentinel);
+      };
+      h.onChat((body) =>
+        toolResults(body).some((value) => Array.isArray(value.items))
+          ? h.call("memory_revise", {
+              id: saved.id,
+              revision: saved.revision,
+              content: replacement,
+            })
+          : h.call("memory_search", { query: old }),
+      );
+      const owner = await nativeCatalogOwner(h.controller),
+        proof = owner.proveRetired;
+      owner.proveRetired = async () => false;
+      const original = CommandSchema.parse({
+        ...command("TEST-actor-held-memory"),
+        text: `Revise memory: ${JSON.stringify(old)} -> ${JSON.stringify(replacement)}`,
+      });
+      await assert.rejects(h.execute(original), NativeRunUnsettledError);
+      const state = h.commandState();
+      assert.equal(state.terminalCandidate, "execution");
+      assert.equal(state.answer, undefined);
+      assert.equal(state.memoryChanged, true);
+      assert.equal(state.memoryReceipts.length, 1);
+      assert.equal(state.memoryReceipts[0]!.result.status, "active");
+      assert(!JSON.stringify(state).includes(sentinel));
+      assert.equal(h.workflow.replay(h.scope, original), undefined);
+      h.context.actor = actor;
+      owner.proveRetired = proof;
+      await h.restart();
+      const reopened = await nativeCatalogOwner(h.controller),
+        reopenedProof = reopened.proveRetired;
+      reopened.proveRetired = async () => false;
+      const before = h.workflow.snapshot(h.scope),
+        requests = h.requests.length;
+      await assert.rejects(
+        h.execute(command("TEST-actor-held-fresh")),
+        /model_busy/,
+      );
+      assert.deepEqual(h.workflow.snapshot(h.scope), before);
+      assert.equal(h.requests.length, requests);
+      assert.deepEqual(h.commandState().memoryReceipts, state.memoryReceipts);
+      reopened.proveRetired = reopenedProof;
+      assert.equal((await h.execute(original)).status, "accepted");
+      assert.equal(h.requests.length, requests);
+      assert.equal(h.network.length, 0);
+    } finally {
+      h.context.actor = actor;
+      await h.close();
+    }
+  },
+);
+
+for (const cleanup of ["interrupt", "fresh-access"] as const) {
+  test(
+    `proven native retirement releases a permanently revoked captured actor through ${cleanup}`,
+    mastraOnly,
+    async () => {
+      const h = createTrustHarness();
+      try {
+        let revoked = false;
+        const validActor = h.context.actor;
+        const oldRuntime = h.runtime({
+          ...h.context,
+          actor: async (target) => {
+            if (revoked) throw new IdentityError(403, "identity_forbidden");
+            return validActor(target);
+          },
+        });
+        const original = command("TEST-captured-actor-" + cleanup);
+        h.onChat(() => {
+          revoked = true;
+          return malformed(h);
+        });
+        const owner = await nativeCatalogOwner(h.controller),
+          settled = owner.isSettled;
+        owner.isSettled = () => false;
+        await assert.rejects(
+          h.model.execute(
+            h.scope,
+            original,
+            () => {},
+            new AbortController().signal,
+            {
+              tools: {
+                has: () => false,
+                invoke: async () => {
+                  throw Error("Unexpected legacy tool");
+                },
+              },
+              run: (fn) => h.context.serial(async () => fn()),
+              integrations: oldRuntime,
+            },
+          ),
+          NativeRunUnsettledError,
+        );
+        owner.isSettled = settled;
+        const requests = h.requests.length,
+          before = h.workflow.snapshot(h.scope),
+          inference = h.commandState(original.commandId).inference;
+        if (cleanup === "interrupt") {
+          const ack = await h.model.interrupt(h.scope, original, async (fn) =>
+            fn(),
+          );
+          assert.equal(ack.status, "unknown");
+          assert.deepEqual(h.workflow.snapshot(h.scope), before);
+        }
+        h.onChat(() => ({ content: "TEST new actor-authorized request" }));
+        assert.equal(
+          (await h.execute(command("TEST-current-captured-" + cleanup))).status,
+          "accepted",
+        );
+        assert.equal(h.commandState(original.commandId).answer, undefined);
+        assert.equal(h.commandState(original.commandId).inference, inference);
+        assert.equal(h.workflow.replay(h.scope, original), undefined);
+        // The new request's answer; a read-only answer gets no checker call.
+        assert.equal(h.requests.length, requests + 1);
+        assert.equal(h.network.length, 0);
+      } finally {
+        await h.close();
+      }
+    },
+  );
 }
