@@ -1046,8 +1046,19 @@ test("native designer charges unknown inference usage at its reservation and con
     );
     assert.equal(next.status, "completed", JSON.stringify(next));
     assert.equal(h.store.get(h.actor, sessionId).revision, 2);
+    // Each turn has its own run; the first turn's run holds its two attempts.
+    assert.equal(
+      Number(
+        h.db.prepare("SELECT count(*) AS n FROM agent_inference_run").get()!.n,
+      ),
+      2,
+    );
     const root = String(
-      h.db.prepare("SELECT id FROM agent_inference_run").get()!.id,
+      h.db
+        .prepare(
+          "SELECT run_id FROM agent_inference_attempt GROUP BY run_id ORDER BY count(*) DESC LIMIT 1",
+        )
+        .get()!.run_id,
     );
     const summary = h.catalog.inferenceBudget.summary(root);
     assert.equal(summary.unknownCalls, 2);
