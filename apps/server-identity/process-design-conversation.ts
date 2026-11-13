@@ -401,10 +401,18 @@ export class ProcessDesignConversation {
       throw new IdentityError(409, "process_design_model_changed");
     return selected;
   }
-  private readyHeld(actor: ProcessActor, binding: DesignConversationBinding) {
+  /** Each turn has its own budget run; the session's caps apply per turn. */
+  private turnRun(binding: DesignConversationBinding, turnId: string) {
+    return processDigest([binding.rootId, turnId]);
+  }
+  private readyHeld(
+    actor: ProcessActor,
+    binding: DesignConversationBinding,
+    runId: string,
+  ) {
     const selected = this.selectedHeld(actor, binding);
     const budget = this.controller.store.inferenceBudget.assertReady(
-      binding.rootId,
+      runId,
       actor,
       0,
       binding.caps,
@@ -481,7 +489,11 @@ export class ProcessDesignConversation {
           current.nativeSettled = true;
           try {
             this.proposals.assertAvailable(actor, target.sessionId);
-            this.readyHeld(actor, snapshot.binding);
+            this.readyHeld(
+              actor,
+              snapshot.binding,
+              this.turnRun(snapshot.binding, current.turnId),
+            );
             if (current.candidateReviewDigest !== review.reviewDigest)
               throw new IdentityError(409, "process_design_review_changed");
             current.reply = current.candidateReply;
@@ -639,7 +651,19 @@ export class ProcessDesignConversation {
           });
         if (binding.modelId !== input.modelId)
           throw new IdentityError(409, "process_design_model_changed");
-        this.readyHeld(actor, binding);
+        this.readyHeld(
+          actor,
+          binding,
+          this.turnRun(binding, this.journal.key(actor, input.requestId)),
+        );
+        // An overrun in an earlier turn still stops the session.
+        for (const earlier of this.journal.list(actor, input.sessionId))
+          if (
+            this.controller.store.inferenceBudget.summary(
+              this.turnRun(binding, earlier.turnId),
+            ).overrun
+          )
+            throw new IdentityError(429, "catalog_budget_overrun");
         const turn = this.journal.start(actor, input, digest, this.maxTurns);
         const active = { turn, binding, settled: false };
         return { replay: false as const, binding, active };
@@ -649,6 +673,7 @@ export class ProcessDesignConversation {
     });
     if (reserved.replay) return this.passive(context, input, input.requestId);
     const { binding, active } = reserved;
+    const runId = this.turnRun(binding, active.turn.turnId);
     const authorizeHeld = async () => {
       signal.throwIfAborted();
       const current = await this.actorHeld(
@@ -659,7 +684,7 @@ export class ProcessDesignConversation {
       if (current.review.acceptedProcessId)
         throw new IdentityError(409, "process_design_conflict");
       this.proposals.assertAvailable(current.actor, input.sessionId);
-      this.readyHeld(current.actor, binding);
+      this.readyHeld(current.actor, binding, runId);
       const turn = this.journal.read(
         current.actor,
         input.sessionId,
@@ -969,7 +994,7 @@ export class ProcessDesignConversation {
                 budgetedInferenceTransport(
                   this.controller.transport,
                   this.controller.store.inferenceBudget,
-                  binding.rootId,
+                  runId,
                   binding.creator,
                   selected,
                   "model",
@@ -1020,7 +1045,7 @@ export class ProcessDesignConversation {
           const current = await authorizeHeld();
           if (turn.candidateReviewDigest !== current.review.reviewDigest)
             throw new IdentityError(409, "process_design_review_changed");
-          this.readyHeld(actor, binding);
+          this.readyHeld(actor, binding, runId);
           turn.reply = turn.candidateReply;
           turn.status = "completed";
           turn.failure = null;

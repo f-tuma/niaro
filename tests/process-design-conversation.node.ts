@@ -305,9 +305,10 @@ test("native designer authorizes before tail proof and keeps new work busy until
     );
     assert.equal(next.status, "completed");
     assert.equal(h.modelCount(), 2);
+    // Each turn has its own budget run.
     assert.equal(
       h.db.prepare("SELECT COUNT(*) AS n FROM agent_inference_run").get()!.n,
-      1,
+      2,
     );
   });
 });
@@ -524,7 +525,8 @@ test("native designer clarifies, drafts, corrects, and retains one isolated conv
     assert.equal(h.modelCount(), 9);
     // The journal projection is the only history; native Memory stays empty.
     assert.equal(Number((await nativeCounts(h, sessionId)).count), 0);
-    assert.equal(count(h, "agent_inference_run"), 1);
+    // One budget run per turn.
+    assert.equal(count(h, "agent_inference_run"), 3);
     assert.equal(count(h, "agent_inference_attempt"), 9);
     assert.equal(
       h.db
@@ -532,7 +534,7 @@ test("native designer clarifies, drafts, corrects, and retains one isolated conv
           "SELECT COUNT(DISTINCT run_id) AS count FROM agent_inference_attempt",
         )
         .get()!.count,
-      1,
+      3,
     );
     const binding = JSON.parse(
       String(
@@ -765,32 +767,90 @@ test("native designer cannot execute an invented business tool or accept command
     assertNoExecution(h);
   }));
 
-test("native designer applies one model-call cap to all conversation turns", () =>
+test("native designer applies the model-call cap to each turn", () =>
   isolated(async (h) => {
     const runtime = adapter(h, {
-      caps: { maxModelCalls: 1, maxTokens: 500_000, maxCostMicros: 10_000_000 },
+      caps: { maxModelCalls: 2, maxTokens: 500_000, maxCostMicros: 10_000_000 },
     });
     const sessionId = start(h);
-    h.onModel(() => ({
-      content: "TEST within the shared conversation budget",
-    }));
+    let calls = 0;
+    h.onModel(() =>
+      ++calls % 2
+        ? h.call("design_list_capabilities", {})
+        : { content: "TEST within this turn's budget" },
+    );
+    for (const n of [1, 2, 3]) {
+      const turn = await runtime.message(
+        h.context,
+        input(h, sessionId, `TEST-cap-${n}`, `TEST question ${n}`),
+        signal(),
+      );
+      assert.equal(turn.status, "completed", JSON.stringify(turn));
+    }
+    assert.equal(h.modelCount(), 6);
+    // Each turn has its own run with its own two calls.
+    assert.deepEqual(
+      h.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM agent_inference_attempt GROUP BY run_id",
+        )
+        .all()
+        .map((row) => Number(row.n)),
+      [2, 2, 2],
+    );
+    // The cap still stops a turn that needs a third call.
+    h.onModel(() => h.call("design_list_capabilities", {}));
+    const capped = await runtime.message(
+      h.context,
+      input(h, sessionId, "TEST-cap-over", "TEST keep looking"),
+      signal(),
+    );
+    assert.equal(capped.status, "failed", JSON.stringify(capped));
+    assert.equal(capped.failure, "catalog_budget_exhausted");
+    assert.equal(capped.reply, null);
+    assert.equal(h.modelCount(), 8);
+    assertNoExecution(h);
+  }));
+
+test("native designer refuses the turn after an earlier turn overran its budget", () =>
+  isolated(async (h) => {
+    const runtime = adapter(h);
+    const sessionId = start(h);
+    h.onModel(() => ({ content: "TEST answer that used more than reserved" }));
+    h.setModelUsage({
+      prompt_tokens: 5_000_000,
+      completion_tokens: 5,
+      cost: 0.00002,
+    });
     const first = await runtime.message(
       h.context,
-      input(h, sessionId, "TEST-cap-first", "TEST clarify the purpose"),
+      input(h, sessionId, "TEST-overrun-first", "TEST clarify the purpose"),
       signal(),
     );
-    assert.equal(first.status, "completed", JSON.stringify(first));
-    const second = await runtime.message(
-      h.context,
-      input(h, sessionId, "TEST-cap-second", "TEST ask one more question"),
-      signal(),
+    assert.equal(first.status, "failed", JSON.stringify(first));
+    assert.equal(first.failure, "catalog_budget_overrun");
+    assert.equal(first.reply, null);
+    assert.equal(
+      Number(
+        h.db
+          .prepare("SELECT MAX(overrun) AS o FROM agent_inference_attempt")
+          .get()!.o,
+      ),
+      1,
     );
-    assert.equal(second.status, "failed", JSON.stringify(second));
-    assert.equal(second.failure, "catalog_budget_exhausted");
-    assert.equal(second.reply, null);
+    h.setModelUsage({ prompt_tokens: 10, completion_tokens: 5, cost: 0.00002 });
+    await assert.rejects(
+      runtime.message(
+        h.context,
+        input(h, sessionId, "TEST-overrun-next", "TEST ask again"),
+        signal(),
+      ),
+      (error: unknown) =>
+        error instanceof IdentityError &&
+        error.code === "catalog_budget_overrun",
+    );
     assert.equal(h.modelCount(), 1);
     assert.equal(count(h, "agent_inference_run"), 1);
-    assert.equal(count(h, "agent_inference_attempt"), 1);
     assertNoExecution(h);
   }));
 
@@ -953,7 +1013,7 @@ test("native designer charges unknown inference usage at its reservation and con
   isolated(async (h) => {
     const runtime = adapter(h, {
       // Two unknown holds (each its request's estimate plus 10,000 output,
-      // about 31,000-35,000 tokens) fit; the next turn's larger request does not.
+      // about 31,000-35,000 tokens) fit; the turn's third, larger request does not.
       caps: { maxModelCalls: 8, maxTokens: 90_000, maxCostMicros: 10_000_000 },
     });
     const sessionId = start(h);
@@ -966,15 +1026,25 @@ test("native designer charges unknown inference usage at its reservation and con
             brief: brief(),
             candidate: h.workflow(),
           })
-        : { content: "TEST draft prepared" },
+        : h.call("design_list_capabilities", {}),
     );
     const turn = await runtime.message(
       h.context,
       input(h, sessionId, "TEST-unknown-usage", "TEST prepare a draft"),
       signal(),
     );
-    assert.equal(turn.status, "completed", JSON.stringify(turn));
+    // A third reservation in the same turn would exceed the 90,000-token cap.
+    assert.equal(turn.status, "failed", JSON.stringify(turn));
+    assert.equal(turn.failure, "catalog_budget_exhausted");
     assert.equal(h.modelCount(), 2);
+    // Unknown usage does not block the session's next turn.
+    h.onModel(() => ({ content: "TEST next turn answer" }));
+    const next = await runtime.message(
+      h.context,
+      input(h, sessionId, "TEST-unknown-next", "TEST refine the draft"),
+      signal(),
+    );
+    assert.equal(next.status, "completed", JSON.stringify(next));
     assert.equal(h.store.get(h.actor, sessionId).revision, 2);
     const root = String(
       h.db.prepare("SELECT id FROM agent_inference_run").get()!.id,
@@ -996,15 +1066,6 @@ test("native designer charges unknown inference usage at its reservation and con
       summary.accountedTokens,
       reserved.reduce((a, b) => a + b),
     );
-    // A third reservation would exceed the 90,000-token cap.
-    const next = await runtime.message(
-      h.context,
-      input(h, sessionId, "TEST-unknown-capped", "TEST refine the draft"),
-      signal(),
-    );
-    assert.equal(next.status, "failed", JSON.stringify(next));
-    assert.equal(next.failure, "catalog_budget_exhausted");
-    assert.equal(h.modelCount(), 2);
     assertNoExecution(h);
   }));
 

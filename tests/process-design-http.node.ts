@@ -673,13 +673,26 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
           const replay = await h.request("owner", base + "/turns", input);
           assert.equal(replay.status, 200);
           assert.deepEqual(h.record(replay.data).turn, stored);
+          if (change === "budget")
+            h.onModel(() => ({ content: "TEST reply under the new budget" }));
           const next = await h.request("owner", base + "/turns", {
             ...input,
             requestId: "TEST-no-replacement-root-" + change,
           });
-          assert.equal(next.status, 409, JSON.stringify(next.data));
-          assert.equal(h.record(next.data).error, failure);
-          assert.equal(h.modelCount(), count + 1);
+          if (change === "budget") {
+            // Each turn pins the policy in its own run, so the next turn
+            // starts under the changed budget.
+            assert.equal(next.status, 200, JSON.stringify(next.data));
+            assert.equal(
+              DesignTurnSchema.parse(h.record(next.data).turn).status,
+              "completed",
+            );
+            assert.equal(h.modelCount(), count + 2);
+          } else {
+            assert.equal(next.status, 409, JSON.stringify(next.data));
+            assert.equal(h.record(next.data).error, failure);
+            assert.equal(h.modelCount(), count + 1);
+          }
           assert.equal(h.businessCount(), 0);
           if (change === "service")
             await h.catalog({
