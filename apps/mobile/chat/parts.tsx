@@ -117,7 +117,7 @@ export function AnswerBody({
       {m.role === "assistant" ? (
         <MemorySaveLines
           saves={chat.memorySaves}
-          commandId={m.replyToCommandId}
+          message={m}
           language={chat.language}
           disabled={chat.readOnly || !chat.online}
         />

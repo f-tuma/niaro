@@ -66,10 +66,14 @@ jest.mock("@tanstack/react-router", () => {
         : "/",
   };
 });
+const mockMemoryItems = { current: [] as unknown[] };
 jest.mock("../apps/server-admin/web/app/pet-memory", () => ({
   ...jest.requireActual("../apps/server-admin/web/app/pet-memory"),
   usePetProfile: () => ({ data: undefined }),
-  usePetMemory: () => ({ page: { items: [] }, read: async () => {} }),
+  usePetMemory: () => ({
+    page: { items: mockMemoryItems.current },
+    read: async () => {},
+  }),
 }));
 jest.mock("../apps/server-admin/web/app/generative-ui/charts", () => ({}));
 jest.mock("../apps/server-admin/web/app/context", () => ({
@@ -100,7 +104,8 @@ const conversation: Conversation = {
   messages: [
     { id: "m-1", role: "user", text: "Who is Jan at Acme?" },
     {
-      id: "m-2",
+      // Created by command-0; an approval moved its reply to command-1.
+      id: "message-command-0-2",
       role: "assistant",
       text: "Jan Novák is the buyer at Acme.",
       replyToCommandId: "command-1",
@@ -374,4 +379,38 @@ test("the preset picker is a named select with Default and the offered presets, 
     fireEvent.change(picker, { target: { value: "thorough" } });
   });
   expect(picker.value).toBe("thorough");
+});
+
+test("an answer an approval moved shows the earlier request's save first, then its own", async () => {
+  const memory = (id: string, content: string, commandId: string) => ({
+    id,
+    scope: "private",
+    kind: "fact",
+    status: "active",
+    revision: 1,
+    content,
+    source: { type: "user_message", commandId, conversationId: "conv-1" },
+    origin: "explicit",
+    seenAt: null,
+    trust: "user_assertion",
+    createdAt: "2026-11-04T10:00:00.000Z",
+    updatedAt: "2026-11-04T10:00:00.000Z",
+    expiresAt: null,
+    supersedesId: null,
+  });
+  mockMemoryItems.current = [
+    memory("s0", "TEST earlier", "command-0"),
+    memory("s1", "TEST later", "command-1"),
+  ];
+  try {
+    const page = await renderChat(fakeSession());
+    const lines = page
+      .queryAllByTestId("memory-save")
+      .map((node) => node.textContent);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("TEST earlier");
+    expect(lines[1]).toContain("TEST later");
+  } finally {
+    mockMemoryItems.current = [];
+  }
 });

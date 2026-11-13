@@ -152,6 +152,47 @@ test("the chat reads its own saves and groups them under the request that made t
   expect(saves!.forCommand("command-3")).toHaveLength(0);
 });
 
+test("an answer an approval moved keeps the saves of the request that made it", async () => {
+  // "Remember X and book it": the save is keyed by the request, the approval
+  // moves the stored answer's replyToCommandId to itself.
+  const thread = storedMessage(
+    {
+      id: "message-command-1-3",
+      role: "assistant",
+      text: "Hotovo.",
+      replyToCommandId: "command-approve",
+    },
+    {},
+  );
+  const saves: ChatMemorySaves = {
+    forCommand: (commandId) =>
+      ({
+        "command-1": [memory("m1", "Tým: Niaro", "command-1")],
+        "command-approve": [memory("m2", "Sál: B", "command-approve")],
+      })[commandId] ?? [],
+    forget: jest.fn(async () => {}),
+  };
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <NextChatProvider value={chat(saves)}>
+        <MemorySaveLines
+          message={{
+            id: thread!.id!,
+            replyToCommandId: nextMeta(thread!).replyToCommandId,
+          }}
+        />
+      </NextChatProvider>,
+    );
+  });
+  const lines = renderer.root.findAll(
+    (node) => node.props["data-testid"] === "memory-save" && node.type === "li",
+  );
+  expect(
+    lines.map((line) => line.props.children[1].props.children.at(-1)),
+  ).toEqual(["Tým: Niaro", "Sál: B"]);
+});
+
 test("each save is a quiet line under the reply; Delete erases that memory", async () => {
   mockMemory.items = [
     memory("m1", "Jméno: Filip Tůma", "command-1"),
@@ -165,7 +206,9 @@ test("each save is a quiet line under the reply; Delete erases that memory", asy
   await act(async () => {
     renderer = TestRenderer.create(
       <NextChatProvider value={chat(saves!)}>
-        <MemorySaveLines commandId="command-1" />
+        <MemorySaveLines
+          message={{ id: "answer-1", replyToCommandId: "command-1" }}
+        />
       </NextChatProvider>,
     );
   });
@@ -201,8 +244,10 @@ test("no line without saves, and Delete waits while offline or archived", async 
   await act(async () => {
     renderer = TestRenderer.create(
       <NextChatProvider value={chat(saves)}>
-        <MemorySaveLines commandId="command-2" />
-        <MemorySaveLines />
+        <MemorySaveLines
+          message={{ id: "answer-2", replyToCommandId: "command-2" }}
+        />
+        <MemorySaveLines message={{ id: "answer-3" }} />
       </NextChatProvider>,
     );
   });
@@ -210,7 +255,9 @@ test("no line without saves, and Delete waits while offline or archived", async 
   await act(async () => {
     renderer.update(
       <NextChatProvider value={chat(saves, { readOnly: true })}>
-        <MemorySaveLines commandId="command-1" />
+        <MemorySaveLines
+          message={{ id: "answer-1", replyToCommandId: "command-1" }}
+        />
       </NextChatProvider>,
     );
   });

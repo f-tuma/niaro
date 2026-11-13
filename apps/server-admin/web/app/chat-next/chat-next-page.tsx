@@ -2040,7 +2040,14 @@ function AssistantMessage() {
               {copy.stillWriting}
             </p>
           )}
-          {!live && <MemorySaveLines commandId={meta.replyToCommandId} />}
+          {!live && (
+            <MemorySaveLines
+              message={{
+                id: message.id,
+                replyToCommandId: meta.replyToCommandId,
+              }}
+            />
+          )}
           {!live && <AnswerReceiptLine commandId={meta.replyToCommandId} />}
         </article>
         {!live && !!text.trim() && (

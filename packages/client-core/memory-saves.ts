@@ -30,3 +30,20 @@ export function memorySavesByCommand(items: readonly MemoryItem[]) {
   }
   return byCommand;
 }
+
+/**
+ * The requests whose saves show under one stored answer: the one that created
+ * it (its id `message-<commandId>-<revision>` keeps it, engine.ts) and the one
+ * it answers now (an approval moves `replyToCommandId`), creator first.
+ */
+export const saveCommandIds = (message: {
+  id: string;
+  replyToCommandId?: string;
+}) => [
+  ...new Set(
+    [
+      /^message-(.+)-\d+$/.exec(message.id)?.[1],
+      message.replyToCommandId,
+    ].filter((id): id is string => id !== undefined),
+  ),
+];

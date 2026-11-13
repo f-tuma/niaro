@@ -12,6 +12,7 @@ import type { MemoryItem } from "../../../packages/protocol/memory";
 import {
   chatMemoryQuery,
   memorySavesByCommand,
+  saveCommandIds,
 } from "../../../packages/client-core/memory-saves";
 import { translate } from "../../../packages/i18n";
 import { tokens as t } from "../../../packages/design-tokens";
@@ -81,19 +82,21 @@ export function useChatMemorySaves(
  */
 export function MemorySaveLines({
   saves,
-  commandId,
+  message,
   language,
   disabled,
 }: {
   saves?: ChatMemorySaves;
-  commandId?: string;
+  message: { id: string; replyToCommandId?: string };
   language: Language;
   /** Archived chat, offline or busy: the line shows, Delete waits. */
   disabled: boolean;
 }) {
   const tr = translate(language);
   const [deleting, setDeleting] = useState<string>();
-  const items = commandId && saves ? saves.forCommand(commandId) : [];
+  const items = saves
+    ? saveCommandIds(message).flatMap((id) => saves.forCommand(id))
+    : [];
   if (!items.length) return null;
   return (
     <View testID="memory-saves" style={{ gap: 2 }}>

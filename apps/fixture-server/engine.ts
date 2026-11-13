@@ -719,6 +719,8 @@ export class FixtureEngine {
       return;
     conversation.revision++;
     conversation.messages.push({
+      // The id's command is the creating command, equal to the first
+      // replyToCommandId (an approval may move that); clients parse it.
       id: `message-${commandId}-${conversation.revision}`,
       role,
       text,
