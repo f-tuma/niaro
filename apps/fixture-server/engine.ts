@@ -52,6 +52,7 @@ import {
   type MeetingSlots,
   type ConversationMemory,
 } from "./conversation-memory";
+import { translate } from "../../packages/i18n";
 import { migrateDatabase } from "./migrate";
 import { operatorLog } from "./operator-log";
 import {
@@ -1399,16 +1400,28 @@ export class FixtureEngine {
         interpretation.serviceResult?.operationId !== command.operationId
       ) {
         const continuation = interpretation.serviceResult;
+        // The card reads the same outcome words as its member-facing frame.
+        const outcome = {
+          rejected: "serviceRejected",
+          failed: "serviceFailed",
+          unknown: "serviceUnknown",
+        } as const;
+        const stepText =
+          resolved.status in outcome
+            ? translate(command.language)(
+                outcome[resolved.status as keyof typeof outcome],
+              )
+            : command.language === "cs"
+              ? "Krok dokončen."
+              : "Step completed.";
         const alreadyShown = continuation
           ? conversation.messages.some(
               (m) =>
                 m.result?.type === "service.action" &&
                 m.result.operationId === continuation.operationId,
             )
-          : message.text ===
-            (command.language === "cs" ? "Krok dokončen." : "Step completed.");
-        message.text =
-          command.language === "cs" ? "Krok dokončen." : "Step completed.";
+          : message.text === stepText;
+        message.text = stepText;
         if (!alreadyShown) {
           const nativeWork =
             !interpretation.serviceResult && !interpretation.ui

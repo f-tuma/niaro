@@ -15,6 +15,7 @@ import {
   selectConversationWork,
   selectTasks,
 } from "../packages/client-core/store";
+import { nativeTaskApproval } from "../packages/test-fixtures";
 const start = (e: FixtureEngine) =>
   e.execute(messageCommand("Choose Peter", "en", "start-1"));
 describe("server-owned work", () => {
@@ -396,3 +397,92 @@ test("an open item brought to a message stays on that person's message only", ()
     humanTask,
   });
 });
+
+describe.each(["en", "cs"] as const)(
+  "%s resolved approval card",
+  (language) => {
+    const resolve = (
+      engine: FixtureEngine,
+      commandId: string,
+      status: "rejected" | "failed" | "unknown" | "succeeded",
+    ) => {
+      const work = nativeTaskApproval(language);
+      const action = work.native!.action!;
+      return engine.execute(
+        CommandSchema.parse({
+          type: "service.resolve",
+          commandId,
+          idempotencyKey: commandId,
+          conversationId: "conversation-1",
+          language,
+          operationId: action.operationId,
+          approved: status !== "rejected",
+          workItemId: work.id,
+          expectedWorkRevision: work.revision,
+        }),
+        {
+          decision: {
+            kind: "reply",
+            contactId: null,
+            title: null,
+            localStart: null,
+            durationMinutes: null,
+            reply: "TEST decision reply",
+          },
+          expectedCursor: engine.snapshot().cursor,
+          timeZone: "UTC",
+          nativeReply: "TEST decision reply",
+          resolvedServiceResult: { ...action, status },
+          nativeWork: [work],
+          workItemId: work.id,
+        },
+      );
+    };
+    const propose = () => {
+      const engine = new FixtureEngine();
+      const work = nativeTaskApproval(language);
+      const reply = "TEST Please approve this meeting.";
+      engine.execute(
+        messageCommand("TEST create a meeting", language, "TEST-proposal"),
+        {
+          decision: {
+            kind: "reply",
+            contactId: null,
+            title: null,
+            localStart: null,
+            durationMinutes: null,
+            reply,
+          },
+          expectedCursor: engine.snapshot().cursor,
+          timeZone: "UTC",
+          nativeReply: reply,
+          serviceResult: work.native!.action!,
+          nativeWork: [work],
+          workItemId: work.id,
+        },
+      );
+      return engine;
+    };
+    const texts = {
+      rejected: { en: "Declined", cs: "Odmítnuto" },
+      failed: { en: "Action failed", cs: "Akce selhala" },
+      unknown: { en: "Result unknown", cs: "Výsledek neznámý" },
+      succeeded: { en: "Step completed.", cs: "Krok dokončen." },
+    } as const;
+    test.each(["rejected", "failed", "unknown", "succeeded"] as const)(
+      "a %s card reads its own outcome and the reply is added once",
+      (status) => {
+        const engine = propose();
+        resolve(engine, "TEST-resolve-1", status);
+        // A second resolve of the same operation under a new command id.
+        const result = resolve(engine, "TEST-resolve-2", status);
+        const messages = result.snapshot.conversations[0]!.messages;
+        const card = messages.find((m) => m.result?.type === "service.action")!;
+        expect(card.text).toBe(texts[status][language]);
+        expect(
+          messages.filter((m) => m.text === "TEST decision reply"),
+        ).toHaveLength(1);
+      },
+    );
+  },
+);
