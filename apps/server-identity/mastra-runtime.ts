@@ -597,11 +597,15 @@ export function createNativeCatalogRuntime(
               });
           } else if (event.type === "tool-end") {
             if (event.error) await restoreCommittedMutation();
+            // A memory change ends the turn; the tool itself did not fail.
+            const memoryChanged =
+              event.error instanceof IdentityError &&
+              event.error.code === "memory_context_changed";
             session.recordToolProblem(
               actionLabels.get(event.name) ?? event.name,
               event.invalidArguments
                 ? "invalid_arguments"
-                : event.error || event.unavailable
+                : (event.error && !memoryChanged) || event.unavailable
                   ? "unavailable"
                   : undefined,
             );

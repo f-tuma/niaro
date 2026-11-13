@@ -649,6 +649,7 @@ export const en = {
     "The process output did not match its required format.",
   revision_conflict:
     "The task or its source has changed or expired. Send a new request to check current data.",
+  memory_context_changed: "Your saved memory changed. Send the request again.",
   progressWaiting: "Waiting for the server",
   progressUnderstanding: "Understand your request",
   progressCrm: "Find contacts in CRM",
@@ -1665,6 +1666,8 @@ export const cs: Record<TranslationKey, string> = {
     "Výstup procesu neodpovídal požadovanému formátu.",
   revision_conflict:
     "Úkol nebo jeho zdroj se změnil či vypršel. Pošli nový požadavek pro ověření aktuálních dat.",
+  memory_context_changed:
+    "Tvoje uložená paměť se změnila. Pošli požadavek znovu.",
   progressWaiting: "Čekám na odpověď serveru",
   progressUnderstanding: "Porozumění požadavku",
   progressCrm: "Vyhledání kontaktů v CRM",
