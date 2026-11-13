@@ -3260,14 +3260,11 @@ export function createMastraDomain(
           language: state.language,
           conversationId: state.conversationId,
         })) ?? null;
-      if (
-        state.memoryVersion !== undefined &&
-        snapshot?.version !== state.memoryVersion
-      )
-        throw new IdentityError(409, "memory_context_changed");
       memoryContent = snapshot?.content ?? "";
       memoryContainsFacts = snapshot?.containsFacts ?? !!memoryContent;
-      state.memoryVersion = snapshot?.version;
+      // The turn keeps its first pin; checkLocked below lets a later change
+      // through only while every item the turn used is still readable.
+      state.memoryVersion ??= snapshot?.version;
       const used = memory?.metadata?.() ?? snapshot?.metadata;
       state.memoryMetadata = mergeMetadata(state.memoryMetadata, used);
       state.replyBasis = mergeMetadata(state.replyBasis, used);

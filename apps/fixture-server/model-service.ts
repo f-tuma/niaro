@@ -1579,6 +1579,15 @@ export class ModelService {
             [400, 403, 404, 409, 429].includes(error.status)
           ) {
             const budgetFailure = isInferenceBudgetFailureCode(error.code);
+            // Members see a generic conflict; operators need the real code.
+            operatorLog(
+              "command_rejected",
+              {
+                status: error.status,
+                code: error.code.slice(0, 80),
+              },
+              "warn",
+            );
             return run(() =>
               this.storage.execute(scope, originalCommand, {
                 decision: {
