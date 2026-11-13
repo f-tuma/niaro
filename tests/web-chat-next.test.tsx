@@ -653,6 +653,61 @@ test("NIAR-307: a message sent with the error's Try again is not kept as the cha
   expect(again.findByType("textarea").props.value).toBe("");
 });
 
+test.each([1, 2])(
+  "NIAR-308: a new chat whose save met %i 502s sends its message with Try again",
+  async (failures) => {
+    const { session, sent, publish } = fakeSession(storeWith([]));
+    const mock = session.send as jest.Mock;
+    const fallback = mock.getMockImplementation()!;
+    // Like the session: a chat's creation the gateway lost is not kept.
+    let left = failures;
+    mock.mockImplementation((command: SessionCommand) => {
+      if (command.type === "conversation.create" && left-- > 0) {
+        sent.push(command);
+        publish({
+          pending: null,
+          commandStates: { [commandTarget(command)]: "idle" },
+          error: null,
+        });
+        return Promise.resolve();
+      }
+      return fallback(command);
+    });
+    const root = (await render(session)).root;
+    await type(root, "Najdi Jana");
+    for (let attempt = 1; attempt <= failures; attempt++) {
+      expect(sent.map((command) => command.type)).toEqual(
+        Array(attempt).fill("conversation.create"),
+      );
+      expect(root.findByType("textarea").props.value).toBe("Najdi Jana");
+      await act(async () =>
+        button(byTestId(root, "chat-error"), "Zkusit znovu").props.onClick(),
+      );
+      await act(async () => {});
+    }
+    expect(sent.map((command) => command.type)).toEqual([
+      ...Array(failures + 1).fill("conversation.create"),
+      "message.send",
+    ]);
+    expect(sent.at(-1)).toMatchObject({ text: "Najdi Jana" });
+    expect(root.findByType("textarea").props.value).toBe("");
+  },
+);
+
+test("NIAR-308: while connecting, Send is disabled with the reason and keeps the words", async () => {
+  const { session, sent, publish } = fakeSession(storeWith([]));
+  const root = (await render(session)).root;
+  await act(async () => publish({ status: "connecting" }));
+  await type(root, "Najdi Jana");
+  expect(sent).toEqual([]);
+  expect(root.findByType("textarea").props.value).toBe("Najdi Jana");
+  expect(text(root)).toContain("Připojuji znovu…");
+  const submit = root.find(
+    (node) => node.type === "button" && node.props.type === "submit",
+  );
+  expect(submit.props["aria-disabled"]).toBe(true);
+});
+
 test("NIAR-286: a message with files on its way shows them with it", async () => {
   const conversation: Conversation = {
     id: "conv-1",

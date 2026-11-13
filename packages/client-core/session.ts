@@ -3605,7 +3605,13 @@ export class ClientSession {
                 : null;
             const c = process?.command ?? parseSessionCommand(raw);
             // The answer ledger suppresses only stale answer compatibility bytes.
-            if (c.type !== "process.answer" || !this.answerEnvelopePresent) {
+            // A stored chat creation (a reload during its flight, or an older
+            // client) is ignored: its caller creates the chat again, the server
+            // replays it by its key, and the next command overwrites the bytes.
+            if (
+              (c.type !== "process.answer" || !this.answerEnvelopePresent) &&
+              c.type !== "conversation.create"
+            ) {
               this.pendingProcess = process;
               if (process && process.outcome !== "unknown")
                 this.commandRejection = process.error;
@@ -4692,6 +4698,15 @@ export class ClientSession {
             : "storage_error",
         });
       } else if (this.currentFlight(flight)) {
+        // Exception to the frozen outbox: a chat's creation has no content and
+        // is replayed by its key, so it is released (as an unrecorded command)
+        // and its caller creates the chat again with the next first message.
+        if (
+          command.type === "conversation.create" &&
+          flight.deliveryStarted &&
+          (await this.releaseUnrecorded(flight))
+        )
+          return;
         const processError =
           isProcessRuntimeCommand(command) &&
           error instanceof Error &&
@@ -4882,7 +4897,8 @@ export class ClientSession {
       );
     return this.interruptFlight(flight, true);
   }
-  /** Clears a command the server proved is neither running nor recorded. */
+  /** Clears a command the server proved is neither running nor recorded,
+   * or a chat's creation that failed (content-free, replayed by its key). */
   private async releaseUnrecorded(flight: CommandFlight) {
     const current = () => this.currentFlight(flight) && !flight.outcomeKnown;
     if (!current()) return false;
