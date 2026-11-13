@@ -592,6 +592,9 @@ export class ProcessDesignClient {
     };
   }
   get canSend() {
+    return this.sendable(this.state.composer);
+  }
+  private sendable(text: string) {
     const review = this.state.review;
     const pin = this.state.turns[0]?.model;
     const modelId = pin?.id ?? this.state.modelId;
@@ -602,11 +605,13 @@ export class ProcessDesignClient {
       !review?.acceptedProcessId &&
       !!model &&
       (!pin || samePin(pin, model)) &&
-      !!this.state.composer.trim()
+      !!text.trim()
     );
   }
-  async send(language: "en" | "cs") {
-    if (!this.canSend) return;
+  /** Sends the composer's text, or a failed turn's text again without
+   * putting it back into the composer. */
+  async send(language: "en" | "cs", text = this.state.composer) {
+    if (!this.sendable(text)) return;
     const review = this.state.review;
     const modelId = this.state.turns[0]?.model.id ?? this.state.modelId;
     if (!this.state.sessionId) {
@@ -614,7 +619,7 @@ export class ProcessDesignClient {
         requestId: crypto.randomUUID(),
         modelId,
         language,
-        text: this.state.composer,
+        text,
       });
       await this.issue(this.startCommand(), { firstMessage });
       return;
@@ -628,7 +633,7 @@ export class ProcessDesignClient {
         revision: review!.revision,
         modelId,
         language,
-        text: this.state.composer,
+        text,
       }),
     });
   }

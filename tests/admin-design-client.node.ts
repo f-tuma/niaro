@@ -1028,7 +1028,11 @@ test("personal designer starts a user-owned process with its own recovery and re
 
   const g = fixture("test_design", true);
   const personal = () =>
-    new ProcessDesignClient({ ...g.scope, owner: "user" }, g.storage, g.transport);
+    new ProcessDesignClient(
+      { ...g.scope, owner: "user" },
+      g.storage,
+      g.transport,
+    );
   const foreign = personal();
   await foreign.refresh();
   assert.equal(foreign.getSnapshot().fresh, false);
@@ -1404,4 +1408,19 @@ test("same-account authority reset always rotates, even when storage cleanup and
   const rotated = resetDesignAuthority();
   assert.notEqual(rotated, previous);
   assert.equal(designAuthority(), rotated);
+});
+
+test("a failed turn sent again never passes through the composer (NIAR-307)", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  const composers: string[] = [];
+  c.subscribe(() => composers.push(c.getSnapshot().composer));
+  await c.send("cs", "TEST failed turn");
+  const turn = f.posts.at(-1)!.body as { text: string };
+  assert.equal(turn.text, "TEST failed turn");
+  assert(composers.length > 0);
+  assert(composers.every((value) => value === ""));
+  c.dispose();
 });

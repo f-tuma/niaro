@@ -643,10 +643,7 @@ export function DesignWorkspace({
                           size="sm"
                           variant="outline"
                           disabled={!retryable}
-                          onClick={() => {
-                            client.setComposer(entry.text);
-                            void client.send(language);
-                          }}
+                          onClick={() => void client.send(language, entry.text)}
                         >
                           {copy.retryTurn}
                         </Button>

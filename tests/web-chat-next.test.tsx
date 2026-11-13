@@ -632,6 +632,27 @@ test("NIAR-286: a sent message leaves the composer at once and never returns; re
   expect(root.findByType("textarea").props.value).toBe("");
 });
 
+test("NIAR-307: a message sent with the error's Try again is not kept as the chat's draft, so it never returns when the chat opens again", async () => {
+  const { session, sent } = fakeSession(storeWith([]));
+  // The first save of the new chat is lost: its words return to the composer.
+  (session.send as jest.Mock).mockImplementationOnce(async () => {});
+  const onSaved = jest.fn();
+  const first = await render(session, undefined, onSaved);
+  await type(first.root, "Najdi Jana");
+  expect(first.root.findByType("textarea").props.value).toBe("Najdi Jana");
+  await act(async () =>
+    button(byTestId(first.root, "chat-error"), "Zkusit znovu").props.onClick(),
+  );
+  await act(async () => {});
+  expect(sent.map((command) => command.type)).toContain("message.send");
+  expect(first.root.findByType("textarea").props.value).toBe("");
+  const id = onSaved.mock.calls[0]![0] as string;
+  // A re-sign-in or a route change remounts the chat page.
+  await act(async () => first.unmount());
+  const again = (await render(session, id)).root;
+  expect(again.findByType("textarea").props.value).toBe("");
+});
+
 test("NIAR-286: a message with files on its way shows them with it", async () => {
   const conversation: Conversation = {
     id: "conv-1",
