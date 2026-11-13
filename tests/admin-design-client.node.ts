@@ -1469,20 +1469,191 @@ test("a turn the gateway lost the answer for reads as running at once, then comp
   c.dispose();
 });
 
-test("a 5xx for a turn the server never recorded keeps the command and its error", async () => {
+/** A POST that fails like a gateway that never delivered it. */
+function lostPosts(f: ReturnType<typeof fixture>, ...errors: Error[]) {
+  f.setPost(async () => {
+    throw errors.shift() ?? new ApiError(502);
+  });
+}
+
+function notDelivered(
+  c: ProcessDesignClient,
+  posts: number,
+  f: ReturnType<typeof fixture>,
+) {
+  const state = c.getSnapshot();
+  assert.equal(state.pending, null);
+  assert.equal(state.error, null);
+  assert.equal(state.rejectedTurns.length, 1);
+  assert.equal(
+    state.rejectedTurns[0]!.code,
+    "process_design_turn_not_delivered",
+  );
+  assert.equal(state.rejectedTurns[0]!.command.text, "TEST lost turn");
+  assert.equal(f.posts.length, posts);
+}
+
+test("a turn the gateway never delivered is resent once with the same request", async () => {
   const f = fixture(),
     c = f.client();
   await c.refresh();
   c.setModel("test_model");
   c.setComposer("TEST lost turn");
-  f.setPost(async () => {
-    throw new ApiError(502, "bad_gateway");
+  let calls = 0;
+  f.setPost(async (_path, body) => {
+    if (calls++ === 0) throw new ApiError(502);
+    const command = body as { requestId: string; text: string };
+    const turn = {
+      ...structuredClone(designUiTurn),
+      requestId: command.requestId,
+      userText: command.text,
+      language: "en" as const,
+    };
+    f.setTurns([turn]);
+    return { profile: DESIGN_PROFILE, turn };
   });
+  await c.send("en");
+  const state = c.getSnapshot();
+  assert.equal(f.posts.length, 2);
+  assert.deepEqual(f.posts[0], f.posts[1]);
+  assert.equal(state.pending, null);
+  assert.equal(state.error, null);
+  assert.equal(state.rejectedTurns.length, 0);
+  assert.equal(state.turns[0]?.userText, "TEST lost turn");
+  c.dispose();
+});
+
+test("a turn the gateway lost twice ends as not delivered, never sends again and clears if it arrives late", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  lostPosts(
+    f,
+    new ApiError(502, "bad_gateway"),
+    new ApiError(502, "bad_gateway"),
+  );
+  await c.send("en");
+  notDelivered(c, 2, f);
+  c.dispose();
+  const reloaded = f.client();
+  await reloaded.refresh();
+  await reloaded.retry();
+  notDelivered(reloaded, 2, f);
+  // A late arrival replaces the failed card with the recorded turn.
+  const requestId = reloaded.getSnapshot().rejectedTurns[0]!.command.requestId;
+  f.setTurns([
+    {
+      ...designUiTurn,
+      requestId,
+      userText: "TEST lost turn",
+      language: "en",
+    },
+  ]);
+  await reloaded.refresh();
+  assert.deepEqual(reloaded.getSnapshot().rejectedTurns, []);
+  assert.equal(reloaded.getSnapshot().turns.length, 1);
+  reloaded.dispose();
+});
+
+test("a resend that fails in transport ends as not delivered", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  lostPosts(f, new ApiError(524), new TypeError("Failed to fetch"));
+  await c.send("en");
+  notDelivered(c, 2, f);
+  c.dispose();
+});
+
+test("a reload during the resend reads the turn as not delivered without sending it again", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  let calls = 0;
+  f.setPost(async () => {
+    // The page reloads while the resend is in flight.
+    if (calls++) c.dispose();
+    throw new ApiError(502);
+  });
+  await c.send("en");
+  assert.equal(f.posts.length, 2);
+  const reloaded = f.client();
+  await reloaded.refresh();
+  notDelivered(reloaded, 2, f);
+  reloaded.dispose();
+});
+
+test("a gateway outage keeps the command until a read shows it was not delivered", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  const read = f.transport.request;
+  let down = true;
+  f.transport.request = async (path, body, signal) => {
+    if (body === undefined && down) throw new ApiError(503);
+    return read(path, body, signal);
+  };
+  lostPosts(f, new ApiError(502, "bad_gateway"));
   await c.send("en");
   const state = c.getSnapshot();
   assert.equal(state.pending?.kind, "turns");
   assert.equal(state.error, "bad_gateway");
-  assert.equal(state.fresh, false);
   assert.equal(f.posts.length, 1);
+  down = false;
+  await c.refresh();
+  notDelivered(c, 1, f);
+  assert(!c.blocked);
+  c.dispose();
+});
+
+test("a gateway outage with a refused mark shows the storage error", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  const read = f.transport.request;
+  f.transport.request = async (path, body, signal) => {
+    if (body === undefined) throw new ApiError(503);
+    return read(path, body, signal);
+  };
+  const write = f.storage.setItem;
+  f.storage.setItem = (key, value) => {
+    if (/"resent":"/.test(value)) throw new Error("TEST quota");
+    write(key, value);
+  };
+  lostPosts(f, new ApiError(502, "bad_gateway"));
+  await c.send("en");
+  assert.equal(c.getSnapshot().pending?.kind, "turns");
+  assert.equal(c.getSnapshot().error, "recovery_storage_unavailable");
+  assert.equal(f.posts.length, 1);
+  c.dispose();
+});
+
+test("a resend never happens when its mark cannot be stored", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  const write = f.storage.setItem;
+  f.storage.setItem = (key, value) => {
+    if (/"resent":"/.test(value)) throw new Error("TEST quota");
+    write(key, value);
+  };
+  lostPosts(f, new ApiError(502));
+  await c.send("en");
+  const state = c.getSnapshot();
+  assert.equal(f.posts.length, 1);
+  assert.equal(state.pending?.kind, "turns");
+  assert.equal(state.error, "recovery_storage_unavailable");
   c.dispose();
 });
