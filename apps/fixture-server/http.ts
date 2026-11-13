@@ -2214,6 +2214,9 @@ export function createFixtureServer(
     storage.close();
     release();
   };
+  // Proxies (cloudflared, Traefik) reuse idle origin sockets up to their 90 s
+  // default and answer 502 to a POST that meets a reset: stay open longer.
+  server.keepAliveTimeout = 120_000;
   server.on("close", dispose);
   server.on("error", dispose);
   return Object.assign(server, { objectStorage: storage.objectStorage });

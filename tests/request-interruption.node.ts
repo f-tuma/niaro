@@ -792,6 +792,13 @@ test("HTTP extension authenticates scope, validates its profile and returns the 
       ).json(),
     );
   try {
+    // NIAR-308: idle sockets outlive the gateway's pool (Node's default is 5 s).
+    assert.equal(
+      (await fetch(`http://127.0.0.1:${address.port}/healthz`)).headers.get(
+        "keep-alive",
+      ),
+      "timeout=120",
+    );
     const alice = await pair("alice"),
       bob = await pair("bob");
     const original = command("TEST-http-stop");
