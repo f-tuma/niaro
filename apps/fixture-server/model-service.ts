@@ -15,7 +15,9 @@ import {
   type CommandResult,
   type WorkItem,
   clipMessageText,
+  MESSAGE_TEXT_MAX,
 } from "../../packages/protocol";
+import { splitDraft } from "../../packages/openui-library/program";
 import {
   REQUEST_INTERRUPTION_PROFILE,
   type RequestInterruptionResponse,
@@ -307,8 +309,13 @@ export class ModelService {
       draft: (draft: string | null) => {
         if (closed) return;
         const { draft: _previous, ...rest } = activity;
-        activity = draft
-          ? { ...rest, draft: draft.slice(0, ACTIVITY_DRAFT_MAX) }
+        // A text over the message limit shows as it will be stored; its
+        // program arrives with the stored answer.
+        const text = draft ? splitDraft(draft).text : "";
+        const shown =
+          text.length > MESSAGE_TEXT_MAX ? clipMessageText(text) : draft;
+        activity = shown
+          ? { ...rest, draft: shown.slice(0, ACTIVITY_DRAFT_MAX) }
           : rest;
         publish();
         this.notify(activityKey, {

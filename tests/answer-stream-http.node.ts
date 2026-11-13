@@ -9,7 +9,10 @@ import { ServerConfigSchema } from "../apps/reference-server/config";
 import { createReferenceServer } from "../apps/reference-server/runtime";
 import { issueAdminKey } from "../apps/server-admin/auth";
 import { openIdentity } from "../apps/server-identity/service";
-import type { IntegrationTransport } from "../apps/server-integrations/transport";
+import {
+  streamingTransport,
+  type IntegrationTransport,
+} from "../apps/server-integrations/transport";
 import {
   AUTH_PROFILE,
   CommandResultSchema,
@@ -113,58 +116,68 @@ test("a message.send that accepts an event stream gets the draft, the steps and 
       },
     ],
   });
-  const transport: IntegrationTransport = async (request) => {
-    const url = new URL(request.url);
-    await request.beforeDispatch!(() => {});
-    if (url.hostname === "services.example.test") {
-      assert.equal(url.pathname, "/v1/items");
-      assert.equal(request.headers?.Authorization, `Bearer ${serviceKey}`);
+  const transport: IntegrationTransport = streamingTransport(
+    async (request) => {
+      const url = new URL(request.url);
+      await request.beforeDispatch!(() => {});
+      if (url.hostname === "services.example.test") {
+        assert.equal(url.pathname, "/v1/items");
+        assert.equal(request.headers?.Authorization, `Bearer ${serviceKey}`);
+        return {
+          status: 200,
+          headers: {},
+          text: JSON.stringify(
+            request.method === "POST"
+              ? { id: "TEST-new", created: true }
+              : { items: [{ id: "TEST-1" }, { id: "TEST-2" }] },
+          ),
+        };
+      }
+      assert.equal(url.hostname, "models.example.test");
+      assert.equal(request.headers?.Authorization, `Bearer ${providerKey}`);
+      const body = request.body as ModelRequest;
+      // The turn's own tool results decide the reply: none yet calls the
+      // action the person asked for; a settled write (approved or declined)
+      // is reported; a finished read is answered.
+      const messages = body.messages ?? [];
+      const lastUser = messages.map((m) => m.role).lastIndexOf("user");
+      const results = messages
+        .slice(lastUser + 1)
+        .filter((entry) => entry.role === "tool");
+      const last = results.at(-1)?.content ?? "";
+      const creating = /create/i.test(messages[lastUser]?.content ?? "");
+      const long = /TEST long (\d+)/.exec(messages[lastUser]?.content ?? "");
+      const message = long
+        ? { content: words(Number(long[1])) }
+        : !results.length
+          ? creating
+            ? call(writeActionName, { name: "TEST-new" })
+            : call(actionName, {})
+          : creating
+            ? {
+                content: last.includes('"status":"succeeded"')
+                  ? "TEST item created"
+                  : "TEST item not created",
+              }
+            : { content: "TEST two items found" };
+      // A long answer streams in pieces, as a provider does.
+      if (long)
+        for (const piece of message.content!.match(/[\s\S]{1,500}/g)!)
+          request.onEvent?.(
+            JSON.stringify({
+              choices: [{ index: 0, delta: { content: piece } }],
+            }),
+          );
       return {
         status: 200,
         headers: {},
-        text: JSON.stringify(
-          request.method === "POST"
-            ? { id: "TEST-new", created: true }
-            : { items: [{ id: "TEST-1" }, { id: "TEST-2" }] },
-        ),
+        text: JSON.stringify({
+          choices: [{ message }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
       };
-    }
-    assert.equal(url.hostname, "models.example.test");
-    assert.equal(request.headers?.Authorization, `Bearer ${providerKey}`);
-    const body = request.body as ModelRequest;
-    // The turn's own tool results decide the reply: none yet calls the
-    // action the person asked for; a settled write (approved or declined)
-    // is reported; a finished read is answered.
-    const messages = body.messages ?? [];
-    const lastUser = messages.map((m) => m.role).lastIndexOf("user");
-    const results = messages
-      .slice(lastUser + 1)
-      .filter((entry) => entry.role === "tool");
-    const last = results.at(-1)?.content ?? "";
-    const creating = /create/i.test(messages[lastUser]?.content ?? "");
-    const long = /TEST long (\d+)/.exec(messages[lastUser]?.content ?? "");
-    const message = long
-      ? { content: words(Number(long[1])) }
-      : !results.length
-        ? creating
-          ? call(writeActionName, { name: "TEST-new" })
-          : call(actionName, {})
-        : creating
-          ? {
-              content: last.includes('"status":"succeeded"')
-                ? "TEST item created"
-                : "TEST item not created",
-            }
-          : { content: "TEST two items found" };
-    return {
-      status: 200,
-      headers: {},
-      text: JSON.stringify({
-        choices: [{ message }],
-        usage: { prompt_tokens: 1, completion_tokens: 1 },
-      }),
-    };
-  };
+    },
+  );
   const identity = await openIdentity(config, {
     integrationTransport: transport,
   });
@@ -668,6 +681,38 @@ test("a message.send that accepts an event stream gets the draft, the steps and 
         assert(words(5000).startsWith(kept + " "));
       }
     }
+    // A streamed answer over the limit shows the text that is stored.
+    const longStream = await typedChunks(
+      await send(
+        command("TEST-long-3", "TEST long 5000"),
+        ANSWER_STREAM_MEDIA_TYPE,
+      ),
+    );
+    // No shown text ever grows past the limit, not even for a moment.
+    let shown = 0;
+    for (const chunk of longStream) {
+      if (chunk.type === "text-start") shown = 0;
+      if (chunk.type === "text-delta") shown += chunk.delta.length;
+      assert(shown <= MESSAGE_TEXT_MAX, `streamed ${shown} characters`);
+    }
+    const lastStart = longStream.findLastIndex(
+      (chunk) => chunk.type === "text-start",
+    );
+    const longText = longStream
+      .slice(lastStart + 1)
+      .filter((chunk) => chunk.type === "text-delta")
+      .map((chunk) => (chunk.type === "text-delta" ? chunk.delta : ""))
+      .join("");
+    const longResult = longStream.find(
+      (chunk) => chunk.type === "data-niaro-result",
+    );
+    assert(longResult && longResult.type === "data-niaro-result");
+    assert.equal(
+      longText,
+      CommandResultSchema.parse(
+        longResult.data.body,
+      ).snapshot.conversations[0]!.messages.at(-1)!.text,
+    );
     // The declined step streams as cancelled, never as a failure.
     assert(!declined.some((chunk) => chunk.type === "tool-output-error"));
     const declinedStep = declined
