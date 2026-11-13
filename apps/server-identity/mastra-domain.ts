@@ -1028,6 +1028,8 @@ const messageHash = (
 };
 export type DomainOptions = {
   signal?: AbortSignal;
+  /** Whether the agent runtime holds this thread's transcript (a Mastra-era thread has none). */
+  hasTranscript?: (threadId: string) => Promise<boolean>;
   reportTool?: (value: ActivityTool) => void;
   progress?: (
     stage: "service" | "action" | "inputs" | "execute",
@@ -6633,6 +6635,14 @@ export function createMastraDomain(
             reuseThread =
               sourceDependencies(prior.data).length <= MAX_THREAD_SOURCES - 32;
             if (!reuseThread) fresh = "sources_full";
+            else if (
+              options.hasTranscript &&
+              !(await options.hasTranscript(prior.data.threadId))
+            ) {
+              // Nothing to continue: seed a new thread from the visible chat.
+              reuseThread = false;
+              fresh = "no_transcript";
+            }
           } catch (error) {
             if (!(error instanceof IdentityError)) throw error;
             // A new task may start afresh; pending/cached runs retain exact pins.

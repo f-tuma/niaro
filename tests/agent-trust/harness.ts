@@ -25,6 +25,7 @@ import { createCatalogRuntime } from "../../apps/server-identity/catalog-runtime
 import {
   closeNativeCatalogRuntime,
   inspectNativeCatalogRuntime,
+  nativeAgentOwner,
 } from "../../apps/server-identity/mastra-runtime";
 import { MemoryStore } from "../../apps/server-identity/memory";
 import { createMemoryRuntime } from "../../apps/server-identity/memory-runtime";
@@ -639,6 +640,17 @@ export function createTrustHarness(
     );
   const execute = (input: Command, signal = new AbortController().signal) =>
     executeAs(scope, input, signal);
+  const nativeResourceId = () =>
+    createHash("sha256")
+      .update(
+        JSON.stringify([
+          scope.serverId,
+          target.organizationId,
+          scope.workspaceId,
+          scope.userId,
+        ]),
+      )
+      .digest("hex");
   const h = {
     runtimeProfile: "mastra-1" as const,
     root,
@@ -712,21 +724,20 @@ export function createTrustHarness(
       );
       return DomainCommandSchema.parse(saved.value);
     },
-    nativeMessages: async (threadId: string) => {
-      const resourceId = createHash("sha256")
-        .update(
-          JSON.stringify([
-            scope.serverId,
-            target.organizationId,
-            scope.workspaceId,
-            scope.userId,
-          ]),
+    nativeMessages: async (threadId: string) =>
+      (
+        await inspectNativeCatalogRuntime(
+          controller,
+          threadId,
+          nativeResourceId(),
         )
-        .digest("hex");
-      return (
-        await inspectNativeCatalogRuntime(controller, threadId, resourceId)
-      ).messages;
-    },
+      ).messages,
+    /** Drops a thread's Pi transcript, as a Mastra-era thread has none. */
+    forgetNativeThread: async (threadId: string) =>
+      (await nativeAgentOwner(controller)).forgetThreads({
+        threadIds: [threadId],
+        resourceId: nativeResourceId(),
+      }),
     nativeInvocations: async (threadId: string) => {
       const messages = await h.nativeMessages(threadId);
       return messages.flatMap((message) =>

@@ -1643,7 +1643,17 @@ export function createNativeCatalogRuntime(
               history,
               timeZone,
               messageContext,
-              options,
+              {
+                ...options,
+                hasTranscript: async (threadId) =>
+                  (
+                    await inspectNativeCatalogRuntime(
+                      controller,
+                      threadId,
+                      resourceId,
+                    )
+                  ).messages.length > 0,
+              },
             );
             const prior = await recorded(session);
             if (prior) return finish(session, Promise.resolve(prior));
