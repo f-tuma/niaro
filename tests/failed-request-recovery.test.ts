@@ -118,7 +118,8 @@ const lost: [string, () => Reply][] = [
   ["a dropped connection", () => new Error("connection reset")],
 ];
 
-test.each(failures)(
+// model_busy is sent again by the session's checks first (reconnect-after-server-loss).
+test.each(failures.filter(([code]) => code !== "model_busy"))(
   "after %s the request is kept for an exact retry but is no longer running",
   async (_name, failure, error) => {
     const f = fixture();

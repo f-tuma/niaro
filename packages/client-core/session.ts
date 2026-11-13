@@ -4749,8 +4749,18 @@ export class ClientSession {
           persisted &&
           flight.deliveryStarted &&
           checkedByItself(command);
+        // Another turn of this person was running (`model_busy`): no outcome was
+        // recorded, so a chat request is sent again by the same checks; when
+        // they run out, it shows the busy failure.
+        const busy =
+          failure === "model_busy" &&
+          (command.type === "message.send" ||
+            command.type === "service.resolve");
         if (checked)
-          this.check = this.nextCheck(command, failure !== "network_error");
+          this.check = this.nextCheck(
+            command,
+            failure !== "network_error" && !busy,
+          );
         // A check that failed before it reached the server (its local save
         // failed) ends as failed, with Try again.
         else if (this.check?.commandId === command.commandId)
@@ -4761,7 +4771,12 @@ export class ClientSession {
             ...this.state.commandStates,
             [target]: pendingRetained ? "network_error" : "idle",
           },
-          error: checked && failure === "network_error" ? null : failure,
+          error:
+            checked &&
+            (failure === "network_error" ||
+              (busy && this.check?.mode === "checking"))
+              ? null
+              : failure,
           activityConnection: "unavailable",
         });
         if (command.type === "process.answer") {
