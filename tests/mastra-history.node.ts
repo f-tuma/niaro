@@ -124,7 +124,18 @@ test("expired CRM authority rotates native history after read-derived write argu
     assert.notEqual(next.threadId, prior.threadId);
     assert.deepEqual(next.sources, []);
     assert.deepEqual(next.threadAuthority?.sources, []);
-    assert(!JSON.stringify(h.requests.slice(offset)).includes(email));
+    // The expired read's result is not reused; the stored reply stays visible
+    // (NIAR-263: receipt age does not withhold an answer).
+    const fresh = h.requests.slice(offset);
+    assert.deepEqual(fresh.flatMap(toolResults), []);
+    assert(
+      JSON.stringify(fresh).includes(`The meeting was created for ${email}.`),
+    );
+    assert.equal(
+      JSON.stringify(fresh).split(email).length - 1,
+      1,
+      "only the stored reply carries the expired read's email",
+    );
     assert.equal(
       h.network.filter((r) => r.path.endsWith("/meetings")).length,
       1,
