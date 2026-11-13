@@ -448,6 +448,13 @@ test("native designer clarifies, drafts, corrects, and retains one isolated conv
         "design_update_proposal",
         "design_validate_proposal",
       ]);
+      // Providers expand `$ref` in tool schemas; the data schema alone
+      // expanded to about 1 MB, so the tools are sent inline and small.
+      const tools = JSON.stringify(body.tools);
+      assert(!tools.includes("$ref"));
+      assert(tools.length < 18_000, `tools are ${tools.length} bytes`);
+      // Every data schema position (7) carries the rule instead.
+      assert.equal(tools.split("At most 6 levels deep.").length - 1, 7);
       switch (++model) {
         case 1:
           return h.call("design_update_proposal", {
@@ -696,6 +703,8 @@ test("native designer rejects malformed proposal tool arguments without mutating
     assert.equal(h.store.get(h.actor, sessionId).candidate, null);
     assert.deepEqual(turn.toolReceipts, []);
     assert(JSON.stringify(h.models()).includes("invalid_arguments"));
+    // The model is told what to fix, not only that something is wrong.
+    assert(JSON.stringify(h.models()).includes("Unrecognized keys"));
     assertNoExecution(h);
   }));
 
@@ -944,8 +953,8 @@ test("native designer charges unknown inference usage at its reservation and con
   isolated(async (h) => {
     const runtime = adapter(h, {
       // Two unknown holds (each its request's estimate plus 10,000 output,
-      // about 41,000 tokens) fit; the next turn's larger request does not.
-      caps: { maxModelCalls: 8, maxTokens: 100_000, maxCostMicros: 10_000_000 },
+      // about 31,000-35,000 tokens) fit; the next turn's larger request does not.
+      caps: { maxModelCalls: 8, maxTokens: 90_000, maxCostMicros: 10_000_000 },
     });
     const sessionId = start(h);
     h.setModelUsage(undefined);
@@ -987,7 +996,7 @@ test("native designer charges unknown inference usage at its reservation and con
       summary.accountedTokens,
       reserved.reduce((a, b) => a + b),
     );
-    // A third reservation would exceed the 100,000-token cap.
+    // A third reservation would exceed the 90,000-token cap.
     const next = await runtime.message(
       h.context,
       input(h, sessionId, "TEST-unknown-capped", "TEST refine the draft"),

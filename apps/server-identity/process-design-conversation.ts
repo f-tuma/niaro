@@ -205,24 +205,63 @@ You only design. You cannot run actions, approve, save for use, test or activate
 [Workspace catalog]
 ${JSON.stringify(data)}`;
 }
+const PROCESS_DATA_RULE =
+  'A data schema: the root is {"type":"object"}; every level is a closed object that allows only these keys: string: type, minLength, maxLength, enum; number or integer: type, minimum, maximum; boolean: type, enum; null: type; array: type, items, minItems, maxItems (at most 100); object: type, properties (at most 40), required (only keys of properties), additionalProperties false; property names start with a letter, then letters, digits or _. No other keywords (description, title, format, default). At most 6 levels deep.';
+/**
+ * The tool schema the model sees. Providers expand `$ref` when they read tool
+ * definitions, and the 6-level data schema expands to about 1 MB, so it is
+ * sent inline and each data schema is described in one sentence instead. The
+ * server still checks the full schema and returns the issues to fix.
+ */
+const modelParameters = (schema: z.ZodType) =>
+  z.toJSONSchema(schema, {
+    target: "draft-7",
+    override: ({ jsonSchema }) => {
+      // Only the data schema union has a `{"type":"null"}` member.
+      if (
+        !jsonSchema.anyOf?.some(
+          (member) =>
+            typeof member === "object" &&
+            (member.properties?.type as { const?: unknown } | undefined)
+              ?.const === "null",
+        )
+      )
+        return;
+      // zod shares this object, so it is changed in place.
+      for (const key of Object.keys(jsonSchema))
+        delete (jsonSchema as Record<string, unknown>)[key];
+      Object.assign(jsonSchema, {
+        type: "object",
+        description: PROCESS_DATA_RULE,
+      });
+    },
+  });
 const definitions: NativeAgentDefinition[] = Object.entries(toolSchemas).map(
   ([name, schema]) => ({
     name,
     description: toolDescriptions[name as keyof typeof toolSchemas],
-    parameters: z.toJSONSchema(schema, { target: "draft-7", reused: "ref" }),
+    parameters: modelParameters(schema),
     validate: (raw) => {
       try {
         assertDesignContent(raw);
-        return schema.safeParse(raw).success
+        const parsed = schema.safeParse(raw);
+        return parsed.success
           ? { valid: true }
           : {
               valid: false,
-              fields: [
-                {
-                  path: "/",
-                  issue: "Arguments must match this design tool's schema.",
-                },
-              ],
+              fields: parsed.error.issues.slice(0, 8).map((issue) => {
+                const path = ("/" + issue.path.join("/")).slice(0, 160);
+                // A data schema union only says "Invalid input"; point at the rule.
+                const dataSchema =
+                  issue.message === "Invalid input" &&
+                  /\/(input|output)Schema(\/|$)/.test(path);
+                return {
+                  path,
+                  issue: dataSchema
+                    ? "Not a valid data schema; follow the rule in this field's description."
+                    : issue.message.slice(0, 200),
+                };
+              }),
             };
       } catch {
         return {
