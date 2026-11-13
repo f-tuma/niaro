@@ -435,18 +435,11 @@ export async function runNativeBudgetFailureCase(
       assert.equal(last.status, 422, JSON.stringify(last.result));
       assert.equal(last.result.status, "rejected");
       assert.equal(last.result.code, "integration_unavailable");
-      assert.equal(session.getSnapshot().error, "integration_unavailable");
+      // The answer above gives the reason, so no error line repeats it (NIAR-308).
+      assert.equal(session.getSnapshot().error, null);
       assert.equal(
         session.getSnapshot().commandStates[commandTarget(failureCommand)],
         "rejected",
-      );
-      const banner = translate(language)("integration_unavailable");
-      assert.doesNotMatch(banner, /calendar|kalendář/i);
-      assert.match(
-        banner,
-        language === "en"
-          ? /server.*request.*reply.*administrator/i
-          : /Server.*požadavek.*odpovědi.*správce/,
       );
       assert.equal(domain().terminalCandidate, undefined);
       assert.equal(h.modelCount(), 1);

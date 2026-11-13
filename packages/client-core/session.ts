@@ -3931,6 +3931,23 @@ export class ClientSession {
       throw new Error("scope_mismatch");
     if (!this.currentFlight(flight) || flight.outcomeKnown) return;
     let store = this.mergeProjection(result.snapshot);
+    // A refusal the server answered in the chat (an assistant message whose
+    // replyToCommandId is this command) has its reason there; no error
+    // repeats it, as after a reload. A reused id with other words is not
+    // that answer's refusal and keeps its error.
+    const error =
+      result.status === "accepted" ||
+      (result.code !== "idempotency_conflict" &&
+        result.snapshot.conversations.some(
+          (conversation) =>
+            conversation.id === flight.command.conversationId &&
+            conversation.messages.some(
+              (message) =>
+                message.replyToCommandId === flight.command.commandId,
+            ),
+        ))
+        ? null
+        : result.code;
     // A refused message keeps its files for Try again; they do not go back
     // to the composer.
     if (flight.command.type === "message.send" && flight.command.attachments)
@@ -3954,7 +3971,7 @@ export class ClientSession {
           ...this.state.commandStates,
           [commandTarget(flight.command)]: result.status,
         },
-        error: result.status !== "accepted" ? result.code : null,
+        error,
       });
       await this.syncRetrySources(store, flight.command);
       if (!this.currentFlight(flight)) return;
@@ -3968,7 +3985,7 @@ export class ClientSession {
           ...this.state.commandStates,
           [commandTarget(flight.command)]: result.status,
         },
-        error: result.status !== "accepted" ? result.code : null,
+        error,
       },
       flight.command.type === "message.send",
     );

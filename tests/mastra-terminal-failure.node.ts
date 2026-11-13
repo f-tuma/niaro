@@ -222,7 +222,11 @@ test("a memory change during a tool step tells the person why and is not traced 
     });
     const result = await h.send("Find Jane Test", { id: "TEST-tool-memory" });
     assert.equal(result.status, "conflict");
-    const reply = result.snapshot.conversations[0]!.messages.at(-1)!.text;
+    assert.equal(result.code, "revision_conflict");
+    const answer = result.snapshot.conversations[0]!.messages.at(-1)!;
+    // The client drops the error of a refusal answered under its command (NIAR-308).
+    assert.equal(answer.replyToCommandId, "TEST-tool-memory");
+    const reply = answer.text;
     assert.equal(reply, translate("en")("memory_context_changed"));
     assert.doesNotMatch(reply, /administrator/i);
     assert.deepEqual(h.commandState("TEST-tool-memory").toolProblems, []);
