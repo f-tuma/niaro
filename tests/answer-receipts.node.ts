@@ -13,6 +13,8 @@ import {
 } from "../packages/client-core/answer-receipts";
 import { translate } from "../packages/i18n";
 import { storedTurn } from "./helpers/answer-receipts";
+import { CommandSchema } from "../packages/protocol";
+import { createTrustHarness, toolResults } from "./agent-trust/harness";
 
 const meeting = "11111111-2222-4333-8444-555555555555";
 const hidden = "99999999-2222-4333-8444-555555555555";
@@ -234,4 +236,85 @@ test("an escalated answer says so, and a removed model leaves only the counts", 
   assert.equal(removed?.model, undefined);
   assert.deepEqual(removed?.read, []);
   assert.equal(receiptVisible(removed), false);
+});
+
+test("an answer after an approval carries its receipt, also after a question moves the request", async () => {
+  const h = createTrustHarness();
+  try {
+    const question = "TEST Which room?";
+    h.onChat((body) =>
+      toolResults(body).some((r) => r.data?.created)
+        ? h.call("ask_user", { question })
+        : h.writeScript(body),
+    );
+    const proposed = await h.send("TEST create a meeting", {
+      id: "TEST-receipt-request",
+    });
+    const card = proposed.snapshot.conversations[0]!.messages.at(-1)!.result;
+    assert(
+      card?.type === "service.action" && card.status === "awaiting_approval",
+    );
+    const footers = async (result: Awaited<ReturnType<typeof h.execute>>) => {
+      const answer = result.snapshot.conversations[0]!.messages.findLast(
+        (message) => message.role === "assistant",
+      )!;
+      const receipts = await answerReceipts(
+        sources(
+          h.catalog.conversationTurns(
+            h.scope.workspaceId,
+            h.scope.userId,
+            "conversation-1",
+            8,
+          ),
+        ),
+      );
+      return [answer.replyToCommandId, receipts.map((r) => r.commandId)];
+    };
+    const approved = await h.execute(
+      CommandSchema.parse({
+        type: "service.resolve",
+        commandId: "TEST-receipt-approve",
+        idempotencyKey: "TEST-receipt-approve",
+        conversationId: "conversation-1",
+        operationId: card.operationId,
+        approved: true,
+        language: "en",
+      }),
+    );
+    // The footer looks the receipt up by the stored answer's request.
+    assert.deepEqual(await footers(approved), [
+      "TEST-receipt-approve",
+      ["TEST-receipt-approve"],
+    ]);
+    h.onChat(() => ({ content: "TEST Room B it is." }));
+    const answered = await h.send("Room B", { id: "TEST-receipt-answer" });
+    assert.deepEqual(await footers(answered), [
+      "TEST-receipt-answer",
+      ["TEST-receipt-answer"],
+    ]);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a receipt under an approval keeps the files of the sent message", async () => {
+  const [receipt] = await answerReceipts(
+    sources([
+      storedTurn("TEST-cmd-1", "TEST-chat", {
+        aliases: [
+          { commandId: "TEST-cmd-1", hash: "TEST-hash-cmd-1" },
+          {
+            commandId: "TEST-approve-key",
+            outerCommandId: "TEST-approve",
+            hash: "TEST-hash-approve",
+          },
+        ],
+      }),
+    ]),
+  );
+  assert.equal(receipt?.commandId, "TEST-approve");
+  assert.deepEqual(
+    receipt?.files.map((item) => item.title),
+    ["offer.pdf"],
+  );
 });
