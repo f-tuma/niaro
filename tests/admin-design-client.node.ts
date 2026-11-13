@@ -1657,3 +1657,147 @@ test("a resend never happens when its mark cannot be stored", async () => {
   assert.equal(state.error, "recovery_storage_unavailable");
   c.dispose();
 });
+
+test("a first message whose start the gateway answered with a 5xx is resent once with the same start", async () => {
+  const f = fixture(null),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost start");
+  firstMessageTransport(f);
+  // The server records the start; only its answer is lost.
+  const request = f.transport.request;
+  let lost = 1;
+  f.transport.request = async (path, body, signal) => {
+    const result = await request(path, body, signal);
+    if (body !== undefined && path.includes("/start") && lost-- > 0)
+      throw new ApiError(502);
+    return result;
+  };
+  await c.send("cs");
+  assert.equal(f.posts.length, 3);
+  assert.deepEqual(f.posts[1], f.posts[0]);
+  assert(f.posts[2]!.path.includes("/turns"));
+  const state = c.getSnapshot();
+  assert.equal(state.pending, null);
+  assert.equal(state.error, null);
+  assert.equal(state.composer, "");
+  assert.equal(state.turns[0]?.userText, "TEST lost start");
+  c.dispose();
+});
+
+function lostStart(c: ProcessDesignClient, posts: number, text: string) {
+  const state = c.getSnapshot();
+  assert.equal(state.pending, null);
+  assert.equal(state.firstMessage, null);
+  assert.equal(state.error, "process_design_turn_not_delivered");
+  assert.equal(state.composer, text);
+  assert.equal(c.blocked, false);
+  assert.equal(posts, 2);
+}
+
+test("a start the gateway lost twice ends as not delivered and Send starts anew", async () => {
+  for (const second of [new ApiError(502), new TypeError("Failed to fetch")]) {
+    const f = fixture(null),
+      c = f.client();
+    await c.refresh();
+    c.setModel("test_model");
+    c.setComposer("TEST lost start");
+    lostPosts(f, new ApiError(502), second);
+    await c.send("cs");
+    lostStart(c, f.posts.length, "TEST lost start");
+    assert.deepEqual(f.posts[1], f.posts[0]);
+    await c.refresh();
+    await c.retry();
+    assert.equal(f.posts.length, 2);
+    firstMessageTransport(f);
+    await c.send("cs");
+    assert.equal(f.posts.length, 4);
+    assert.notEqual(
+      (f.posts[2]!.body as { requestId: string }).requestId,
+      (f.posts[0]!.body as { requestId: string }).requestId,
+    );
+    assert.equal(c.getSnapshot().pending, null);
+    c.dispose();
+  }
+});
+
+test("a start is resent even when the server stays down, and ends as Try again", async () => {
+  const f = fixture(null),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost start");
+  const capabilities = f.transport.capabilities;
+  let down = false;
+  f.transport.capabilities = async (target, signal) => {
+    if (down) throw new ApiError(503);
+    return capabilities(target, signal);
+  };
+  f.setPost(async () => {
+    down = true;
+    throw new ApiError(502);
+  });
+  await c.send("cs");
+  assert.deepEqual(f.posts[1], f.posts[0]);
+  lostStart(c, f.posts.length, "TEST lost start");
+  c.dispose();
+});
+
+test("a reload during a start's resend ends it as not delivered without sending it again", async () => {
+  const f = fixture(null),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost start");
+  f.setPost(async () => {
+    // The page reloads while the resend is in flight.
+    if (f.posts.length === 2) c.dispose();
+    throw new ApiError(502);
+  });
+  await c.send("cs");
+  assert.equal(f.posts.length, 2);
+  const reloaded = f.client();
+  assert.equal(reloaded.getSnapshot().pending?.kind, "start");
+  assert(reloaded.getSnapshot().firstMessage);
+  assert.equal(reloaded.getSnapshot().error, null);
+  await reloaded.refresh();
+  lostStart(reloaded, f.posts.length, "TEST lost start");
+  reloaded.dispose();
+});
+
+test("a blank canvas start the gateway lost twice ends as not delivered", async () => {
+  const f = fixture(null),
+    c = f.client();
+  await c.refresh();
+  lostPosts(f, new ApiError(502), new ApiError(502));
+  await c.start();
+  assert.deepEqual(f.posts[1], f.posts[0]);
+  lostStart(c, f.posts.length, "");
+  c.dispose();
+});
+
+test("a refresh while a start is being resent keeps its first message", async () => {
+  const f = fixture(null),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost start");
+  firstMessageTransport(f);
+  const request = f.transport.request;
+  let starts = 0;
+  f.transport.request = async (path, body, signal) => {
+    if (body !== undefined && path.includes("/start") && starts++ === 1)
+      // A console-wide refresh runs while the resend is in flight.
+      await c.refresh();
+    const result = await request(path, body, signal);
+    if (starts === 1 && body !== undefined) throw new ApiError(502);
+    return result;
+  };
+  await c.send("cs");
+  assert.equal(f.posts.length, 3);
+  assert.equal(c.getSnapshot().pending, null);
+  assert.equal(c.getSnapshot().error, null);
+  assert.equal(c.getSnapshot().turns[0]?.userText, "TEST lost start");
+  c.dispose();
+});

@@ -70,7 +70,7 @@ const SavedSchema = z.strictObject({
     )
     .max(8)
     .default([]),
-  // requestId of a turn that has no automatic send left (resent once after a 5xx).
+  // requestId of a turn or start that has no automatic send left (resent once after a 5xx).
   resent: z.string().nullable().default(null),
 });
 type Saved = z.infer<typeof SavedSchema>;
@@ -557,6 +557,14 @@ export class ProcessDesignClient {
           }
         }
         if (this.disposed || sequence !== this.refreshSequence) return;
+        // A reload during a start's one resend: no read can show a start, so
+        // it ends as failed and the text stays in the composer for Send.
+        const lostStart =
+          pending?.kind === "start" &&
+          !this.postBusy &&
+          this.state.resent === pending.body.requestId;
+        if (lostStart && !this.save({ pending: null, firstMessage: null }))
+          return;
         // A turn marked failed may still arrive late (gateway timeout after delivery).
         const undelivered = this.state.rejectedTurns.filter(
           (r) => !ids.has(r.command.requestId),
@@ -571,7 +579,8 @@ export class ProcessDesignClient {
           review: proposal,
           turns: history,
           fresh: true,
-          error: null,
+          // The start reuses the turn's code: its copy fits both.
+          error: lostStart ? "process_design_turn_not_delivered" : null,
         });
         return;
       }
@@ -966,6 +975,23 @@ export class ProcessDesignClient {
         ) {
           await this.refresh();
           this.set({ error: problem(error) });
+        }
+      } else if (
+        command.kind === "start" &&
+        (error instanceof ApiError
+          ? error.status >= 500
+          : this.state.resent === command.body.requestId)
+      ) {
+        // A start has nothing to read back, and the server answers the same
+        // requestId with the same session, so it is resent once at once.
+        if (this.state.resent !== command.body.requestId)
+          return this.save({ resent: command.body.requestId });
+        if (this.save({ pending: null, firstMessage: null })) {
+          // The verified catalog suffices with no session, so Send works again
+          // even while the server is still down.
+          await this.refresh({ reuseCapabilities: true });
+          if (this.disposed || lifecycle !== this.lifecycle) return false;
+          this.set({ error: "process_design_turn_not_delivered" });
         }
       } else if (
         command.kind === "turns" &&
