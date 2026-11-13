@@ -25,6 +25,9 @@ import { IdentityError } from "./error";
 
 export const PROCESS_DESIGN_PATH =
   "/admin/api/identity/catalog/processes/design";
+/** A designer turn with a reasoning model can take several calls of a
+ * minute or more; ending it early leaves a call of unknown cost. */
+export const DESIGN_TURN_TIMEOUT_MS = 300_000;
 export const isProcessDesignPath = (path: string) =>
   path === PROCESS_DESIGN_PATH || path.startsWith(PROCESS_DESIGN_PATH + "/");
 const capabilityQuery = CatalogTarget.extend({

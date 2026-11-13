@@ -96,6 +96,7 @@ export async function designHttpFixture(
   let currentRoot = root;
   let app: ReturnType<typeof createReferenceServer>;
   let turnRequest: IncomingMessage | undefined;
+  let turnClosed = Promise.resolve();
   let disconnectTurnAtBodyEnd = false;
   const server = createServer((req, res) => {
     testOptions.observeRequest?.(req, res);
@@ -105,6 +106,8 @@ export async function designHttpFixture(
         (trackedPath.startsWith("/") ? trackedPath : "/admin/" + trackedPath)
     ) {
       turnRequest = req;
+      // Resolves after every close listener of the server ran.
+      turnClosed = new Promise((resolve) => res.once("close", resolve));
       if (disconnectTurnAtBodyEnd) {
         disconnectTurnAtBodyEnd = false;
         req.once("end", () => res.destroy());
@@ -473,6 +476,8 @@ export async function designHttpFixture(
       assert(turnRequest);
       turnRequest.headers[name] = value;
     },
+    /** The last designer turn POST's response has closed on the server. */
+    turnClosed: () => turnClosed,
     disconnectNextTurnAtBodyEnd: () => {
       disconnectTurnAtBodyEnd = true;
     },

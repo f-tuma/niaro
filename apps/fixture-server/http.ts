@@ -106,6 +106,7 @@ import {
   eventsWithoutProcessWork,
 } from "../../packages/protocol/process-work";
 import { IdentityError } from "../server-identity/error";
+import { DESIGN_TURN_TIMEOUT_MS } from "../server-identity/process-design-controller";
 import {
   MCP_ACCESS_SCOPES,
   type McpPrincipal,
@@ -955,11 +956,13 @@ export function createFixtureServer(
         const controller = new AbortController();
         const cancel = () => controller.abort();
         modelControllers.add(controller);
-        res.once("close", cancel);
+        // A turn is the server's once admitted; a closed request does not stop it.
+        const turn = req.method === "POST" && route === "process-design/turns";
+        if (!turn) res.once("close", cancel);
         if (res.destroyed || res.writableEnded) cancel();
         const signal = AbortSignal.any([
           controller.signal,
-          AbortSignal.timeout(120_000),
+          AbortSignal.timeout(turn ? DESIGN_TURN_TIMEOUT_MS : 120_000),
         ]);
         try {
           if (req.method === "POST") auth.rateLimit(clientAddress(req));

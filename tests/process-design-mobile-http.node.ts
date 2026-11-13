@@ -260,26 +260,22 @@ test("mobile workspace designer enforces bearer scope, roles, profile, methods, 
 
     let release!: () => void;
     let entered!: () => void;
-    let serverAborted!: () => void;
+    let serverAborted = false;
     const modelGate = new Promise<void>((resolve) => {
       release = resolve;
     });
     const modelEntered = new Promise<void>((resolve) => {
       entered = resolve;
     });
-    // The server must notice the closed request before the model answers;
-    // otherwise a slow runner lets the turn complete first.
-    const disconnected = new Promise<void>((resolve) => {
-      serverAborted = resolve;
-    });
     h.onModel(async (_request, signal) => {
-      if (signal?.aborted) serverAborted();
-      else signal?.addEventListener("abort", () => serverAborted());
       entered();
       await modelGate;
-      return { content: "TEST mobile designer interrupted" };
+      // Read here: the agent aborts the call's signal once the call ends.
+      serverAborted = signal?.aborted ?? false;
+      return { content: "TEST mobile designer finished" };
     });
     const turnRequestId = "TEST-mobile-design-abort";
+    h.trackRequestPath(`/v1/${h.target.workspaceId}/process-design/turns`);
     const abort = new AbortController();
     const pendingTurn = fetch(
       `${h.origin}/v1/${h.target.workspaceId}/process-design/turns?${profile}`,
@@ -306,35 +302,84 @@ test("mobile workspace designer enforces bearer scope, roles, profile, methods, 
       await modelEntered;
       abort.abort();
       await pendingTurn;
-      await Promise.race([
-        disconnected,
-        new Promise((_, reject) =>
-          setTimeout(
-            () => reject(Error("The server did not notice the closed request")),
-            10_000,
-          ),
-        ),
-      ]);
+      await h.turnClosed();
     } finally {
       release();
     }
-    let interruptedTurn: any;
+    let leftTurn: any;
     for (let attempt = 0; attempt < 100; attempt++) {
       const current = await request(
         owner.accessToken,
         `process-design/turns?${profile}&sessionId=${encodeURIComponent(sessionId)}&requestId=${encodeURIComponent(turnRequestId)}`,
       );
       assert.equal(current.status, 200, JSON.stringify(current.value));
-      interruptedTurn = current.value.turn;
-      if (interruptedTurn.status !== "running") break;
+      leftTurn = current.value.turn;
+      if (leftTurn.status !== "running") break;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    assert.equal(interruptedTurn.status, "interrupted");
-    assert.equal(
-      interruptedTurn.userText,
-      "TEST cancel this mobile design turn",
+    // A closed request does not stop the turn; the turn is the server's.
+    assert.equal(leftTurn.status, "completed", JSON.stringify(leftTurn));
+    assert.equal(serverAborted, false);
+    assert.equal(leftTurn.userText, "TEST cancel this mobile design turn");
+    assert.equal(leftTurn.reply, "TEST mobile designer finished");
+
+    // Shutdown still stops a detached turn and waits for its journal write.
+    let stopEntered!: () => void;
+    const stopReady = new Promise<void>((resolve) => {
+      stopEntered = resolve;
+    });
+    h.onModel(
+      (_request, signal) =>
+        new Promise((_resolve, reject) => {
+          stopEntered();
+          signal?.addEventListener("abort", () =>
+            reject(new Error("TEST aborted")),
+          );
+        }),
     );
-    assert.equal(interruptedTurn.reply, null);
+    const current = await request(
+      owner.accessToken,
+      `process-design?${profile}&sessionId=${encodeURIComponent(sessionId)}`,
+    );
+    const stopId = "TEST-mobile-design-shutdown";
+    const stopAbort = new AbortController();
+    const stopTurn = fetch(
+      `${h.origin}/v1/${h.target.workspaceId}/process-design/turns?${profile}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${owner.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          organizationId: h.target.organizationId,
+          workspaceId: h.target.workspaceId,
+          sessionId,
+          requestId: stopId,
+          revision: current.value.review.revision,
+          modelId: h.modelId,
+          text: "TEST stopped by shutdown",
+          language: "en",
+        }),
+        signal: stopAbort.signal,
+      },
+    ).catch(() => undefined);
+    await stopReady;
+    stopAbort.abort();
+    await stopTurn;
+    await h.turnClosed();
+    await h.restart();
+    const stopped = await request(
+      owner.accessToken,
+      `process-design/turns?${profile}&sessionId=${encodeURIComponent(sessionId)}&requestId=${encodeURIComponent(stopId)}`,
+    );
+    assert.equal(stopped.status, 200, JSON.stringify(stopped.value));
+    assert.equal(stopped.value.turn.status, "interrupted");
+    assert.notEqual(
+      stopped.value.turn.failure,
+      "process_design_server_restarted",
+    );
+    h.onModel(() => ({ content: "TEST design HTTP reply" }));
 
     // Members design personal processes: the mobile app's workspace start is
     // recorded as the member's own process. Service designer lists stay admin-only.
