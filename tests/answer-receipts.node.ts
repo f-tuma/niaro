@@ -318,3 +318,84 @@ test("a receipt under an approval keeps the files of the sent message", async ()
     ["offer.pdf"],
   );
 });
+
+test("a memory saved after a question answer sits under that answer", async () => {
+  const h = createTrustHarness();
+  try {
+    const fact = "TEST I prefer Room B";
+    let asked = false;
+    h.onChat((body) => {
+      if (!asked) {
+        asked = true;
+        return h.call("ask_user", { question: "TEST Which room?" });
+      }
+      return toolResults(body).some((result) => result.results)
+        ? { content: "TEST Noted, Room B." }
+        : h.call("memory_remember", {
+            facts: [{ text: fact, kind: "preference" }],
+          });
+    });
+    await h.send("TEST book a room", { id: "TEST-memory-request" });
+    const answered = await h.send(`Remember: ${fact}`, {
+      id: "TEST-memory-answer",
+    });
+    const answer = answered.snapshot.conversations[0]!.messages.findLast(
+      (message) => message.role === "assistant",
+    )!;
+    const saved = (
+      await h.memoryStore.list(h.memoryActor, { settings: h.memorySettings })
+    ).find((item) => item.content === fact && item.status === "active");
+    assert(saved?.source?.type === "user_message");
+    assert.equal(answer.replyToCommandId, "TEST-memory-answer");
+    // The chat shows a save under the reply whose request id it carries.
+    assert.equal(saved.source.commandId, answer.replyToCommandId);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a memory saved after an approval sits under that answer", async () => {
+  const h = createTrustHarness();
+  try {
+    const fact = "TEST I prefer Room B";
+    h.onChat((body) => {
+      const results = toolResults(body);
+      if (results.some((result) => result.results))
+        return { content: "TEST Created and noted." };
+      return results.some((result) => result.data?.created)
+        ? h.call("memory_remember", {
+            facts: [{ text: fact, kind: "preference" }],
+          })
+        : h.writeScript(body);
+    });
+    const proposed = await h.send(`Remember: ${fact}. TEST create a meeting`, {
+      id: "TEST-memory-approval-request",
+    });
+    const card = proposed.snapshot.conversations[0]!.messages.at(-1)!.result;
+    assert(
+      card?.type === "service.action" && card.status === "awaiting_approval",
+    );
+    const approved = await h.execute(
+      CommandSchema.parse({
+        type: "service.resolve",
+        commandId: "TEST-memory-approve",
+        idempotencyKey: "TEST-memory-approve",
+        conversationId: "conversation-1",
+        operationId: card.operationId,
+        approved: true,
+        language: "en",
+      }),
+    );
+    const answer = approved.snapshot.conversations[0]!.messages.findLast(
+      (message) => message.role === "assistant",
+    )!;
+    const saved = (
+      await h.memoryStore.list(h.memoryActor, { settings: h.memorySettings })
+    ).find((item) => item.content === fact && item.status === "active");
+    assert(saved?.source?.type === "user_message");
+    assert.equal(answer.replyToCommandId, "TEST-memory-approve");
+    assert.equal(saved.source.commandId, answer.replyToCommandId);
+  } finally {
+    await h.close();
+  }
+});

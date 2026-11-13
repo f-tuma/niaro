@@ -2373,7 +2373,8 @@ export function createMastraDomain(
      * this chat may become a saved fact (NIAR-292). */
     const memoryRequest = () => ({
       commandId: state.commandId,
-      messageCommandId: state.aliases[0]?.outerCommandId ?? state.commandId,
+      // The stored reply answers the newest command (see answer-receipts).
+      messageCommandId: state.aliases.at(-1)?.outerCommandId ?? state.commandId,
       text: state.text,
       conversationId: state.conversationId,
       personText: history

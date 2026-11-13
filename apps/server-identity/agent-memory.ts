@@ -61,8 +61,9 @@ export interface AgentMemory {
        * fact may come from.
        */
       personText?: readonly string[];
-      /** The chat message's own command id, when it differs from commandId:
-       * saved memory names it so the chat can show the save in place. */
+      /** The command the stored reply answers (the send, a question answer
+       * or an approval): saved memory names it so the chat shows the save
+       * under that reply. */
       messageCommandId?: string;
       callId: string;
       /** Request lifetime and synchronous request authority, rechecked at publication. */
