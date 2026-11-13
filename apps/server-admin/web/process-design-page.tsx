@@ -735,7 +735,8 @@ export function DesignWorkspace({
               {state.initializing ||
               state.handoff ||
               state.dispatching ||
-              state.pending ? (
+              state.pending ||
+              isRunning ? (
                 <Button variant="outline" disabled title={copy.pendingHint}>
                   <Plus data-icon="inline-start" aria-hidden="true" />
                   {copy.newConversation}

@@ -30,7 +30,11 @@ import {
   processValueSchema,
   ProcessDefinitionSchema,
 } from "../packages/protocol/service-processes";
-import { designUiCapabilities, designUiReview } from "./admin-design-fixtures";
+import {
+  designUiCapabilities,
+  designUiReview,
+  designUiTurn,
+} from "./admin-design-fixtures";
 import { ProcessHostContext } from "../apps/server-admin/web/process-host";
 
 // Exercise the editor's actual hooks and event handlers using DOM hosts. The
@@ -1075,6 +1079,11 @@ function workspaceFixture(
     edit,
     click,
     rerender: () => act(() => tree.update(element())),
+    setSnapshot: (patch: Record<string, unknown>) =>
+      act(() => {
+        snapshot = { ...snapshot, ...patch } as typeof snapshot;
+        tree.update(element());
+      }),
     settlePromotion: () =>
       act(() => {
         snapshot = { ...snapshot, initializing: false };
@@ -1121,6 +1130,23 @@ test("designer guards dirty sidebar/back/new-conversation exits and reload while
   expect(mockBlockerOptions.enableBeforeUnload).toBe(false);
 });
 
+test("New conversation stays disabled while a recorded turn is running", () => {
+  const f = workspaceFixture();
+  const newConversation = () =>
+    f.tree.root
+      .findAll(
+        (node) =>
+          (node.type === "a" || node.type === "button") &&
+          text(node) === designEn.newConversation,
+      )
+      .map((node) => ({ type: node.type, disabled: !!node.props.disabled }));
+  f.setSnapshot({
+    turns: [{ ...designUiTurn, status: "running", reply: null }],
+  });
+  expect(newConversation()).toEqual([{ type: "button", disabled: true }]);
+  f.setSnapshot({ turns: [{ ...designUiTurn, status: "completed" }] });
+  expect(newConversation()).toContainEqual({ type: "a", disabled: false });
+});
 test("leaving asks separately from accepting a process and keep-editing/reset preserve the canvas", () => {
   const f = workspaceFixture();
   f.edit();

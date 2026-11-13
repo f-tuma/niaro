@@ -523,7 +523,6 @@ export class ProcessDesignClient {
             )
               throw new SyntaxError("Designer command binding mismatch");
             if (
-              recorded.status !== "running" &&
               !this.save({
                 pending: null,
                 composer:
@@ -930,6 +929,16 @@ export class ProcessDesignClient {
           await this.refresh();
           this.set({ error: problem(error) });
         }
+      } else if (
+        command.kind === "turns" &&
+        error instanceof ApiError &&
+        error.status >= 500
+      ) {
+        // A gateway can lose only the answer; a passive read shows a recorded turn.
+        await this.refresh();
+        if (this.disposed || lifecycle !== this.lifecycle) return;
+        if (this.state.pending)
+          this.set({ error: problem(error), fresh: false });
       } else this.set({ error: problem(error), fresh: false });
     } finally {
       if (lifecycle === this.lifecycle) {

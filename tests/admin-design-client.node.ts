@@ -1424,3 +1424,65 @@ test("a failed turn sent again never passes through the composer (NIAR-307)", as
   assert(composers.every((value) => value === ""));
   c.dispose();
 });
+
+test("a turn the gateway lost the answer for reads as running at once, then completes", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST still running");
+  f.setPost(async (_path, body) => {
+    const command = body as { requestId: string; text: string };
+    f.setTurns([
+      {
+        ...designUiTurn,
+        requestId: command.requestId,
+        userText: command.text,
+        language: "en",
+        status: "running",
+        reply: null,
+      },
+    ]);
+    throw new ApiError(502, "bad_gateway");
+  });
+  await c.send("en");
+  // One passive read after the 5xx; no manual refresh.
+  let state = c.getSnapshot();
+  assert.equal(state.pending, null);
+  assert.equal(state.error, null);
+  assert.equal(state.composer, "");
+  assert.equal(state.turns[0]?.status, "running");
+  assert(c.blocked);
+  assert.equal(f.posts.length, 1);
+  f.setTurns([
+    {
+      ...state.turns[0]!,
+      status: "completed",
+      reply: "TEST finished",
+    },
+  ]);
+  await c.refresh();
+  state = c.getSnapshot();
+  assert.equal(state.turns[0]?.status, "completed");
+  assert(!c.blocked);
+  assert.equal(f.posts.length, 1);
+  c.dispose();
+});
+
+test("a 5xx for a turn the server never recorded keeps the command and its error", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  f.setPost(async () => {
+    throw new ApiError(502, "bad_gateway");
+  });
+  await c.send("en");
+  const state = c.getSnapshot();
+  assert.equal(state.pending?.kind, "turns");
+  assert.equal(state.error, "bad_gateway");
+  assert.equal(state.fresh, false);
+  assert.equal(f.posts.length, 1);
+  c.dispose();
+});
