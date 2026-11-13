@@ -33,6 +33,7 @@ import { nativeAgentOwner } from "./mastra-runtime";
 import { IdentityError } from "./error";
 import { CONTACT_CONTEXT_TTL } from "./contact-context";
 import type { AgentMemory } from "./agent-memory";
+import { unwrapMcpText } from "./bounded-preview";
 import {
   createProcessAgentBoundary,
   isQuestionResume,
@@ -877,7 +878,10 @@ export function createServiceProcessRuntime(
                       current,
                       CONTACT_CONTEXT_TTL,
                     );
-                  return { status: "complete", output: receipt.result };
+                  return {
+                    status: "complete",
+                    output: unwrapMcpText(receipt.result),
+                  };
                 }
                 if (
                   receipt.status === "awaiting_approval" &&
@@ -1164,7 +1168,7 @@ export function createServiceProcessRuntime(
             );
             throw domainFailure;
           }
-          return { status: "complete", output: receipt.result };
+          return { status: "complete", output: unwrapMcpText(receipt.result) };
         },
       };
       const eventSteps = new Map<string, ReturnType<typeof startLoopStep>>();
