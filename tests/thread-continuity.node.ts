@@ -568,3 +568,29 @@ test("a chat whose thread has no transcript (a Mastra-era chat) restarts from it
     await h.close();
   }
 });
+
+test("a fresh thread keeps an earlier reply that carries a service card (NIAR-307)", async () => {
+  const h = createTrustHarness();
+  try {
+    h.onChat(h.lookupScript);
+    await h.send("Show Jane Test's contact details", {
+      id: "TEST-card-reply-1",
+    });
+    const first = h.commandState();
+    assert.equal(first.answer?.reply, "Contact found.");
+    await h.forgetNativeThread(first.threadId);
+    h.onChat(() => ({ content: "TEST card follow-up" }));
+    await h.send("What did you find?", { id: "TEST-card-reply-2" });
+    const second = h.commandState();
+    assert.notEqual(second.threadId, first.threadId);
+    assert.deepEqual(
+      second.earlier?.map(({ role, text }) => [role, text]),
+      [
+        ["user", "Show Jane Test's contact details"],
+        ["assistant", "Contact found."],
+      ],
+    );
+  } finally {
+    await h.close();
+  }
+});

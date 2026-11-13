@@ -107,6 +107,9 @@ function historyText(message: Conversation["messages"][number]) {
     return `Contact lookup returned ${message.result.contacts.length} displayed contacts.`;
   return message.text;
 }
+/** A card reply's visible text, only matched against the reply the server stored (NIAR-263). */
+const cardReply = (message: Conversation["messages"][number]) =>
+  message.role === "assistant" && message.result ? { reply: message.text } : {};
 /** What cancelling open work needs from the authenticated runtime. */
 type WorkAccess = Partial<
   Pick<MobileRuntime, "integrations" | "cancelProcessRun">
@@ -1084,7 +1087,7 @@ export class ModelService {
             (command.logicalMessageId ?? command.commandId),
         )
         .slice(-8)
-        .map((m) => ({ role: m.role, text: historyText(m) }));
+        .map((m) => ({ role: m.role, text: historyText(m), ...cardReply(m) }));
       const answer = await access.integrations!.message(
         command.idempotencyKey,
         text,
@@ -1482,6 +1485,7 @@ export class ModelService {
                       .map((m) => ({
                         role: m.role,
                         text: historyText(m),
+                        ...cardReply(m),
                         ...(m.result || m.workItemId
                           ? {
                               operationId:

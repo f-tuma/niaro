@@ -833,6 +833,8 @@ export function nativeToolValidator(
 export type DomainHistory = {
   role: "user" | "assistant";
   text: string;
+  /** A card reply's visible text (the stored reply); `text` is its summary. */
+  reply?: string;
   operationId?: string | null;
 }[];
 export const nativeQuestionId = (runId: string, toolCallId: string) =>
@@ -6594,7 +6596,7 @@ export function createMastraDomain(
         history.some(
           (message) =>
             message.text === prior.data.text ||
-            message.text === prior.data.answer?.reply ||
+            (message.reply ?? message.text) === prior.data.answer?.reply ||
             (!!message.operationId &&
               prior.data.operations.includes(message.operationId)),
         );
@@ -6686,7 +6688,7 @@ export function createMastraDomain(
                   text: message.text.slice(0, EARLIER_TEXT_CHARS),
                 },
               ];
-            const reply = replies.get(message.text);
+            const reply = replies.get(message.reply ?? message.text);
             return reply ? [{ role: "assistant", ...reply }] : [];
           })
           .filter((message) => message.text.trim())
@@ -7259,7 +7261,7 @@ export function createMastraDomain(
         const visible = history.some(
           (message) =>
             message.text === state.text ||
-            message.text === state.answer?.reply ||
+            (message.reply ?? message.text) === state.answer?.reply ||
             (!!message.operationId &&
               state.operations.includes(message.operationId)),
         );
