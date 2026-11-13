@@ -1394,7 +1394,18 @@ export class FixtureEngine {
       }
       if (!message || !resolved || resolved.operationId !== command.operationId)
         return this.result(command, "rejected", "unknown_context");
+      // A later resolve (another device) that brings no new status is
+      // passive: the answer keeps its text and request.
+      const settled =
+        message.result?.type === "service.action" &&
+        message.result.status !== "awaiting_approval" &&
+        message.result.status === resolved.status;
       message.result = resolved;
+      if (settled) {
+        conversation.revision++;
+        this.emit({ type: "conversation.upserted", entity: conversation });
+        return this.result(command, "accepted", "accepted");
+      }
       if (
         interpretation?.resolvedServiceResult &&
         interpretation.serviceResult?.operationId !== command.operationId

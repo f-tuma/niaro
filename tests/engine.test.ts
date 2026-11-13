@@ -484,5 +484,16 @@ describe.each(["en", "cs"] as const)(
         ).toHaveLength(1);
       },
     );
+    test("a resolve that brings a new status still rewrites the card", () => {
+      const engine = propose();
+      resolve(engine, "TEST-first", "unknown");
+      const result = resolve(engine, "TEST-second", "succeeded");
+      const messages = result.snapshot.conversations[0]!.messages;
+      const card = messages.find((m) => m.result?.type === "service.action")!;
+      expect(card.text).toBe(texts.succeeded[language]);
+      expect(
+        messages.filter((m) => m.text === "TEST decision reply"),
+      ).toHaveLength(2);
+    });
   },
 );

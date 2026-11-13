@@ -399,3 +399,115 @@ test("a memory saved after an approval sits under that answer", async () => {
     await h.close();
   }
 });
+
+test("a second approval of a settled card from another device changes nothing", async () => {
+  const h = createTrustHarness();
+  try {
+    const fact = "TEST I prefer Room B";
+    h.onChat((body) => {
+      const results = toolResults(body);
+      if (results.some((result) => result.results))
+        return { content: "TEST Created and noted." };
+      return results.some((result) => result.data?.created)
+        ? h.call("memory_remember", {
+            facts: [{ text: fact, kind: "preference" }],
+          })
+        : h.writeScript(body);
+    });
+    const proposed = await h.send(`Remember: ${fact}. TEST create a meeting`, {
+      id: "TEST-twice-request",
+    });
+    const card = proposed.snapshot.conversations[0]!.messages.at(-1)!.result;
+    assert(
+      card?.type === "service.action" && card.status === "awaiting_approval",
+    );
+    const approve = (commandId: string) =>
+      h.execute(
+        CommandSchema.parse({
+          type: "service.resolve",
+          commandId,
+          idempotencyKey: commandId,
+          conversationId: "conversation-1",
+          operationId: card.operationId,
+          approved: true,
+          language: "en",
+        }),
+      );
+    const view = async (result: Awaited<ReturnType<typeof approve>>) => {
+      const messages = result.snapshot.conversations[0]!.messages;
+      const receipts = await answerReceipts(
+        sources(
+          h.catalog.conversationTurns(
+            h.scope.workspaceId,
+            h.scope.userId,
+            "conversation-1",
+            8,
+          ),
+        ),
+      );
+      const saved = (
+        await h.memoryStore.list(h.memoryActor, { settings: h.memorySettings })
+      ).find((item) => item.content === fact && item.status === "active");
+      return {
+        messages: messages.map((m) => [
+          m.role,
+          m.text,
+          m.replyToCommandId,
+          m.result?.type === "service.action" ? m.result.status : null,
+        ]),
+        receipts: receipts.map((r) => r.commandId),
+        saved:
+          saved?.source?.type === "user_message"
+            ? saved.source.commandId
+            : undefined,
+      };
+    };
+    const first = await view(await approve("TEST-twice-a"));
+    assert.deepEqual(first.receipts, ["TEST-twice-a"]);
+    assert.equal(first.saved, "TEST-twice-a");
+    assert.equal(first.messages.at(-1)?.[2], "TEST-twice-a");
+    // The other device approves the same card under its own command.
+    assert.deepEqual(await view(await approve("TEST-twice-b")), first);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a second approval of a declined card changes nothing", async () => {
+  const h = createTrustHarness();
+  try {
+    h.onChat((body) => h.writeScript(body));
+    const proposed = await h.send("TEST create a meeting", {
+      id: "TEST-declined-request",
+    });
+    const card = proposed.snapshot.conversations[0]!.messages.at(-1)!.result;
+    assert(
+      card?.type === "service.action" && card.status === "awaiting_approval",
+    );
+    const resolve = (commandId: string, approved: boolean) =>
+      h.execute(
+        CommandSchema.parse({
+          type: "service.resolve",
+          commandId,
+          idempotencyKey: commandId,
+          conversationId: "conversation-1",
+          operationId: card.operationId,
+          approved,
+          language: "en",
+        }),
+      );
+    const messages = (result: Awaited<ReturnType<typeof resolve>>) =>
+      result.snapshot.conversations[0]!.messages.map((m) => [
+        m.text,
+        m.replyToCommandId,
+        m.result?.type === "service.action" ? m.result.status : null,
+      ]);
+    const declined = messages(await resolve("TEST-declined-a", false));
+    assert.deepEqual(
+      messages(await resolve("TEST-declined-b", true)),
+      declined,
+    );
+  } finally {
+    await h.close();
+  }
+});
