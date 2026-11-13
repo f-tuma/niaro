@@ -426,6 +426,42 @@ test("forgetting a thread deletes its conversations' content from the file, even
   }
 });
 
+test("a thread whose conversation content was purged shows no history and takes a new turn (NIAR-307)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pi-native-"));
+  const file = join(root, "identity.sqlite.pi.sqlite");
+  try {
+    let core = await PiAgentCore.open({ host: noHost, file });
+    const invocations: Invocation[] = [];
+    const done = await core
+      .agentRuntime()
+      .execute(input({ session: session({ invocations, approved: true }) }));
+    assert.equal(done.answer?.reply, "TEST done");
+    // The real purge with the thread doc kept: a forget that purged and
+    // stopped before retiring the thread.
+    const db = new DatabaseSync(file, { readOnly: true });
+    const ids = (
+      db
+        .prepare("SELECT DISTINCT conversation_id AS id FROM entries")
+        .all() as { id: number }[]
+    ).map(({ id }) => String(id));
+    db.close();
+    assert.deepEqual(await core.native.purge(ids), ids);
+    await core.close();
+    core = await PiAgentCore.open({ host: noHost, file });
+    assert.deepEqual((await core.agentRuntime().inspect(binding)).messages, []);
+    const next = await core.agentRuntime().execute(
+      input({
+        runId: "TEST-run-2",
+        session: session({ invocations, approved: true }),
+      }),
+    );
+    assert.equal(next.answer?.reply, "TEST done");
+    await core.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a question resumes with the answer, and a new turn during a pending approval forks the thread", async () => {
   const core = await PiAgentCore.open({ host: noHost });
   try {

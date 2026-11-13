@@ -1510,12 +1510,18 @@ export function createPiAgentRuntime(core: NativeCore) {
   async function conversationDoc(id: string) {
     return harness.snapshot(NativeConversationDoc, cid(id), ctx);
   }
-  /** The thread's latest conversation with memory: its recall. */
+  /**
+   * The thread's latest conversation with memory: its recall. A purged one
+   * (no doc) is skipped: a thread kept after a partial forget falls back to an
+   * earlier conversation, or starts again.
+   */
   async function recallConversation(resourceId: string, threadId: string) {
     for (const id of (
       await threadConversations(resourceId, threadId)
-    ).reverse())
-      if (!(await conversationDoc(id))?.memoryless) return id;
+    ).reverse()) {
+      const doc = await conversationDoc(id);
+      if (doc && !doc.memoryless) return id;
+    }
     return undefined;
   }
   async function live(id: string) {
