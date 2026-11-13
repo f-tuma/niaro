@@ -865,7 +865,7 @@ export class ProcessDesignClient {
   private async dispatch() {
     if (await this.post()) await this.post();
   }
-  /** One POST; true when the same turn is to be resent once. */
+  /** One POST; true when the same turn or start is to be resent once. */
   private async post(): Promise<boolean> {
     const command = this.state.pending;
     if (!command || this.disposed || this.postBusy) return false;

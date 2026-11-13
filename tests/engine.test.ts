@@ -404,7 +404,7 @@ describe.each(["en", "cs"] as const)(
     const resolve = (
       engine: FixtureEngine,
       commandId: string,
-      status: "rejected" | "failed" | "unknown" | "succeeded",
+      status: "rejected" | "failed" | "unknown" | "succeeded" | "running",
     ) => {
       const work = nativeTaskApproval(language);
       const action = work.native!.action!;
@@ -484,6 +484,17 @@ describe.each(["en", "cs"] as const)(
         ).toHaveLength(1);
       },
     );
+    test("a new status with the same words adds no second reply", () => {
+      const engine = propose();
+      resolve(engine, "TEST-running", "running");
+      const result = resolve(engine, "TEST-succeeded", "succeeded");
+      const messages = result.snapshot.conversations[0]!.messages;
+      const card = messages.find((m) => m.result?.type === "service.action")!;
+      expect(card.result).toMatchObject({ status: "succeeded" });
+      expect(
+        messages.filter((m) => m.text === "TEST decision reply"),
+      ).toHaveLength(1);
+    });
     test("a resolve that brings a new status still rewrites the card", () => {
       const engine = propose();
       resolve(engine, "TEST-first", "unknown");
