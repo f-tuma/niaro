@@ -283,6 +283,7 @@ import { exchangeOAuthCode } from "../server-integrations/service-oauth";
 
 import { AuthProviderStore, type AuthProviderSnapshot } from "./auth-providers";
 import { ServerSettingsStore, serverSettingsDefaults } from "./server-settings";
+import { InstanceStore } from "./instance";
 import { handleConfigBundle } from "./config-bundle/http";
 import { CONFIG_BUNDLE_MAX_BYTES } from "../../packages/protocol/config-bundle";
 import {
@@ -829,6 +830,7 @@ export class IdentityService {
   private hosted?: HostedServers;
   private pluginFiles?: PluginFiles;
   private pluginEditing = false;
+  private instance: InstanceStore;
   constructor(
     private db: DatabaseSync,
     private auth: Auth,
@@ -882,6 +884,8 @@ export class IdentityService {
     this.scheduleMeetingSweep();
     this.loops = new LoopsStore(db, catalog.store);
     this.plugins = new WorkspacePluginStore(db, pluginSettings);
+    this.instance = new InstanceStore(db);
+    this.instance.backfill();
     this.skills = new SkillStore(db, (record) => this.audit.append(record));
     this.instructions = new InstructionsStore(db, (record) =>
       this.audit.append(record),
@@ -5393,6 +5397,37 @@ export class IdentityService {
       userId: session.user.id,
     };
   }
+  /**
+   * What affects the whole server: owners of the instance organization only.
+   * The selector must name that organization; it is never authorization.
+   * `refused` audits a refusal in the named organization when the person
+   * belongs to it.
+   */
+  private async instanceOwner(
+    req: IncomingMessage,
+    organizationId: string,
+    refused?: (userId: string) => void,
+  ) {
+    const session = await this.getSession(req);
+    if (!session) throw new IdentityError(401, "identity_unauthorized");
+    const userId = session.user.id;
+    if (
+      organizationId !== this.instance.organizationId() ||
+      !this.instance.isOwner(userId)
+    ) {
+      if (
+        refused &&
+        this.db
+          .prepare(
+            'SELECT 1 FROM member WHERE "organizationId"=? AND "userId"=?',
+          )
+          .get(organizationId, userId)
+      )
+        refused(userId);
+      throw new IdentityError(403, "instance_owner_required");
+    }
+    return { userId };
+  }
   private async state(
     req: IncomingMessage,
     operator: boolean,
@@ -5436,6 +5471,10 @@ export class IdentityService {
             )
             .all(session.user.id)
         : [],
+      instance:
+        session && this.instance.isOwner(session.user.id)
+          ? { owner: true, organizationId: this.instance.organizationId() }
+          : { owner: false },
     });
   }
   private async detail(req: IncomingMessage, orgId: string) {
@@ -5537,6 +5576,7 @@ export class IdentityService {
         },
       });
       if (!org) throw new IdentityError(503, "identity_unavailable");
+      this.instance.record(org.id, "setup");
       const actorId = operator ? null : created.user.id;
       this.audit.append({
         organizationId: org.id,
@@ -6962,7 +7002,7 @@ export class IdentityService {
               .string()
               .max(2048)
               .regex(
-                /^(?:\/admin\/(?:device|settings|service-connect|mcp(?:\/consent)?)?|\/account\/(?:login|invite)|\/(?:chat(?:\/[A-Za-z0-9_-]+)?|tasks|meetings(?:\/[A-Za-z0-9_-]+)?|processes(?:\/[A-Za-z0-9_-]+)?|skills(?:\/[A-Za-z0-9_-]+)?|connections(?:\/[A-Za-z0-9_-]+)?|search|me)?)(?:[?#].*)?$/,
+                /^(?:\/admin\/(?:device|settings|account|service-connect|mcp(?:\/consent)?)?|\/account\/(?:login|invite)|\/(?:chat(?:\/[A-Za-z0-9_-]+)?|tasks|meetings(?:\/[A-Za-z0-9_-]+)?|processes(?:\/[A-Za-z0-9_-]+)?|skills(?:\/[A-Za-z0-9_-]+)?|connections(?:\/[A-Za-z0-9_-]+)?|search|me)?)(?:[?#].*)?$/,
               )
               .optional(),
           }).parse(payload);
@@ -7487,7 +7527,7 @@ export class IdentityService {
                     userId: actor.userId,
                     sessionId: session.session.id,
                   },
-                  returnPath: input.returnPath ?? "/admin/settings",
+                  returnPath: input.returnPath ?? "/admin/account",
                 }),
               );
             }
@@ -7644,6 +7684,9 @@ export class IdentityService {
                 this.connections.changePolicy(organizationId),
               forget: () => this.serverSettingsStore?.forget(),
               serverName: () => this.serverSettings()?.name ?? "Niaro",
+              instanceOwner: (organizationId, userId) =>
+                organizationId === this.instance.organizationId() &&
+                this.instance.isOwner(userId),
             },
           );
           res.writeHead(reply.status, {
@@ -7655,7 +7698,7 @@ export class IdentityService {
           return true;
         }
         if (url.pathname.startsWith("/admin/api/identity/server-settings")) {
-          // Server-wide settings: owners and administrators, from an account.
+          // Server-wide settings: instance owners only, from an account.
           const store = this.serverSettingsStore;
           const action = url.pathname.slice(
             "/admin/api/identity/server-settings".length,
@@ -7675,9 +7718,23 @@ export class IdentityService {
                   .strictObject({ organizationId: IdentityId })
                   .parse(Object.fromEntries(url.searchParams))
               : z.object({ organizationId: IdentityId }).parse(payload);
-          const actor = await this.actor(req, organizationId);
-          if (actor.role === "member")
-            throw new IdentityError(403, "identity_forbidden");
+          const actor = await this.instanceOwner(
+            req,
+            organizationId,
+            req.method === "POST"
+              ? (actorId) =>
+                  this.audit.append({
+                    organizationId,
+                    workspaceId: null,
+                    actorId,
+                    source: "console",
+                    action: "server.settings_changed",
+                    targetId: null,
+                    outcome: "denied",
+                    details: {},
+                  })
+              : undefined,
+          );
           // Export and import travel in the configuration bundle.
           // Whether the saved diarizer answers and has its model loaded.
           if (action === "/diarizer")
@@ -7764,14 +7821,17 @@ export class IdentityService {
               value.workspaceId,
               actor.role !== "member",
               {
-                allowed: actor.role === "owner" && !!this.pluginFiles,
+                allowed:
+                  value.organizationId === this.instance.organizationId() &&
+                  this.instance.isOwner(actor.userId) &&
+                  !!this.pluginFiles,
                 disabled: !this.pluginEditing,
               },
             ),
           );
         }
         if (url.pathname === "/admin/api/identity/plugin-files") {
-          // A plugin's code runs in this process: owners only, audited, and
+          // A plugin's code runs in this process: instance owners only, audited, and
           // the operator can make it read-only (NIARO_PLUGIN_EDITING=0).
           if (req.method !== "GET" && req.method !== "POST")
             return respond(405, { error: "method_not_allowed" });
@@ -7783,9 +7843,23 @@ export class IdentityService {
                   Object.fromEntries(url.searchParams),
                 )
               : ChangePluginFilesSchema.parse(payload);
-          const actor = await this.actor(req, value.organizationId);
-          if (actor.role !== "owner")
-            throw new IdentityError(403, "identity_forbidden");
+          const actor = await this.instanceOwner(
+            req,
+            value.organizationId,
+            "action" in value && value.action !== "check"
+              ? (actorId) =>
+                  this.audit.append({
+                    organizationId: value.organizationId,
+                    workspaceId: null,
+                    actorId,
+                    source: "console",
+                    action: "server.plugin_changed",
+                    targetId: value.pluginId,
+                    outcome: "denied",
+                    details: { pluginEvent: "refused" },
+                  })
+              : undefined,
+          );
           const id = value.pluginId;
           const view = () => {
             try {

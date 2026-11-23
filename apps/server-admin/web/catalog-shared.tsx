@@ -58,6 +58,8 @@ export function catalogIssue(error: unknown, copy: CatalogCopy) {
     if (error.code?.startsWith("catalog_budget_")) return copy.usageLimits;
     if (error.code === "catalog_service_in_use") return copy.serviceInUse;
     if (error.code?.endsWith("_in_use")) return copy.inUse;
+    if (error.code === "instance_owner_required")
+      return copy.instanceOwnerRequired;
     if (error.status === 409) return copy.conflict;
     if (error.status === 403 || error.status === 401) return copy.forbidden;
     if (error.status === 400) return copy.invalid;

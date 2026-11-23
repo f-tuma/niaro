@@ -39,6 +39,7 @@ export const loopsFixtureIdentity = IdentityStateSchema.parse({
   needsSetup: false,
   user: { id: "test_user", name: "Demo user", email: "user@example.test" },
   organizations: [{ id: "test_org", name: "TEST organization", role: "owner" }],
+  instance: { owner: true, organizationId: "test_org" },
 });
 export const loopsFixtureOrganization = OrganizationDetailSchema.parse({
   organizationId: "test_org",

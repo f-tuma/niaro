@@ -25,7 +25,16 @@ jest.mock("../apps/server-admin/web/context", () => ({
 jest.mock("../apps/server-admin/web/console-scope", () => ({
   useConsoleScope: () => ({
     organization: { id: "org_TEST", name: "TEST", role: mockRole },
-    identity: { isPending: false, error: null },
+    identity: {
+      isPending: false,
+      error: null,
+      data: {
+        instance:
+          mockRole === "owner"
+            ? { owner: true, organizationId: "org_TEST" }
+            : { owner: false },
+      },
+    },
   }),
 }));
 const mockNavigate = jest.fn();
@@ -139,12 +148,12 @@ afterEach(() => {
   mockRole = "owner";
 });
 
-test("only an owner opens a plugin's files", async () => {
+test("only the server's owner opens a plugin's files", async () => {
   mockRole = "admin";
   const root = await render();
   expect(mockApi).not.toHaveBeenCalled();
   expect(root.findAll((node) => node.type === "textarea")).toHaveLength(0);
-  expect(text(root)).toContain("no longer have permission");
+  expect(text(root)).toContain("Only the server's owner can do this.");
 });
 
 test("the owner edits index.ts, sees why it was refused, then saves", async () => {

@@ -11,6 +11,7 @@ import {
   Moon,
   RefreshCw,
   Sun,
+  UserRound,
   Terminal,
 } from "lucide-react";
 import { Button } from "@admin/components/ui/button";
@@ -128,6 +129,9 @@ function ConsoleLayout({
 }: ConsoleShellProps) {
   const copy = useShellCopy();
   const { selectedOrganization, selectedWorkspace } = useAdmin();
+  const { identity } = useConsoleScope();
+  // Settings change the whole server: only its owners see them.
+  const instanceOwner = !!identity.data?.instance.owner;
   const edits = useProcessEditsGuard();
   const { setOpenMobile } = useSidebar();
   const path = usePath();
@@ -165,25 +169,31 @@ function ConsoleLayout({
                       )}
                       <SidebarGroupContent>
                         <SidebarMenu>
-                          {group.items.map((item) => (
-                            <SidebarMenuItem key={item.to}>
-                              <SidebarMenuButton
-                                asChild
-                                isActive={active?.to === item.to}
-                                tooltip={copy[item.key]}
-                              >
-                                <Link
-                                  to={item.to}
-                                  aria-current={
-                                    active?.to === item.to ? "page" : undefined
-                                  }
+                          {group.items
+                            .filter(
+                              (item) => !item.instanceOwner || instanceOwner,
+                            )
+                            .map((item) => (
+                              <SidebarMenuItem key={item.to}>
+                                <SidebarMenuButton
+                                  asChild
+                                  isActive={active?.to === item.to}
+                                  tooltip={copy[item.key]}
                                 >
-                                  <item.icon aria-hidden="true" />
-                                  <span>{copy[item.key]}</span>
-                                </Link>
-                              </SidebarMenuButton>
-                            </SidebarMenuItem>
-                          ))}
+                                  <Link
+                                    to={item.to}
+                                    aria-current={
+                                      active?.to === item.to
+                                        ? "page"
+                                        : undefined
+                                    }
+                                  >
+                                    <item.icon aria-hidden="true" />
+                                    <span>{copy[item.key]}</span>
+                                  </Link>
+                                </SidebarMenuButton>
+                              </SidebarMenuItem>
+                            ))}
                         </SidebarMenu>
                       </SidebarGroupContent>
                     </SidebarGroup>
@@ -493,6 +503,12 @@ function UserMenu({ logout, busy }: { logout: () => void; busy: boolean }) {
               </span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link to="/account">
+                <UserRound aria-hidden="true" />
+                {copy.account}
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <ThemeIcon aria-hidden="true" />

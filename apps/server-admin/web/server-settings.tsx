@@ -214,7 +214,12 @@ export function ServerSettingsSections({
       <Section title={copy.server}>
         {query.isError ? (
           <Alert variant="destructive">
-            <AlertDescription>{copy.loadFailed}</AlertDescription>
+            <AlertDescription>
+              {query.error instanceof ApiError &&
+              query.error.code === "instance_owner_required"
+                ? copy.ownerOnly
+                : copy.loadFailed}
+            </AlertDescription>
             <AlertAction>
               <Button
                 variant="outline"
@@ -252,7 +257,10 @@ export function ServerSettingsSections({
       setError(
         failure instanceof ApiError && failure.status === 409
           ? copy.conflict
-          : copy.failed,
+          : failure instanceof ApiError &&
+              failure.code === "instance_owner_required"
+            ? copy.ownerOnly
+            : copy.failed,
       );
     } finally {
       setBusy(false);

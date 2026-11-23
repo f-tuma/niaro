@@ -129,6 +129,15 @@ the decision, then the reason.
 
 - **Better Auth with the Organization plugin** is the identity foundation
   (owner, admin, member) rather than a home-grown stack.
+- **The server has one recorded instance organization,** the one created by
+  the first owner setup (or, on servers from earlier versions, the earliest
+  created organization, recorded once at start). Its owners are the server's
+  owners and the only people who manage what affects every organization:
+  server settings and plugin code. The record never changes through the
+  console or API, ownership is re-read on every request, and the last-owner
+  rule means no recovery-key escape hatch is needed. A wrong backfill on
+  legacy multi-organization data is corrected only in the database
+  (`agent_instance`).
 - **Identity is the OIDC issuer and subject,** mapped to the server's own user;
   never an email match and never a bare OAuth token.
 - **Provider tokens never reach clients.** The app gets a server-issued

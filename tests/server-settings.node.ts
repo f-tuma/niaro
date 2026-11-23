@@ -1,4 +1,5 @@
 import { seedIdentityFixture } from "./helpers/identity-seed";
+import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -16,7 +17,7 @@ import {
 import { WorkspacePluginsSchema } from "../packages/protocol/workspace-plugins";
 
 const password = "TEST-server-settings-password-2026";
-test("server settings: profile defaults, owner and administrator writes, audit, operator origins and restart", async () => {
+test("server settings: profile defaults, instance owner writes, audit, operator origins and restart", async () => {
   const root = mkdtempSync(join(tmpdir(), "server-settings-"));
   let app: ReturnType<typeof createReferenceServer>;
   const server = createServer((req, res) => app.emit("request", req, res));
@@ -140,6 +141,39 @@ test("server settings: profile defaults, owner and administrator writes, audit, 
       email: "member@example.test",
       password,
     });
+    // A second organization, as data from earlier versions could carry; its
+    // owner, and the instance owner naming it, never reach server settings.
+    const db = identity["db"];
+    const otherId = randomUUID();
+    db.prepare(
+      'INSERT INTO organization(id,name,slug,"createdAt") VALUES(?,?,?,?)',
+    ).run(otherId, "TEST Other", "test-other", new Date().toISOString());
+    await seedIdentityFixture(identity, {
+      organizationId: otherId,
+      type: "createAccount",
+      name: "TEST Other owner",
+      email: "other@example.test",
+      password,
+      role: "admin",
+    });
+    // The fixture seeds administrators; the other organization gets an owner.
+    db.prepare(`UPDATE member SET role='owner' WHERE "organizationId"=?`).run(
+      otherId,
+    );
+    db.prepare(
+      'INSERT INTO member(id,"organizationId","userId",role,"createdAt") VALUES(?,?,?,?,?)',
+    ).run(
+      randomUUID(),
+      otherId,
+      (await owner("admin/api/identity")).data.user.id,
+      "owner",
+      new Date().toISOString(),
+    );
+    const other = client();
+    await other("admin/auth/sign-in/email", {
+      email: "other@example.test",
+      password,
+    });
     const path = `admin/api/identity/server-settings?organizationId=${organizationId}`;
     const read = async (who = owner) =>
       ServerSettingsViewSchema.parse((await who(path)).data);
@@ -177,13 +211,75 @@ test("server settings: profile defaults, owner and administrator writes, audit, 
     assert.deepEqual(initial.restartPending, []);
     // The operator's origins are shown, never saved with the settings.
     assert.deepEqual(initial.operatorOrigins, ["http://searxng:8080"]);
-    assert.equal((await read(admin)).revision, 0);
 
-    // Owners and administrators only, from an account.
-    assert.equal((await member(path)).status, 403);
-    assert.equal((await save(defaults, 0, member)).status, 403);
+    // Instance owners only, from an account.
+    const refused = async (
+      reply: Promise<{ status: number; data: { error?: string } }>,
+      error = "instance_owner_required",
+    ) => {
+      const { status, data } = await reply;
+      assert.equal(status, 403);
+      assert.equal(data.error, error);
+    };
+    const otherPath = `admin/api/identity/server-settings?organizationId=${otherId}`;
+    for (const who of [admin, member]) {
+      await refused(who(path));
+      await refused(save(defaults, 0, who));
+      await refused(
+        who(
+          `admin/api/identity/server-settings/diarizer?organizationId=${organizationId}`,
+        ),
+      );
+    }
+    await refused(other(otherPath));
+    await refused(
+      other(
+        `admin/api/identity/server-settings/diarizer?organizationId=${otherId}`,
+      ),
+    );
+    await refused(
+      other("admin/api/identity/server-settings", {
+        organizationId: otherId,
+        revision: 0,
+        settings: defaults,
+      }),
+    );
+    // The instance owner naming their other organization is refused too.
+    await refused(owner(otherPath));
     // The recovery key session has no account in the organization.
-    assert.equal((await operator(path)).status, 403);
+    await refused(operator(path), "identity_account_required");
+    assert.equal((await read()).revision, 0);
+    // Refused saves are audited in the organization the request named.
+    const deniedIn = async (who: typeof owner, id: string) =>
+      (
+        (
+          await who(
+            `admin/api/identity/audit?organizationId=${id}&category=changes`,
+          )
+        ).data.entries as { action: string; outcome: string }[]
+      ).some(
+        (entry) =>
+          entry.action === "server.settings_changed" &&
+          entry.outcome === "denied",
+      );
+    assert.ok(await deniedIn(other, otherId));
+    assert.ok(await deniedIn(owner, organizationId));
+    // A non-owner's configuration bundle carries no server settings.
+    assert.equal(
+      (
+        await other(
+          `admin/api/identity/config-bundle/export?organizationId=${otherId}`,
+        )
+      ).data.organization.serverSettings,
+      undefined,
+    );
+    assert.ok(
+      (
+        await owner(
+          `admin/api/identity/config-bundle/export?organizationId=${organizationId}`,
+        )
+      ).data.organization.serverSettings,
+    );
     // Export and import travel in the configuration bundle.
     for (const action of ["export", "import"])
       assert.equal(
@@ -221,7 +317,7 @@ test("server settings: profile defaults, owner and administrator writes, audit, 
       hubScheduler: { intervalSeconds: 600, maxPerTick: 5, idleDays: 7 },
       integrationOrigins: ["http://127.0.0.1:9412"],
     };
-    const saved = await save(changed, 0, admin);
+    const saved = await save(changed, 0);
     assert.equal(saved.status, 200);
     const view = ServerSettingsViewSchema.parse(saved.data);
     assert.equal(view.revision, 1);
