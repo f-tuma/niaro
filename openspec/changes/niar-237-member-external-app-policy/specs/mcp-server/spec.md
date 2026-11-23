@@ -2,7 +2,7 @@
 
 ### Requirement: Members' external AI apps policy
 
-Owners and administrators SHALL choose per workspace whether members may connect external AI apps: `off`, `review` (default) or `free`. The policy SHALL apply to people with the organization role `member` only; grants, app registrations and links of owners and administrators SHALL never wait for approval. A change SHALL be revision-checked (`mcp_policy_conflict`) and audited as `mcp.policy_changed`.
+Owners and administrators SHALL choose per workspace whether members may connect external AI apps: `off`, `review` (default) or `free`. The policy SHALL bind organization role `member` only; owners' and administrators' grants, registrations and links SHALL never wait for approval. A change SHALL be revision-checked (`mcp_policy_conflict`) and audited as `mcp.policy_changed`; choosing `off` SHALL ask for confirmation first.
 
 #### Scenario: New workspace
 
@@ -26,7 +26,7 @@ Owners and administrators SHALL choose per workspace whether members may connect
 
 ### Requirement: Policy for manual grants
 
-A member's manual grant SHALL follow the workspace policy: under `off` issuance SHALL be refused with 403 `mcp_external_apps_off`; under `review` the grant SHALL be stored `pending`, its token still shown once, and every MCP request with it refused with 403 `mcp_access_pending` until approved; under `free` it SHALL be active at once. A pending grant SHALL count toward the 50-grant limit and its expiry SHALL count from issue.
+A member's manual grant SHALL follow the workspace policy: under `off` issuance SHALL be refused with 403 `mcp_external_apps_off`; under `review` the grant SHALL be stored `pending`, its token still shown once, and MCP requests with it refused with 403 `mcp_access_pending` until approved (`mcp_access_rejected` once rejected); under `free` it SHALL be active at once. A pending grant SHALL count toward the 50-grant limit; expiry SHALL count from issue.
 
 #### Scenario: Pending grant used
 
@@ -45,7 +45,7 @@ A member's manual grant SHALL follow the workspace policy: under `off` issuance 
 
 ### Requirement: OAuth apps belong to an organization
 
-A newly registered OAuth app SHALL belong to the organization of the workspace named at registration and SHALL be linkable only into workspaces of that organization; consent into any other workspace SHALL be refused. Every app SHALL carry an approval state per workspace of its organization: `approved`, `pending`, `rejected` or none.
+A newly registered OAuth app SHALL belong to the organization of the workspace named at registration and SHALL be linkable only into workspaces of that organization; consent into any other workspace SHALL be refused. Every app, registered or known by its metadata-document client ID, SHALL carry an approval state per workspace, keyed by its client ID: `approved`, `pending`, `rejected` or none.
 
 #### Scenario: Link into another organization
 
@@ -54,7 +54,7 @@ A newly registered OAuth app SHALL belong to the organization of the workspace n
 
 ### Requirement: Policy for app registration
 
-A member's app registration SHALL follow the named workspace's policy: refused with 403 `mcp_external_apps_off` under `off`, recorded `pending` for that workspace under `review` and audited as `mcp.app_requested`, `approved` under `free`. An owner's or administrator's registration SHALL be `approved` for that workspace. Every registration SHALL be audited as `mcp.app_registered`.
+A member's app registration SHALL follow the named workspace's policy: refused with 403 `mcp_external_apps_off` under `off`; under `review` recorded `pending` and audited as `mcp.app_requested`, at most 100 waiting per organization (else 429 `identity_limit`, checked before any client is created); `approved` under `free`. An owner's or administrator's registration SHALL be `approved` there. Every registration SHALL be audited as `mcp.app_registered`.
 
 #### Scenario: Member registers under review
 
@@ -65,6 +65,11 @@ A member's app registration SHALL follow the named workspace's policy: refused w
 
 - **WHEN** a member registers an app for a workspace whose policy is `off`
 - **THEN** registration is refused with 403 `mcp_external_apps_off` and no client is created
+
+#### Scenario: Too many waiting requests
+
+- **WHEN** a member registers an app under `review` while the organization already has 100 waiting app requests
+- **THEN** registration is refused with 429 `identity_limit` and no client is created
 
 ### Requirement: Policy for OAuth links
 
@@ -96,7 +101,7 @@ The consent information SHALL state for each workspace the person may choose whe
 
 ### Requirement: Reviewing external AI app requests
 
-On External AI apps (`/admin/mcp`) owners and administrators SHALL see the selected workspace's pending requests — members' grants (person, label, mode, expiry) and apps (name, callback addresses, requester) — and approve or reject each with an optional reason of at most 500 characters. Decisions SHALL be revision-checked (`mcp_review_conflict`) and audited as `mcp.access_reviewed` or `mcp.app_reviewed`.
+On External AI apps (`/admin/mcp`) owners and administrators SHALL see the selected workspace's pending requests — members' grants (person, label, mode, expiry) and apps (name, callback addresses, requester) — and approve or reject each with an optional reason of at most 500 characters. An approved app SHALL only be withdrawn, not rejected. Decisions SHALL be revision-checked (`mcp_review_conflict`) and audited as `mcp.access_reviewed` or `mcp.app_reviewed`.
 
 #### Scenario: Reject with a reason
 

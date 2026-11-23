@@ -6,6 +6,11 @@ import {
   IdentityName,
   OrganizationRole,
 } from "../../packages/protocol/identity";
+import type {
+  McpAdminGrant,
+  McpGrantStatus,
+  McpPolicy,
+} from "../../packages/protocol/mcp-admin";
 import { IdentityError } from "./error";
 
 /** What a person's own AI app may do: read their Niaro data, save into their
@@ -80,6 +85,11 @@ export type McpGrant = {
   revokedAt: string | null;
   lastUsedAt: string | null;
   issuedByUserId: string | null;
+  /** pending/rejected: refused by MCP until an administrator approves it. */
+  status: McpGrantStatus;
+  revision: number;
+  /** An administrator's reason for a rejection, shown to the person. */
+  reviewReason: string | null;
 };
 export type McpPrincipal = {
   grantId: string;
@@ -108,6 +118,9 @@ type StoredGrant = {
   revoked_at: number | null;
   last_used_at: number | null;
   issued_by_user_id: string | null;
+  status: McpGrantStatus;
+  revision: number;
+  review_reason: string | null;
 };
 type Membership = {
   memberId: string;
@@ -115,7 +128,8 @@ type Membership = {
   role: z.infer<typeof OrganizationRole>;
 };
 const PUBLIC_COLUMNS = `id,user_id,member_id,organization_id,workspace_id,server_id,
-  label,scopes_json,created_at,expires_at,revoked_at,last_used_at,issued_by_user_id`;
+  label,scopes_json,created_at,expires_at,revoked_at,last_used_at,issued_by_user_id,
+  status,revision,review_reason`;
 const TOKEN_PREFIX = "agent_mcp_";
 const digest = (token: string) =>
   createHash("sha256").update(`agent-mcp-access/1\0${token}`).digest("hex");
@@ -136,6 +150,8 @@ export class McpAccessStore {
     private readonly db: DatabaseSync,
     private readonly options: {
       checkServer: (serverId: string) => boolean;
+      /** Members' external AI apps policy of a workspace (NIAR-237). */
+      policy: (workspaceId: string) => McpPolicy;
       now?: () => number;
       maxTtlMs?: number;
       maxActiveGrants?: number;
@@ -167,6 +183,27 @@ export class McpAccessStore {
     ) STRICT;
     CREATE INDEX IF NOT EXISTS agent_mcp_access_owner
       ON agent_mcp_access(user_id,server_id,workspace_id);`);
+    const columns = new Set(
+      db
+        .prepare("PRAGMA table_info(agent_mcp_access)")
+        .all()
+        .map((column) => String(column.name)),
+    );
+    // NIAR-237: existing grants stay active by the column default.
+    for (const [name, definition] of [
+      [
+        "status",
+        "TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','pending','rejected'))",
+      ],
+      ["revision", "INTEGER NOT NULL DEFAULT 0"],
+      ["reviewed_by_user_id", "TEXT"],
+      ["reviewed_at", "INTEGER"],
+      ["review_reason", "TEXT"],
+    ] as const)
+      if (!columns.has(name))
+        db.exec(
+          `ALTER TABLE agent_mcp_access ADD COLUMN ${name} ${definition}`,
+        );
     this.dropRetiredAccess();
   }
   /** NIAR-289: MCP no longer hands tasks to Niaro's agent. Grants holding the
@@ -256,21 +293,34 @@ export class McpAccessStore {
           ? null
           : new Date(row.last_used_at).toISOString(),
       issuedByUserId: row.issued_by_user_id,
+      status: row.status,
+      revision: row.revision,
+      reviewReason: row.review_reason,
     };
   }
+  /** `approved`: an administrator issues it, or the member's OAuth app is
+   * approved for the workspace; otherwise a member's grant follows the policy. */
   private create(
     userId: string,
     issuer: string,
     input: z.infer<typeof IssueFields>,
+    approved: boolean,
   ) {
     this.checkServer(input.serverId);
     const member = this.membership(userId, input.workspaceId);
     const now = this.now();
     if (input.expiresAt <= now || input.expiresAt - now > this.maxTtlMs)
       throw new IdentityError(400, "mcp_access_invalid");
+    let status: McpGrantStatus = "active";
+    if (!approved && member.role === "member") {
+      const policy = this.options.policy(input.workspaceId);
+      if (policy === "off")
+        throw new IdentityError(403, "mcp_external_apps_off");
+      if (policy === "review") status = "pending";
+    }
     const count = this.db
       .prepare(
-        "SELECT count(*) AS n FROM agent_mcp_access WHERE user_id=? AND server_id=? AND revoked_at IS NULL AND expires_at>?",
+        "SELECT count(*) AS n FROM agent_mcp_access WHERE user_id=? AND server_id=? AND revoked_at IS NULL AND expires_at>? AND status!='rejected'",
       )
       .get(userId, input.serverId, now)!;
     if (Number(count.n) >= this.maxActiveGrants)
@@ -290,11 +340,14 @@ export class McpAccessStore {
       revoked_at: null,
       last_used_at: null,
       issued_by_user_id: issuer,
+      status,
+      revision: 0,
+      review_reason: null,
     };
     this.db
       .prepare(
         `INSERT INTO agent_mcp_access (${PUBLIC_COLUMNS},token_digest)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         row.id,
@@ -310,15 +363,19 @@ export class McpAccessStore {
         row.revoked_at,
         row.last_used_at,
         row.issued_by_user_id,
+        row.status,
+        row.revision,
+        row.review_reason,
         digest(accessToken),
       );
     // The secret is returned once; list/authenticate/revoke never return its digest.
     return { grant: this.metadata(row), accessToken };
   }
-  issue(raw: unknown) {
+  /** `linked`: an OAuth consent the app's approval already allowed. */
+  issue(raw: unknown, linked = false) {
     const input = parse(McpIssueSchema, raw);
     const user = this.sessionUser(input.sessionId);
-    return this.create(user, user, input);
+    return this.create(user, user, input, linked);
   }
   /** Explicit administrative issuance. The session must belong to a current
    * owner/admin of the target user's organization; user binding is mandatory.
@@ -329,7 +386,7 @@ export class McpAccessStore {
     const authority = this.membership(issuer, input.workspaceId);
     if (authority.role === "member")
       throw new IdentityError(403, "mcp_scope_mismatch");
-    return this.create(input.userId, issuer, input);
+    return this.create(input.userId, issuer, input, true);
   }
   list(raw: unknown): McpGrant[] {
     const input = parse(McpManagementScopeSchema, raw);
@@ -363,8 +420,9 @@ export class McpAccessStore {
       .run(this.now(), input.grantId, user, input.serverId, input.workspaceId);
     return { revoked: Number(result.changes) > 0 };
   }
-  /** The person's live grants in every workspace, for their own account page. */
-  listOwnActive(userId: string) {
+  /** The person's live grants in every workspace, waiting and rejected ones
+   * included, for their own account page. */
+  listOwn(userId: string) {
     return (
       this.db
         .prepare(
@@ -380,6 +438,124 @@ export class McpAccessStore {
       grant: this.metadata(row),
       workspaceName: row.workspace_name,
     }));
+  }
+  private hasTables(...names: string[]) {
+    return names.every(
+      (name) =>
+        !!this.db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
+          .get(name),
+    );
+  }
+  /** Members' live grants (active and pending) of a workspace for its
+   * administrators: person, app and status, never a token or digest. */
+  listWorkspace(workspaceId: string): McpAdminGrant[] {
+    const oauth = this.hasTables("agent_mcp_oauth_binding", "oauthClient");
+    const rows = this.db
+      .prepare(
+        `SELECT ${PUBLIC_COLUMNS.replace(/(\w+)/g, "a.$1")},u.name AS person_name,u.email AS person_email,
+        ${oauth ? "b.grant_id IS NOT NULL AS oauth,c.name AS app_name" : "0 AS oauth,NULL AS app_name"}
+      FROM agent_mcp_access a JOIN member m ON m.id=a.member_id JOIN user u ON u.id=a.user_id
+      ${oauth ? 'LEFT JOIN agent_mcp_oauth_binding b ON b.grant_id=a.id LEFT JOIN "oauthClient" c ON c."clientId"=b.client_id' : ""}
+      WHERE a.workspace_id=? AND m.role='member' AND a.revoked_at IS NULL AND a.expires_at>?
+        AND a.status IN ('active','pending')
+      ORDER BY a.created_at DESC,a.id LIMIT 1000`,
+      )
+      .all(workspaceId, this.now()) as (StoredGrant & {
+      person_name: string | null;
+      person_email: string | null;
+      oauth: number;
+      app_name: string | null;
+    })[];
+    return rows.map((row) => {
+      const grant = this.metadata(row);
+      return {
+        id: grant.id,
+        person: {
+          name: String(row.person_name ?? "").slice(0, 200),
+          email: String(row.person_email ?? "").slice(0, 320),
+        },
+        label: grant.label,
+        scopes: grant.scopes,
+        createdAt: grant.createdAt,
+        expiresAt: grant.expiresAt,
+        lastUsedAt: grant.lastUsedAt,
+        status: grant.status,
+        revision: grant.revision,
+        kind: row.oauth ? "oauth" : "manual",
+        appName: row.oauth ? (row.app_name?.slice(0, 100) ?? null) : null,
+      };
+    });
+  }
+  /** An administrator's decision on a pending grant; `revision` must match. */
+  review(input: {
+    workspaceId: string;
+    grantId: string;
+    revision: number;
+    decision: "approve" | "reject";
+    reason?: string;
+    reviewerId: string;
+  }): McpGrant {
+    const row = this.db
+      .prepare(
+        `SELECT ${PUBLIC_COLUMNS} FROM agent_mcp_access WHERE id=? AND workspace_id=?`,
+      )
+      .get(input.grantId, input.workspaceId) as StoredGrant | undefined;
+    if (!row) throw new IdentityError(404, "identity_not_found");
+    const now = this.now();
+    if (
+      row.status !== "pending" ||
+      row.revision !== input.revision ||
+      row.revoked_at !== null ||
+      row.expires_at <= now
+    )
+      throw new IdentityError(409, "mcp_review_conflict");
+    const status = input.decision === "approve" ? "active" : "rejected";
+    const reason = input.reason?.trim() || null;
+    this.db
+      .prepare(
+        `UPDATE agent_mcp_access SET status=?,revision=revision+1,reviewed_by_user_id=?,
+        reviewed_at=?,review_reason=? WHERE id=? AND revision=?`,
+      )
+      .run(status, input.reviewerId, now, reason, row.id, row.revision);
+    return this.metadata({
+      ...row,
+      status,
+      revision: row.revision + 1,
+      review_reason: reason,
+    });
+  }
+  /** An administrator revokes a member's grant in the workspace; repeating it
+   * changes nothing. Owners' and administrators' grants are not theirs to end. */
+  revokeByAdministrator(workspaceId: string, grantId: string) {
+    const row = this.db
+      .prepare(
+        `SELECT a.user_id,a.revoked_at FROM agent_mcp_access a JOIN member m ON m.id=a.member_id
+      WHERE a.id=? AND a.workspace_id=? AND m.role='member'`,
+      )
+      .get(grantId, workspaceId);
+    if (!row) throw new IdentityError(404, "identity_not_found");
+    if (row.revoked_at !== null) return { revoked: false };
+    return { revoked: this.revokeOwn(String(row.user_id), grantId) };
+  }
+  /** Revokes members' live grants in a workspace, manual and OAuth, active and
+   * pending; with `clientId` only those linked through that OAuth app. */
+  revokeMembers(workspaceId: string, clientId?: string) {
+    if (clientId !== undefined && !this.hasTables("agent_mcp_oauth_binding"))
+      return 0;
+    const rows = this.db
+      .prepare(
+        `SELECT a.id,a.user_id FROM agent_mcp_access a JOIN member m ON m.id=a.member_id
+      WHERE a.workspace_id=? AND m.role='member' AND a.revoked_at IS NULL AND a.expires_at>?
+      ${clientId === undefined ? "" : "AND a.id IN (SELECT grant_id FROM agent_mcp_oauth_binding WHERE client_id=?)"}`,
+      )
+      .all(
+        ...(clientId === undefined
+          ? [workspaceId, this.now()]
+          : [workspaceId, this.now(), clientId]),
+      );
+    for (const row of rows) this.revokeOwn(String(row.user_id), String(row.id));
+    return rows.length;
   }
   /** Revokes one of the person's own grants (any server or workspace). */
   revokeOwn(userId: string, grantId: string) {
@@ -429,6 +605,11 @@ export class McpAccessStore {
     const now = this.now();
     if (!row || row.revoked_at !== null || row.expires_at <= now)
       throw new IdentityError(401, "mcp_unauthorized");
+    if (row.status !== "active")
+      throw new IdentityError(
+        403,
+        row.status === "pending" ? "mcp_access_pending" : "mcp_access_rejected",
+      );
     if (
       row.server_id !== target.serverId ||
       (target.workspaceId !== undefined &&

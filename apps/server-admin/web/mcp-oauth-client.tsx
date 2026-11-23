@@ -20,8 +20,10 @@ const RegisteredSchema = z.object({
   clientId: z.string().min(1).max(200),
   name: z.string().min(1).max(100),
   redirectUris: z.array(z.url().max(2048)).min(1).max(10),
+  /** pending: a member's app waits for an administrator in the workspace. */
+  state: z.enum(["approved", "pending"]),
 });
-export function McpOAuthClient() {
+export function McpOAuthClient({ workspaceId }: { workspaceId: string }) {
   const copy = useMcpCopy();
   const id = useId();
   const [name, setName] = useState("");
@@ -52,7 +54,11 @@ export function McpOAuthClient() {
       const value = RegisteredSchema.parse(
         await api(
           "identity/mcp/oauth/client/register",
-          { name: name.trim(), redirectUris: [callback.trim()] },
+          {
+            workspaceId,
+            name: name.trim(),
+            redirectUris: [callback.trim()],
+          },
           controller.signal,
         ),
       );
@@ -67,9 +73,12 @@ export function McpOAuthClient() {
         setError(
           cause instanceof ApiError && cause.status === 401
             ? copy.authError
-            : cause instanceof ApiError && cause.status === 403
-              ? copy.registerForbidden
-              : copy.failed,
+            : cause instanceof ApiError &&
+                cause.code === "mcp_external_apps_off"
+              ? copy.stateOff
+              : cause instanceof ApiError && cause.status === 403
+                ? copy.registerForbidden
+                : copy.failed,
         );
     } finally {
       if (!controller.signal.aborted) {
@@ -87,6 +96,11 @@ export function McpOAuthClient() {
       ) : null}
       {registered ? (
         <div className="flex flex-col gap-3">
+          {registered.state === "pending" ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {copy.registeredPending}
+            </p>
+          ) : null}
           <DetailList
             stacked
             items={[

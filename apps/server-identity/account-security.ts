@@ -53,10 +53,7 @@ export class AccountSecurity {
       audit: AuditStore;
       mobile: MobileSessionStore;
       /** Personal MCP grants end with the person's sign-ins. */
-      mcp?: Pick<
-        McpAccessStore,
-        "listOwnActive" | "revokeOwn" | "revokeAllOwn"
-      >;
+      mcp?: Pick<McpAccessStore, "listOwn" | "revokeOwn" | "revokeAllOwn">;
       mail?: Mail;
     },
   ) {
@@ -372,7 +369,7 @@ export class AccountSecurity {
         .filter((s) => !live.has(s.sessionId))
         .map(({ sessionId: _session, ...s }) => s),
       browsers,
-      mcp: (this.deps.mcp?.listOwnActive(userId) ?? []).map(
+      mcp: (this.deps.mcp?.listOwn(userId) ?? []).map(
         ({ grant, workspaceName }) => ({
           id: publicId(grant.id),
           label: grant.label,
@@ -381,6 +378,8 @@ export class AccountSecurity {
           createdAt: Date.parse(grant.createdAt),
           expiresAt: Date.parse(grant.expiresAt),
           lastUsedAt: grant.lastUsedAt ? Date.parse(grant.lastUsedAt) : null,
+          status: grant.status,
+          reason: grant.reviewReason,
         }),
       ),
     };
@@ -392,7 +391,7 @@ export class AccountSecurity {
       .all(userId)
       .find((row) => publicId(String(row.id)) === id);
     const grant = this.deps.mcp
-      ?.listOwnActive(userId)
+      ?.listOwn(userId)
       .find((value) => publicId(value.grant.id) === id);
     if (browser)
       this.db

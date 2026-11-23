@@ -9,6 +9,7 @@ import {
   AccessSchema,
   browserLabel,
 } from "../apps/server-admin/web/lib/account-access";
+import { needsAttention } from "../apps/server-admin/web/lib/needs-attention";
 
 test("each unusable invitation or reset link names its own reason", () => {
   const fallback = "fallback";
@@ -125,4 +126,56 @@ test("the account access list parses the server's shape", () => {
     ],
   });
   expect(withMcp.mcp[0]!.label).toBe("TEST desktop");
+  // Older servers send no status: the grant is active.
+  expect(withMcp.mcp[0]!.status).toBe("active");
+});
+
+test("a person's waiting and rejected grants carry their status and reason", () => {
+  const grant = {
+    id: "g",
+    label: "TEST app",
+    workspaceName: "TEST",
+    scopes: ["data.read"],
+    createdAt: 1,
+    expiresAt: 2,
+    lastUsedAt: null,
+  };
+  const parsed = AccessSchema.parse({
+    hasPassword: true,
+    limit: 8,
+    used: 0,
+    devices: [],
+    sessions: [],
+    browsers: [],
+    mcp: [
+      { ...grant, status: "pending", reason: null },
+      { ...grant, id: "r", status: "rejected", reason: "Use the shared one" },
+    ],
+  });
+  expect(parsed.mcp.map((g) => [g.status, g.reason])).toEqual([
+    ["pending", null],
+    ["rejected", "Use the shared one"],
+  ]);
+});
+
+test("Needs attention lists waiting external AI app requests after members' services", () => {
+  const rows = needsAttention({
+    failedToday: null,
+    retests: null,
+    review: [{ serviceId: "s", name: "TEST" }],
+    signIn: [{ serviceId: "t", name: "TEST sign-in", connected: 0 }],
+    mcpRequests: 3,
+    requests: 0,
+    limit: 0,
+  });
+  expect(rows.map((row) => row.key)).toEqual(["review", "mcp", "signIn"]);
+  expect(
+    needsAttention({
+      failedToday: null,
+      retests: null,
+      mcpRequests: 0,
+      requests: 0,
+      limit: 0,
+    }),
+  ).toEqual([]);
 });

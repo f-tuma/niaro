@@ -93,16 +93,21 @@ async function harness(
     },
   });
   const bridge = createAuthProviderBridge(store, { factory, timeoutMs });
+  // The members' policy is covered in mcp-oauth and mcp-policy-http tests.
   const mcpGrants = new McpAccessStore(db, {
     checkServer: (id) => id === "server-a",
+    policy: () => "free",
   });
   const mcpOAuth = createMcpOAuth({
     db,
     baseURL,
     getServerId: () => "server-a",
-    issueGrant: (i) => mcpGrants.issue(i),
+    issueGrant: (i) => mcpGrants.issue(i, true),
     revalidateGrant: (id, target) => mcpGrants.authenticateGrant(id, target),
     revokeGrant: (i) => mcpGrants.revoke(i),
+    linkable: () => undefined,
+    availability: () => [],
+    linked: () => undefined,
   });
   const { kysely } = await createKyselyAdapter({ database: db });
   assert.ok(kysely);
@@ -248,6 +253,10 @@ test("service callback preserves the official canonical MCP SSO resume before br
         redirectUris: ["https://external.example.test/callback"],
       },
       new Headers({ Cookie: f.cookies, Origin: baseURL }),
+      {
+        organizationId: "company",
+        userId: String(f.db.prepare("SELECT id FROM user").get()!.id),
+      },
     );
     const verifier = randomBytes(32).toString("base64url");
     const q = new URLSearchParams({

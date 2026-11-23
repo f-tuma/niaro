@@ -91,6 +91,9 @@ const en = {
   revoke: "Revoke",
   revokeTitle: "Disconnect this app?",
   revokeHint: "The client stops working until you connect it again.",
+  accessPending: "Waiting for approval",
+  accessRejected: "Rejected",
+  reason: "Reason: {reason}",
   cancel: "Cancel",
   loadFailed: "Couldn't load your sign-ins.",
   retry: "Try again",
@@ -147,6 +150,9 @@ const cs: Copy = {
   revoke: "Zrušit",
   revokeTitle: "Odpojit tuhle aplikaci?",
   revokeHint: "Klient přestane fungovat, dokud ho znovu nepřipojíš.",
+  accessPending: "Čeká na schválení",
+  accessRejected: "Zamítnuto",
+  reason: "Důvod: {reason}",
   cancel: "Zrušit",
   loadFailed: "Přihlášení se nepodařilo načíst.",
   retry: "Zkusit znovu",
@@ -637,7 +643,18 @@ function McpAccess({
               <KeyRound aria-hidden="true" />
             </ItemMedia>
             <ItemContent>
-              <ItemTitle>{grant.label}</ItemTitle>
+              <ItemTitle>
+                {grant.label}
+                {grant.status !== "active" && (
+                  <StatusBadge
+                    tone={grant.status === "pending" ? "warning" : "danger"}
+                  >
+                    {grant.status === "pending"
+                      ? copy.accessPending
+                      : copy.accessRejected}
+                  </StatusBadge>
+                )}
+              </ItemTitle>
               <ItemDescription>
                 {grant.workspaceName && `${grant.workspaceName} · `}
                 {grant.lastUsedAt === null ? (
@@ -650,6 +667,11 @@ function McpAccess({
                 {" · "}
                 {copy.expires} <RelativeTime value={grant.expiresAt} />
               </ItemDescription>
+              {grant.reason ? (
+                <ItemDescription>
+                  {copy.reason.replace("{reason}", grant.reason)}
+                </ItemDescription>
+              ) : null}
             </ItemContent>
             <ItemActions>
               <RemoveButton

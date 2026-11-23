@@ -4,6 +4,7 @@ import { Link, Navigate, type LinkProps } from "@tanstack/react-router";
 import {
   ArrowRight,
   AudioLines,
+  Cable,
   Check,
   Boxes,
   BrainCircuit,
@@ -38,6 +39,7 @@ import { ServiceAvatar } from "./service-avatar";
 import { auditOutcomes, outcomeTone, useAuditEvent } from "./audit-page";
 import { api } from "./lib/api";
 import { loadOwnedProcesses } from "./lib/owned-processes";
+import { loadMcpAdmin, mcpAdminKey } from "./lib/mcp-admin";
 import {
   countToday,
   needsAttention,
@@ -488,6 +490,20 @@ function useNeedsAttention(
     retry: false,
     staleTime: 15_000,
   });
+  // The same query, key and cache as External AI apps.
+  const mcp = useQuery({
+    queryKey: mcpAdminKey(data.authentication.principalId, workspace!.id),
+    queryFn: ({ signal }) =>
+      loadMcpAdmin(
+        { organizationId: organization!.id, workspaceId: workspace!.id },
+        signal,
+      ),
+    enabled:
+      !!detail.data?.canManageWorkspaces &&
+      data.authentication.current === "better-auth",
+    retry: false,
+    staleTime: 15_000,
+  });
   const [now] = useState(Date.now);
   const catalog = state.query.data;
   return needsAttention({
@@ -502,6 +518,9 @@ function useNeedsAttention(
     review: (catalog?.services ?? [])
       .filter((s) => s.personal?.status === "pending")
       .map((s) => ({ serviceId: s.id, name: s.name })),
+    mcpRequests: mcp.data
+      ? mcp.data.requests.grants.length + mcp.data.requests.apps.length
+      : null,
     requests,
     limit,
   });
@@ -527,7 +546,9 @@ function NeedsAttention({
                 ? FlaskConical
                 : row.key === "signIn" || row.key === "review"
                   ? PlugZap
-                  : Gauge;
+                  : row.key === "mcp"
+                    ? Cable
+                    : Gauge;
           const title =
             row.key === "failed"
               ? plural(language, row.count, copy.failedToday)
@@ -537,7 +558,9 @@ function NeedsAttention({
                   ? copy.nobodySignedIn.replace("{service}", row.name)
                   : row.key === "review"
                     ? copy.ownServiceReview.replace("{service}", row.name)
-                    : copy.requestsShare.replace("{p}", String(row.percent));
+                    : row.key === "mcp"
+                      ? plural(language, row.count, copy.mcpRequests)
+                      : copy.requestsShare.replace("{p}", String(row.percent));
           const content = (
             <>
               <ItemMedia>
@@ -587,6 +610,8 @@ function NeedsAttention({
                 >
                   {content}
                 </Link>
+              ) : row.key === "mcp" ? (
+                <Link to="/mcp">{content}</Link>
               ) : (
                 <Link to={row.key === "retest" ? "/processes" : "/providers"}>
                   {content}

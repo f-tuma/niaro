@@ -673,6 +673,12 @@ export function createFixtureServer(
               if (error instanceof IdentityError || error instanceof AuthError)
                 throw new McpAuthenticationError(
                   error.status === 403 ? 403 : 401,
+                  // Public: the person's own grant waits for, or lost, approval.
+                  error.code === "mcp_access_pending"
+                    ? "Waiting for an administrator's approval (mcp_access_pending)."
+                    : error.code === "mcp_access_rejected"
+                      ? "An administrator rejected this access (mcp_access_rejected)."
+                      : undefined,
                 );
               throw error;
             }

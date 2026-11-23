@@ -30,6 +30,7 @@ import {
   type McpPrincipal,
 } from "../server-identity/mcp-access";
 import { IdentityError } from "../server-identity/error";
+import type { McpAvailability } from "../../packages/protocol/mcp-admin";
 
 export const MCP_OAUTH_TOKEN_PREFIX = "agent_mcp_oauth_";
 export const MCP_OAUTH_REFRESH_PREFIX = "agent_mcp_refresh_";
@@ -37,6 +38,12 @@ export const MCP_OAUTH_GRANT_CLAIM = "urn:agent:mcp:grant-id";
 /** An OAuth link lasts at most this long from consent, like a manual grant. */
 export const MCP_OAUTH_GRANT_DAYS = 30;
 const GRANT_MS = MCP_OAUTH_GRANT_DAYS * 24 * 60 * 60 * 1000;
+/** Why a member may not link an app yet, as the consent page explains it. */
+const POLICY_REFUSALS: readonly string[] = [
+  "mcp_external_apps_off",
+  "mcp_app_pending",
+  "mcp_app_rejected",
+];
 /** Asks for a refresh token; it is never a permission the person chooses. */
 const OFFLINE = "offline_access";
 const OAUTH_SCOPES = [...MCP_ACCESS_SCOPES, OFFLINE];
@@ -134,6 +141,21 @@ export type McpOAuthOptions = {
     serverId: string;
     workspaceId: string;
   }) => unknown;
+  /** NIAR-237: throws IdentityError (`mcp_external_apps_off`,
+   * `mcp_app_pending`, `mcp_app_rejected` or another refusal) when the person
+   * may not link the app into the workspace; may file a request first. */
+  linkable: (input: {
+    userId: string;
+    clientId: string;
+    workspaceId: string;
+  }) => void;
+  /** What linking the app means in each workspace the person may choose. */
+  availability: (input: {
+    userId: string;
+    clientId: string;
+  }) => { id: string; state: McpAvailability }[];
+  /** A consent created this grant and returned the code to the client. */
+  linked: (grant: McpGrant) => void;
   accessTokenTtlSeconds?: number;
   allowInsecureDevelopment?: boolean;
   /** Tests only (requires allowInsecureDevelopment): serves client metadata
@@ -184,6 +206,22 @@ export function createMcpOAuth(options: McpOAuthOptions) {
     session_id TEXT REFERENCES session(id) ON DELETE SET NULL,
     client_id TEXT NOT NULL, expires_at INTEGER NOT NULL
   ) STRICT`);
+  const clientColumns = new Set(
+    options.db
+      .prepare("PRAGMA table_info(agent_mcp_oauth_client)")
+      .all()
+      .map((column) => String(column.name)),
+  );
+  // NIAR-237: apps belong to an organization; older ones have none.
+  for (const column of [
+    "organization_id TEXT",
+    "registered_by_user_id TEXT",
+    "created_at INTEGER",
+  ])
+    if (!clientColumns.has(column.split(" ")[0]!))
+      options.db.exec(
+        `ALTER TABLE agent_mcp_oauth_client ADD COLUMN ${column}`,
+      );
   const selection = new AsyncLocalStorage<Selection>();
   const clientManagement = new AsyncLocalStorage<boolean>();
   const serverId = () => {
@@ -516,6 +554,10 @@ export function createMcpOAuth(options: McpOAuthOptions) {
             redirectUri: request.query.get("redirect_uri")!,
             userId: ctx.context.session.user.id,
             requiresSignIn: request.requiresSignIn,
+            workspaces: options.availability({
+              userId: ctx.context.session.user.id,
+              clientId: request.clientId,
+            }),
           };
         },
       ),
@@ -589,6 +631,11 @@ export function createMcpOAuth(options: McpOAuthOptions) {
           if (!ctx.body.workspaceId) throw invalid();
           let issued: { grant: McpGrant };
           try {
+            options.linkable({
+              userId: ctx.context.session.user.id,
+              clientId: request.clientId,
+              workspaceId: ctx.body.workspaceId,
+            });
             issued = options.issueGrant({
               sessionId: ctx.context.session.session.id,
               serverId: serverId(),
@@ -604,7 +651,12 @@ export function createMcpOAuth(options: McpOAuthOptions) {
             if (error instanceof IdentityError)
               throw new APIError(
                 error.status === 403 ? "FORBIDDEN" : "BAD_REQUEST",
-                { error: "access_denied" },
+                {
+                  // Only the policy's own refusals reach the consent page.
+                  error: POLICY_REFUSALS.includes(error.code)
+                    ? error.code
+                    : "access_denied",
+                },
               );
             throw error;
           }
@@ -619,8 +671,9 @@ export function createMcpOAuth(options: McpOAuthOptions) {
               request.clientId,
               Date.parse(issued.grant.expiresAt),
             );
+          let result: { redirect_uri: string };
           try {
-            return await selection.run(
+            result = await selection.run(
               {
                 grant: issued.grant,
                 sessionId: ctx.context.session.session.id,
@@ -636,6 +689,8 @@ export function createMcpOAuth(options: McpOAuthOptions) {
             });
             throw error;
           }
+          options.linked(issued.grant);
+          return result;
         },
       ),
       mcpOAuthAuthenticate: createAuthEndpoint(
@@ -896,8 +951,14 @@ export function createMcpOAuth(options: McpOAuthOptions) {
       scopes_supported: [...MCP_ACCESS_SCOPES],
       bearer_methods_supported: ["header"],
     }),
-    /** Trusted administration only; caller authorizes the human operator first. */
-    registerClient: async (auth: Auth, raw: unknown, headers: Headers) => {
+    /** Trusted administration only; caller authorizes the human operator and
+     * the workspace's policy first. The app belongs to `owner.organizationId`. */
+    registerClient: async (
+      auth: Auth,
+      raw: unknown,
+      headers: Headers,
+      owner: { organizationId: string; userId: string },
+    ) => {
       const input = z
         .strictObject({
           name: IdentityName.max(80),
@@ -987,8 +1048,18 @@ export function createMcpOAuth(options: McpOAuthOptions) {
         }),
       );
       options.db
-        .prepare("INSERT INTO agent_mcp_oauth_client VALUES (?,?,?)")
-        .run(client.client_id, input.name, JSON.stringify(input.redirectUris));
+        .prepare(
+          `INSERT INTO agent_mcp_oauth_client (client_id,name,redirect_uris,organization_id,
+          registered_by_user_id,created_at) VALUES (?,?,?,?,?,?)`,
+        )
+        .run(
+          client.client_id,
+          input.name,
+          JSON.stringify(input.redirectUris),
+          owner.organizationId,
+          owner.userId,
+          Date.now(),
+        );
       return {
         clientId: client.client_id,
         name: input.name,
