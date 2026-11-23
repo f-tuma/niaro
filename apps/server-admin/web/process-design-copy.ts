@@ -31,6 +31,12 @@ export const designEn = {
   retryTurn: "Try again",
   add: "Add process",
   resume: "Continue",
+  deleteConversation: "Delete",
+  deleteConversationTitle: "Delete this design conversation?",
+  deleteConversationDescription:
+    "The conversation and its unsaved proposal are deleted for good. Saved processes stay.",
+  deleteConversationFailed:
+    "The conversation could not be deleted. If the designer is still answering, wait for it and try again.",
   start: "Start conversation",
   conversation: "Conversation",
   canvas: "Canvas",
@@ -235,6 +241,12 @@ export const designCs: DesignCopy = {
   retryTurn: "Zkusit znovu",
   add: "Přidat proces",
   resume: "Pokračovat",
+  deleteConversation: "Smazat",
+  deleteConversationTitle: "Smazat rozhovor s návrhářem?",
+  deleteConversationDescription:
+    "Rozhovor i jeho neuložený návrh se nevratně smažou. Uložené procesy zůstanou.",
+  deleteConversationFailed:
+    "Rozhovor se nepodařilo smazat. Pokud návrhář ještě odpovídá, počkej na něj a zkus to znovu.",
   start: "Začít rozhovor",
   conversation: "Rozhovor",
   canvas: "Plátno",

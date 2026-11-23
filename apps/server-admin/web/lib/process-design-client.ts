@@ -151,6 +151,37 @@ export function storedDesignSessions(
   }
   return [...sessions].slice(-8);
 }
+/** Deletes an unaccepted session on the server, then forgets it in this tab.
+ * Already gone on the server (404) still clears the stale local entry. */
+export async function deleteDesignSession(
+  scope: DesignClientScope,
+  sessionId: string,
+  storage: globalThis.Storage,
+  request: typeof api = api,
+) {
+  try {
+    await request(`${designApiPath}/delete`, {
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      sessionId,
+    });
+  } catch (error) {
+    if (!(error instanceof ApiError && error.status === 404)) throw error;
+  }
+  const prefix = `${designScopeStorageKey(scope)}/`;
+  const stale: string[] = [];
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i);
+    if (!key?.startsWith(prefix)) continue;
+    try {
+      if (JSON.parse(storage.getItem(key) ?? "null")?.sessionId === sessionId)
+        stale.push(key);
+    } catch {
+      // Unreadable entries are not this session's.
+    }
+  }
+  for (const key of stale) storage.removeItem(key);
+}
 function problem(error: unknown): string {
   return error instanceof ApiError
     ? error.code && /^[a-z][a-z0-9_]{0,100}$/.test(error.code)

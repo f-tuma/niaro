@@ -435,6 +435,15 @@ export class ProcessDesignStore {
       throw new IdentityError(404, "process_design_not_found");
     return review;
   }
+  /** Deletes an unaccepted session with its conversation, turns and commands
+   * (foreign-key cascade); an accepted one stays as its process's history. */
+  delete(raw: ProcessActor, id: string) {
+    const actor = this.actor(raw),
+      state = this.row(actor, id);
+    if (state.acceptedProcessId)
+      throw new IdentityError(409, "process_design_conflict");
+    this.db.prepare("DELETE FROM agent_process_design WHERE id=?").run(id);
+  }
   /** Session summaries stay private to the authenticated owner and service. */
   listServiceSessions(raw: ProcessActor, serviceId: string, after?: string) {
     const actor = this.actor(raw);

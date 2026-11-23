@@ -141,6 +141,15 @@ export async function handleProcessDesign(
       return { profile, layout: input.proposals.layout(current, request) };
     });
   }
+  if (path === "/delete" && method === "POST") {
+    const request = DesignReadSchema.parse(payload);
+    return context.serial(async () => {
+      const current = await actor(request, context);
+      input.conversation?.assertIdle(request.sessionId);
+      input.proposals.delete(current, request.sessionId);
+      return { profile, deleted: request.sessionId };
+    });
+  }
   if (
     method === "POST" &&
     ["/start", "/update", "/acknowledge", "/accept"].includes(path)

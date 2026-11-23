@@ -48,7 +48,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@admin/components/ui/sheet";
-import { storedDesignSessions } from "../lib/process-design-client";
 import { DesignSessions } from "../service-process-overview";
 import { designCs, designEn } from "../process-design-copy";
 import { PageHeader, Section } from "@admin/components/console/page";
@@ -203,12 +202,6 @@ function Launcher({ session }: { session: ClientSession }) {
   });
   const personal = mine.data
     ? personalProcessRows(mine.data, model.inventory?.processes ?? [])
-    : [];
-  const sessions = userId
-    ? storedDesignSessions(
-        { ...target, authority, serviceId: "", owner: "user" },
-        sessionStorage,
-      )
     : [];
   const designCopy = language === "cs" ? designCs : designEn;
   const notice: TranslationKey | null =
@@ -369,7 +362,14 @@ function Launcher({ session }: { session: ClientSession }) {
           </Empty>
         )}
       </Section>
-      <DesignSessions sessions={sessions} serviceId="" copy={designCopy} />
+      <DesignSessions
+        scope={
+          userId
+            ? { ...target, authority, serviceId: "", owner: "user" }
+            : undefined
+        }
+        copy={designCopy}
+      />
       {!model.inventory
         ? !model.error && (
             <div role="status" aria-label={tr("processesLoading")}>

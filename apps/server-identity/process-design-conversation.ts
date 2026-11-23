@@ -606,6 +606,11 @@ export class ProcessDesignConversation {
     await context.serial(() => this.actorHeld(context, input));
     return turns;
   }
+  /** A session whose turn still holds its lock cannot be deleted. */
+  assertIdle(sessionId: string) {
+    if (this.active.has(sessionId))
+      throw new IdentityError(429, "process_design_busy");
+  }
   async message(context: CatalogContext, raw: unknown, signal: AbortSignal) {
     assertDesignContent(raw);
     const input = DesignTurnStartSchema.parse(raw);

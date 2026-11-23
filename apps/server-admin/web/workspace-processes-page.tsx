@@ -22,7 +22,6 @@ import {
   processAuthority,
 } from "./service-process-overview";
 import { loadOwnedProcesses } from "./lib/owned-processes";
-import { storedDesignSessions } from "./lib/process-design-client";
 import { designEn, designCs } from "./process-design-copy";
 
 export { loadOwnedProcesses };
@@ -58,12 +57,6 @@ export function WorkspaceProcessesPage() {
     if (allowed) void refetch();
   }, [admin.refreshGeneration, allowed, refetch]);
   const processes = allowed && !query.isError ? query.data : undefined;
-  const sessions = allowed
-    ? storedDesignSessions(
-        { ...state.target, authority, serviceId: "" },
-        sessionStorage,
-      )
-    : [];
   const design = (
     <Button asChild>
       <Link to="/processes/design" search={{}}>
@@ -113,7 +106,12 @@ export function WorkspaceProcessesPage() {
             <EmptyContent>{design}</EmptyContent>
           </Empty>
         )}
-        <DesignSessions sessions={sessions} serviceId="" copy={copy} />
+        <DesignSessions
+          scope={
+            allowed ? { ...state.target, authority, serviceId: "" } : undefined
+          }
+          copy={copy}
+        />
       </div>
     </CatalogBoundary>
   );

@@ -1,6 +1,14 @@
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, ChevronRight, MessageSquare, Plus, Workflow } from "lucide-react";
+import {
+  Bot,
+  ChevronRight,
+  MessageSquare,
+  Plus,
+  Trash2,
+  Workflow,
+} from "lucide-react";
 import { Button } from "@admin/components/ui/button";
 import { Card } from "@admin/components/ui/card";
 import {
@@ -24,11 +32,16 @@ import { Skeleton } from "@admin/components/ui/skeleton";
 import { Section } from "@admin/components/console/page";
 import { EntityIcon } from "@admin/components/console/entity-icon";
 import { StatusBadge } from "@admin/components/console/status";
+import { ConfirmAction } from "@admin/components/console/forms";
 import { RelativeTime } from "@admin/components/console/time";
 import { useAdmin } from "./context";
 import type { CatalogState } from "./catalog-shared";
 import { ApiError } from "./lib/api";
-import { storedDesignSessions } from "./lib/process-design-client";
+import {
+  deleteDesignSession,
+  storedDesignSessions,
+  type DesignClientScope,
+} from "./lib/process-design-client";
 import {
   loadWorkspaceProcesses,
   workspaceProcessesKey,
@@ -164,47 +177,84 @@ export function ProcessRows({
   );
 }
 
-/** Unsaved designer conversations kept in this browser tab. */
+/** Unsaved designer conversations kept in this browser tab; `scope` is
+ * omitted when the viewer may not design here. */
 export function DesignSessions({
-  sessions,
-  serviceId,
+  scope,
   copy,
 }: {
-  sessions: string[];
-  serviceId: string;
+  scope?: DesignClientScope;
   copy: DesignCopy;
 }) {
+  const [deleted, setDeleted] = useState<string[]>([]);
+  const [failed, setFailed] = useState(false);
+  if (!scope) return null;
+  const sessions = storedDesignSessions(scope, sessionStorage).filter(
+    (id) => !deleted.includes(id),
+  );
   if (!sessions.length) return null;
+  const remove = async (sessionId: string) => {
+    setFailed(false);
+    try {
+      await deleteDesignSession(scope, sessionId, sessionStorage);
+      setDeleted((ids) => [...ids, sessionId]);
+    } catch {
+      setFailed(true);
+    }
+  };
   return (
     <Section title={copy.inProgress} count={sessions.length}>
+      {failed && (
+        <Alert variant="destructive">
+          <AlertDescription>{copy.deleteConversationFailed}</AlertDescription>
+        </Alert>
+      )}
       <Card variant="list">
-        {sessions.map((sessionId, index) => (
-          <Item key={sessionId} asChild variant="row" size="row">
-            <Link {...processDesignRoute(serviceId)} search={{ sessionId }}>
+        {sessions.map((sessionId, index) => {
+          const title =
+            sessions.length > 1
+              ? `${copy.designConversation} ${index + 1}`
+              : copy.designConversation;
+          return (
+            <Item key={sessionId} variant="row" size="row">
               <ItemMedia>
                 <EntityIcon size="sm" tone="muted">
                   <MessageSquare />
                 </EntityIcon>
               </ItemMedia>
               <ItemContent>
-                <ItemTitle>
-                  {sessions.length > 1
-                    ? `${copy.designConversation} ${index + 1}`
-                    : copy.designConversation}
-                </ItemTitle>
+                <ItemTitle>{title}</ItemTitle>
               </ItemContent>
               <ItemActions>
-                <span className="text-xs text-muted-foreground">
-                  {copy.resume}
-                </span>
-                <ChevronRight
-                  aria-hidden="true"
-                  className="size-4 text-muted-foreground"
+                <Button asChild variant="ghost" size="sm">
+                  <Link
+                    {...processDesignRoute(scope.serviceId)}
+                    search={{ sessionId }}
+                  >
+                    {copy.resume}
+                    <ChevronRight data-icon="inline-end" aria-hidden="true" />
+                  </Link>
+                </Button>
+                <ConfirmAction
+                  trigger={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`${copy.deleteConversation}: ${title}`}
+                    >
+                      <Trash2 aria-hidden="true" />
+                    </Button>
+                  }
+                  title={copy.deleteConversationTitle}
+                  description={copy.deleteConversationDescription}
+                  confirmLabel={copy.deleteConversation}
+                  cancelLabel={copy.cancel}
+                  onConfirm={() => remove(sessionId)}
                 />
               </ItemActions>
-            </Link>
-          </Item>
-        ))}
+            </Item>
+          );
+        })}
       </Card>
     </Section>
   );
@@ -226,12 +276,6 @@ export function ServiceProcessOverview({
   )?.enabled;
   const auth = processAuthority(state, admin);
   const processes = query.data?.filter((p) => p.serviceId === serviceId) ?? [];
-  const sessions = allowed
-    ? storedDesignSessions(
-        { ...state.target, authority: auth, serviceId },
-        sessionStorage,
-      )
-    : [];
   const add = allowed && !query.isError && serviceEnabled && (
     <Button asChild variant="outline" size="sm">
       <Link
@@ -295,7 +339,12 @@ export function ServiceProcessOverview({
           </div>
         )}
       </Section>
-      <DesignSessions sessions={sessions} serviceId={serviceId} copy={copy} />
+      <DesignSessions
+        scope={
+          allowed ? { ...state.target, authority: auth, serviceId } : undefined
+        }
+        copy={copy}
+      />
     </div>
   );
 }

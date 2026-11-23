@@ -159,6 +159,16 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
             (await h.request("owner", base + suffix, accept)).status,
             404,
           );
+        // An accepted session stays as its process's history.
+        assert.equal(
+          (
+            await h.request("owner", base + "/delete", {
+              ...h.target,
+              sessionId: initial.id,
+            })
+          ).status,
+          409,
+        );
         assert.equal(h.modelCount(), 0);
         assert.equal(h.businessCount(), 0);
       },
@@ -319,6 +329,15 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
           ).status,
           429,
         );
+        assert.equal(
+          (
+            await h.request("owner", base + "/delete", {
+              ...h.target,
+              sessionId: initial.id,
+            })
+          ).status,
+          429,
+        );
         assert.equal(h.modelCount(), 1);
         release();
         const result = await pending;
@@ -344,6 +363,40 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
         assert.equal(h.modelCount(), 1);
         assert.equal(h.businessCount(), 0);
         h.onModel(() => ({ content: "TEST design HTTP reply" }));
+      },
+    );
+    await t.test(
+      "the creator deletes an unaccepted session with its conversation; others cannot",
+      async () => {
+        const initial = await start();
+        const input = command(initial.id, "TEST-deleted-turn");
+        h.onModel(async () => ({ content: "TEST design before delete" }));
+        const done = await h.request("owner", base + "/turns", input);
+        assert.equal(turn(done.data).status, "completed");
+        const remove = { ...h.target, sessionId: initial.id };
+        assert.equal(
+          (await h.request("admin", base + "/delete", remove)).status,
+          404,
+        );
+        const deleted = await h.request("owner", base + "/delete", remove);
+        assert.equal(deleted.status, 200, JSON.stringify(deleted.data));
+        assert.equal(
+          (await h.request("owner", base + "?" + query(initial.id))).status,
+          404,
+        );
+        assert.equal(
+          (
+            await h.request(
+              "owner",
+              base + "/turns?" + query(initial.id, input.requestId),
+            )
+          ).status,
+          404,
+        );
+        assert.equal(
+          (await h.request("owner", base + "/delete", remove)).status,
+          404,
+        );
       },
     );
     await t.test(
