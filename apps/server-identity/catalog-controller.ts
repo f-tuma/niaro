@@ -971,7 +971,15 @@ export class CatalogController {
           input.workspaceId,
           actor,
         );
+        // A price kept as saved (a disabled model's, pinned to its old
+        // revision) is not re-checked: reservations never use a stale pin.
+        const kept = new Set(
+          this.store.inferenceBudget
+            .policy(input.organizationId, input.workspaceId)
+            .settings.prices.map((p) => JSON.stringify(p)),
+        );
         for (const price of input.settings.prices) {
+          if (kept.has(JSON.stringify(price))) continue;
           const model = inventory.models.find((m) => m.id === price.modelId);
           if (!model || !["chat", "router", "decision"].includes(model.kind))
             throw new IdentityError(409, "catalog_model_unavailable");

@@ -754,6 +754,81 @@ test("a typed price follows its model through saves that keep what it prices", (
   }
 });
 
+test("a kept price of a disabled model with a stale pin does not block saving limits", async () => {
+  const h = harness([]);
+  try {
+    const controller = new CatalogController(h.store, async () => {
+      throw Error("TEST no request");
+    });
+    const paid = h.command({
+      type: "saveProvider",
+      revision: 0,
+      settings: {
+        name: "TEST paid",
+        url: "https://api.example.test/v1",
+        enabled: true,
+        dailyRequestLimit: 100,
+      },
+    });
+    const model = {
+      providerId: paid,
+      name: "TEST model",
+      model: "paid",
+      enabled: true,
+      tools: true,
+    };
+    const id = h.command({ type: "saveModel", revision: 0, settings: model });
+    const price = {
+      modelId: id,
+      modelRevision: 1,
+      providerRevision: 1,
+      maxInputTokens: 8192,
+      maxOutputTokens: 1024,
+      inputMicrosPerMillion: 100,
+      outputMicrosPerMillion: 200,
+    };
+    const budget = h.store.inferenceBudget;
+    budget.savePolicy("org", target.workspaceId, 0, {
+      ...budget.policy("org", target.workspaceId).settings,
+      prices: [price],
+    });
+    // Another model id leaves the price pinned to revision 1; then it is switched off.
+    h.command({
+      type: "saveModel",
+      id,
+      revision: 1,
+      settings: { ...model, model: "other", enabled: false },
+    });
+    const save = (prices: (typeof price)[]) =>
+      controller.handle(
+        "POST",
+        new URL("https://server.test/admin/api/identity/catalog/budget"),
+        {
+          ...target,
+          revision: budget.policy("org", target.workspaceId).revision,
+          settings: {
+            mode: "observe",
+            maxTokens: 500_000,
+            maxCostMicros: 1_000_000,
+            prices,
+          },
+        },
+        h.context,
+        signal(),
+      );
+    // The console sends the disabled model's price back untouched.
+    await save([price]);
+    assert.equal(budget.storedPolicy("org", target.workspaceId).revision, 2);
+    // A changed price for the disabled model is still refused.
+    await assert.rejects(
+      save([{ ...price, inputMicrosPerMillion: 300 }]),
+      /catalog_model_unavailable/,
+    );
+  } finally {
+    h.db.close();
+  }
+});
+
 test("voice and meetings use the standard audio endpoints of any provider", async () => {
   const server = await fakeServer((seen) => {
     if (seen.path === "/v1/audio/transcriptions")
