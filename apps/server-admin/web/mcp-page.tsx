@@ -260,7 +260,7 @@ export function McpPage() {
           ) : null}
           {scope.organization && scope.detail.data?.canManageWorkspaces ? (
             <MembersMcp
-              key={`${authorityGeneration}:${data.authentication.principalId}:${scope.workspace.id}`}
+              key={`members:${authorityGeneration}:${data.authentication.principalId}:${scope.workspace.id}`}
               organizationId={scope.organization.id}
               workspaceId={scope.workspace.id}
             />
