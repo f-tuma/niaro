@@ -36,6 +36,11 @@ export const IdentityStateSchema = z.strictObject({
       }),
     )
     .max(100),
+  /** Whether the person owns the server; the organization only for its owners. */
+  instance: z.strictObject({
+    owner: z.boolean(),
+    organizationId: IdentityId.optional(),
+  }),
 });
 export const MemberSchema = z.strictObject({
   id: IdentityId,

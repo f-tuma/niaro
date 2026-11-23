@@ -29,7 +29,7 @@ import type { ModelMessage } from "../apps/server-integrations/models";
 import { routingCommand } from "./helpers/model-policy";
 
 const password = "TEST-plugin-files-password-2026";
-test("plugin files: owners edit plugins in the console, validated, audited and switchable off", async (t) => {
+test("plugin files: instance owners edit plugins in the console, validated, audited and switchable off", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "plugin-files-"));
   let app: ReturnType<typeof createReferenceServer>;
   const server = createServer((req, res) => app.emit("request", req, res));
@@ -238,22 +238,111 @@ test("plugin files: owners edit plugins in the console, validated, audited and s
     },
   );
 
-  await t.test("only the owner opens and changes plugin files", async () => {
-    const view = PluginFilesSchema.parse((await files("datetime")).data);
-    assert.equal(view.source, "built-in");
-    assert.equal(view.readOnly, false);
-    assert.equal(view.files["index.ts"], builtIn("index.ts"));
-    assert.equal(view.files["plugin.json"], builtIn("plugin.json"));
-    for (const who of [admin, member]) {
-      assert.equal((await files("datetime", who)).status, 403);
-      assert.equal(
-        (await change({ pluginId: "datetime", action: "create" }, who)).status,
-        403,
+  await t.test(
+    "only the instance owner opens and changes plugin files",
+    async () => {
+      const view = PluginFilesSchema.parse((await files("datetime")).data);
+      assert.equal(view.source, "built-in");
+      assert.equal(view.readOnly, false);
+      assert.equal(view.files["index.ts"], builtIn("index.ts"));
+      assert.equal(view.files["plugin.json"], builtIn("plugin.json"));
+      for (const who of [admin, member]) {
+        const read = await files("datetime", who);
+        assert.equal(read.status, 403);
+        assert.equal(read.data.error, "instance_owner_required");
+        assert.equal(
+          (await change({ pluginId: "datetime", action: "create" }, who))
+            .status,
+          403,
+        );
+      }
+      assert.equal((await files("missing")).status, 404);
+      assert.equal((await files("../secret")).status, 400);
+    },
+  );
+
+  await t.test(
+    "another organization's owner gets no plugin files",
+    async () => {
+      // A second organization, as data from earlier versions could carry.
+      const db = identity["db"];
+      const otherId = randomUUID();
+      const otherWorkspace = randomUUID();
+      db.prepare(
+        'INSERT INTO organization(id,name,slug,"createdAt") VALUES(?,?,?,?)',
+      ).run(otherId, "TEST Other", "test-other", new Date().toISOString());
+      db.prepare("INSERT INTO agent_workspace VALUES (?, ?, ?)").run(
+        otherWorkspace,
+        otherId,
+        "TEST Other",
       );
-    }
-    assert.equal((await files("missing")).status, 404);
-    assert.equal((await files("../secret")).status, 400);
-  });
+      await seedIdentityFixture(identity, {
+        organizationId: otherId,
+        type: "createAccount",
+        name: "TEST Other owner",
+        email: "other@example.test",
+        password,
+        role: "admin",
+      });
+      // The fixture seeds administrators; the other organization gets an owner.
+      db.prepare(`UPDATE member SET role='owner' WHERE "organizationId"=?`).run(
+        otherId,
+      );
+      const other = client();
+      await other("auth/sign-in/email", {
+        email: "other@example.test",
+        password,
+      });
+      const query = new URLSearchParams({
+        organizationId: otherId,
+        workspaceId: otherWorkspace,
+      });
+      assert.equal(
+        WorkspacePluginsSchema.parse(
+          (await other(`api/identity/plugins?${query}`)).data,
+        ).editing.allowed,
+        false,
+      );
+      const read = await other(
+        `api/identity/plugin-files?${new URLSearchParams({ organizationId: otherId, pluginId: "datetime" })}`,
+      );
+      assert.equal(read.status, 403);
+      assert.equal(read.data.error, "instance_owner_required");
+      const saved = await other("api/identity/plugin-files", {
+        organizationId: otherId,
+        pluginId: "datetime",
+        action: "save",
+        files: {
+          "plugin.json": builtIn("plugin.json"),
+          "index.ts": "export default {};",
+        },
+      });
+      assert.equal(saved.status, 403);
+      assert.equal(saved.data.error, "instance_owner_required");
+      assert.equal(
+        PluginFilesSchema.parse((await files("datetime")).data).files[
+          "index.ts"
+        ],
+        builtIn("index.ts"),
+      );
+      assert.deepEqual(
+        (
+          await other(
+            `api/identity/audit?${new URLSearchParams({ organizationId: otherId })}`,
+          )
+        ).data.entries
+          .filter(
+            (entry: { action: string }) =>
+              entry.action === "server.plugin_changed",
+          )
+          .map((entry: { outcome: string; details: object }) => [
+            entry.outcome,
+            entry.details,
+          ]),
+        [["denied", { pluginEvent: "refused" }]],
+      );
+    },
+  );
 
   await t.test(
     "saving validates and loads first; an override replaces the built-in until reset",
@@ -449,6 +538,9 @@ test("plugin files: owners edit plugins in the console, validated, audited and s
         )
         .reverse(),
       [
+        // The administrator's and the member's refused creations.
+        ["datetime", "refused", "denied"],
+        ["datetime", "refused", "denied"],
         ["datetime", "refused", "failed"],
         ["datetime", "saved", "succeeded"],
         ["datetime", "reset", "succeeded"],

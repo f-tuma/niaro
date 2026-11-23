@@ -94,7 +94,7 @@ Server settings SHALL move between servers only in the configuration bundle's `s
 
 ### Requirement: Console navigation
 
-The console sidebar SHALL show the workspace switcher at the top, **Overview** first, then the groups **Services** (Services, Installed connectors, Plugins, External AI apps), **AI** (AI providers, Model choice, Usage limits, Skills), **Processes** (Processes, Runs), **People** (People, Workspaces, Sign-in methods) and **Settings** (Activity log, and Settings for instance owners), and the account menu (account, theme, language, sign out) at the bottom. The whole sidebar SHALL be one labelled landmark.
+The sidebar SHALL show the workspace switcher on top, **Overview** first, then the groups **Services** (Services, Installed connectors, Plugins, External AI apps), **AI** (AI providers, Model choice, Usage limits, Skills), **Processes** (Processes, Runs), **People** (People, Workspaces, Sign-in methods) and **Settings** (Activity log; Settings only for instance owners), and the account menu (account, theme, language, sign out) at the bottom. The sidebar SHALL be one labelled landmark.
 
 #### Scenario: Administrator opens the console
 

@@ -64,14 +64,15 @@ const filesKey = (organizationId?: string, pluginId?: string) => [
   pluginId,
 ];
 
-/** Administration → Plugins → a plugin → Files: plugin.json and index.ts. Owners only. */
+/** Administration → Plugins → a plugin → Files: plugin.json and index.ts. The server's owners only. */
 export function PluginFilesPage() {
   const { pluginId } = useParams({ strict: false }) as { pluginId: string };
   const scope = useConsoleScope();
   const copy = usePluginsCopy(),
     common = useCatalogCopy();
-  const organizationId = scope.organization?.id;
-  const owner = scope.organization?.role === "owner";
+  // Plugin code runs for every organization: only the server's owners see it.
+  const organizationId = scope.identity.data?.instance.organizationId;
+  const owner = !!organizationId;
   const query = useQuery({
     queryKey: filesKey(organizationId, pluginId),
     queryFn: async ({ signal }) =>
@@ -119,7 +120,9 @@ export function PluginFilesPage() {
       ) : !owner || error || !query.data ? (
         <Alert variant="destructive">
           <AlertDescription>
-            {!owner || !error ? common.forbidden : catalogIssue(error, common)}
+            {!owner || !error
+              ? common.instanceOwnerRequired
+              : catalogIssue(error, common)}
           </AlertDescription>
           {owner && (
             <AlertAction>

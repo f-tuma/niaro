@@ -258,6 +258,7 @@ const en = {
   conflict: "Configuration changed. Reload the saved values.",
   reloadSaved: "Discard changes and reload",
   forbidden: "You no longer have permission for this action.",
+  instanceOwnerRequired: "Only the server's owner can do this.",
   unavailable:
     "The endpoint did not return a supported response. Check its URL and credentials.",
   openapiRequired:
@@ -558,6 +559,7 @@ const cs: Record<keyof typeof en, string> = {
   conflict: "Konfigurace se změnila. Načti uložené hodnoty.",
   reloadSaved: "Zahodit změny a načíst",
   forbidden: "Pro tuto akci už nemáš oprávnění.",
+  instanceOwnerRequired: "Tohle může jen vlastník serveru.",
   unavailable:
     "Endpoint nevrátil podporovanou odpověď. Zkontroluj URL a přihlašovací údaje.",
   openapiRequired:

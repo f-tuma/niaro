@@ -185,8 +185,10 @@ Google account.
 3. Enter **Client ID** and **Client secret**. Microsoft needs the
    **Microsoft tenant ID**; Google can be limited to one **Google hosted
    domain**. Save.
-4. People who already have an account link it under **Sign-in methods → Your
-   account → Connect account**, then can sign in with it.
+4. People who already have an account link it under **Account**
+   (`/admin/account`, in the account menu at the bottom of the sidebar) or
+   **Sign-in methods → Your account → Connect account**, then can sign in
+   with it.
 
 A secret left blank in an edit keeps the stored one. To change the provider
 kind, client or tenant, add a new method.
@@ -594,11 +596,21 @@ administrator." instead of an admin link.
 
 ## Server settings
 
-**Settings** (`/admin/settings`, owners and administrators) groups the
-server-wide values, each group with a one-line hint: **Server** (name, time
-zone, app session lifetime), **Meetings**, **Overview refresh**, **Allowed
-addresses** and **Your session**. A quiet line at the bottom says when the
-server started and which protocol it speaks.
+**Settings** (`/admin/settings`) is for the server's owners only: the owners
+of the organization created by the first owner setup (the instance
+organization). Server settings and plugin files affect every organization on
+the server, so administrators, and owners of any other organization, do not
+see Settings; opening the address says that the server's owner manages these
+settings, and the server answers their requests with 403
+`instance_owner_required`. Refused saves are recorded in the Activity log.
+Settings groups the server-wide values, each group with a one-line hint:
+**Server** (name, time zone, app session lifetime), **Meetings**, **Overview
+refresh** and **Allowed addresses**.
+
+**Account** (`/admin/account`, in the account menu) is there for every
+console user: linking sign-in methods to your own account, how you are
+signed in and until when, and the server's name, app session lifetime, start
+time and protocol. A recovery key session sees the session and server facts.
 
 **Allowed addresses** (both lists apply after the server restarts):
 
@@ -612,5 +624,6 @@ server started and which protocol it speaks.
 
 To move settings to another server, use **Settings → Configuration**
 (`/admin/settings/configuration`): **Export** downloads the organization or
-one workspace, including the server settings, and **Import** shows what a
-file changes before applying it. Sign-in methods have their own page.
+one workspace, including the server settings when a server owner exports,
+and **Import** shows what a file changes before applying it; only a server
+owner's import applies server settings. Sign-in methods have their own page.

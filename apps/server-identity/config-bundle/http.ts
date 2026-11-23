@@ -33,6 +33,8 @@ export type ConfigBundleHost = {
   /** Drops cached values a rolled back transaction left behind. */
   forget: () => void;
   serverName: () => string;
+  /** Whether the person owns the server through this organization. */
+  instanceOwner: (organizationId: string, userId: string) => boolean;
 };
 type Reply = {
   status: number;
@@ -74,6 +76,9 @@ export async function handleConfigBundle(
   const actor = await host.actor(input.organizationId);
   if (actor.role === "member")
     throw new IdentityError(403, "identity_forbidden");
+  // Server settings travel only in an instance owner's export and import.
+  if (!host.instanceOwner(input.organizationId, actor.userId))
+    host = { ...host, stores: { ...host.stores, serverSettings: undefined } };
   const db = host.stores.db;
   const workspaces = db
     .prepare(

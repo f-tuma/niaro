@@ -108,8 +108,9 @@ const en = {
   appearance: "Appearance",
   session: "Your session",
   sessionHint: "How you are signed in to this console.",
-  signInMethodsHint: "How people sign in to this organization.",
-  open: "Open",
+  ownerSettingsTitle: "Server settings are managed by the server's owner.",
+  ownerSettingsHint:
+    "They affect every organization on this server. Your own account, session and the server's details are under Account.",
   aboutServer: "About this server",
   signInMethod: "Signed in with",
   accountSignIn: "Account",
@@ -230,8 +231,9 @@ const cs: ShellCopy = {
   appearance: "Vzhled",
   session: "Tvoje relace",
   sessionHint: "Jak jsi přihlášen do této konzole.",
-  signInMethodsHint: "Jak se lidé do této organizace přihlašují.",
-  open: "Otevřít",
+  ownerSettingsTitle: "Nastavení serveru spravuje vlastník serveru.",
+  ownerSettingsHint:
+    "Platí pro všechny organizace na tomto serveru. Tvůj účet, relace a údaje o serveru jsou v části Účet.",
   aboutServer: "O serveru",
   signInMethod: "Přihlášení přes",
   accountSignIn: "Účet",

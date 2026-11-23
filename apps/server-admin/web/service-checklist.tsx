@@ -56,6 +56,7 @@ import {
   type HostedSignIn,
 } from "./service-onboarding";
 import { fill, useServiceSetupCopy } from "./service-setup-copy";
+import { useConsoleScope } from "./console-scope";
 
 type SetupCopy = ReturnType<typeof useServiceSetupCopy>;
 type AuthProvider = z.infer<typeof AuthProvidersSchema>["providers"][number];
@@ -423,6 +424,7 @@ export function ServiceChecklist({
   const copy = useServiceSetupCopy();
   const authCopy = useServiceAuthCopy();
   const { data } = useAdmin();
+  const instanceOwner = !!useConsoleScope().identity.data?.instance.owner;
   const client = useQueryClient();
   const { target } = state;
   const scope = [
@@ -591,10 +593,15 @@ export function ServiceChecklist({
     );
     switch (fix.kind) {
       case "settings":
-        return (
+        // Allowed addresses are a server setting: others ask its owner.
+        return instanceOwner ? (
           <Button asChild variant="outline" size="sm">
             <Link to="/settings">{fix.label}</Link>
           </Button>
+        ) : (
+          <span className="text-xs text-muted-foreground">
+            {copy.askServerOwner}
+          </span>
         );
       case "providers":
         return (
