@@ -1,7 +1,7 @@
 # Roadmap
 
 Source: Itsaplan project NIAR (https://api-plan.f-tuma.dev), pulled 2026-11-23. Itsaplan stays the source of truth: refresh this file from it, do not edit plans here only.
-Open work: 58 issues (13 In Progress, 18 Todo, 27 Backlog). Done initiatives are listed at the end.
+Open work: 52 issues (2 In Progress, 19 Todo, 31 Backlog). Done initiatives are listed at the end.
 
 ## Initiatives with open work
 
@@ -25,15 +25,12 @@ Přehled (/) je osobní dashboard ve stylu Twenty: registr typů widgetů (packa
 
 ### Úklid po přechodu na OpenSpec: oprávnění, odstranění starého kódu a mezery
 
-Status active, priority high, 0/14 done (0 canceled).
+Status active, priority high, 3/17 done (0 canceled).
 
 Po přechodu dokumentace na OpenSpec (NIAR-236) jsme při ověřování specifikací proti kódu našli díry v oprávněních, starý kód bez rozhraní a mezery v produktu. Každá položka má OpenSpec změnu v openspec/changes (proposal, design, tasks, delta specifikací) a projde kontrolou návrhu před implementací.
 
-- `NIAR-236` In Progress · high — Přechod dokumentace na OpenSpec: chování v openspec/specs, rozhodnutí v architecture.md, návody v docs/guides
-- `NIAR-245` In Progress · medium — Jest po doběhnutí testů neskončí: běžící časovač ve webovém chatu
-- `NIAR-233` Todo · high — 12 padajících identity testů na main (obnova nativních chatů, ukončení nativního běhu, chyby rozpočtu)
-- `NIAR-237` Todo · high — Externí AI aplikace členů: admin může vyžadovat schválení (vypnuto / se schválením / volně)
-- `NIAR-238` Todo · high — Nastavení celého serveru smí měnit jen vlastník instance, ne admin libovolné organizace
+- `NIAR-237` In Progress · high — Externí AI aplikace členů: admin může vyžadovat schválení (vypnuto / se schválením / volně)
+- `NIAR-238` In Progress · high — Nastavení celého serveru smí měnit jen vlastník instance, ne admin libovolné organizace
 - `NIAR-239` Todo · medium — Odstranit zastaralá admin API: AI profily, CalDAV pracovního prostoru, TEST contacts, pole planner, staré párování aplikace
 - `NIAR-240` Todo · medium — Odstranit testovací interpret: operátorsky spárované /v1/a a /v1/b, kalendářové návrhy, crm.contacts
 - `NIAR-242` Todo · medium — Vyřazení firemního procesu z provozu
@@ -43,6 +40,9 @@ Po přechodu dokumentace na OpenSpec (NIAR-236) jsme při ověřování specifik
 - `NIAR-247` Backlog · medium — Odstranit staré enginy agent-1 a progressive-1 a navazující obnovu otázek
 - `NIAR-249` Backlog · medium — Člen si připojí AI aplikaci a schvaluje akce konektoru ze svého účtu
 - `NIAR-248` Backlog · low — Oddělit organizace: instalované konektory, přihlašovací stránka a chyby pluginů
+- `NIAR-310` Backlog · low — Nainstalované konektory: sdílený host a vlastní image jen pro vlastníka instance
+- `NIAR-311` Backlog · low — Přihlašovací stránka ukazuje metody přihlášení všech organizací
+- `NIAR-312` Backlog · low — Chyby načtení pluginů vidí admini všech organizací
 
 ### Mobilní aplikace jako harness nad webem
 
@@ -58,11 +58,10 @@ Od října 2026 je hlavním produktem webová aplikace. Mobil sdílí protokol a
 
 ### Meetings: záznam, upload a artefakty
 
-Status active, priority medium, 5/9 done (1 canceled).
+Status active, priority medium, 6/9 done (1 canceled).
 
 Schůzky ve webu i na mobilu: nahrávání audia hovoru u nás (dvoustopé stereo, ffmpeg na serveru), přepis, souhrn a lidské úkoly; nikdy přepisy z Teams. Otevřené: import nahrávek Teams/Google, živý bot, fyzická akceptace mobilního záznamu (NIAR-140), bezpečný trigger po zpracování (NIAR-146).
 
-- `NIAR-232` In Progress · medium — Volitelná diarizace porad: rozlišení mluvčích z nahrávky (pyannote)
 - `NIAR-212` Todo · high — Schůzky fáze 3: kalendář, šablony, follow-up e-mail, CRM, vlastní poznámky, brief
 - `NIAR-213` Backlog · low — Schůzky fáze 4: živý přepis, průběžný upload, import z Teams, bot
 
@@ -97,22 +96,17 @@ Uzavřít bezpečnostní, provozní, retenční a distribuční podmínky soukro
 
 ## Open issues without an initiative
 
-- `NIAR-235` In Progress · high — Produkce: osobní data v logu, prázdné odpovědi přemýšlivých modelů v přehledu a drahé dotazování na události
-- `NIAR-246` In Progress · high — Pracovní mazlíček: postupně sbíraný profil člověka viditelný jako mazlíček
-- `NIAR-257` In Progress · high — Audit UI webu a aplikace: chyby, architektura, zbytečné věci
-- `NIAR-258` In Progress · high — Méně tokenů bez ztráty funkčnosti: cache, menší schémata, widgety
-- `NIAR-259` In Progress · high — Audio ze schůzek v S3 a lokální RustFS na dev serveru
-- `NIAR-288` In Progress · high — MCP: připojení z Claude, ChatGPT a Codexu jedním kliknutím a bez hodinového odpojování
-- `NIAR-256` In Progress · medium — Mobil: jednodušší navigace bez duplicitních cest
-- `NIAR-250` In Progress · — — Přílohy a kamera v chatu s úložištěm S3, Hetzner a RustFS
-- `NIAR-254` In Progress · — — Doplnit reference v zadávání chatu a zjednodušit mobilní ovládání
-- `NIAR-255` In Progress · — — Umožnit uživateli vybrat osobní hlas výstupu
 - `NIAR-135` Todo · high — Dokončit poznámku u osoby a pravdivě zobrazit částečný CRM zápis
 - `NIAR-140` Todo · high — Akceptace záznamu schůzky: skutečná schůzka na webu a fyzický telefon
+- `NIAR-246` Todo · high — Pracovní mazlíček: postupně sbíraný profil člověka viditelný jako mazlíček
+- `NIAR-259` Todo · high — Audio ze schůzek v S3 a lokální RustFS na dev serveru
 - `NIAR-264` Todo · high — Telefon: připomínky z prvního testu aplikace
+- `NIAR-288` Todo · high — MCP: připojení z Claude, ChatGPT a Codexu jedním kliknutím a bez hodinového odpojování
 - `NIAR-306` Todo · low — Prozkoumat: asynchronní úlohy a multiplayer přes Pi Durable
+- `NIAR-250` Todo · — — Přílohy a kamera v chatu s úložištěm S3, Hetzner a RustFS
 - `NIAR-146` Backlog · high — Nastavit bezpečný procesní trigger po zpracování schůzky
 - `NIAR-162` Backlog · high — Odstranit legacy smyčky až po ověřeném drainu
+- `NIAR-309` Backlog · low — Mazlíček: počasí a prostředí peta (pet-weather, PetEnvironment)
 - `NIAR-108` Backlog · — — Přijmout celý native procesní tok na fyzickém Androidu
 
 ## Initiatives with no open issues
@@ -124,8 +118,11 @@ Uzavřít bezpečnostní, provozní, retenční a distribuční podmínky soukro
 
 ## Follow-ups not in Itsaplan yet
 
-From the NIAR-308 reviews (2026-11-13) and the 2026-11-23 production checks. None blocks members.
+From the NIAR-308 reviews (2026-11-13) and the 2026-11-23 checks. None blocks members.
 
+- Attachment tests (`tests/attachment-*.node.ts`) are in no npm script and not in CI.
+- Docs drift: `docs/guides/object-storage.md` still says backup tasks 4.4–4.5 are not implemented (backup scripts ship); `docs/guides/memory.md` still calls the pet page later work.
+- Worktrees with symlinked `node_modules` fail 3 Pi tests (`pi-agent-core`, `pi-crash`) even on clean main; run full suites in the main checkout.
 - Designer budget copy: `budget_exhausted` and `budget_overrun` show the same "used its per-run usage limit" text (`apps/server-admin/web/process-design-copy.ts`), so a price overrun reads as a spent limit.
 - Price ceiling outside OpenRouter: enforced calls to other providers have no `max_price`, so a provider billing above the saved price still overruns and stops the turn (`apps/server-identity/inference-budget.ts`).
 - Designer `resent` mark is never cleared after a successful resend (`apps/server-admin/web/lib/process-design-client.ts`).
