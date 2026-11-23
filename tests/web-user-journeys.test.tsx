@@ -533,6 +533,10 @@ const mockConsoleScope = {
         { id: "test_org", name: "TEST organization" },
         { id: "second_org", name: "Second organization" },
       ],
+      instance: { owner: true, organizationId: "test_org" } as {
+        owner: boolean;
+        organizationId?: string;
+      },
     },
   },
   detail: {
@@ -1833,4 +1837,34 @@ test("the admin sidebar groups pages as Services, AI, Processes, People and Sett
   );
   const lastNav = anchors.findIndex((a) => a.props.to === "/settings");
   expect(back).toBeGreaterThan(lastNav);
+  // Settings change the whole server: others have no Settings item.
+  mockConsoleScope.identity.data.instance = { owner: false };
+  try {
+    act(() => {
+      tree.update(
+        <ConsoleShell
+          logout={() => {}}
+          refresh={() => {}}
+          busy={false}
+          refreshing={false}
+        >
+          <span>Page</span>
+        </ConsoleShell>,
+      );
+    });
+    const others = tree!.root
+      .findByProps({ "aria-label": "Navigation" })
+      .findAllByType("a")
+      .map((a) => a.props.href ?? a.props.to);
+    expect(others).toEqual(links.filter((link) => link !== "/settings"));
+    // Everyone keeps their own Account in the account menu.
+    expect(
+      tree!.root.findAllByType("a").some((a) => a.props.to === "/account"),
+    ).toBe(true);
+  } finally {
+    mockConsoleScope.identity.data.instance = {
+      owner: true,
+      organizationId: "test_org",
+    };
+  }
 });

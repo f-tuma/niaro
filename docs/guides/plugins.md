@@ -168,8 +168,8 @@ Renaming or adding a tool means changing both files: the tool list in
 
 ## Editing in the console or as files
 
-**In the console** (**Plugins** → a plugin → **Files**; organization
-owners only):
+**In the console** (**Plugins** → a plugin → **Files**; the server's owners
+only, see [Server settings](administration.md#server-settings)):
 
 - **Check** loads the files without saving.
 - **Save changes** validates, loads and saves them as the plugin's override

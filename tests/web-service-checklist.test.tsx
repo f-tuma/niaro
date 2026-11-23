@@ -30,6 +30,12 @@ jest.mock("../apps/server-admin/web/context", () => ({
     data: { authentication: { principalId: "usr_TEST" } },
   }),
 }));
+let mockInstanceOwner = true;
+jest.mock("../apps/server-admin/web/console-scope", () => ({
+  useConsoleScope: () => ({
+    identity: { data: { instance: { owner: mockInstanceOwner } } },
+  }),
+}));
 jest.mock("../apps/server-admin/web/hosted-page", () => ({
   useHostedServers: () => ({ data: mockHosted }),
 }));
@@ -594,5 +600,38 @@ test("without a Microsoft method the checklist shows what to register", async ()
     ).toBe("/auth-providers");
   } finally {
     act(() => unmount());
+  }
+});
+
+test("a denied address links the server's owner to Settings and asks others to contact them", async () => {
+  mockHosted = { builtins: [], servers: [] };
+  mockApi.mockImplementation(async (path: string) => {
+    if (path === "identity/catalog/probe")
+      return { status: "failed", error: "integration_origin_denied" };
+    if (path === "identity/catalog/oauth/status") return oauth();
+    if (path === "identity/auth-providers/list")
+      return { organizationId: "org_TEST", canManage: true, providers: [] };
+    throw new Error(path);
+  });
+  const settingsLinks = (root: ReactTestInstance) =>
+    root.findAll(
+      (node) => node.type === "a" && node.props.href === "/settings",
+    );
+  const owner = await render(service());
+  try {
+    expect(settingsLinks(owner.root)).toHaveLength(1);
+  } finally {
+    act(() => owner.unmount());
+  }
+  mockInstanceOwner = false;
+  const other = await render(service());
+  try {
+    expect(settingsLinks(other.root)).toHaveLength(0);
+    expect(text(other.root)).toContain(
+      "Ask the server's owner to allow this address.",
+    );
+  } finally {
+    mockInstanceOwner = true;
+    act(() => other.unmount());
   }
 });

@@ -5,7 +5,7 @@ import {
   SERVER_SETTINGS_PROFILE,
   type ServerSettings,
 } from "../packages/protocol/server-settings";
-import { Settings } from "../apps/server-admin/web/pages";
+import { AccountPage, Settings } from "../apps/server-admin/web/pages";
 
 const mockApi = jest.fn();
 jest.mock("../apps/server-admin/web/lib/api", () => ({
@@ -19,7 +19,8 @@ jest.mock("../apps/server-admin/web/lib/api", () => ({
     }
   },
 }));
-let mockRole = "owner";
+let mockOwner = true;
+let mockCurrent = "better-auth";
 jest.mock("../apps/server-admin/web/context", () => ({
   useAdmin: () => ({
     language: "en",
@@ -31,17 +32,39 @@ jest.mock("../apps/server-admin/web/context", () => ({
         workflowProfile: "agent-workflow/1",
       },
       authentication: {
-        current: "better-auth",
+        current: mockCurrent,
         expiresAt: "2026-10-22T08:00:00.000Z",
       },
     },
   }),
 }));
+// The selected organization differs from the instance organization: server
+// settings always name the instance organization.
 jest.mock("../apps/server-admin/web/console-scope", () => ({
   useConsoleScope: () => ({
-    organization: { id: "org_TEST", name: "TEST", role: mockRole },
+    organization: { id: "org_SELECTED", name: "TEST", role: "owner" },
+    identity: {
+      isPending: false,
+      data: {
+        user: { id: "user_TEST" },
+        instance: mockOwner
+          ? { owner: true, organizationId: "org_TEST" }
+          : { owner: false },
+      },
+    },
   }),
 }));
+jest.mock("../apps/server-admin/web/account-providers", () => {
+  const React = jest.requireActual<typeof import("react")>("react");
+  return {
+    AccountProviderLinks: (props: { organizationId?: string }) =>
+      React.createElement("div", {
+        "data-host": "AccountProviderLinks",
+        organizationId: props.organizationId,
+      }),
+  };
+});
+jest.mock("@admin/components/ui/empty", () => host(), { virtual: true });
 jest.mock("@tanstack/react-router", () => {
   const React = jest.requireActual<typeof import("react")>("react");
   return {
@@ -176,7 +199,7 @@ const view = (revision: number, value: ServerSettings) => ({
   operatorOrigins: [] as string[],
 });
 const mounted: { unmount(): void }[] = [];
-async function render() {
+async function render(Page: () => React.ReactNode = Settings) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
@@ -184,7 +207,7 @@ async function render() {
   await act(async () => {
     renderer = TestRenderer.create(
       <QueryClientProvider client={client}>
-        <Settings />
+        <Page />
       </QueryClientProvider>,
     );
   });
@@ -200,17 +223,48 @@ async function render() {
 afterEach(() => {
   for (const entry of mounted.splice(0)) act(() => entry.unmount());
   mockApi.mockReset();
-  mockRole = "owner";
+  mockOwner = true;
+  mockCurrent = "better-auth";
 });
 
-test("a member's console shows the server read-only", async () => {
-  mockRole = "member";
+test("anyone but the server's owner sees who manages server settings and no values", async () => {
+  mockOwner = false;
   const root = await render();
   expect(mockApi).not.toHaveBeenCalled();
   expect(root.findAll((node) => node.type === "input")).toHaveLength(0);
-  expect(text(root)).toContain("TEST Server");
-  // Moving the configuration is for owners and administrators.
+  expect(text(root)).toContain(
+    "Server settings are managed by the server's owner.",
+  );
+  expect(text(root)).not.toContain("TEST Server");
+  // Moving the configuration is for the server's owner too.
   expect(root.findAll((node) => node.type === "a")).toHaveLength(0);
+});
+
+test("Account holds sign-in linking, the session and the server's facts", async () => {
+  mockOwner = false;
+  const root = await render(AccountPage);
+  expect(mockApi).not.toHaveBeenCalled();
+  const all = text(root);
+  expect(all).toContain("TEST Server");
+  expect(all).toContain("Your session");
+  expect(all).toContain("30 min");
+  expect(all).toContain("About this server");
+  expect(all).toContain("agent-workflow/1");
+  expect(
+    root.find((node) => node.props["data-host"] === "AccountProviderLinks")
+      .props.organizationId,
+  ).toBe("org_SELECTED");
+});
+
+test("a recovery session's Account shows the session and server facts only", async () => {
+  mockCurrent = "admin-key";
+  const root = await render(AccountPage);
+  const all = text(root);
+  expect(all).toContain("Recovery key");
+  expect(all).toContain("TEST Server");
+  expect(
+    root.findAll((node) => node.props["data-host"] === "AccountProviderLinks"),
+  ).toHaveLength(0);
 });
 
 test("owners reach the configuration export and import from Settings", async () => {
@@ -241,7 +295,6 @@ test("settings are grouped with a hint each; export and import live on Configura
     "Meetings",
     "Overview refresh",
     "Allowed addresses",
-    "Your session",
   ])
     expect(
       root.findAll(
@@ -264,13 +317,13 @@ test("settings are grouped with a hint each; export and import live on Configura
         node.type === "button" && ["Export", "Import"].includes(text(node)),
     ),
   ).toHaveLength(0);
-  const signIn = root.find(
-    (node) => node.type === "a" && node.props.href === "/auth-providers",
-  );
-  expect(text(signIn)).toBe("Open");
-  // The protocol is a quiet line about the server, not a setting.
-  expect(all).toContain("About this server");
-  expect(all).toContain("agent-workflow/1");
+  // The session and the server's facts live on Account.
+  expect(
+    root.findAll(
+      (node) => node.type === "a" && node.props.href === "/auth-providers",
+    ),
+  ).toHaveLength(0);
+  expect(all).not.toContain("Your session");
 });
 
 test("an edited field is validated and saved with the revision", async () => {

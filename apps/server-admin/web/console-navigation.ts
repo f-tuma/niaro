@@ -38,6 +38,8 @@ export type NavItem = {
   to: NonNullable<LinkProps["to"]>;
   key: NavKey;
   icon: LucideIcon;
+  /** Shown only to the server's owners (see the identity state's `instance`). */
+  instanceOwner?: true;
 };
 export type NavGroup = {
   label?:
@@ -88,7 +90,12 @@ export const navigation: NavGroup[] = [
     label: "groupSettings",
     items: [
       { to: "/audit", key: "audit", icon: ScrollText },
-      { to: "/settings", key: "settings", icon: Settings2 },
+      {
+        to: "/settings",
+        key: "settings",
+        icon: Settings2,
+        instanceOwner: true,
+      },
     ],
   },
 ];
