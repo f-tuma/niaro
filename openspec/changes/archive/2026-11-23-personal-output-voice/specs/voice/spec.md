@@ -18,7 +18,7 @@ Voice requests and spoken replies SHALL be offered by the phone app. The web app
 
 ### Requirement: Reply playback timing
 
-An automatically read reply SHALL hold its text until audio actually starts, for at most 8 seconds from the accepted reply. If audio does not start in time the app SHALL show the text, allow manual playback, and MUST NOT start the late audio. Stop, navigation, backgrounding, changing the spoken-replies on/off preference, a replacing response or a session change SHALL cancel playback. Saving only a personal output voice SHALL affect the next requested synthesis without stopping or restarting existing playback.
+An automatically read reply SHALL hold its text until audio actually starts, for at most 8 seconds from the accepted reply. If audio does not start in time the app SHALL show the text, allow manual playback, and MUST NOT start the late audio. Stop, navigation, backgrounding, turning spoken replies on or off, a replacing response or a session change SHALL cancel playback. Saving only a personal output voice SHALL affect the next requested synthesis without stopping or restarting current playback.
 
 #### Scenario: Slow synthesis
 
