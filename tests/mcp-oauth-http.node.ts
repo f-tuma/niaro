@@ -271,6 +271,26 @@ test(
         apps.map((app) => [app.clientId, h.record(app.requestedBy).email]),
         [[h.record(requested.data).clientId, "member@example.test"]],
       );
+      // At the organization's 100 waiting requests a member's registration is
+      // refused before any client exists, so no app is left without a state.
+      const fill = h.identity["db"].prepare(
+        `INSERT INTO agent_mcp_oauth_app (id,client_id,workspace_id,status,requested_at,revision)
+        VALUES (?,?,?,'pending',0,1)`,
+      );
+      for (let index = 1; index < 100; index += 1)
+        fill.run(
+          `TEST-fill-${index}`,
+          `TEST-fill-${index}`,
+          h.target.workspaceId,
+        );
+      const full = clients();
+      const limited = await register("member");
+      assert.equal(limited.status, 429);
+      assert.equal(h.record(limited.data).error, "identity_limit");
+      assert.equal(clients(), full);
+      h.identity["db"]
+        .prepare("DELETE FROM agent_mcp_oauth_app WHERE id LIKE 'TEST-fill-%'")
+        .run();
       const administrator = await register("admin");
       assert.equal(h.record(administrator.data).state, "approved");
       await policy("free", 0);

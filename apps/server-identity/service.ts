@@ -7128,6 +7128,7 @@ export class IdentityService {
           if (member && policy === "off")
             throw new IdentityError(403, "mcp_external_apps_off");
           const state = member && policy === "review" ? "pending" : "approved";
+          if (state === "pending") this.mcpPolicies.requestRoom(organizationId);
           const registered = await this.mcpOAuth.registerClient(
             this.auth,
             client,

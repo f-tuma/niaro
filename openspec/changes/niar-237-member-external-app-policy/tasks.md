@@ -20,17 +20,17 @@
 
 ## 4. Console and pages (EN/CS)
 
-- [ ] 4.1 `mcp-page.tsx`: policy select, Requests, Members' access and Apps sections with revision-checked actions; strings in `mcp-copy.ts` EN/CS; verify `tests/web-mcp-policy.test.tsx` — `npx jest --runInBand tests/web-mcp-policy.test.tsx`. (Req: Members' external AI apps policy, Reviewing external AI app requests, Administrators oversee members' access)
-- [ ] 4.2 `mcp-oauth-client.tsx` sends the selected workspace and shows the state; `mcp-consent.tsx` shows per-workspace state and the three error texts; verify jest cases in `tests/web-mcp-policy.test.tsx`. (Req: Consent shows availability, Policy for OAuth links)
+- [x] 4.1 `mcp-page.tsx`: policy select, Requests, Members' access and Apps sections with revision-checked actions; strings in `mcp-copy.ts` EN/CS; verify `tests/web-mcp-policy.test.tsx` — `npx jest --runInBand tests/web-mcp-policy.test.tsx`. (Req: Members' external AI apps policy, Reviewing external AI app requests, Administrators oversee members' access)
+- [x] 4.2 `mcp-oauth-client.tsx` sends the selected workspace and shows the state; `mcp-consent.tsx` shows per-workspace state and the three error texts; verify jest cases in `tests/web-mcp-policy.test.tsx`. (Req: Consent shows availability, Policy for OAuth links)
 - [x] 4.3 Account page pending/rejected rows with reason and remove; audit labels for the new actions in `audit-page.tsx` EN/CS; verify `npx jest --runInBand tests/account-pages.test.ts`. (Req: A person sees their requests, External AI app activity)
 - [x] 4.4 Overview Needs attention row for waiting requests (`lib/needs-attention.ts`, `overview-page.tsx`), EN/CS; verify a jest case for the row order and link. (Req: Needs attention)
-- [ ] 4.5 Update `docs/guides/administration.md` "External AI apps" (policy, requests, OAuth registration now per workspace) and the MCP bullet in `docs/architecture.md`; verify links resolve.
+- [x] 4.5 Update `docs/guides/administration.md` "External AI apps" (policy, requests, OAuth registration now per workspace) and the MCP bullet in `docs/architecture.md`; verify links resolve.
 
 ## 5. Integration checks
 
-- [ ] 5.1 `npm run admin:build && npm run check && npm run test:mcp` pass.
+- [x] 5.1 `npm run admin:build && npm run check && npm run test:mcp` pass (the only failures, 3 in `tests/pi-crash.node.ts` and `tests/pi-agent-core.node.ts`, also fail on clean main in this symlinked-`node_modules` worktree).
 - [ ] 5.2 Manual UI check on the dev server at 1440 px and 390 px, EN and CS: `/admin/mcp` (each section), `/admin/mcp/consent` in states available/request/pending/rejected/off, account page, Overview row; no horizontal scroll at 390 px.
-- [ ] 5.3 `spec openspec --project /home/flamendrin/workspace/niaro -- validate niar-237-member-external-app-policy --strict` passes.
+- [x] 5.3 `npx -y @fission-ai/openspec@latest validate niar-237-member-external-app-policy --strict` passes (the `spec openspec` wrapper answers "OpenSpec has not been initialized by SPEC" in this repo).
 
 ## Workflow follow-up
 

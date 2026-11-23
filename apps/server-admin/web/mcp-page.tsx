@@ -876,7 +876,7 @@ function RequestRow({
 
 /** Owners and administrators: members' policy, requests, access and apps
  * of the selected workspace (NIAR-237). Every decision is revision-checked. */
-function MembersMcp({
+export function MembersMcp({
   organizationId,
   workspaceId,
 }: {

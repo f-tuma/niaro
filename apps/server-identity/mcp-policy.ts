@@ -189,7 +189,8 @@ export class McpPolicyStore {
     if (state === "available") return;
     if (state === "off") throw new IdentityError(403, "mcp_external_apps_off");
     if (state === "rejected") throw new IdentityError(403, "mcp_app_rejected");
-    if (state === "request")
+    if (state === "request") {
+      this.requestRoom(access.organizationId);
       this.request(
         input.clientId,
         input.workspaceId,
@@ -197,6 +198,7 @@ export class McpPolicyStore {
         input.userId,
         "pending",
       );
+    }
     throw new IdentityError(403, "mcp_app_pending");
   }
   /** Every workspace the person may use with this app, and what linking means there. */
@@ -223,8 +225,20 @@ export class McpPolicyStore {
         };
       });
   }
+  /** Pending app requests are bounded per organization; checked before a
+   * registration creates its client, so no client is left without a state. */
+  requestRoom(organizationId: string) {
+    const waiting = this.db
+      .prepare(
+        `SELECT count(*) AS n FROM agent_mcp_oauth_app a JOIN agent_workspace w ON w.id=a.workspace_id
+        WHERE w.organization_id=? AND a.status='pending'`,
+      )
+      .get(organizationId)!;
+    if (Number(waiting.n) >= MAX_PENDING_APPS)
+      throw new IdentityError(429, "identity_limit");
+  }
   /** Records an app's state in a workspace as it was registered or requested;
-   * a pending request is audited and bounded per organization. */
+   * a pending request is audited. Callers check `requestRoom` first. */
   request(
     clientId: string,
     workspaceId: string,
@@ -233,16 +247,6 @@ export class McpPolicyStore {
     status: "approved" | "pending",
     reviewed = false,
   ) {
-    if (status === "pending") {
-      const waiting = this.db
-        .prepare(
-          `SELECT count(*) AS n FROM agent_mcp_oauth_app a JOIN agent_workspace w ON w.id=a.workspace_id
-        WHERE w.organization_id=? AND a.status='pending'`,
-        )
-        .get(organizationId)!;
-      if (Number(waiting.n) >= MAX_PENDING_APPS)
-        throw new IdentityError(429, "identity_limit");
-    }
     const id = randomUUID();
     const at = this.now();
     this.db

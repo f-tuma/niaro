@@ -163,12 +163,20 @@ the decision, then the reason.
   `invalid_grant` disconnects.
 - **MCP grants for external AI apps are a separate credential store** bound to
   the original member record, so leaving and rejoining never restores access.
-  No refresh tokens; manual tokens expire within 30 days; OAuth uses the
-  Better Auth provider with pinned callbacks and PKCE S256; dynamic client
-  registration and metadata fetching are off (SSRF risk). MCP is a router:
+  Manual tokens expire within 30 days and have no refresh. OAuth uses the
+  Better Auth provider with pinned callbacks and PKCE S256; apps identify
+  themselves by a Client ID Metadata Document (CIMD), get rotating refresh
+  tokens (a connection lasts up to 30 days) and loopback callbacks are allowed
+  for native clients; dynamic client registration stays off. MCP is a router:
   the app's own model plans, Niaro serves the person's data with their app
   visibility and runs catalog actions, re-authenticating the grant on every
   call and never calling a model for it.
+  A per-workspace policy (`off`/`review`/`free`, in `mcp-policy.ts`) governs
+  members only: their grants carry a status checked on that same
+  re-authentication; apps registered on the server belong to an organization,
+  and every OAuth app is approved per workspace (keyed by `client_id`, so
+  metadata-document apps too), because a one-hour session-bound link cannot
+  wait for review.
 - **The activity log holds metadata only,** written in the same transaction as
   the change. It is not tamper-evident and has no retention.
 

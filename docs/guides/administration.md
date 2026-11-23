@@ -368,12 +368,40 @@ also sees and revokes their tokens on **Account** (`/me`) in the app.
 For apps that link through OAuth:
 
 1. In the app's connector settings, copy its exact HTTPS callback address.
-2. **External AI apps → Register OAuth client**, paste it as **Callback URL**,
-   copy the returned **Client ID**.
+2. Select the workspace, then **External AI apps → Register OAuth client**,
+   paste it as **Callback URL**, copy the returned **Client ID**. The app
+   belongs to that workspace's organization and is approved there.
 3. Enter the client ID in the app's own-client settings, with the same `/mcp`
    endpoint. When linking, the person chooses the workspace and permissions.
 
 OAuth access lasts at most an hour; link again after it expires.
+
+### Members' AI apps
+
+Owners and administrators decide per workspace, under **Members' AI apps**,
+whether members may connect their own AI apps. Owners and administrators are
+never held back.
+
+- **Members connect apps**: _Off_, _Administrator approves_ (default) or
+  _Allowed_. Choosing _Off_ asks for confirmation and ends every member's
+  access in the workspace at once, manual and OAuth; app approvals stay
+  recorded. Going from _Allowed_ to _Administrator approves_ keeps what
+  already works; only new access waits.
+- **Requests**: under approval, a member's new token waits (the token is shown
+  once but `/mcp` answers `mcp_access_pending` until approved), and a member's
+  first link of an app nobody approved for the workspace files a request; the
+  consent page says so. **Approve** or **Reject** with an optional reason the
+  member sees on their **Account** page. Waiting requests also appear in
+  **Overview → Needs attention**.
+- **Members' access**: every member's active token and OAuth link, with last
+  use; `…` → **Revoke access** ends it at once.
+- **OAuth apps**: every app known in the workspace with its state. Apps known
+  by their metadata address (ChatGPT) appear once a member asks to link them.
+  **Withdraw approval** ends members' links through that app in the workspace
+  and refuses new ones; an app that is not approved can be approved here.
+
+Apps registered and linked before this policy existed were approved in the
+workspaces of the time, so nothing stopped working at upgrade.
 
 ### Client notes
 

@@ -81,6 +81,15 @@ New routes in `service.ts`, all `POST`, body JSON with `organizationId` and `wor
 - `overview-page.tsx` + `lib/needs-attention.ts`: one row "N external AI app requests waiting" linking to `/admin/mcp`, inserted after the own-services row.
 - All strings in `mcp-copy.ts`, `audit-page.tsx` copy, account-page copy, `overview` copy — EN and CS.
 
+### Implementation deviations (recorded after the build)
+
+- **Apps are keyed by `clientId`, not a numeric app id.** After NIAR-288/289 an app may arrive by its metadata-document `client_id` (CIMD) without registering, so review and withdraw take `{ kind: 'app', clientId, revision, decision }` (D8) and an app nobody decided has revision 0. Each `agent_mcp_oauth_app` row also carries its own `id` (`TEXT NOT NULL UNIQUE`), used as the audit target of `mcp.app_registered` / `mcp.app_requested` / `mcp.app_reviewed` so the audit never stores a client ID URL.
+- **Backfill also covers CIMD apps** (D7): besides registered legacy clients × every workspace, every `(client_id, workspace_id)` already linked through `agent_mcp_oauth_binding` is approved, so metadata-document apps keep working where they were in use. CIMD apps have no organization and appear on a workspace's Apps list only once they have a state there.
+- **An approved app can only be withdrawn, not rejected.** `reject` applies to an undecided or pending app; `withdraw` to an approved one; `approve` to anything not approved. Any other combination is 409 `mcp_review_conflict`.
+- **`/mcp` names the refusal.** A pending or rejected grant gets 403 whose body names `mcp_access_pending` or `mcp_access_rejected`, so a client's operator sees why.
+- **Choosing `off` asks for confirmation** in the console, since it revokes every member grant of the workspace (D6); other policy changes save at once.
+- **The pending-app limit is checked before a registration creates its client** (`McpPolicyStore.requestRoom`), so a member's registration refused with 429 `identity_limit` leaves no client without an approval row. Concurrent registrations may overshoot the bound by a few; the bound is a flood guard, not an invariant.
+
 ## Risks / Trade-offs
 
 - [Members' new manual grants silently wait under the default] → the issue response returns `status: "pending"`, the account page and the API say so, and Needs attention surfaces requests.
