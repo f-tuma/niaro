@@ -48,7 +48,7 @@ RUN git clone --depth 1 --branch v1.9.4 https://github.com/ggml-org/whisper.cpp.
  && cmake --build src/build --target whisper-vad-speech-segments -j "$(nproc)" \
  && mkdir -p out/whisper.cpp/build/bin out/models \
  && cp src/build/bin/whisper-vad-speech-segments out/whisper.cpp/build/bin/ \
- && curl --fail --location --retry 2 --output out/models/ggml-silero-v6.2.0.bin \
+ && curl -fL --retry 2 --output out/models/ggml-silero-v6.2.0.bin \
       https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin \
  && echo "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987  out/models/ggml-silero-v6.2.0.bin" | sha256sum -c -
 
