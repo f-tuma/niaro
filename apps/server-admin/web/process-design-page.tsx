@@ -643,10 +643,7 @@ export function DesignWorkspace({
                           size="sm"
                           variant="outline"
                           disabled={!retryable}
-                          onClick={() => {
-                            client.setComposer(entry.text);
-                            void client.send(language);
-                          }}
+                          onClick={() => void client.send(language, entry.text)}
                         >
                           {copy.retryTurn}
                         </Button>
@@ -738,7 +735,8 @@ export function DesignWorkspace({
               {state.initializing ||
               state.handoff ||
               state.dispatching ||
-              state.pending ? (
+              state.pending ||
+              isRunning ? (
                 <Button variant="outline" disabled title={copy.pendingHint}>
                   <Plus data-icon="inline-start" aria-hidden="true" />
                   {copy.newConversation}

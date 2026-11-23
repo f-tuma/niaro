@@ -1,3 +1,4 @@
+import { unwrapMcpText } from "./bounded-preview";
 import {
   NativeTestSuiteSchema,
   type NativeTestCase,
@@ -222,7 +223,7 @@ function walk(artifact: ProcessVersion, catalog: Catalog) {
           input: bound as Fixture["input"],
           decision: action.approval === "always" ? "approve" : "none",
           outcome: "complete",
-          output: result as Fixture["input"],
+          output: mcpResult(service, result) as Fixture["input"],
         },
         receipt: {
           serviceId: service.id,
@@ -232,7 +233,7 @@ function walk(artifact: ProcessVersion, catalog: Catalog) {
           input: bound as Receipt["input"],
           effect: action.effect,
           status: "succeeded",
-          output: result as Receipt["input"],
+          output: mcpResult(service, result) as Receipt["input"],
           dispatches: 1,
         },
       });
@@ -277,15 +278,9 @@ function walk(artifact: ProcessVersion, catalog: Catalog) {
           valid = false;
         }
         if (!valid) continue;
-        // An MCP action's receipt keeps its whole tools/call result.
-        const output: Fixture["input"] =
-          service.protocol === "mcp"
-            ? {
-                content: [
-                  { type: "text", text: JSON.stringify({ value: SAMPLE }) },
-                ],
-              }
-            : { value: SAMPLE };
+        const output = mcpResult(service, {
+          value: SAMPLE,
+        }) as Fixture["input"];
         fixtures.push({
           service,
           action,
@@ -337,6 +332,12 @@ function walk(artifact: ProcessVersion, catalog: Catalog) {
   if (!output) throw new Gap("output_unsupported");
   return { input, steps, fixtures, output };
 }
+
+/** An MCP action's receipt keeps its whole tools/call result. */
+const mcpResult = (service: Service, value: unknown) =>
+  service.protocol === "mcp"
+    ? { content: [{ type: "text", text: JSON.stringify(value) }] }
+    : value;
 
 /**
  * A minimal qualifying suite derived only from the frozen definition and the
@@ -472,10 +473,11 @@ function build(
       } else if (end!.as === "malformed") {
         // A write never fails plainly (its effect is then uncertain): its
         // result does not match the step's declared output instead.
-        const output = {
-          ...(fixture.output as Record<string, unknown>),
-          [unusedKey(fixture.output as Record<string, unknown>)]: SAMPLE,
-        } as Fixture["input"];
+        const plain = unwrapMcpText(fixture.output) as Record<string, unknown>;
+        const output = mcpResult(path.fixtures[step.action]!.service, {
+          ...plain,
+          [unusedKey(plain)]: SAMPLE,
+        }) as Fixture["input"];
         actions.push({ ...fixture, output });
         receipts.push({ ...receipt, output });
       } else if (end!.as === "reject") {

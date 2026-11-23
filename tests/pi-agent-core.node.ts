@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { before, test } from "node:test";
@@ -418,10 +425,22 @@ test("the agent core file is private and reopens with its conversations", async 
     const first = await PiAgentCore.open({ file, host });
     const chat = await first.createConversation(piScope);
     await ask(first, chat.id, "hi");
+    const mode = (path: string) => statSync(path).mode & 0o777;
+    const sides = [file + "-wal", file + "-shm"];
+    assert(sides.every((path) => existsSync(path)));
+    for (const path of [file, ...sides]) assert.equal(mode(path), 0o600, path);
     await first.close();
-    assert.equal(statSync(file).mode & 0o777, 0o600);
+    assert.equal(mode(file), 0o600);
+    // Side files an older run left readable; SQLite resets the mode of empty ones itself, so they hold data.
+    for (const path of sides) {
+      writeFileSync(path, "x");
+      chmodSync(path, 0o644);
+    }
     const second = await PiAgentCore.open({ file, host });
     try {
+      assert(sides.every((path) => existsSync(path)));
+      for (const path of [file, ...sides])
+        assert.equal(mode(path), 0o600, path);
       assert.equal(assistants(await entries(second, chat.id)).length, 1);
     } finally {
       await second.close();

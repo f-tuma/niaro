@@ -122,6 +122,8 @@ export type CatalogRuntime = {
     history: {
       role: "user" | "assistant";
       text: string;
+      /** A card reply's visible text, beside its summary in `text`. */
+      reply?: string;
       operationId?: string | null;
     }[],
     signal: AbortSignal,

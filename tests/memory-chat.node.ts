@@ -109,7 +109,10 @@ test("memory chat: explicit notes persist into new sessions, opt-out and deletio
                 },
               ],
             }
-          : { content: "TEST reply" };
+          : latest?.startsWith("Search:") &&
+              !body.messages.some((m) => m.role === "tool")
+            ? tool("memory_search", { query: "TEST" })
+            : { content: "TEST reply" };
     return {
       status: 200,
       headers: {},
@@ -314,6 +317,54 @@ test("memory chat: explicit notes persist into new sessions, opt-out and deletio
     ])
       assert(!JSON.stringify(requests[opted]!.messages).includes(content));
     await mutate({ type: "preference", optOut: false });
+    // Memory saved (and one also deleted) elsewhere while a turn runs is not
+    // memory the turn used, so the turn still answers.
+    let resume!: () => void, unblock!: () => void;
+    const paused = new Promise<void>((resolve) => {
+        resume = resolve;
+      }),
+      held = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+    gate = async () => {
+      resume();
+      await held;
+    };
+    // Two steps (a memory search, then the answer), so the turn reloads its
+    // memory after the change.
+    const before = requests.length;
+    const unaffected = run("Search: TEST preference");
+    await paused;
+    try {
+      await mutate({
+        type: "remember",
+        content: "TEST kept fact",
+        kind: "fact",
+      });
+      await mutate({
+        type: "remember",
+        content: "TEST unrelated fact",
+        kind: "fact",
+      });
+      const unrelated = (await memory()).items.find(
+        (entry) => entry.content === "TEST unrelated fact",
+      )!;
+      await mutate({
+        type: "forget",
+        id: unrelated.id,
+        revision: unrelated.revision,
+      });
+    } finally {
+      gate = undefined;
+      unblock();
+    }
+    await unaffected;
+    assert(requests.length - before >= 2, "The turn should take two steps");
+    const kept = (await memory()).items.find(
+      (entry) => entry.content === "TEST kept fact",
+    )!;
+    assert.equal(kept.status, "active");
+    await mutate({ type: "forget", id: kept.id, revision: kept.revision });
     let entered!: () => void, release!: () => void;
     const started = new Promise<void>((resolve) => {
         entered = resolve;

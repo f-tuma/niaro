@@ -70,6 +70,8 @@ const SavedSchema = z.strictObject({
     )
     .max(8)
     .default([]),
+  // requestId of a turn or start that has no automatic send left (resent once after a 5xx).
+  resent: z.string().nullable().default(null),
 });
 type Saved = z.infer<typeof SavedSchema>;
 export type DesignClientState = Saved & {
@@ -191,6 +193,7 @@ export class ProcessDesignClient {
       firstMessage: null,
       handoff: null,
       rejectedTurns: [],
+      resent: null,
     };
     let error: string | null = null;
     try {
@@ -298,6 +301,7 @@ export class ProcessDesignClient {
       firstMessage,
       handoff,
       rejectedTurns,
+      resent,
     } = this.state;
     return {
       version,
@@ -308,6 +312,7 @@ export class ProcessDesignClient {
       firstMessage,
       handoff,
       rejectedTurns,
+      resent,
       ...patch,
     };
   }
@@ -399,6 +404,7 @@ export class ProcessDesignClient {
       firstMessage: null,
       handoff: null,
       rejectedTurns: [],
+      resent: null,
       fresh: false,
       loading: false,
       dispatching: false,
@@ -514,6 +520,22 @@ export class ProcessDesignClient {
               if (!attempt) continue;
               throw new ApiError(409, "process_design_snapshot_changed");
             }
+            if (this.disposed || sequence !== this.refreshSequence) return;
+            // The one automatic resend was used up, so the turn ends as failed.
+            if (
+              this.state.resent === pending.body.requestId &&
+              !this.save({
+                pending: null,
+                rejectedTurns: [
+                  ...this.state.rejectedTurns,
+                  {
+                    command: pending.body,
+                    code: "process_design_turn_not_delivered",
+                  },
+                ].slice(-8),
+              })
+            )
+              return;
           }
           if (recorded) {
             if (
@@ -523,7 +545,6 @@ export class ProcessDesignClient {
             )
               throw new SyntaxError("Designer command binding mismatch");
             if (
-              recorded.status !== "running" &&
               !this.save({
                 pending: null,
                 composer:
@@ -536,12 +557,30 @@ export class ProcessDesignClient {
           }
         }
         if (this.disposed || sequence !== this.refreshSequence) return;
+        // A reload during a start's one resend: no read can show a start, so
+        // it ends as failed and the text stays in the composer for Send.
+        const lostStart =
+          pending?.kind === "start" &&
+          !this.postBusy &&
+          this.state.resent === pending.body.requestId;
+        if (lostStart && !this.save({ pending: null, firstMessage: null }))
+          return;
+        // A turn marked failed may still arrive late (gateway timeout after delivery).
+        const undelivered = this.state.rejectedTurns.filter(
+          (r) => !ids.has(r.command.requestId),
+        );
+        if (
+          undelivered.length !== this.state.rejectedTurns.length &&
+          !this.save({ rejectedTurns: undelivered })
+        )
+          return;
         this.set({
           capabilities,
           review: proposal,
           turns: history,
           fresh: true,
-          error: null,
+          // The start reuses the turn's code: its copy fits both.
+          error: lostStart ? "process_design_turn_not_delivered" : null,
         });
         return;
       }
@@ -592,6 +631,9 @@ export class ProcessDesignClient {
     };
   }
   get canSend() {
+    return this.sendable(this.state.composer);
+  }
+  private sendable(text: string) {
     const review = this.state.review;
     const pin = this.state.turns[0]?.model;
     const modelId = pin?.id ?? this.state.modelId;
@@ -602,11 +644,13 @@ export class ProcessDesignClient {
       !review?.acceptedProcessId &&
       !!model &&
       (!pin || samePin(pin, model)) &&
-      !!this.state.composer.trim()
+      !!text.trim()
     );
   }
-  async send(language: "en" | "cs") {
-    if (!this.canSend) return;
+  /** Sends the composer's text, or a failed turn's text again without
+   * putting it back into the composer. */
+  async send(language: "en" | "cs", text = this.state.composer) {
+    if (!this.sendable(text)) return;
     const review = this.state.review;
     const modelId = this.state.turns[0]?.model.id ?? this.state.modelId;
     if (!this.state.sessionId) {
@@ -614,7 +658,7 @@ export class ProcessDesignClient {
         requestId: crypto.randomUUID(),
         modelId,
         language,
-        text: this.state.composer,
+        text,
       });
       await this.issue(this.startCommand(), { firstMessage });
       return;
@@ -628,7 +672,7 @@ export class ProcessDesignClient {
         revision: review!.revision,
         modelId,
         language,
-        text: this.state.composer,
+        text,
       }),
     });
   }
@@ -819,8 +863,12 @@ export class ProcessDesignClient {
     }
   }
   private async dispatch() {
+    if (await this.post()) await this.post();
+  }
+  /** One POST; true when the same turn or start is to be resent once. */
+  private async post(): Promise<boolean> {
     const command = this.state.pending;
-    if (!command || this.disposed || this.postBusy) return;
+    if (!command || this.disposed || this.postBusy) return false;
     this.postBusy = true;
     const lifecycle = this.lifecycle;
     this.refreshSequence++;
@@ -831,7 +879,7 @@ export class ProcessDesignClient {
         command.body,
         this.controller.signal,
       );
-      if (this.disposed || lifecycle !== this.lifecycle) return;
+      if (this.disposed || lifecycle !== this.lifecycle) return false;
       if (command.kind === "turns") {
         const turn = this.response(designTurnResponse.parse(result)).turn;
         this.assertTurn(turn, command.body.sessionId);
@@ -890,11 +938,11 @@ export class ProcessDesignClient {
             ...(command.kind === "start" ? { handoff: command } : {}),
           })
         )
-          return;
+          return false;
       }
       await this.refresh();
     } catch (error) {
-      if (this.disposed || lifecycle !== this.lifecycle) return;
+      if (this.disposed || lifecycle !== this.lifecycle) return false;
       if (error instanceof ApiError && [401, 403, 404].includes(error.status))
         this.deny();
       else if (
@@ -915,7 +963,10 @@ export class ProcessDesignClient {
             ...(command.kind === "turns"
               ? {
                   rejectedTurns: [
-                    ...this.state.rejectedTurns,
+                    // An early read may already have marked it not delivered.
+                    ...this.state.rejectedTurns.filter(
+                      (r) => r.command.requestId !== command.body.requestId,
+                    ),
                     { command: command.body, code: problem(error) },
                   ].slice(-8),
                 }
@@ -925,6 +976,43 @@ export class ProcessDesignClient {
           await this.refresh();
           this.set({ error: problem(error) });
         }
+      } else if (
+        command.kind === "start" &&
+        (error instanceof ApiError
+          ? error.status >= 500
+          : this.state.resent === command.body.requestId)
+      ) {
+        // A start has nothing to read back, and the server answers the same
+        // requestId with the same session, so it is resent once at once.
+        if (this.state.resent !== command.body.requestId)
+          return this.save({ resent: command.body.requestId });
+        if (this.save({ pending: null, firstMessage: null })) {
+          // The verified catalog suffices with no session, so Send works again
+          // even while the server is still down.
+          await this.refresh({ reuseCapabilities: true });
+          if (this.disposed || lifecycle !== this.lifecycle) return false;
+          this.set({ error: "process_design_turn_not_delivered" });
+        }
+      } else if (
+        command.kind === "turns" &&
+        (error instanceof ApiError
+          ? error.status >= 500
+          : this.state.resent === command.body.requestId)
+      ) {
+        // A gateway can lose the request or only the answer; a passive read
+        // shows a recorded turn, and an unrecorded one is resent once.
+        const requestId = command.body.requestId;
+        const first = this.state.resent !== requestId;
+        await this.refresh();
+        if (this.disposed || lifecycle !== this.lifecycle) return false;
+        if (this.state.pending) {
+          // The mark is durable before the resend, so a reload never sends again.
+          if (first && this.state.fresh)
+            return this.save({ resent: requestId });
+          // A refused mark keeps the storage error visible instead.
+          if (first && !this.save({ resent: requestId })) return false;
+          this.set({ error: problem(error), fresh: false });
+        }
       } else this.set({ error: problem(error), fresh: false });
     } finally {
       if (lifecycle === this.lifecycle) {
@@ -932,5 +1020,6 @@ export class ProcessDesignClient {
         this.set({ dispatching: false });
       }
     }
+    return false;
   }
 }

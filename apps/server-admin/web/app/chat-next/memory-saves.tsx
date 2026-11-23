@@ -5,6 +5,7 @@ import type { MemoryItem } from "../../../../../packages/protocol/memory";
 import {
   chatMemoryQuery,
   memorySavesByCommand,
+  saveCommandIds,
 } from "../../../../../packages/client-core/memory-saves";
 import { usePetMemory } from "../pet-memory";
 import { useChatCopy } from "../chat-copy";
@@ -47,13 +48,17 @@ export function useChatMemorySaves(conversationId: string): ChatMemorySaves {
  * "Saved to memory: …" under the reply that saved it, each with Delete. A
  * quiet line, no card: a failed delete leaves the line as it is.
  */
-export function MemorySaveLines({ commandId }: { commandId?: string }) {
+export function MemorySaveLines({
+  message,
+}: {
+  message: { id: string; replyToCommandId?: string };
+}) {
   const chat = useNextChat();
   const { tr } = useChatCopy();
   const [deleting, setDeleting] = useState<string>();
-  const saves = commandId
-    ? (chat.memorySaves?.forCommand(commandId) ?? [])
-    : [];
+  const saves = saveCommandIds(message).flatMap(
+    (id) => chat.memorySaves?.forCommand(id) ?? [],
+  );
   if (!saves.length) return null;
   return (
     <ul data-testid="memory-saves" className="flex flex-col gap-0.5">

@@ -12,7 +12,10 @@ import {
   receiptVisible,
 } from "../packages/client-core/answer-receipts";
 import { translate } from "../packages/i18n";
+import { saveCommandIds } from "../packages/client-core/memory-saves";
 import { storedTurn } from "./helpers/answer-receipts";
+import { CommandSchema } from "../packages/protocol";
+import { createTrustHarness, toolResults } from "./agent-trust/harness";
 
 const meeting = "11111111-2222-4333-8444-555555555555";
 const hidden = "99999999-2222-4333-8444-555555555555";
@@ -234,4 +237,357 @@ test("an escalated answer says so, and a removed model leaves only the counts", 
   assert.equal(removed?.model, undefined);
   assert.deepEqual(removed?.read, []);
   assert.equal(receiptVisible(removed), false);
+});
+
+test("an answer after an approval carries its receipt, also after a question moves the request", async () => {
+  const h = createTrustHarness();
+  try {
+    const question = "TEST Which room?";
+    h.onChat((body) =>
+      toolResults(body).some((r) => r.data?.created)
+        ? h.call("ask_user", { question })
+        : h.writeScript(body),
+    );
+    const proposed = await h.send("TEST create a meeting", {
+      id: "TEST-receipt-request",
+    });
+    const card = proposed.snapshot.conversations[0]!.messages.at(-1)!.result;
+    assert(
+      card?.type === "service.action" && card.status === "awaiting_approval",
+    );
+    const footers = async (result: Awaited<ReturnType<typeof h.execute>>) => {
+      const answer = result.snapshot.conversations[0]!.messages.findLast(
+        (message) => message.role === "assistant",
+      )!;
+      const receipts = await answerReceipts(
+        sources(
+          h.catalog.conversationTurns(
+            h.scope.workspaceId,
+            h.scope.userId,
+            "conversation-1",
+            8,
+          ),
+        ),
+      );
+      return [answer.replyToCommandId, receipts.map((r) => r.commandId)];
+    };
+    const approved = await h.execute(
+      CommandSchema.parse({
+        type: "service.resolve",
+        commandId: "TEST-receipt-approve",
+        idempotencyKey: "TEST-receipt-approve",
+        conversationId: "conversation-1",
+        operationId: card.operationId,
+        approved: true,
+        language: "en",
+      }),
+    );
+    // The footer looks the receipt up by the stored answer's request.
+    assert.deepEqual(await footers(approved), [
+      "TEST-receipt-approve",
+      ["TEST-receipt-approve"],
+    ]);
+    h.onChat(() => ({ content: "TEST Room B it is." }));
+    const answered = await h.send("Room B", { id: "TEST-receipt-answer" });
+    assert.deepEqual(await footers(answered), [
+      "TEST-receipt-answer",
+      ["TEST-receipt-answer"],
+    ]);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a receipt under an approval keeps the files of the sent message", async () => {
+  const [receipt] = await answerReceipts(
+    sources([
+      storedTurn("TEST-cmd-1", "TEST-chat", {
+        aliases: [
+          { commandId: "TEST-cmd-1", hash: "TEST-hash-cmd-1" },
+          {
+            commandId: "TEST-approve-key",
+            outerCommandId: "TEST-approve",
+            hash: "TEST-hash-approve",
+          },
+        ],
+      }),
+    ]),
+  );
+  assert.equal(receipt?.commandId, "TEST-approve");
+  assert.deepEqual(
+    receipt?.files.map((item) => item.title),
+    ["offer.pdf"],
+  );
+});
+
+test("a memory saved after a question answer sits under that answer", async () => {
+  const h = createTrustHarness();
+  try {
+    const fact = "TEST I prefer Room B";
+    let asked = false;
+    h.onChat((body) => {
+      if (!asked) {
+        asked = true;
+        return h.call("ask_user", { question: "TEST Which room?" });
+      }
+      return toolResults(body).some((result) => result.results)
+        ? { content: "TEST Noted, Room B." }
+        : h.call("memory_remember", {
+            facts: [{ text: fact, kind: "preference" }],
+          });
+    });
+    await h.send("TEST book a room", { id: "TEST-memory-request" });
+    const answered = await h.send(`Remember: ${fact}`, {
+      id: "TEST-memory-answer",
+    });
+    const answer = answered.snapshot.conversations[0]!.messages.findLast(
+      (message) => message.role === "assistant",
+    )!;
+    const saved = (
+      await h.memoryStore.list(h.memoryActor, { settings: h.memorySettings })
+    ).find((item) => item.content === fact && item.status === "active");
+    assert(saved?.source?.type === "user_message");
+    assert.equal(answer.replyToCommandId, "TEST-memory-answer");
+    // The chat shows a save under the reply whose request id it carries.
+    assert.equal(saved.source.commandId, answer.replyToCommandId);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a memory saved after an approval sits under that answer", async () => {
+  const h = createTrustHarness();
+  try {
+    const fact = "TEST I prefer Room B";
+    h.onChat((body) => {
+      const results = toolResults(body);
+      if (results.some((result) => result.results))
+        return { content: "TEST Created and noted." };
+      return results.some((result) => result.data?.created)
+        ? h.call("memory_remember", {
+            facts: [{ text: fact, kind: "preference" }],
+          })
+        : h.writeScript(body);
+    });
+    const proposed = await h.send(`Remember: ${fact}. TEST create a meeting`, {
+      id: "TEST-memory-approval-request",
+    });
+    const card = proposed.snapshot.conversations[0]!.messages.at(-1)!.result;
+    assert(
+      card?.type === "service.action" && card.status === "awaiting_approval",
+    );
+    const approved = await h.execute(
+      CommandSchema.parse({
+        type: "service.resolve",
+        commandId: "TEST-memory-approve",
+        idempotencyKey: "TEST-memory-approve",
+        conversationId: "conversation-1",
+        operationId: card.operationId,
+        approved: true,
+        language: "en",
+      }),
+    );
+    const answer = approved.snapshot.conversations[0]!.messages.findLast(
+      (message) => message.role === "assistant",
+    )!;
+    const saved = (
+      await h.memoryStore.list(h.memoryActor, { settings: h.memorySettings })
+    ).find((item) => item.content === fact && item.status === "active");
+    assert(saved?.source?.type === "user_message");
+    assert.equal(answer.replyToCommandId, "TEST-memory-approve");
+    assert.equal(saved.source.commandId, answer.replyToCommandId);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a second approval of a settled card from another device changes nothing", async () => {
+  const h = createTrustHarness();
+  try {
+    const fact = "TEST I prefer Room B";
+    h.onChat((body) => {
+      const results = toolResults(body);
+      if (results.some((result) => result.results))
+        return { content: "TEST Created and noted." };
+      return results.some((result) => result.data?.created)
+        ? h.call("memory_remember", {
+            facts: [{ text: fact, kind: "preference" }],
+          })
+        : h.writeScript(body);
+    });
+    const proposed = await h.send(`Remember: ${fact}. TEST create a meeting`, {
+      id: "TEST-twice-request",
+    });
+    const card = proposed.snapshot.conversations[0]!.messages.at(-1)!.result;
+    assert(
+      card?.type === "service.action" && card.status === "awaiting_approval",
+    );
+    const approve = (commandId: string) =>
+      h.execute(
+        CommandSchema.parse({
+          type: "service.resolve",
+          commandId,
+          idempotencyKey: commandId,
+          conversationId: "conversation-1",
+          operationId: card.operationId,
+          approved: true,
+          language: "en",
+        }),
+      );
+    const view = async (result: Awaited<ReturnType<typeof approve>>) => {
+      const messages = result.snapshot.conversations[0]!.messages;
+      const receipts = await answerReceipts(
+        sources(
+          h.catalog.conversationTurns(
+            h.scope.workspaceId,
+            h.scope.userId,
+            "conversation-1",
+            8,
+          ),
+        ),
+      );
+      const saved = (
+        await h.memoryStore.list(h.memoryActor, { settings: h.memorySettings })
+      ).find((item) => item.content === fact && item.status === "active");
+      return {
+        messages: messages.map((m) => [
+          m.role,
+          m.text,
+          m.replyToCommandId,
+          m.result?.type === "service.action" ? m.result.status : null,
+        ]),
+        receipts: receipts.map((r) => r.commandId),
+        saved:
+          saved?.source?.type === "user_message"
+            ? saved.source.commandId
+            : undefined,
+      };
+    };
+    const first = await view(await approve("TEST-twice-a"));
+    assert.deepEqual(first.receipts, ["TEST-twice-a"]);
+    assert.equal(first.saved, "TEST-twice-a");
+    assert.equal(first.messages.at(-1)?.[2], "TEST-twice-a");
+    // The other device approves the same card under its own command.
+    assert.deepEqual(await view(await approve("TEST-twice-b")), first);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a second approval of a declined card changes nothing", async () => {
+  const h = createTrustHarness();
+  try {
+    h.onChat((body) => h.writeScript(body));
+    const proposed = await h.send("TEST create a meeting", {
+      id: "TEST-declined-request",
+    });
+    const card = proposed.snapshot.conversations[0]!.messages.at(-1)!.result;
+    assert(
+      card?.type === "service.action" && card.status === "awaiting_approval",
+    );
+    const resolve = (commandId: string, approved: boolean) =>
+      h.execute(
+        CommandSchema.parse({
+          type: "service.resolve",
+          commandId,
+          idempotencyKey: commandId,
+          conversationId: "conversation-1",
+          operationId: card.operationId,
+          approved,
+          language: "en",
+        }),
+      );
+    const messages = (result: Awaited<ReturnType<typeof resolve>>) =>
+      result.snapshot.conversations[0]!.messages.map((m) => [
+        m.text,
+        m.replyToCommandId,
+        m.result?.type === "service.action" ? m.result.status : null,
+      ]);
+    const declined = messages(await resolve("TEST-declined-a", false));
+    assert.deepEqual(
+      messages(await resolve("TEST-declined-b", true)),
+      declined,
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+test("a memory saved before an approval stays under the answer the approval moved", async () => {
+  const h = createTrustHarness();
+  try {
+    const fact = "TEST I prefer Room B";
+    h.onChat((body) => {
+      const results = toolResults(body);
+      if (results.some((result) => result.data?.created))
+        return { content: "TEST Created." };
+      return results.some((result) => result.results)
+        ? h.writeScript(body)
+        : h.call("memory_remember", {
+            facts: [{ text: fact, kind: "preference" }],
+          });
+    });
+    const proposed = await h.send(`Remember: ${fact}. TEST create a meeting`, {
+      id: "TEST-before-request",
+    });
+    const card = proposed.snapshot.conversations[0]!.messages.at(-1)!.result;
+    assert(
+      card?.type === "service.action" && card.status === "awaiting_approval",
+    );
+    const approved = await h.execute(
+      CommandSchema.parse({
+        type: "service.resolve",
+        commandId: "TEST-before-approve",
+        idempotencyKey: "TEST-before-approve",
+        conversationId: "conversation-1",
+        operationId: card.operationId,
+        approved: true,
+        language: "en",
+      }),
+    );
+    // Exactly one stored answer carries the request, and the approval moved it.
+    const created = approved.snapshot.conversations[0]!.messages.filter(
+      (message) =>
+        message.role === "assistant" &&
+        saveCommandIds(message).includes("TEST-before-request"),
+    );
+    assert.equal(created.length, 1);
+    assert.equal(created[0]!.replyToCommandId, "TEST-before-approve");
+    const saved = (
+      await h.memoryStore.list(h.memoryActor, { settings: h.memorySettings })
+    ).find((item) => item.content === fact && item.status === "active");
+    assert(saved?.source?.type === "user_message");
+    assert.deepEqual(saveCommandIds(created[0]!), [
+      saved.source.commandId,
+      "TEST-before-approve",
+    ]);
+  } finally {
+    await h.close();
+  }
+});
+
+test("the saves under an answer come from its creating request and its current one", () => {
+  assert.deepEqual(
+    saveCommandIds({ id: "message-cmd-1-4", replyToCommandId: "cmd-1" }),
+    ["cmd-1"],
+  );
+  assert.deepEqual(
+    saveCommandIds({ id: "message-cmd-1-4", replyToCommandId: "approve-9" }),
+    ["cmd-1", "approve-9"],
+  );
+  assert.deepEqual(
+    saveCommandIds({ id: "message-request-12-7", replyToCommandId: "r" }),
+    ["request-12", "r"],
+  );
+  // Another format names no request that saved anything; the reply id still counts.
+  assert.deepEqual(
+    saveCommandIds({ id: "answer-1", replyToCommandId: "cmd-1" }),
+    ["cmd-1"],
+  );
+  assert.deepEqual(
+    saveCommandIds({
+      id: "message-process-answer-11111111-2222-4333-8444-555555555555",
+    }),
+    ["process-answer-11111111-2222-4333-8444"],
+  );
 });

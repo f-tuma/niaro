@@ -205,24 +205,63 @@ You only design. You cannot run actions, approve, save for use, test or activate
 [Workspace catalog]
 ${JSON.stringify(data)}`;
 }
+const PROCESS_DATA_RULE =
+  'A data schema: the root is {"type":"object"}; every level is a closed object that allows only these keys: string: type, minLength, maxLength, enum; number or integer: type, minimum, maximum; boolean: type, enum; null: type; array: type, items, minItems, maxItems (at most 100); object: type, properties (at most 40), required (only keys of properties), additionalProperties false; property names start with a letter, then letters, digits or _. No other keywords (description, title, format, default). At most 6 levels deep.';
+/**
+ * The tool schema the model sees. Providers expand `$ref` when they read tool
+ * definitions, and the 6-level data schema expands to about 1 MB, so it is
+ * sent inline and each data schema is described in one sentence instead. The
+ * server still checks the full schema and returns the issues to fix.
+ */
+const modelParameters = (schema: z.ZodType) =>
+  z.toJSONSchema(schema, {
+    target: "draft-7",
+    override: ({ jsonSchema }) => {
+      // Only the data schema union has a `{"type":"null"}` member.
+      if (
+        !jsonSchema.anyOf?.some(
+          (member) =>
+            typeof member === "object" &&
+            (member.properties?.type as { const?: unknown } | undefined)
+              ?.const === "null",
+        )
+      )
+        return;
+      // zod shares this object, so it is changed in place.
+      for (const key of Object.keys(jsonSchema))
+        delete (jsonSchema as Record<string, unknown>)[key];
+      Object.assign(jsonSchema, {
+        type: "object",
+        description: PROCESS_DATA_RULE,
+      });
+    },
+  });
 const definitions: NativeAgentDefinition[] = Object.entries(toolSchemas).map(
   ([name, schema]) => ({
     name,
     description: toolDescriptions[name as keyof typeof toolSchemas],
-    parameters: z.toJSONSchema(schema, { target: "draft-7", reused: "ref" }),
+    parameters: modelParameters(schema),
     validate: (raw) => {
       try {
         assertDesignContent(raw);
-        return schema.safeParse(raw).success
+        const parsed = schema.safeParse(raw);
+        return parsed.success
           ? { valid: true }
           : {
               valid: false,
-              fields: [
-                {
-                  path: "/",
-                  issue: "Arguments must match this design tool's schema.",
-                },
-              ],
+              fields: parsed.error.issues.slice(0, 8).map((issue) => {
+                const path = ("/" + issue.path.join("/")).slice(0, 160);
+                // A data schema union only says "Invalid input"; point at the rule.
+                const dataSchema =
+                  issue.message === "Invalid input" &&
+                  /\/(input|output)Schema(\/|$)/.test(path);
+                return {
+                  path,
+                  issue: dataSchema
+                    ? "Not a valid data schema; follow the rule in this field's description."
+                    : issue.message.slice(0, 200),
+                };
+              }),
             };
       } catch {
         return {
@@ -362,10 +401,18 @@ export class ProcessDesignConversation {
       throw new IdentityError(409, "process_design_model_changed");
     return selected;
   }
-  private readyHeld(actor: ProcessActor, binding: DesignConversationBinding) {
+  /** Each turn has its own budget run; the session's caps apply per turn. */
+  private turnRun(binding: DesignConversationBinding, turnId: string) {
+    return processDigest([binding.rootId, turnId]);
+  }
+  private readyHeld(
+    actor: ProcessActor,
+    binding: DesignConversationBinding,
+    runId: string,
+  ) {
     const selected = this.selectedHeld(actor, binding);
     const budget = this.controller.store.inferenceBudget.assertReady(
-      binding.rootId,
+      runId,
       actor,
       0,
       binding.caps,
@@ -442,7 +489,11 @@ export class ProcessDesignConversation {
           current.nativeSettled = true;
           try {
             this.proposals.assertAvailable(actor, target.sessionId);
-            this.readyHeld(actor, snapshot.binding);
+            this.readyHeld(
+              actor,
+              snapshot.binding,
+              this.turnRun(snapshot.binding, current.turnId),
+            );
             if (current.candidateReviewDigest !== review.reviewDigest)
               throw new IdentityError(409, "process_design_review_changed");
             current.reply = current.candidateReply;
@@ -600,7 +651,19 @@ export class ProcessDesignConversation {
           });
         if (binding.modelId !== input.modelId)
           throw new IdentityError(409, "process_design_model_changed");
-        this.readyHeld(actor, binding);
+        this.readyHeld(
+          actor,
+          binding,
+          this.turnRun(binding, this.journal.key(actor, input.requestId)),
+        );
+        // An overrun in an earlier turn still stops the session.
+        for (const earlier of this.journal.list(actor, input.sessionId))
+          if (
+            this.controller.store.inferenceBudget.summary(
+              this.turnRun(binding, earlier.turnId),
+            ).overrun
+          )
+            throw new IdentityError(429, "catalog_budget_overrun");
         const turn = this.journal.start(actor, input, digest, this.maxTurns);
         const active = { turn, binding, settled: false };
         return { replay: false as const, binding, active };
@@ -610,6 +673,7 @@ export class ProcessDesignConversation {
     });
     if (reserved.replay) return this.passive(context, input, input.requestId);
     const { binding, active } = reserved;
+    const runId = this.turnRun(binding, active.turn.turnId);
     const authorizeHeld = async () => {
       signal.throwIfAborted();
       const current = await this.actorHeld(
@@ -620,7 +684,7 @@ export class ProcessDesignConversation {
       if (current.review.acceptedProcessId)
         throw new IdentityError(409, "process_design_conflict");
       this.proposals.assertAvailable(current.actor, input.sessionId);
-      this.readyHeld(current.actor, binding);
+      this.readyHeld(current.actor, binding, runId);
       const turn = this.journal.read(
         current.actor,
         input.sessionId,
@@ -930,7 +994,7 @@ export class ProcessDesignConversation {
                 budgetedInferenceTransport(
                   this.controller.transport,
                   this.controller.store.inferenceBudget,
-                  binding.rootId,
+                  runId,
                   binding.creator,
                   selected,
                   "model",
@@ -981,7 +1045,7 @@ export class ProcessDesignConversation {
           const current = await authorizeHeld();
           if (turn.candidateReviewDigest !== current.review.reviewDigest)
             throw new IdentityError(409, "process_design_review_changed");
-          this.readyHeld(actor, binding);
+          this.readyHeld(actor, binding, runId);
           turn.reply = turn.candidateReply;
           turn.status = "completed";
           turn.failure = null;

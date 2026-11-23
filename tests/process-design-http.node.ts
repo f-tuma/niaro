@@ -485,7 +485,7 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
       },
     );
     await t.test(
-      "client abort interrupts tracked native work and preserves the submitted message",
+      "a client that goes away does not stop the turn: it completes and keeps its reply",
       async () => {
         const initial = await start(),
           input = command(initial.id, "TEST-client-abort");
@@ -499,7 +499,7 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
         h.onModel(async () => {
           entered();
           await gate;
-          return { content: "TEST stopped reply" };
+          return { content: "TEST reply after the client left" };
         });
         const abort = new AbortController();
         const pending = h
@@ -508,7 +508,7 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
         await ready;
         abort.abort();
         await pending;
-        await delay(30);
+        await h.turnClosed();
         release();
         let result;
         for (let i = 0; i < 100; i++) {
@@ -521,9 +521,9 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
           if (result.status !== "running") break;
           await delay(20);
         }
-        assert.equal(result?.status, "interrupted");
-        assert.equal(result.failure, "process_design_interrupted");
-        assert.equal(result.reply, null);
+        // A proxy or a reload closes the socket; the turn is the server's.
+        assert.equal(result?.status, "completed", JSON.stringify(result));
+        assert.equal(result.reply, "TEST reply after the client left");
         assert.equal(result.userText, input.text);
         h.onModel(() => ({ content: "TEST design HTTP reply" }));
       },
@@ -574,6 +574,52 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
         );
         assert.equal(h.modelCount(), count);
         assert.equal(h.businessCount(), 0);
+      },
+    );
+    await t.test(
+      "shutdown stops a turn whose client already left and waits for it",
+      async () => {
+        const initial = await start(),
+          input = command(initial.id, "TEST-detached-shutdown");
+        let entered!: () => void;
+        const ready = new Promise<void>((r) => {
+          entered = r;
+        });
+        h.onModel(
+          (_body, signal) =>
+            new Promise((_resolve, reject) => {
+              entered();
+              signal?.addEventListener("abort", () =>
+                reject(new Error("TEST aborted")),
+              );
+            }),
+        );
+        const abort = new AbortController();
+        const pending = h
+          .request("owner", base + "/turns", input, { signal: abort.signal })
+          .catch(() => undefined);
+        await ready;
+        abort.abort();
+        await pending;
+        await h.turnClosed();
+        await h.restart();
+        const response = await h.request(
+          "owner",
+          base + "/turns?" + query(initial.id, input.requestId),
+        );
+        assert.equal(response.status, 200, JSON.stringify(response.data));
+        const stored = turn(response.data);
+        assert.equal(stored.status, "interrupted");
+        // Recorded by the drain, not repaired by the startup sweep.
+        assert.notEqual(stored.failure, "process_design_server_restarted");
+        assert.equal(stored.reply, null);
+        const count = h.modelCount();
+        assert.deepEqual(
+          turn((await h.request("owner", base + "/turns", input)).data),
+          stored,
+        );
+        assert.equal(h.modelCount(), count);
+        h.onModel(() => ({ content: "TEST design HTTP reply" }));
       },
     );
 
@@ -673,13 +719,26 @@ test("authenticated designer HTTP preserves scope, native replay and shutdown bo
           const replay = await h.request("owner", base + "/turns", input);
           assert.equal(replay.status, 200);
           assert.deepEqual(h.record(replay.data).turn, stored);
+          if (change === "budget")
+            h.onModel(() => ({ content: "TEST reply under the new budget" }));
           const next = await h.request("owner", base + "/turns", {
             ...input,
             requestId: "TEST-no-replacement-root-" + change,
           });
-          assert.equal(next.status, 409, JSON.stringify(next.data));
-          assert.equal(h.record(next.data).error, failure);
-          assert.equal(h.modelCount(), count + 1);
+          if (change === "budget") {
+            // Each turn pins the policy in its own run, so the next turn
+            // starts under the changed budget.
+            assert.equal(next.status, 200, JSON.stringify(next.data));
+            assert.equal(
+              DesignTurnSchema.parse(h.record(next.data).turn).status,
+              "completed",
+            );
+            assert.equal(h.modelCount(), count + 2);
+          } else {
+            assert.equal(next.status, 409, JSON.stringify(next.data));
+            assert.equal(h.record(next.data).error, failure);
+            assert.equal(h.modelCount(), count + 1);
+          }
           assert.equal(h.businessCount(), 0);
           if (change === "service")
             await h.catalog({

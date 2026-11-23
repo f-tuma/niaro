@@ -327,6 +327,7 @@ import {
 import {
   handleProcessDesign,
   isProcessDesignPath,
+  DESIGN_TURN_TIMEOUT_MS,
   PROCESS_DESIGN_PATH,
 } from "./process-design-controller";
 import {
@@ -3315,20 +3316,45 @@ export class IdentityService {
             workspaceId,
           }
         : payload;
-    return handleProcessDesign(
-      method,
-      designUrl,
-      scopedPayload,
-      {
-        proposals: this.processDesigns,
-        conversation: this.processDesignConversation,
-        registry: this.processes,
-        catalog: this.catalog.store,
-        plugins: this.plugins,
-      },
-      access.context,
-      signal,
+    const run = (signal: AbortSignal) =>
+      handleProcessDesign(
+        method,
+        designUrl,
+        scopedPayload,
+        {
+          proposals: this.processDesigns,
+          conversation: this.processDesignConversation,
+          registry: this.processes,
+          catalog: this.catalog.store,
+          plugins: this.plugins,
+        },
+        access.context,
+        signal,
+      );
+    if (
+      !(
+        method === "POST" &&
+        designUrl.pathname === PROCESS_DESIGN_PATH + "/turns"
+      )
+    )
+      return run(signal);
+    // A turn outlives its request, so shutdown stops it and waits for its
+    // journal write before the database closes.
+    if (this.closing) throw new IdentityError(503, "identity_unavailable");
+    const controller = new AbortController();
+    this.executions.add(controller);
+    const turn = run(AbortSignal.any([signal, controller.signal]));
+    const settled = turn.then(
+      () => {},
+      () => {},
     );
+    this.catalogRequests.add(settled);
+    try {
+      return await turn;
+    } finally {
+      this.executions.delete(controller);
+      this.catalogRequests.delete(settled);
+    }
   }
   /** Shared authenticated passive process dependencies; constructs no native runtime. */
   private processReadAccess(
@@ -5823,9 +5849,17 @@ export class IdentityService {
       });
       this.catalogRequests.add(completion);
       const close = () => controller.abort();
-      res.once("close", close);
-      if (res.destroyed || res.writableEnded) close();
       const design = isProcessDesignPath(url.pathname);
+      // A designer turn is the server's once admitted: a proxy cut-off or a
+      // reload does not stop it, the client reads it back from the journal.
+      if (
+        !(
+          req.method === "POST" &&
+          url.pathname === PROCESS_DESIGN_PATH + "/turns"
+        )
+      )
+        res.once("close", close);
+      if (res.destroyed || res.writableEnded) close();
       const nativeTest = isProcessNativeTestPath(url.pathname);
       const activation = isProcessActivationPath(url.pathname);
       const versions = isProcessVersionsPath(url.pathname);
@@ -5833,15 +5867,15 @@ export class IdentityService {
       const signal = AbortSignal.any([
         controller.signal,
         AbortSignal.timeout(
-          // A designer turn with a reasoning model can take several calls of
-          // a minute or more; ending it early leaves a call of unknown cost.
-          // A capability test makes up to four calls of a minute at most.
-          design || url.pathname === "/admin/api/identity/catalog/models/test"
-            ? 300_000
-            : pinnedAccount ||
-                url.pathname === "/admin/api/identity/catalog/discover"
-              ? 120000
-              : 45000,
+          design
+            ? DESIGN_TURN_TIMEOUT_MS
+            : // A capability test makes up to four calls of a minute at most.
+              url.pathname === "/admin/api/identity/catalog/models/test"
+              ? 300_000
+              : pinnedAccount ||
+                  url.pathname === "/admin/api/identity/catalog/discover"
+                ? 120000
+                : 45000,
         ),
       ]);
       try {

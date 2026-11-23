@@ -630,6 +630,17 @@ test("old failed receipts show missing evidence, and unknown status overrides un
     failure: validation,
   } as StoredInvocation);
   assert.equal(staleRetry.failure?.retry, "verify_first");
+  // A declined write was never sent: the model must not blame the service.
+  const declined = failureToolResult({
+    id: "TEST-declined",
+    status: "rejected",
+    effect: "write",
+  } as StoredInvocation);
+  assert.equal(declined.failure, undefined);
+  assert.equal(
+    declined.note,
+    "Declined: not executed and the service was not called. Do not say the service refused it; do not call it again unless the person asks again.",
+  );
 });
 
 test("an observed successful retry replaces a failed read card without erasing the failed attempt", async () => {

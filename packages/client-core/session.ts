@@ -2492,13 +2492,14 @@ export class ClientSession {
         } else if (chunk.type === "tool-output-available") {
           const step = steps.get(chunk.toolCallId);
           if (step) {
-            const status =
+            const sent =
               chunk.output &&
               typeof chunk.output === "object" &&
-              "status" in chunk.output &&
-              chunk.output.status === "waiting"
-                ? "waiting"
-                : "succeeded";
+              "status" in chunk.output
+                ? chunk.output.status
+                : undefined;
+            const status =
+              sent === "waiting" || sent === "cancelled" ? sent : "succeeded";
             steps.set(chunk.toolCallId, {
               ...step,
               status,
@@ -3604,7 +3605,13 @@ export class ClientSession {
                 : null;
             const c = process?.command ?? parseSessionCommand(raw);
             // The answer ledger suppresses only stale answer compatibility bytes.
-            if (c.type !== "process.answer" || !this.answerEnvelopePresent) {
+            // A stored chat creation (a reload during its flight, or an older
+            // client) is ignored: its caller creates the chat again, the server
+            // replays it by its key, and the next command overwrites the bytes.
+            if (
+              (c.type !== "process.answer" || !this.answerEnvelopePresent) &&
+              c.type !== "conversation.create"
+            ) {
               this.pendingProcess = process;
               if (process && process.outcome !== "unknown")
                 this.commandRejection = process.error;
@@ -3924,6 +3931,23 @@ export class ClientSession {
       throw new Error("scope_mismatch");
     if (!this.currentFlight(flight) || flight.outcomeKnown) return;
     let store = this.mergeProjection(result.snapshot);
+    // A refusal the server answered in the chat (an assistant message whose
+    // replyToCommandId is this command) has its reason there; no error
+    // repeats it, as after a reload. A reused id with other words is not
+    // that answer's refusal and keeps its error.
+    const error =
+      result.status === "accepted" ||
+      (result.code !== "idempotency_conflict" &&
+        result.snapshot.conversations.some(
+          (conversation) =>
+            conversation.id === flight.command.conversationId &&
+            conversation.messages.some(
+              (message) =>
+                message.replyToCommandId === flight.command.commandId,
+            ),
+        ))
+        ? null
+        : result.code;
     // A refused message keeps its files for Try again; they do not go back
     // to the composer.
     if (flight.command.type === "message.send" && flight.command.attachments)
@@ -3947,7 +3971,7 @@ export class ClientSession {
           ...this.state.commandStates,
           [commandTarget(flight.command)]: result.status,
         },
-        error: result.status !== "accepted" ? result.code : null,
+        error,
       });
       await this.syncRetrySources(store, flight.command);
       if (!this.currentFlight(flight)) return;
@@ -3961,7 +3985,7 @@ export class ClientSession {
           ...this.state.commandStates,
           [commandTarget(flight.command)]: result.status,
         },
-        error: result.status !== "accepted" ? result.code : null,
+        error,
       },
       flight.command.type === "message.send",
     );
@@ -4691,6 +4715,15 @@ export class ClientSession {
             : "storage_error",
         });
       } else if (this.currentFlight(flight)) {
+        // Exception to the frozen outbox: a chat's creation has no content and
+        // is replayed by its key, so it is released (as an unrecorded command)
+        // and its caller creates the chat again with the next first message.
+        if (
+          command.type === "conversation.create" &&
+          flight.deliveryStarted &&
+          (await this.releaseUnrecorded(flight))
+        )
+          return;
         const processError =
           isProcessRuntimeCommand(command) &&
           error instanceof Error &&
@@ -4748,8 +4781,18 @@ export class ClientSession {
           persisted &&
           flight.deliveryStarted &&
           checkedByItself(command);
+        // Another turn of this person was running (`model_busy`): no outcome was
+        // recorded, so a chat request is sent again by the same checks; when
+        // they run out, it shows the busy failure.
+        const busy =
+          failure === "model_busy" &&
+          (command.type === "message.send" ||
+            command.type === "service.resolve");
         if (checked)
-          this.check = this.nextCheck(command, failure !== "network_error");
+          this.check = this.nextCheck(
+            command,
+            failure !== "network_error" && !busy,
+          );
         // A check that failed before it reached the server (its local save
         // failed) ends as failed, with Try again.
         else if (this.check?.commandId === command.commandId)
@@ -4760,7 +4803,12 @@ export class ClientSession {
             ...this.state.commandStates,
             [target]: pendingRetained ? "network_error" : "idle",
           },
-          error: checked && failure === "network_error" ? null : failure,
+          error:
+            checked &&
+            (failure === "network_error" ||
+              (busy && this.check?.mode === "checking"))
+              ? null
+              : failure,
           activityConnection: "unavailable",
         });
         if (command.type === "process.answer") {
@@ -4866,7 +4914,8 @@ export class ClientSession {
       );
     return this.interruptFlight(flight, true);
   }
-  /** Clears a command the server proved is neither running nor recorded. */
+  /** Clears a command the server proved is neither running nor recorded,
+   * or a chat's creation that failed (content-free, replayed by its key). */
   private async releaseUnrecorded(flight: CommandFlight) {
     const current = () => this.currentFlight(flight) && !flight.outcomeKnown;
     if (!current()) return false;

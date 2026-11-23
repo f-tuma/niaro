@@ -105,10 +105,12 @@ function Thread({
   session,
   online = true,
   readOnly = false,
+  thread = messages,
 }: {
   session: ClientSession;
   online?: boolean;
   readOnly?: boolean;
+  thread?: ChatMessage[];
 }) {
   const saves: ChatMemorySaves = useChatMemorySaves(
     session,
@@ -133,7 +135,7 @@ function Thread({
     work: () => undefined,
   } as unknown as MobileChat;
   const entries = projectThread({
-    messages,
+    messages: thread,
     work: [],
     anchors: new Map(),
     referencedWork: new Set(),
@@ -204,4 +206,35 @@ test("no saves, no line", async () => {
   const { session } = memorySession([]);
   await show(<Thread session={session} />);
   expect(screen.queryByTestId("memory-saves")).toBeNull();
+});
+
+test("an answer an approval moved keeps the saves of the request that made it", async () => {
+  // "Remember X and book it": the save is keyed by the request, the approval
+  // moves the stored answer's replyToCommandId to itself.
+  const { session } = memorySession([
+    memory("m1", "Tým: Niaro", "command-1"),
+    memory("m2", "Sál: B", "command-approve"),
+  ]);
+  await show(
+    <Thread
+      session={session}
+      thread={[
+        {
+          id: "message-command-1-2",
+          role: "user",
+          text: "Zapamatuj a zarezervuj",
+        },
+        {
+          id: "message-command-1-3",
+          role: "assistant",
+          text: "Hotovo.",
+          replyToCommandId: "command-approve",
+        },
+      ]}
+    />,
+  );
+  // The creating request's save first, then the approval's.
+  expect(
+    screen.getAllByText(/^Uloženo do paměti:/).map((n) => n.props.children),
+  ).toEqual(["Uloženo do paměti: Tým: Niaro", "Uloženo do paměti: Sál: B"]);
 });

@@ -525,3 +525,72 @@ test("a fresh thread starts with the earlier replies that pass, generated UI inc
     await h.close();
   }
 });
+
+test("a chat whose thread has no transcript (a Mastra-era chat) restarts from its visible history once", async () => {
+  const h = createTrustHarness();
+  try {
+    h.onChat(() => ({ content: "TEST zebra reply one" }));
+    await h.send("TEST zebra question one", { id: "TEST-no-transcript-1" });
+    const first = h.commandState();
+    // Mastra-era threads have no Pi transcript; dropping it models one.
+    await h.forgetNativeThread(first.threadId);
+    assert.deepEqual(await h.nativeMessages(first.threadId), []);
+    h.onChat(() => ({ content: "TEST zebra reply two" }));
+    await h.send("TEST zebra question two", { id: "TEST-no-transcript-2" });
+    const second = h.commandState();
+    assert.notEqual(second.threadId, first.threadId);
+    assert.deepEqual(
+      second.earlier?.map(({ role, text }) => [role, text]),
+      [
+        ["user", "TEST zebra question one"],
+        ["assistant", "TEST zebra reply one"],
+      ],
+    );
+    h.onChat(() => ({ content: "TEST zebra reply three" }));
+    const offset = h.requests.length;
+    await h.send("TEST zebra question three", { id: "TEST-no-transcript-3" });
+    const third = h.commandState();
+    assert.equal(third.threadId, second.threadId);
+    assert.deepEqual(third.earlier, second.earlier);
+    const request = JSON.stringify(
+      h.requests
+        .slice(offset)
+        .filter((r) => JSON.stringify(r).includes("TEST zebra question three"))
+        .at(-1),
+    );
+    const count = (text: string) => request.split(text).length - 1;
+    // Turn one only in the earlier block, turn two in the thread itself.
+    assert.equal(count("TEST zebra question one"), 1);
+    assert.equal(count("TEST zebra reply one"), 1);
+    assert.equal(count("TEST zebra question two"), 1);
+    assert.equal(count("TEST zebra reply two"), 1);
+  } finally {
+    await h.close();
+  }
+});
+
+test("a fresh thread keeps an earlier reply that carries a service card (NIAR-307)", async () => {
+  const h = createTrustHarness();
+  try {
+    h.onChat(h.lookupScript);
+    await h.send("Show Jane Test's contact details", {
+      id: "TEST-card-reply-1",
+    });
+    const first = h.commandState();
+    assert.equal(first.answer?.reply, "Contact found.");
+    await h.forgetNativeThread(first.threadId);
+    h.onChat(() => ({ content: "TEST card follow-up" }));
+    await h.send("What did you find?", { id: "TEST-card-reply-2" });
+    const second = h.commandState();
+    assert.notEqual(second.threadId, first.threadId);
+    assert.deepEqual(
+      second.earlier?.map(({ role, text }) => [role, text]),
+      [
+        ["user", "Show Jane Test's contact details"],
+        ["assistant", "Contact found."],
+      ],
+    );
+  } finally {
+    await h.close();
+  }
+});

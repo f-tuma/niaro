@@ -193,12 +193,15 @@ function receipt(
     const title = sources.meetingTitle(id);
     return title ? [{ kind: "meeting", id, title: clip(title) }] : [];
   });
-  // The stored answer replies to the client's command id, which the run
-  // keeps as the alias's outer id when it differs from its own.
-  const commandId =
+  // The files belong to the sent message: the client's command id, which
+  // the run keeps as the alias's outer id when it differs from its own.
+  const sent =
     turn.aliases.find((alias) => alias.commandId === turn.commandId)
       ?.outerCommandId ?? turn.commandId;
-  const fileItems = (sources.files?.(commandId) ?? []).map(
+  // The stored answer replies to the newest command that drove the run: the
+  // send, a question answer or an approval (each appends its alias).
+  const commandId = turn.aliases.at(-1)?.outerCommandId ?? sent;
+  const fileItems = (sources.files?.(sent) ?? []).map(
     (file): ReceiptItem => ({
       kind: "file",
       id: file.id,

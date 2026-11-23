@@ -31,6 +31,7 @@ import {
   nativePassedBudget,
 } from "./process-native-verdict";
 import { processDigest } from "./process-validation";
+import { unwrapMcpText } from "./bounded-preview";
 import { rankNativeActions, mastraActionToolName } from "./mastra-domain";
 import { processAgentToolName } from "../server-agent/process-agent-tools";
 import { nativeScriptedInitialToolNames } from "./process-native-tools";
@@ -546,7 +547,8 @@ function domainFailure(
     )
       return true;
   }
-  // A workflow may reject a typed action result before its final return.
+  // A workflow may reject a typed action result before its final return; it
+  // sees an MCP result's JSON, as the runtime hands it over.
   return (
     artifact.definition.kind === "workflow" &&
     artifact.definition.steps.some(
@@ -557,8 +559,9 @@ function domainFailure(
             fixture.serviceId === step.serviceId &&
             fixture.actionId === step.actionId &&
             fixture.outcome === "complete" &&
-            !processValueSchema(step.outputSchema).safeParse(fixture.output)
-              .success,
+            !processValueSchema(step.outputSchema).safeParse(
+              unwrapMcpText(fixture.output),
+            ).success,
         ),
     )
   );

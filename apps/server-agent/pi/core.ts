@@ -10,7 +10,7 @@
  * most `retry.maxRetries` times and `restartLimit` crashes in a row. External
  * writes are never re-run blindly (`tools.ts`).
  */
-import { chmodSync } from "node:fs";
+import { chmodSync, existsSync } from "node:fs";
 import { createModels } from "@earendil-works/pi-ai";
 import {
   createRegistry,
@@ -148,7 +148,14 @@ export class PiAgentCore {
           throw error;
         })
       : new MemoryStorage();
-    if (options.file) chmodSync(options.file, 0o600);
+    // Side files hold conversation text too; ones left by an older run keep their mode.
+    if (options.file)
+      for (const path of [
+        options.file,
+        options.file + "-wal",
+        options.file + "-shm",
+      ])
+        if (existsSync(path)) chmodSync(path, 0o600);
     if (database) {
       // Deleted content is overwritten in the file, not left in free pages.
       await database.exec("PRAGMA secure_delete=ON");

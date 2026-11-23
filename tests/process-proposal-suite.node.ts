@@ -549,3 +549,58 @@ test("an agent reading through an MCP service qualifies in both strategies, the 
     assert.deepEqual(success[1]!.receipts[0]!.input, { select: ["Ukázka"] });
     noBusinessEffects(h);
   }));
+
+test("a workflow whose action runs through an MCP service qualifies with its generated suite", () =>
+  setup(async (h) => {
+    h.model();
+    const command = (body: object) =>
+      h.catalog.command(CatalogCommand.parse({ ...target, ...body }));
+    const serviceId = command({
+      type: "saveService",
+      revision: 0,
+      settings: {
+        name: "TEST MCP",
+        url: "https://mcp.example.test/mcp",
+        protocol: "mcp",
+        icon: "plug",
+        auth: { type: "none" },
+        enabled: true,
+      },
+    });
+    for (const source of [h.ids.readId, h.ids.writeId]) {
+      const {
+        id: _id,
+        revision: _revision,
+        sourceKey: _sourceKey,
+        ...settings
+      } = h.catalog
+        .service(target.workspaceId, h.ids.serviceId)
+        .actions.find((a) => a.id === source)!;
+      const actionId = command({
+        type: "saveAction",
+        serviceId,
+        serviceRevision: h.catalog.service(target.workspaceId, serviceId)
+          .revision,
+        revision: 0,
+        settings: { ...settings, binding: { type: "mcp", name: "TEST-tool" } },
+      });
+      const result = await qualify(
+        h,
+        processWorkflow(serviceId, actionId),
+        undefined,
+        serviceId,
+      );
+      assert(result.verdict, JSON.stringify(result));
+      assert.equal(
+        result.report.status,
+        "passed",
+        JSON.stringify(result.report.observations.filter((o) => !o.passed)),
+      );
+      assert.equal(
+        result.verdict.status,
+        "qualified",
+        JSON.stringify(result.verdict),
+      );
+    }
+    noBusinessEffects(h);
+  }));

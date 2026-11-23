@@ -68,6 +68,9 @@ export function createMemoryRuntime(
   let observedItems: MemoryItem[] = [];
   /** The chat this runtime serves, once a request names it. */
   let conversation: string | undefined;
+  /** Versions this runtime's own context() pinned, and every item it showed (never reset). */
+  const pins = new Set<number>();
+  const shown = new Set<string>();
   const metadata = (): AgentMemoryMetadata => {
     // What reached the model, so a later turn can tell whether the thread
     // still holds only current memory (NIAR-263). A fact saved from the
@@ -127,6 +130,7 @@ export function createMemoryRuntime(
       (item, index, all) =>
         all.findIndex((other) => other.id === item.id) === index,
     );
+    for (const item of result.items) shown.add(item.id);
     return result;
   };
   return {
@@ -147,6 +151,8 @@ export function createMemoryRuntime(
         if (result.version !== observed.version)
           throw new IdentityError(409, "memory_context_changed");
         observedItems = observed.items;
+        for (const item of observed.items) shown.add(item.id);
+        pins.add(result.version);
         expiry =
           [expiry as string | null, observed.expiresAt]
             .filter((value): value is string => value !== null)
@@ -192,9 +198,22 @@ export function createMemoryRuntime(
         ...(saved?.sources ?? []),
         ...(current.sources ?? []),
       ];
+      // A turn's own pin survives an unrelated change while every item it
+      // showed is still readable; any other pin needs the exact version.
+      const unaffected = () =>
+        typeof version === "number" &&
+        pins.has(version) &&
+        !!saved?.items &&
+        !store.readPreferences(actor).optOut &&
+        store.itemsReadable(
+          actor,
+          [...new Set([...saved.items, ...shown])],
+          settings,
+          expiresAt,
+        );
       if (
         typeof version !== "number" ||
-        !store.isCurrent(actor, version, expiresAt) ||
+        (!store.isCurrent(actor, version, expiresAt) && !unaffected()) ||
         provenance.some((source) => !options.sourceAccess(source, actor))
       )
         throw new IdentityError(409, "memory_context_changed");
@@ -218,7 +237,10 @@ export function createMemoryRuntime(
         )
       )
         throw new IdentityError(409, "memory_context_changed");
-      return store.version(actor);
+      // The thread's items were just checked: this version is the turn's own pin.
+      const current = store.version(actor);
+      pins.add(current);
+      return current;
     },
     async readable(saved) {
       // Called from the identity queue; never recursively acquire it.

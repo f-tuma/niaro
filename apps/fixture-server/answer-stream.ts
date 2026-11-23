@@ -147,7 +147,7 @@ export function openAnswerStream(
         toolName: value.label,
         input: { fields: value.input },
       });
-    } else if (value.status === "failed" || value.status === "cancelled") {
+    } else if (value.status === "failed") {
       write({
         type: "tool-output-error",
         toolCallId: value.toolCallId,

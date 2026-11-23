@@ -1119,6 +1119,9 @@ export function ChatNextConversation({
     isRunning,
     isDisabled: readOnly,
     onNew: async (message) => {
+      // Every assistant-ui send (Enter, Send, the error's Try again) has taken
+      // the text, so the saved draft must not keep it; a refused send puts it back.
+      noteDraft("");
       submitMessage(appendedText(message));
     },
     onCancel: async () => {
@@ -2037,7 +2040,14 @@ function AssistantMessage() {
               {copy.stillWriting}
             </p>
           )}
-          {!live && <MemorySaveLines commandId={meta.replyToCommandId} />}
+          {!live && (
+            <MemorySaveLines
+              message={{
+                id: message.id,
+                replyToCommandId: meta.replyToCommandId,
+              }}
+            />
+          )}
           {!live && <AnswerReceiptLine commandId={meta.replyToCommandId} />}
         </article>
         {!live && !!text.trim() && (

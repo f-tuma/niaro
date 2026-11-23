@@ -1028,7 +1028,11 @@ test("personal designer starts a user-owned process with its own recovery and re
 
   const g = fixture("test_design", true);
   const personal = () =>
-    new ProcessDesignClient({ ...g.scope, owner: "user" }, g.storage, g.transport);
+    new ProcessDesignClient(
+      { ...g.scope, owner: "user" },
+      g.storage,
+      g.transport,
+    );
   const foreign = personal();
   await foreign.refresh();
   assert.equal(foreign.getSnapshot().fresh, false);
@@ -1404,4 +1408,396 @@ test("same-account authority reset always rotates, even when storage cleanup and
   const rotated = resetDesignAuthority();
   assert.notEqual(rotated, previous);
   assert.equal(designAuthority(), rotated);
+});
+
+test("a failed turn sent again never passes through the composer (NIAR-307)", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  const composers: string[] = [];
+  c.subscribe(() => composers.push(c.getSnapshot().composer));
+  await c.send("cs", "TEST failed turn");
+  const turn = f.posts.at(-1)!.body as { text: string };
+  assert.equal(turn.text, "TEST failed turn");
+  assert(composers.length > 0);
+  assert(composers.every((value) => value === ""));
+  c.dispose();
+});
+
+test("a turn the gateway lost the answer for reads as running at once, then completes", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST still running");
+  f.setPost(async (_path, body) => {
+    const command = body as { requestId: string; text: string };
+    f.setTurns([
+      {
+        ...designUiTurn,
+        requestId: command.requestId,
+        userText: command.text,
+        language: "en",
+        status: "running",
+        reply: null,
+      },
+    ]);
+    throw new ApiError(502, "bad_gateway");
+  });
+  await c.send("en");
+  // One passive read after the 5xx; no manual refresh.
+  let state = c.getSnapshot();
+  assert.equal(state.pending, null);
+  assert.equal(state.error, null);
+  assert.equal(state.composer, "");
+  assert.equal(state.turns[0]?.status, "running");
+  assert(c.blocked);
+  assert.equal(f.posts.length, 1);
+  f.setTurns([
+    {
+      ...state.turns[0]!,
+      status: "completed",
+      reply: "TEST finished",
+    },
+  ]);
+  await c.refresh();
+  state = c.getSnapshot();
+  assert.equal(state.turns[0]?.status, "completed");
+  assert(!c.blocked);
+  assert.equal(f.posts.length, 1);
+  c.dispose();
+});
+
+/** A POST that fails like a gateway that never delivered it. */
+function lostPosts(f: ReturnType<typeof fixture>, ...errors: Error[]) {
+  f.setPost(async () => {
+    throw errors.shift() ?? new ApiError(502);
+  });
+}
+
+function notDelivered(
+  c: ProcessDesignClient,
+  posts: number,
+  f: ReturnType<typeof fixture>,
+) {
+  const state = c.getSnapshot();
+  assert.equal(state.pending, null);
+  assert.equal(state.error, null);
+  assert.equal(state.rejectedTurns.length, 1);
+  assert.equal(
+    state.rejectedTurns[0]!.code,
+    "process_design_turn_not_delivered",
+  );
+  assert.equal(state.rejectedTurns[0]!.command.text, "TEST lost turn");
+  assert.equal(f.posts.length, posts);
+}
+
+test("a turn the gateway never delivered is resent once with the same request", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  let calls = 0;
+  f.setPost(async (_path, body) => {
+    if (calls++ === 0) throw new ApiError(502);
+    const command = body as { requestId: string; text: string };
+    const turn = {
+      ...structuredClone(designUiTurn),
+      requestId: command.requestId,
+      userText: command.text,
+      language: "en" as const,
+    };
+    f.setTurns([turn]);
+    return { profile: DESIGN_PROFILE, turn };
+  });
+  await c.send("en");
+  const state = c.getSnapshot();
+  assert.equal(f.posts.length, 2);
+  assert.deepEqual(f.posts[0], f.posts[1]);
+  assert.equal(state.pending, null);
+  assert.equal(state.error, null);
+  assert.equal(state.rejectedTurns.length, 0);
+  assert.equal(state.turns[0]?.userText, "TEST lost turn");
+  c.dispose();
+});
+
+test("a turn the gateway lost twice ends as not delivered, never sends again and clears if it arrives late", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  lostPosts(
+    f,
+    new ApiError(502, "bad_gateway"),
+    new ApiError(502, "bad_gateway"),
+  );
+  await c.send("en");
+  notDelivered(c, 2, f);
+  c.dispose();
+  const reloaded = f.client();
+  await reloaded.refresh();
+  await reloaded.retry();
+  notDelivered(reloaded, 2, f);
+  // A late arrival replaces the failed card with the recorded turn.
+  const requestId = reloaded.getSnapshot().rejectedTurns[0]!.command.requestId;
+  f.setTurns([
+    {
+      ...designUiTurn,
+      requestId,
+      userText: "TEST lost turn",
+      language: "en",
+    },
+  ]);
+  await reloaded.refresh();
+  assert.deepEqual(reloaded.getSnapshot().rejectedTurns, []);
+  assert.equal(reloaded.getSnapshot().turns.length, 1);
+  reloaded.dispose();
+});
+
+test("a resend that fails in transport ends as not delivered", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  lostPosts(f, new ApiError(524), new TypeError("Failed to fetch"));
+  await c.send("en");
+  notDelivered(c, 2, f);
+  c.dispose();
+});
+
+test("a reload during the resend reads the turn as not delivered without sending it again", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  let calls = 0;
+  f.setPost(async () => {
+    // The page reloads while the resend is in flight.
+    if (calls++) c.dispose();
+    throw new ApiError(502);
+  });
+  await c.send("en");
+  assert.equal(f.posts.length, 2);
+  const reloaded = f.client();
+  await reloaded.refresh();
+  notDelivered(reloaded, 2, f);
+  reloaded.dispose();
+});
+
+test("a gateway outage keeps the command until a read shows it was not delivered", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  const read = f.transport.request;
+  let down = true;
+  f.transport.request = async (path, body, signal) => {
+    if (body === undefined && down) throw new ApiError(503);
+    return read(path, body, signal);
+  };
+  lostPosts(f, new ApiError(502, "bad_gateway"));
+  await c.send("en");
+  const state = c.getSnapshot();
+  assert.equal(state.pending?.kind, "turns");
+  assert.equal(state.error, "bad_gateway");
+  assert.equal(f.posts.length, 1);
+  down = false;
+  await c.refresh();
+  notDelivered(c, 1, f);
+  assert(!c.blocked);
+  c.dispose();
+});
+
+test("a gateway outage with a refused mark shows the storage error", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  const read = f.transport.request;
+  f.transport.request = async (path, body, signal) => {
+    if (body === undefined) throw new ApiError(503);
+    return read(path, body, signal);
+  };
+  const write = f.storage.setItem;
+  f.storage.setItem = (key, value) => {
+    if (/"resent":"/.test(value)) throw new Error("TEST quota");
+    write(key, value);
+  };
+  lostPosts(f, new ApiError(502, "bad_gateway"));
+  await c.send("en");
+  assert.equal(c.getSnapshot().pending?.kind, "turns");
+  assert.equal(c.getSnapshot().error, "recovery_storage_unavailable");
+  assert.equal(f.posts.length, 1);
+  c.dispose();
+});
+
+test("a resend never happens when its mark cannot be stored", async () => {
+  const f = fixture(),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost turn");
+  const write = f.storage.setItem;
+  f.storage.setItem = (key, value) => {
+    if (/"resent":"/.test(value)) throw new Error("TEST quota");
+    write(key, value);
+  };
+  lostPosts(f, new ApiError(502));
+  await c.send("en");
+  const state = c.getSnapshot();
+  assert.equal(f.posts.length, 1);
+  assert.equal(state.pending?.kind, "turns");
+  assert.equal(state.error, "recovery_storage_unavailable");
+  c.dispose();
+});
+
+test("a first message whose start the gateway answered with a 5xx is resent once with the same start", async () => {
+  const f = fixture(null),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost start");
+  firstMessageTransport(f);
+  // The server records the start; only its answer is lost.
+  const request = f.transport.request;
+  let lost = 1;
+  f.transport.request = async (path, body, signal) => {
+    const result = await request(path, body, signal);
+    if (body !== undefined && path.includes("/start") && lost-- > 0)
+      throw new ApiError(502);
+    return result;
+  };
+  await c.send("cs");
+  assert.equal(f.posts.length, 3);
+  assert.deepEqual(f.posts[1], f.posts[0]);
+  assert(f.posts[2]!.path.includes("/turns"));
+  const state = c.getSnapshot();
+  assert.equal(state.pending, null);
+  assert.equal(state.error, null);
+  assert.equal(state.composer, "");
+  assert.equal(state.turns[0]?.userText, "TEST lost start");
+  c.dispose();
+});
+
+function lostStart(c: ProcessDesignClient, posts: number, text: string) {
+  const state = c.getSnapshot();
+  assert.equal(state.pending, null);
+  assert.equal(state.firstMessage, null);
+  assert.equal(state.error, "process_design_turn_not_delivered");
+  assert.equal(state.composer, text);
+  assert.equal(c.blocked, false);
+  assert.equal(posts, 2);
+}
+
+test("a start the gateway lost twice ends as not delivered and Send starts anew", async () => {
+  for (const second of [new ApiError(502), new TypeError("Failed to fetch")]) {
+    const f = fixture(null),
+      c = f.client();
+    await c.refresh();
+    c.setModel("test_model");
+    c.setComposer("TEST lost start");
+    lostPosts(f, new ApiError(502), second);
+    await c.send("cs");
+    lostStart(c, f.posts.length, "TEST lost start");
+    assert.deepEqual(f.posts[1], f.posts[0]);
+    await c.refresh();
+    await c.retry();
+    assert.equal(f.posts.length, 2);
+    firstMessageTransport(f);
+    await c.send("cs");
+    assert.equal(f.posts.length, 4);
+    assert.notEqual(
+      (f.posts[2]!.body as { requestId: string }).requestId,
+      (f.posts[0]!.body as { requestId: string }).requestId,
+    );
+    assert.equal(c.getSnapshot().pending, null);
+    c.dispose();
+  }
+});
+
+test("a start is resent even when the server stays down, and ends as Try again", async () => {
+  const f = fixture(null),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost start");
+  const capabilities = f.transport.capabilities;
+  let down = false;
+  f.transport.capabilities = async (target, signal) => {
+    if (down) throw new ApiError(503);
+    return capabilities(target, signal);
+  };
+  f.setPost(async () => {
+    down = true;
+    throw new ApiError(502);
+  });
+  await c.send("cs");
+  assert.deepEqual(f.posts[1], f.posts[0]);
+  lostStart(c, f.posts.length, "TEST lost start");
+  c.dispose();
+});
+
+test("a reload during a start's resend ends it as not delivered without sending it again", async () => {
+  const f = fixture(null),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost start");
+  f.setPost(async () => {
+    // The page reloads while the resend is in flight.
+    if (f.posts.length === 2) c.dispose();
+    throw new ApiError(502);
+  });
+  await c.send("cs");
+  assert.equal(f.posts.length, 2);
+  const reloaded = f.client();
+  assert.equal(reloaded.getSnapshot().pending?.kind, "start");
+  assert(reloaded.getSnapshot().firstMessage);
+  assert.equal(reloaded.getSnapshot().error, null);
+  await reloaded.refresh();
+  lostStart(reloaded, f.posts.length, "TEST lost start");
+  reloaded.dispose();
+});
+
+test("a blank canvas start the gateway lost twice ends as not delivered", async () => {
+  const f = fixture(null),
+    c = f.client();
+  await c.refresh();
+  lostPosts(f, new ApiError(502), new ApiError(502));
+  await c.start();
+  assert.deepEqual(f.posts[1], f.posts[0]);
+  lostStart(c, f.posts.length, "");
+  c.dispose();
+});
+
+test("a refresh while a start is being resent keeps its first message", async () => {
+  const f = fixture(null),
+    c = f.client();
+  await c.refresh();
+  c.setModel("test_model");
+  c.setComposer("TEST lost start");
+  firstMessageTransport(f);
+  const request = f.transport.request;
+  let starts = 0;
+  f.transport.request = async (path, body, signal) => {
+    if (body !== undefined && path.includes("/start") && starts++ === 1)
+      // A console-wide refresh runs while the resend is in flight.
+      await c.refresh();
+    const result = await request(path, body, signal);
+    if (starts === 1 && body !== undefined) throw new ApiError(502);
+    return result;
+  };
+  await c.send("cs");
+  assert.equal(f.posts.length, 3);
+  assert.equal(c.getSnapshot().pending, null);
+  assert.equal(c.getSnapshot().error, null);
+  assert.equal(c.getSnapshot().turns[0]?.userText, "TEST lost start");
+  c.dispose();
 });

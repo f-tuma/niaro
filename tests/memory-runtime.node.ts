@@ -812,15 +812,12 @@ test("chat saves: form answers become one private memory per fact, the person's 
         conversationId: "TEST.conversation:1",
       });
     }
-    assert.deepEqual(
-      items.map((item) => item.content).sort(),
-      [
-        "Jméno a příjmení: Filip Tůma",
-        "Preferuje krátké odpovědi v češtině.",
-        "Role: produktový manažer",
-        "Tým: Niaro mobilní aplikace",
-      ],
-    );
+    assert.deepEqual(items.map((item) => item.content).sort(), [
+      "Jméno a příjmení: Filip Tůma",
+      "Preferuje krátké odpovědi v češtině.",
+      "Role: produktový manažer",
+      "Tým: Niaro mobilní aplikace",
+    ]);
     // The chat finds them by its conversation, under the request that saved them.
     const page = await f.store.privatePage(f.actor, {
       origin: "explicit",
@@ -944,9 +941,10 @@ test("chat saves: exact duplicates are skipped and an exact retry across call ID
     const input = {
       facts: [{ text: "Role: produktový manažer", kind: "fact" as const }],
     };
-    const first = await f
-      .runtime()
-      .invoke!("memory_remember", input, { ...chatSave, text: formAnswers });
+    const first = await f.runtime().invoke!("memory_remember", input, {
+      ...chatSave,
+      text: formAnswers,
+    });
     const retry = await f.runtime().invoke!("memory_remember", input, {
       ...chatSave,
       callId: "different",
@@ -1107,6 +1105,92 @@ test("memory validation: retrieval expiry, deletion and opt-out invalidate pendi
   }
 });
 
+test("memory validation: a turn's own pin survives unrelated changes, never a change to what it showed", async () => {
+  const f = fixture();
+  const unrelated = async () => {
+    const other = await f.remember(f.actor, {
+      content: "TEST unrelated fact",
+      kind: "fact",
+    });
+    await f.store.forget(f.actor, {
+      requestId: randomUUID(),
+      id: other.id,
+      revision: other.revision,
+    });
+  };
+  try {
+    const used = await f.note(),
+      turn = f.runtime(),
+      context = await turn.context({ text: "TEST", language: "en" });
+    assert(context);
+    const metadata = turn.metadata!();
+    assert.deepEqual(metadata.items, [used.id]);
+    // A continued thread's pin is that runtime's own, so it is relaxed too.
+    const thread = f.runtime(),
+      pinned = await thread.continuation!(context.version, metadata);
+    await unrelated();
+    await turn.validate(context.version, metadata);
+    await thread.validate(pinned, metadata);
+    // Another runtime's pin (a waiting task, a later turn) stays exact.
+    await assert.rejects(
+      f.runtime().validate(context.version, metadata),
+      /memory_context_changed/,
+    );
+    await f.store.forget(f.actor, {
+      requestId: randomUUID(),
+      id: used.id,
+      revision: used.revision,
+    });
+    await assert.rejects(
+      turn.validate(context.version, metadata),
+      /memory_context_changed/,
+    );
+
+    // An item saved from this chat's own words is left out of the thread's
+    // items, but the turn showed it, so deleting it still ends the turn.
+    const own = await f.note("TEST own words", {
+        type: "user_message",
+        commandId: "TEST.command:own",
+        conversationId: "TEST.chat",
+      }),
+      chat = f.runtime(),
+      chatContext = await chat.context({
+        text: "TEST",
+        language: "en",
+        conversationId: "TEST.chat",
+      });
+    assert(chatContext);
+    const chatMetadata = chat.metadata!();
+    assert.deepEqual(chatMetadata.items, []);
+    await f.store.forget(f.actor, {
+      requestId: randomUUID(),
+      id: own.id,
+      revision: own.revision,
+    });
+    await assert.rejects(
+      chat.validate(chatContext.version, chatMetadata),
+      /memory_context_changed/,
+    );
+
+    // A turn that showed nothing survives an unrelated change, not an opt-out.
+    const empty = f.runtime(),
+      emptyContext = await empty.context({ text: "TEST", language: "en" });
+    assert(emptyContext);
+    const emptyMetadata = empty.metadata!();
+    assert.deepEqual(emptyMetadata.items, []);
+    await unrelated();
+    await empty.validate(emptyContext.version, emptyMetadata);
+    f.store.setOptOut(f.actor, { requestId: "off", optOut: true });
+    await assert.rejects(
+      empty.validate(emptyContext.version, emptyMetadata),
+      /memory_context_changed/,
+    );
+  } finally {
+    await f.store.close();
+    f.db.close();
+  }
+});
+
 test("observed context: immediate, separately bounded, private and version/expiry fenced", async () => {
   const f = fixture();
   try {
@@ -1190,23 +1274,76 @@ test("observed context: immediate, separately bounded, private and version/expir
   }
 });
 
-test("observed chat correction: actual memory tool creates an immediate explicit user-note assertion",async()=>{
-  const f=fixture();
-  try{
-    const old="TEST owns the green project",replacement="TEST coordinates the green project";
-    const observed=await f.store.observe(f.actor,{batchId:randomUUID(),expectedVersion:f.store.version(f.actor),deadline:f.now()+120000,settings:f.settings,
-      add:[{statement:old,section:"projects",personal:false,sources:[{type:"chat",sourceId:randomUUID(),messageId:"TEST-own",at:new Date(f.now()).toISOString(),digest:"a".repeat(64)}]}],refresh:[],update:[]},{observationSourceAccess:()=>true});
-    const item=observed.items[0]!,receipt=await f.runtime().invoke!("memory_revise",{id:item.id,revision:item.revision,content:replacement},correction(old,replacement)) as {id:string};
-    const explicit=(await f.store.find(f.actor,receipt.id))!;assert.equal(explicit.origin,"explicit");assert.equal(explicit.trust,"user_assertion");assert.deepEqual(explicit.source,{type:"user_note"});
-    assert.equal((await f.store.observationsForTurn(f.actor)).items.length,0);
-    const next=await f.runtime().context({text:"TEST project",language:"en"});assert(next?.content.includes(replacement));assert(!next?.content.includes(old));
-  }finally{await f.store.close();f.db.close();}
+test("observed chat correction: actual memory tool creates an immediate explicit user-note assertion", async () => {
+  const f = fixture();
+  try {
+    const old = "TEST owns the green project",
+      replacement = "TEST coordinates the green project";
+    const observed = await f.store.observe(
+      f.actor,
+      {
+        batchId: randomUUID(),
+        expectedVersion: f.store.version(f.actor),
+        deadline: f.now() + 120000,
+        settings: f.settings,
+        add: [
+          {
+            statement: old,
+            section: "projects",
+            personal: false,
+            sources: [
+              {
+                type: "chat",
+                sourceId: randomUUID(),
+                messageId: "TEST-own",
+                at: new Date(f.now()).toISOString(),
+                digest: "a".repeat(64),
+              },
+            ],
+          },
+        ],
+        refresh: [],
+        update: [],
+      },
+      { observationSourceAccess: () => true },
+    );
+    const item = observed.items[0]!,
+      receipt = (await f.runtime().invoke!(
+        "memory_revise",
+        { id: item.id, revision: item.revision, content: replacement },
+        correction(old, replacement),
+      )) as { id: string };
+    const explicit = (await f.store.find(f.actor, receipt.id))!;
+    assert.equal(explicit.origin, "explicit");
+    assert.equal(explicit.trust, "user_assertion");
+    assert.deepEqual(explicit.source, { type: "user_note" });
+    assert.equal((await f.store.observationsForTurn(f.actor)).items.length, 0);
+    const next = await f
+      .runtime()
+      .context({ text: "TEST project", language: "en" });
+    assert(next?.content.includes(replacement));
+    assert(!next?.content.includes(old));
+  } finally {
+    await f.store.close();
+    f.db.close();
+  }
 });
 
-test("context snapshots fail closed when memory changes between explicit and observation retrieval",async()=>{
-  const f=fixture();
-  try{await f.note();const original=f.store.observationsForTurn.bind(f.store);
-    f.store.observationsForTurn=async(actor,options)=>{await f.note("TEST concurrent memory");return original(actor,options);};
-    await assert.rejects(f.runtime().context({text:"TEST",language:"en"}),/memory_context_changed/);
-  }finally{await f.store.close();f.db.close();}
+test("context snapshots fail closed when memory changes between explicit and observation retrieval", async () => {
+  const f = fixture();
+  try {
+    await f.note();
+    const original = f.store.observationsForTurn.bind(f.store);
+    f.store.observationsForTurn = async (actor, options) => {
+      await f.note("TEST concurrent memory");
+      return original(actor, options);
+    };
+    await assert.rejects(
+      f.runtime().context({ text: "TEST", language: "en" }),
+      /memory_context_changed/,
+    );
+  } finally {
+    await f.store.close();
+    f.db.close();
+  }
 });

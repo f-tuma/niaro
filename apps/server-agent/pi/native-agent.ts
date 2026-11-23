@@ -858,9 +858,10 @@ export class NativeAgentHost {
     () => undefined;
   /** Set by the core: the extensions a native conversation selects. */
   extensionsFor: (conversationId: string) => Extension[] = () => [];
-  /** Set by a file-backed core: delete idle conversations' rows (`purgeConversations`). */
-  purge: (conversationIds: readonly string[]) => Promise<string[]> =
-    async () => [];
+  /** Set by a file-backed core: delete idle conversations' rows (`purgeConversations`), returning the purged ids. Memory storage keeps nothing on file, so every id counts as purged. */
+  purge: (conversationIds: readonly string[]) => Promise<string[]> = async (
+    ids,
+  ) => [...ids];
   readonly bindings = new Map<string, RunBinding>();
   /**
    * Conversations whose run a restart cut off (live at open, no call waiting
@@ -1509,12 +1510,18 @@ export function createPiAgentRuntime(core: NativeCore) {
   async function conversationDoc(id: string) {
     return harness.snapshot(NativeConversationDoc, cid(id), ctx);
   }
-  /** The thread's latest conversation with memory: its recall. */
+  /**
+   * The thread's latest conversation with memory: its recall. A purged one
+   * (no doc) is skipped: a thread kept after a partial forget falls back to an
+   * earlier conversation, or starts again.
+   */
   async function recallConversation(resourceId: string, threadId: string) {
     for (const id of (
       await threadConversations(resourceId, threadId)
-    ).reverse())
-      if (!(await conversationDoc(id))?.memoryless) return id;
+    ).reverse()) {
+      const doc = await conversationDoc(id);
+      if (doc && !doc.memoryless) return id;
+    }
     return undefined;
   }
   async function live(id: string) {
@@ -1737,6 +1744,9 @@ export function createPiAgentRuntime(core: NativeCore) {
     const initial = await session.prepareModel();
     const binding = new RunBinding(input, conversationId, initial, native);
     native.bind(binding);
+    // Removed on every exit: a request's deadline must not abort the run
+    // after the request returned (a waiting approval, a later turn).
+    let onAbort: (() => void) | undefined;
     try {
       let submissionId: string | undefined;
       if (continued)
@@ -1795,6 +1805,7 @@ export function createPiAgentRuntime(core: NativeCore) {
               ),
             );
         };
+        onAbort = fail;
         if (input.signal.aborted) fail();
         else input.signal.addEventListener("abort", fail, { once: true });
       });
@@ -1836,6 +1847,7 @@ export function createPiAgentRuntime(core: NativeCore) {
         answer: binding.finalized,
       };
     } finally {
+      if (onAbort) input.signal.removeEventListener("abort", onAbort);
       if (input.resume && !restarted)
         native.forgetResume(binding, input.resume.toolCallId);
       native.unbind(binding);
@@ -1863,8 +1875,9 @@ export function createPiAgentRuntime(core: NativeCore) {
     }
     // Pi keeps a reset conversation's entries; a forgotten chat's content goes
     // from the file too. Aborted above, so nothing of it runs any more.
-    await native.purge(ids);
-    if (ids.length)
+    const purged = await native.purge(ids);
+    // A conversation whose task did not end keeps the thread doc, so forgetting again retries it.
+    if (ids.length && ids.every((id) => purged.includes(id)))
       await harness.commit(async (tx) => {
         await tx.retireDoc(NativeThreadDoc, key);
       }, ctx);

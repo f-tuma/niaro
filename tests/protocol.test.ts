@@ -8,6 +8,8 @@ import {
   CrmContactResultSchema,
   PROFILE,
   PairingRequestSchema,
+  clipMessageText,
+  MESSAGE_TEXT_MAX,
 } from "../packages/protocol";
 import {
   choosePeter,
@@ -233,4 +235,21 @@ test("an open item rides only on a new message from the person", () => {
   expect(
     MessageSchema.safeParse({ ...message, role: "assistant" }).success,
   ).toBe(false);
+});
+
+test("a reply longer than a message ends on its last whole word", () => {
+  const words = Array.from({ length: 900 }, (_, i) => `slovo${i}`).join(" ");
+  expect(clipMessageText(words.slice(0, 2400))).toBe(words.slice(0, 2400));
+  const clipped = clipMessageText(words);
+  expect(clipped.length).toBeLessThanOrEqual(MESSAGE_TEXT_MAX);
+  expect(clipped.endsWith("…")).toBe(true);
+  expect(words.startsWith(clipped.slice(0, -1) + " ")).toBe(true);
+  expect(clipMessageText(clipped)).toBe(clipped);
+  // A word that ends right at the limit is kept.
+  expect(clipMessageText("a".repeat(3990) + " bbbbbbbb ccc")).toBe(
+    "a".repeat(3990) + " bbbbbbbb…",
+  );
+  const unbroken = clipMessageText("x".repeat(5000));
+  expect(unbroken).toHaveLength(MESSAGE_TEXT_MAX);
+  expect(unbroken.endsWith("…")).toBe(true);
 });

@@ -992,8 +992,11 @@ async function operatorLines(run: () => Promise<void>) {
   const write = process.stdout.write;
   const previous = process.env.NIARO_LOG;
   process.env.NIARO_LOG = "1";
-  process.stdout.write = ((chunk: string | Uint8Array) => {
-    for (const line of String(chunk).split("\n"))
+  process.stdout.write = ((chunk: string | Uint8Array, ...rest: never[]) => {
+    // Node 24's test runner reports over stdout in binary chunks; pass them through.
+    if (typeof chunk !== "string")
+      return write.call(process.stdout, chunk, ...rest);
+    for (const line of chunk.split("\n"))
       if (line.startsWith("{")) lines.push(JSON.parse(line));
     return true;
   }) as typeof process.stdout.write;

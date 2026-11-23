@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createTrustHarness, toolResults } from "./agent-trust/harness";
+import { translate } from "../packages/i18n";
 
 test("live task polling cannot discard the final failure or its user message", async () => {
   const h = createTrustHarness();
@@ -191,6 +192,44 @@ test("unavailable SDK tools reach the bounded public failure without leaking too
       h.commandState("TEST-invalid-tool").toolProblems[0]?.reason,
       "unavailable",
     );
+  } finally {
+    await h.close();
+  }
+});
+
+test("a memory change during a tool step tells the person why and is not traced as an unavailable tool", async () => {
+  const h = createTrustHarness();
+  try {
+    const note = await h.memoryStore.remember(h.memoryActor, {
+      requestId: "TEST-tool-memory-note",
+      content: "TEST preference",
+      kind: "preference",
+      source: { type: "user_note" },
+      explicitIntent: true,
+      settings: h.memorySettings,
+    });
+    let forgotten = false;
+    h.onChat(async (body) => {
+      if (!forgotten) {
+        forgotten = true;
+        await h.memoryStore.forget(h.memoryActor, {
+          requestId: "TEST-tool-memory-forget",
+          id: note.id,
+          revision: note.revision,
+        });
+      }
+      return h.lookupScript(body);
+    });
+    const result = await h.send("Find Jane Test", { id: "TEST-tool-memory" });
+    assert.equal(result.status, "conflict");
+    assert.equal(result.code, "revision_conflict");
+    const answer = result.snapshot.conversations[0]!.messages.at(-1)!;
+    // The client drops the error of a refusal answered under its command (NIAR-308).
+    assert.equal(answer.replyToCommandId, "TEST-tool-memory");
+    const reply = answer.text;
+    assert.equal(reply, translate("en")("memory_context_changed"));
+    assert.doesNotMatch(reply, /administrator/i);
+    assert.deepEqual(h.commandState("TEST-tool-memory").toolProblems, []);
   } finally {
     await h.close();
   }

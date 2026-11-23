@@ -78,6 +78,7 @@ export const designEn = {
   authorityLost: "Access to this conversation is no longer available.",
   connectionLost:
     "The server response was lost. Your message and request are preserved.",
+  notDelivered: "Your request did not reach the designer. Try again.",
   responseInvalid:
     "The server response could not be verified. Check the request before continuing.",
   conflict:
@@ -281,6 +282,7 @@ export const designCs: DesignCopy = {
   authorityLost: "K tomuto rozhovoru už nemáš přístup.",
   connectionLost:
     "Odpověď serveru se ztratila. Zpráva i požadavek zůstávají uložené.",
+  notDelivered: "Požadavek se k návrháři nedostal. Zkus to znovu.",
   responseInvalid:
     "Odpověď serveru nešlo ověřit. Před pokračováním ověř požadavek.",
   conflict:
@@ -408,6 +410,7 @@ export const designCs: DesignCopy = {
 export function designProblem(code: string, copy: DesignCopy): string {
   if (code === "authority_lost") return copy.authorityLost;
   if (code === "connection_lost") return copy.connectionLost;
+  if (code === "process_design_turn_not_delivered") return copy.notDelivered;
   if (code === "response_invalid") return copy.responseInvalid;
   if (code === "recovery_storage_unavailable") return copy.storage;
   if (code === "recovery_storage_invalid") return copy.storageInvalid;

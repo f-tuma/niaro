@@ -26,7 +26,7 @@ const response = (value: unknown, status = 200) =>
   }) as Response;
 
 type Mode = "up" | "down" | "broken";
-type PostReply = "engine" | "model_unavailable" | "error500";
+type PostReply = "engine" | "model_unavailable" | "model_busy" | "error500";
 
 function server() {
   const engine = new FixtureEngine();
@@ -72,8 +72,8 @@ function server() {
             hold = { resolve, reject };
           });
         }
-        if (postReply === "model_unavailable")
-          return response({ error: "model_unavailable" }, 503);
+        if (postReply === "model_unavailable" || postReply === "model_busy")
+          return response({ error: postReply }, 503);
         if (postReply === "error500")
           return response({ error: "fixture_error" }, 500);
         return response(engine.execute(JSON.parse(String(init.body))));
@@ -430,6 +430,60 @@ test("coming back to the foreground retries at once instead of waiting out the b
     s.session.setActive(true);
     await jest.advanceTimersByTimeAsync(0);
     expect(s.session.getSnapshot().status).toBe("online");
+  } finally {
+    s.session.stop();
+  }
+});
+
+test("a message sent while another turn runs (model_busy) stays working, is sent again by the checks, and its answer appears", async () => {
+  const s = server();
+  const command = messageCommand("Choose Peter", "en", "TEST-busy");
+  try {
+    await s.session.start(true);
+    s.reply("model_busy");
+    await s.session.send(command);
+    expect(quiet(s.session.getSnapshot(), command.conversationId)).toBe(true);
+    s.reply("engine");
+    await jest.advanceTimersByTimeAsync(1_000);
+    const state = s.session.getSnapshot();
+    expect(state.pending).toBeNull();
+    expect(state.error).toBeNull();
+    expect(state.commandStates.chat).toBe("accepted");
+    expect(s.posted).toEqual([
+      JSON.stringify(command),
+      JSON.stringify(command),
+    ]);
+    expect(
+      messages(s.engine, command.commandId, "Choose Peter").answers,
+    ).toHaveLength(1);
+  } finally {
+    s.session.stop();
+  }
+});
+
+test("a message that stays model_busy through every check shows the busy failure with Retry", async () => {
+  const s = server();
+  const command = messageCommand("Choose Peter", "en", "TEST-busy-long");
+  try {
+    await s.session.start(true);
+    s.reply("model_busy");
+    await s.session.send(command);
+    expect(quiet(s.session.getSnapshot(), command.conversationId)).toBe(true);
+    for (let second = 0; second < 40; second++) {
+      await jest.advanceTimersByTimeAsync(1_000);
+      if (s.session.getSnapshot().deliveryCheck === "checking")
+        expect(quiet(s.session.getSnapshot(), command.conversationId)).toBe(
+          true,
+        );
+    }
+    expect(s.posted).toHaveLength(6);
+    expect(new Set(s.posted)).toEqual(new Set([JSON.stringify(command)]));
+    const state = s.session.getSnapshot();
+    expect(state.deliveryCheck).toBe("failed");
+    expect(state.error).toBe("model_busy");
+    expect(canRetryPending(state, command.conversationId)).toBe(true);
+    await jest.advanceTimersByTimeAsync(120_000);
+    expect(s.posted).toHaveLength(6);
   } finally {
     s.session.stop();
   }

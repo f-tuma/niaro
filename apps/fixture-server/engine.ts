@@ -31,6 +31,7 @@ import {
   type CalendarTarget,
   type OpenWork,
   sameScope,
+  MESSAGE_TEXT_MAX,
 } from "../../packages/protocol";
 import {
   choosePeter,
@@ -51,6 +52,7 @@ import {
   type MeetingSlots,
   type ConversationMemory,
 } from "./conversation-memory";
+import { translate } from "../../packages/i18n";
 import { migrateDatabase } from "./migrate";
 import { operatorLog } from "./operator-log";
 import {
@@ -717,6 +719,8 @@ export class FixtureEngine {
       return;
     conversation.revision++;
     conversation.messages.push({
+      // The id's command is the creating command, equal to the first
+      // replyToCommandId (an approval may move that); clients parse it.
       id: `message-${commandId}-${conversation.revision}`,
       role,
       text,
@@ -987,7 +991,7 @@ export class FixtureEngine {
     message.processing = processing;
     this.appendNativeAnswer(
       command.commandId,
-      z.string().max(2000).parse(interpretation.nativeReply),
+      z.string().max(MESSAGE_TEXT_MAX).parse(interpretation.nativeReply),
       interpretation,
     );
     this.commit();
@@ -1291,7 +1295,7 @@ export class FixtureEngine {
   ): CommandResult {
     const replyText =
       interpretation?.nativeReply !== undefined
-        ? z.string().max(2000).parse(interpretation.nativeReply)
+        ? z.string().max(MESSAGE_TEXT_MAX).parse(interpretation.nativeReply)
         : interpretation?.decision.reply;
     if (command.type === "conversation.create") {
       if (
@@ -1392,22 +1396,45 @@ export class FixtureEngine {
       }
       if (!message || !resolved || resolved.operationId !== command.operationId)
         return this.result(command, "rejected", "unknown_context");
+      // A later resolve (another device) that brings no new status is
+      // passive: the answer keeps its text and request.
+      const settled =
+        message.result?.type === "service.action" &&
+        message.result.status !== "awaiting_approval" &&
+        message.result.status === resolved.status;
       message.result = resolved;
+      if (settled) {
+        conversation.revision++;
+        this.emit({ type: "conversation.upserted", entity: conversation });
+        return this.result(command, "accepted", "accepted");
+      }
       if (
         interpretation?.resolvedServiceResult &&
         interpretation.serviceResult?.operationId !== command.operationId
       ) {
         const continuation = interpretation.serviceResult;
+        // The card reads the same outcome words as its member-facing frame.
+        const outcome = {
+          rejected: "serviceRejected",
+          failed: "serviceFailed",
+          unknown: "serviceUnknown",
+        } as const;
+        const stepText =
+          resolved.status in outcome
+            ? translate(command.language)(
+                outcome[resolved.status as keyof typeof outcome],
+              )
+            : command.language === "cs"
+              ? "Krok dokončen."
+              : "Step completed.";
         const alreadyShown = continuation
           ? conversation.messages.some(
               (m) =>
                 m.result?.type === "service.action" &&
                 m.result.operationId === continuation.operationId,
             )
-          : message.text ===
-            (command.language === "cs" ? "Krok dokončen." : "Step completed.");
-        message.text =
-          command.language === "cs" ? "Krok dokončen." : "Step completed.";
+          : message.text === stepText;
+        message.text = stepText;
         if (!alreadyShown) {
           const nativeWork =
             !interpretation.serviceResult && !interpretation.ui

@@ -14,7 +14,10 @@ import {
   type Command,
   type CommandResult,
   type WorkItem,
+  clipMessageText,
+  MESSAGE_TEXT_MAX,
 } from "../../packages/protocol";
+import { splitDraft } from "../../packages/openui-library/program";
 import {
   REQUEST_INTERRUPTION_PROFILE,
   type RequestInterruptionResponse,
@@ -106,6 +109,9 @@ function historyText(message: Conversation["messages"][number]) {
     return `Contact lookup returned ${message.result.contacts.length} displayed contacts.`;
   return message.text;
 }
+/** A card reply's visible text, only matched against the reply the server stored (NIAR-263). */
+const cardReply = (message: Conversation["messages"][number]) =>
+  message.role === "assistant" && message.result ? { reply: message.text } : {};
 /** What cancelling open work needs from the authenticated runtime. */
 type WorkAccess = Partial<
   Pick<MobileRuntime, "integrations" | "cancelProcessRun">
@@ -190,7 +196,7 @@ export class ModelService {
         timeZone: "UTC",
         nativeWork: window.items,
         nativeWorkAuthoritative: true,
-        nativeReply: result.reply.slice(0, 2000),
+        nativeReply: clipMessageText(result.reply),
         workItemId: result.workItemId,
         serviceResult: result.result,
         connectionResult: result.connection,
@@ -303,8 +309,13 @@ export class ModelService {
       draft: (draft: string | null) => {
         if (closed) return;
         const { draft: _previous, ...rest } = activity;
-        activity = draft
-          ? { ...rest, draft: draft.slice(0, ACTIVITY_DRAFT_MAX) }
+        // A text over the message limit shows as it will be stored; its
+        // program arrives with the stored answer.
+        const text = draft ? splitDraft(draft).text : "";
+        const shown =
+          text.length > MESSAGE_TEXT_MAX ? clipMessageText(text) : draft;
+        activity = shown
+          ? { ...rest, draft: shown.slice(0, ACTIVITY_DRAFT_MAX) }
           : rest;
         publish();
         this.notify(activityKey, {
@@ -504,7 +515,7 @@ export class ModelService {
                   timeZone: "UTC",
                   nativeWork,
                   nativeWorkAuthoritative: !!nativeWindow,
-                  nativeReply: result.reply.slice(0, 2000),
+                  nativeReply: clipMessageText(result.reply),
                   expectedConversationRevision: conversation?.revision,
                   workItemId: result.workItemId,
                   serviceResult: result.result,
@@ -1083,7 +1094,7 @@ export class ModelService {
             (command.logicalMessageId ?? command.commandId),
         )
         .slice(-8)
-        .map((m) => ({ role: m.role, text: historyText(m) }));
+        .map((m) => ({ role: m.role, text: historyText(m), ...cardReply(m) }));
       const answer = await access.integrations!.message(
         command.idempotencyKey,
         text,
@@ -1382,7 +1393,7 @@ export class ModelService {
               timeZone: "UTC",
               nativeWork,
               nativeWorkAuthoritative: !!nativeWindow,
-              nativeReply: result.reply.slice(0, 2000),
+              nativeReply: clipMessageText(result.reply),
               ...(originalCommand.type === "message.send" &&
               originalCommand.retryOf
                 ? { nativeRetryAuthorized: true }
@@ -1481,6 +1492,7 @@ export class ModelService {
                       .map((m) => ({
                         role: m.role,
                         text: historyText(m),
+                        ...cardReply(m),
                         ...(m.result || m.workItemId
                           ? {
                               operationId:
@@ -1578,6 +1590,15 @@ export class ModelService {
             [400, 403, 404, 409, 429].includes(error.status)
           ) {
             const budgetFailure = isInferenceBudgetFailureCode(error.code);
+            // Members see a generic conflict; operators need the real code.
+            operatorLog(
+              "command_rejected",
+              {
+                status: error.status,
+                code: error.code.slice(0, 80),
+              },
+              "warn",
+            );
             return run(() =>
               this.storage.execute(scope, originalCommand, {
                 decision: {

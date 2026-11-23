@@ -18,6 +18,7 @@ import {
   TOOL_ACTIVITY_PROFILE,
   LEGACY_ACTIVITY_PROFILE,
 } from "../packages/protocol/activity";
+import { clipMessageText, MESSAGE_TEXT_MAX } from "../packages/protocol";
 import {
   scopeFor,
   requestActivity,
@@ -577,8 +578,11 @@ test("the draft is transient progress: replaced as it grows, cleared on request 
             const draft = args[8]!.reportDraft!;
             draft("TEST answer");
             seen.push(current());
-            draft("TEST answer " + "x".repeat(ACTIVITY_DRAFT_MAX));
+            draft("TEST answer\n```openui\n" + "x".repeat(ACTIVITY_DRAFT_MAX));
             seen.push(String(current()?.length));
+            // Text over the message limit shows as it will be stored.
+            draft("TEST " + "word ".repeat(MESSAGE_TEXT_MAX));
+            seen.push(current());
             draft(null);
             seen.push(current());
             draft("TEST again");
@@ -590,6 +594,7 @@ test("the draft is transient progress: replaced as it grows, cleared on request 
     expect(seen).toEqual([
       "TEST answer",
       String(ACTIVITY_DRAFT_MAX),
+      clipMessageText("TEST " + "word ".repeat(MESSAGE_TEXT_MAX)),
       undefined,
     ]);
     const final = RequestActivitySchema.parse(
