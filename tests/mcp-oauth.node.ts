@@ -22,8 +22,11 @@ import {
 import {
   MCP_ACCESS_SCOPES,
   McpAccessStore,
+  type McpGrant,
 } from "../apps/server-identity/mcp-access";
 import { IdentityError } from "../apps/server-identity/error";
+import { McpPolicyStore } from "../apps/server-identity/mcp-policy";
+import type { AuditRecord } from "../packages/protocol/audit";
 
 /** Client metadata documents served without the network (development only). */
 const APP_ID = "https://agent-app.example.test/oauth/client.json";
@@ -48,8 +51,13 @@ async function fixture({
   const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys=ON");
   let enabled = true;
+  // Created once the workspace tables exist; consulted only at request time.
+  let policies: McpPolicyStore | undefined;
+  const audits: AuditRecord[] = [];
+  const linked: McpGrant[] = [];
   const grants = new McpAccessStore(db, {
     checkServer: (id) => enabled && id === "server-a",
+    policy: (workspaceId) => policies!.policy(workspaceId),
   });
   const documents = new Map<string, unknown>([[APP_ID, appDocument]]);
   const fetched: string[] = [];
@@ -57,9 +65,12 @@ async function fixture({
     db,
     baseURL: origin,
     getServerId: () => "server-a",
-    issueGrant: (input) => grants.issue(input),
+    issueGrant: (input) => grants.issue(input, true),
     revalidateGrant: (id, target) => grants.authenticateGrant(id, target),
     revokeGrant: (input) => grants.revoke(input),
+    linkable: (input) => policies!.linkable(input),
+    availability: (input) => policies!.availability(input),
+    linked: (grant) => linked.push(grant),
     ...(development
       ? {
           allowInsecureDevelopment: true,
@@ -153,6 +164,10 @@ async function fixture({
     "workspace-b",
     `${alice.id}-member`,
   );
+  policies = new McpPolicyStore(db, (record) => audits.push(record));
+  // Cases before NIAR-237 link as members of workspaces that allow it.
+  policies.save("workspace-a", "free", 0);
+  policies.save("workspace-b", "free", 0);
   const redirect = "https://client.example.test/callback";
   const cookieSession = await request("/get-session", undefined, alice.cookie);
   assert.equal(cookieSession.status, 200);
@@ -168,6 +183,7 @@ async function fixture({
         redirectUris: [redirect],
       },
       new Headers({ Cookie: alice.cookie, Origin: origin }),
+      { organizationId: "org-a", userId: alice.id },
     )
     .catch((error: { body?: unknown; status?: string }) => {
       throw new Error(
@@ -284,6 +300,9 @@ async function fixture({
   return {
     db,
     grants,
+    policies,
+    audits,
+    linked,
     oauth,
     auth,
     alice,
@@ -1287,6 +1306,7 @@ test("administrators register loopback callbacks on a production server; any por
       f.auth,
       { name: "TEST Claude Code", redirectUris: ["http://localhost/callback"] },
       headers,
+      { organizationId: "org-a", userId: f.alice.id },
     );
     const flow = await f.start(f.alice.cookie, `${VIEW} offline_access`, {
       client_id: local.clientId,
@@ -1308,6 +1328,7 @@ test("administrators register loopback callbacks on a production server; any por
             f.auth,
             { name: "TEST refused", redirectUris: [redirect] },
             headers,
+            { organizationId: "org-a", userId: f.alice.id },
           ),
         (error) =>
           error instanceof IdentityError &&
@@ -1327,6 +1348,9 @@ test("administrators register loopback callbacks on a production server; any por
             throw new Error("unused");
           },
           clientMetadataFetch: () => new Response(null, { status: 404 }),
+          linkable: () => undefined,
+          availability: () => [],
+          linked: () => undefined,
         }),
       /mcp_oauth_configuration_invalid/,
     );
@@ -1524,5 +1548,198 @@ test("a metadata client that signs its token requests with its published key (as
     assert.equal(signed.status, 200, await signed.clone().text());
   } finally {
     f.db.close();
+  }
+});
+
+test("a member links an app only where it is approved; the first attempt files one request and refusals create no grant", async () => {
+  const f = await fixture();
+  try {
+    f.policies.save("workspace-a", "review", 1);
+    const accept = async (workspaceId = "workspace-a") => {
+      const flow = await f.start(f.alice.cookie, "data.read");
+      const response = await f.request(
+        "/mcp/oauth/consent",
+        { oauth_query: flow.oauth_query, accept: true, workspaceId },
+        f.alice.cookie,
+      );
+      return { flow, status: response.status, body: await response.json() };
+    };
+    const states = async () => {
+      const flow = await f.start(f.alice.cookie, "data.read");
+      const info = await f.request(
+        "/mcp/oauth/consent-info",
+        { oauth_query: flow.oauth_query },
+        f.alice.cookie,
+      );
+      assert.equal(info.status, 200);
+      return (await info.json()).workspaces;
+    };
+    const grants = () =>
+      f.db.prepare("SELECT count(*) AS n FROM agent_mcp_access").get()!.n;
+    assert.deepEqual(await states(), [
+      { id: "workspace-a", state: "request" },
+      { id: "workspace-b", state: "available" },
+    ]);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const refused = await accept();
+      assert.equal(refused.status, 403);
+      assert.equal(refused.body.error, "mcp_app_pending");
+    }
+    assert.equal(grants(), 0);
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT count(*) AS n FROM agent_mcp_oauth_app WHERE status='pending'",
+        )
+        .get()!.n,
+      1,
+    );
+    assert.deepEqual(
+      f.audits.map((record) => [record.action, record.actorId]),
+      [["mcp.app_requested", f.alice.id]],
+    );
+    assert.equal((await states())[0].state, "pending");
+    f.policies.reviewApp({
+      workspaceId: "workspace-a",
+      organizationId: "org-a",
+      clientId: f.client.clientId,
+      revision: 1,
+      decision: "approve",
+      reviewerId: f.bob.id,
+    });
+    const linked = await f.token("workspace-a", f.alice.cookie, "data.read");
+    assert.equal(f.linked.length, 1);
+    assert.equal(f.linked[0]!.status, "active");
+    const principal = await f.oauth.authenticate(
+      f.auth,
+      `Bearer ${linked.data.access_token}`,
+      accessTarget,
+    );
+    assert.equal(principal.userId, f.alice.id);
+    // Withdrawing the approval ends members' links made through the app.
+    f.policies.reviewApp({
+      workspaceId: "workspace-a",
+      organizationId: "org-a",
+      clientId: f.client.clientId,
+      revision: 2,
+      decision: "withdraw",
+      reviewerId: f.bob.id,
+    });
+    assert.equal(f.grants.revokeMembers("workspace-a", f.client.clientId), 1);
+    await assert.rejects(
+      f.oauth.authenticate(
+        f.auth,
+        `Bearer ${linked.data.access_token}`,
+        accessTarget,
+      ),
+      unauthorized,
+    );
+    assert.equal((await accept()).body.error, "mcp_app_rejected");
+    f.policies.save("workspace-a", "off", 2);
+    assert.equal((await accept()).body.error, "mcp_external_apps_off");
+    // The other workspace allows any app of the organization.
+    assert.equal((await accept("workspace-b")).status, 200);
+    assert.equal(grants(), 2);
+  } finally {
+    f.db.close();
+  }
+});
+
+test("an app registered for one organization is never linked into another", async () => {
+  const f = await fixture();
+  try {
+    f.db
+      .exec(`INSERT INTO organization(id,name,slug,"createdAt") VALUES ('org-b','TEST B','test-b','${new Date().toISOString()}');
+      INSERT INTO agent_workspace VALUES ('workspace-c','org-b');`);
+    f.db
+      .prepare(
+        'INSERT INTO member(id,"organizationId","userId",role,"createdAt") VALUES (?,?,?,?,?)',
+      )
+      .run(
+        "alice-owner-b",
+        "org-b",
+        f.alice.id,
+        "owner",
+        new Date().toISOString(),
+      );
+    const flow = await f.start(f.alice.cookie, "data.read");
+    const info = await f.request(
+      "/mcp/oauth/consent-info",
+      { oauth_query: flow.oauth_query },
+      f.alice.cookie,
+    );
+    assert.deepEqual(
+      (await info.json()).workspaces.map((value: { id: string }) => value.id),
+      ["workspace-a", "workspace-b"],
+    );
+    const refused = await f.request(
+      "/mcp/oauth/consent",
+      {
+        oauth_query: flow.oauth_query,
+        accept: true,
+        workspaceId: "workspace-c",
+      },
+      f.alice.cookie,
+    );
+    assert.equal(refused.status, 403);
+    assert.equal((await refused.json()).error, "access_denied");
+    assert.equal(
+      f.db.prepare("SELECT count(*) AS n FROM agent_mcp_access").get()!.n,
+      0,
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+test("apps members could link before NIAR-237 are approved once in the workspaces of the time", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(`CREATE TABLE user(id TEXT PRIMARY KEY) STRICT;
+      CREATE TABLE member(id TEXT PRIMARY KEY,"userId" TEXT NOT NULL,"organizationId" TEXT NOT NULL,role TEXT NOT NULL) STRICT;
+      CREATE TABLE agent_workspace(id TEXT PRIMARY KEY,organization_id TEXT NOT NULL) STRICT;
+      CREATE TABLE agent_workspace_member(workspace_id TEXT NOT NULL,member_id TEXT NOT NULL) STRICT;
+      CREATE TABLE agent_mcp_oauth_client(client_id TEXT PRIMARY KEY,name TEXT NOT NULL,redirect_uris TEXT NOT NULL,organization_id TEXT) STRICT;
+      CREATE TABLE agent_mcp_access(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL) STRICT;
+      CREATE TABLE agent_mcp_oauth_binding(grant_id TEXT PRIMARY KEY,client_id TEXT NOT NULL) STRICT;
+      INSERT INTO user VALUES ('alice');
+      INSERT INTO member VALUES ('alice-member','alice','org-a','member');
+      INSERT INTO agent_workspace VALUES ('workspace-a','org-a'),('workspace-b','org-a');
+      INSERT INTO agent_workspace_member VALUES ('workspace-a','alice-member'),('workspace-b','alice-member');
+      INSERT INTO agent_mcp_oauth_client VALUES ('legacy','TEST legacy','["https://legacy.example.test/cb"]',NULL);
+      INSERT INTO agent_mcp_access VALUES ('grant-1','workspace-b');
+      INSERT INTO agent_mcp_oauth_binding VALUES ('grant-1','${APP_ID}');`);
+    const policies = new McpPolicyStore(db, () => undefined);
+    const approved = () =>
+      db
+        .prepare(
+          "SELECT client_id,workspace_id FROM agent_mcp_oauth_app WHERE status='approved' ORDER BY client_id,workspace_id",
+        )
+        .all()
+        .map((row) => `${row.client_id}@${row.workspace_id}`);
+    assert.deepEqual(approved(), [
+      `${APP_ID}@workspace-b`,
+      "legacy@workspace-a",
+      "legacy@workspace-b",
+    ]);
+    // Under the default review the legacy app stays linkable.
+    for (const workspaceId of ["workspace-a", "workspace-b"])
+      policies.linkable({ userId: "alice", clientId: "legacy", workspaceId });
+    assert.throws(
+      () =>
+        policies.linkable({
+          userId: "alice",
+          clientId: APP_ID,
+          workspaceId: "workspace-a",
+        }),
+      (error) =>
+        error instanceof IdentityError && error.code === "mcp_app_pending",
+    );
+    // Runs once: a workspace created later is not approved by it.
+    db.exec("INSERT INTO agent_workspace VALUES ('workspace-c','org-a')");
+    new McpPolicyStore(db, () => undefined);
+    assert.equal(approved().length, 3);
+  } finally {
+    db.close();
   }
 });

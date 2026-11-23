@@ -27,12 +27,14 @@ export type AttentionRow =
   | { key: "retest"; count: number }
   | { key: "signIn"; serviceId: string; name: string }
   | { key: "review"; serviceId: string; name: string }
+  | { key: "mcp"; count: number }
   | { key: "requests"; percent: number };
 
 /**
  * What an administrator should look at first, in this order: failed actions
- * today, processes blocked until a new test, enabled services people must
- * sign in to that nobody has signed in to yet, and AI requests close to
+ * today, processes blocked until a new test, member-added services and
+ * external AI app requests waiting for a decision, enabled services people
+ * must sign in to that nobody has signed in to yet, and AI requests close to
  * today's limit. Unknown inputs (null, still loading or not visible) add no row.
  */
 export function needsAttention(input: {
@@ -42,6 +44,8 @@ export function needsAttention(input: {
   signIn?: readonly { serviceId: string; name: string; connected: number }[];
   /** Services members connected for themselves that wait for a decision. */
   review?: readonly { serviceId: string; name: string }[];
+  /** Members' grants and app requests waiting on External AI apps. */
+  mcpRequests?: number | null;
   requests: number;
   limit: number;
 }): AttentionRow[] {
@@ -54,6 +58,7 @@ export function needsAttention(input: {
       serviceId: service.serviceId,
       name: service.name,
     });
+  if (input.mcpRequests) rows.push({ key: "mcp", count: input.mcpRequests });
   for (const service of input.signIn ?? [])
     if (!service.connected)
       rows.push({

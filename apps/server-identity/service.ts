@@ -20,9 +20,19 @@ import { meetingAgentAccess } from "./meeting-agent";
 import {
   McpAccessStore,
   MCP_ACCESS_SCOPES,
+  type McpGrant,
   type McpPrincipal,
   type McpAccessScope,
 } from "./mcp-access";
+import { McpPolicyStore } from "./mcp-policy";
+import {
+  MCP_ADMIN_PROFILE,
+  McpAdminRevokeRequest,
+  McpAdminScope,
+  McpAdminState,
+  McpPolicyRequest,
+  McpReviewRequest,
+} from "../../packages/protocol/mcp-admin";
 import {
   connectorRequestId,
   connectorResult,
@@ -477,18 +487,27 @@ export async function openIdentity(
         : {}),
     });
     let service: IdentityService | undefined;
+    const policies = () => {
+      if (!service) throw new IdentityError(503, "identity_unavailable");
+      return service.mcpPolicies;
+    };
     const oauthGrants = new McpAccessStore(db, {
       checkServer: (id) => service?.mcpServerId() === id,
+      policy: (workspaceId) => policies().policy(workspaceId),
     });
     const mcpOAuth = createMcpOAuth({
       db,
       baseURL: settings.baseURL,
       allowInsecureDevelopment: new URL(settings.baseURL).protocol === "http:",
       getServerId: () => service?.mcpServerId(),
-      issueGrant: (input) => oauthGrants.issue(input),
+      // The app's approval for the workspace was checked by `linkable`.
+      issueGrant: (input) => oauthGrants.issue(input, true),
       revalidateGrant: (id, target) =>
         oauthGrants.authenticateGrant(id, target),
       revokeGrant: (input) => oauthGrants.revoke(input),
+      linkable: (input) => policies().linkable(input),
+      availability: (input) => policies().availability(input),
+      linked: (grant) => service?.mcpLinked(grant),
     });
     const auth = await createIdentityAuth(
       db,
@@ -724,6 +743,8 @@ const instructionsScope = (workspaceId: string | null): InstructionsScope =>
     : { type: "workspace", workspaceId };
 export class IdentityService {
   private mcpGrants: McpAccessStore;
+  /** Members' external AI apps policy and OAuth app approvals (NIAR-237). */
+  readonly mcpPolicies: McpPolicyStore;
   private mcpDataTools!: McpDataTools;
   private loops: LoopsStore;
   private serviceFlows: ServiceMobileFlows;
@@ -837,8 +858,12 @@ export class IdentityService {
     meetingSettings?: Partial<MeetingSettings>,
     private serverSettingsStore?: ServerSettingsStore,
   ) {
+    this.mcpPolicies = new McpPolicyStore(db, (record) =>
+      this.audit.append(record),
+    );
     this.mcpGrants = new McpAccessStore(db, {
       checkServer: (id) => !this.closing && id === this.workflowServerId,
+      policy: (workspaceId) => this.mcpPolicies.policy(workspaceId),
     });
     this.meetings = new MeetingStore(db);
     const meetingOptions = { ...MEETING_SETTINGS_DEFAULTS, ...meetingSettings };
@@ -4147,6 +4172,19 @@ export class IdentityService {
   mcpServerId() {
     return this.closing ? undefined : this.workflowServerId;
   }
+  /** An OAuth consent linked an app: recorded like a manual grant. */
+  mcpLinked(grant: McpGrant) {
+    this.audit.append({
+      organizationId: grant.organizationId,
+      workspaceId: grant.workspaceId,
+      actorId: grant.userId,
+      source: "console",
+      action: "mcp.access_issued",
+      targetId: grant.id,
+      outcome: "succeeded",
+      details: { accessStatus: grant.status, oauth: true },
+    });
+  }
   async mcpPublicHttp(
     req: IncomingMessage,
     res: ServerResponse,
@@ -7031,20 +7069,190 @@ export class IdentityService {
           if (!this.mcpOAuth || !this.workflowServerId)
             throw new IdentityError(503, "mcp_oauth_unavailable");
           const session = await this.getSession(req);
-          if (
-            !session ||
-            !this.db
-              .prepare('SELECT 1 FROM member WHERE "userId"=?')
-              .get(session.user.id)
-          )
-            throw new IdentityError(403, "identity_account_required");
+          if (!session) throw new IdentityError(401, "identity_unauthorized");
+          const { workspaceId, ...client } = z
+            .looseObject({ workspaceId: IdentityId })
+            .parse(payload);
+          const workspace = this.db
+            .prepare("SELECT organization_id FROM agent_workspace WHERE id=?")
+            .get(workspaceId);
+          if (!workspace) throw new IdentityError(404, "identity_not_found");
+          const organizationId = String(workspace.organization_id);
+          const actor = await this.workspaceActor(req, {
+            organizationId,
+            workspaceId,
+          });
+          const member = actor.role === "member";
+          const policy = this.mcpPolicies.policy(workspaceId);
+          // Refused before anything is created.
+          if (member && policy === "off")
+            throw new IdentityError(403, "mcp_external_apps_off");
+          const state = member && policy === "review" ? "pending" : "approved";
+          const registered = await this.mcpOAuth.registerClient(
+            this.auth,
+            client,
+            this.headers(req),
+            { organizationId, userId: actor.userId },
+          );
+          const appId = this.mcpPolicies.request(
+            registered.clientId,
+            workspaceId,
+            organizationId,
+            actor.userId,
+            state,
+            !member,
+          );
+          this.audit.append({
+            organizationId,
+            workspaceId,
+            actorId: actor.userId,
+            source: "console",
+            action: "mcp.app_registered",
+            targetId: appId,
+            outcome: "succeeded",
+            details: {},
+          });
+          return respond(201, { ...registered, state });
+        }
+        // Members' external AI apps of a workspace: owners and administrators
+        // only, also when called directly past the console (NIAR-237).
+        if (url.pathname.startsWith("/admin/api/identity/mcp/admin/")) {
+          if (req.method !== "POST")
+            return respond(405, { error: "method_not_allowed" });
+          const action = url.pathname.split("/").at(-1);
+          if (!["list", "policy", "review", "revoke"].includes(action ?? ""))
+            return respond(404, { error: "identity_not_found" });
+          // Authorized from the selectors first; each action's body is strict.
+          const { organizationId, workspaceId } = z
+            .looseObject(McpAdminScope.shape)
+            .parse(payload);
+          const actor = await this.workspaceActor(req, {
+            organizationId,
+            workspaceId,
+          });
+          if (actor.role === "member")
+            throw new IdentityError(403, "identity_forbidden");
+          const record = {
+            organizationId,
+            workspaceId,
+            actorId: actor.userId,
+            source: "console" as const,
+            outcome: "succeeded" as const,
+          };
+          if (action === "policy") {
+            const input = McpPolicyRequest.parse(payload);
+            const saved = await this.transaction(async () => {
+              const saved = this.mcpPolicies.save(
+                workspaceId,
+                input.policy,
+                input.revision,
+              );
+              // Tightening to off ends every member grant at once.
+              const revokedCount =
+                saved.policy === "off"
+                  ? this.mcpGrants.revokeMembers(workspaceId)
+                  : 0;
+              this.audit.append({
+                ...record,
+                action: "mcp.policy_changed",
+                targetId: workspaceId,
+                details: {
+                  externalAppsPolicy: saved.policy,
+                  previousExternalAppsPolicy: saved.previous,
+                  revision: saved.revision,
+                  revokedCount,
+                },
+              });
+              return saved;
+            });
+            return respond(200, {
+              policy: saved.policy,
+              revision: saved.revision,
+            });
+          }
+          if (action === "review") {
+            const input = McpReviewRequest.parse(payload);
+            const decision = (
+              {
+                approve: "approved",
+                reject: "rejected",
+                withdraw: "withdrawn",
+              } as const
+            )[input.decision];
+            if (input.kind === "grant") {
+              const grant = this.mcpGrants.review({
+                workspaceId,
+                grantId: input.id,
+                revision: input.revision,
+                decision: input.decision,
+                reason: input.reason,
+                reviewerId: actor.userId,
+              });
+              this.audit.append({
+                ...record,
+                action: "mcp.access_reviewed",
+                targetId: grant.id,
+                details: { decision, accessStatus: grant.status },
+              });
+              return respond(200, { ok: true });
+            }
+            await this.transaction(async () => {
+              const app = this.mcpPolicies.reviewApp({
+                workspaceId,
+                organizationId,
+                clientId: input.clientId,
+                revision: input.revision,
+                decision: input.decision,
+                reason: input.reason,
+                reviewerId: actor.userId,
+              });
+              // Withdrawing ends members' links made through the app here.
+              const revokedCount =
+                input.decision === "withdraw"
+                  ? this.mcpGrants.revokeMembers(workspaceId, input.clientId)
+                  : undefined;
+              this.audit.append({
+                ...record,
+                action: "mcp.app_reviewed",
+                targetId: app.id,
+                details: {
+                  decision,
+                  ...(revokedCount === undefined ? {} : { revokedCount }),
+                },
+              });
+            });
+            return respond(200, { ok: true });
+          }
+          if (action === "revoke") {
+            const input = McpAdminRevokeRequest.parse(payload);
+            const result = this.mcpGrants.revokeByAdministrator(
+              workspaceId,
+              input.grantId,
+            );
+            if (result.revoked)
+              this.audit.append({
+                ...record,
+                action: "mcp.access_revoked",
+                targetId: input.grantId,
+                details: {},
+              });
+            return respond(200, result);
+          }
+          McpAdminScope.parse(payload);
+          const grants = this.mcpGrants.listWorkspace(workspaceId);
+          const apps = this.mcpPolicies.apps(workspaceId, organizationId);
           return respond(
-            201,
-            await this.mcpOAuth.registerClient(
-              this.auth,
-              payload,
-              this.headers(req),
-            ),
+            200,
+            McpAdminState.parse({
+              profile: MCP_ADMIN_PROFILE,
+              ...this.mcpPolicies.read(workspaceId),
+              requests: {
+                grants: grants.filter((grant) => grant.status === "pending"),
+                apps: apps.filter((app) => app.state === "pending"),
+              },
+              access: grants.filter((grant) => grant.status === "active"),
+              apps,
+            }),
           );
         }
         if (url.pathname.startsWith("/admin/api/identity/mcp/access/")) {
@@ -7075,7 +7283,7 @@ export class IdentityService {
               action: "mcp.access_issued",
               targetId: issued.grant.id,
               outcome: "succeeded",
-              details: {},
+              details: { accessStatus: issued.grant.status },
             });
             return respond(201, issued);
           }

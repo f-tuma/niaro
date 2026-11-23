@@ -85,6 +85,10 @@ const en = {
   requestsShare: "AI requests at {p} % of today's limit",
   nobodySignedIn: "{service}: nobody has signed in yet",
   ownServiceReview: "{service}: a member's own service waits for approval",
+  mcpRequests: {
+    one: "external AI app request waits for a decision",
+    other: "external AI app requests wait for a decision",
+  } as PluralForms,
   members: "Members",
   recentActivity: "Recent activity",
   viewAll: "View all",
@@ -207,6 +211,11 @@ const cs: ShellCopy = {
   requestsShare: "Dotazy na AI dnes na {p} % limitu",
   nobodySignedIn: "{service}: zatím se nikdo nepřihlásil",
   ownServiceReview: "{service}: vlastní služba člena čeká na schválení",
+  mcpRequests: {
+    one: "žádost o externí AI aplikaci čeká na rozhodnutí",
+    few: "žádosti o externí AI aplikace čekají na rozhodnutí",
+    other: "žádostí o externí AI aplikace čeká na rozhodnutí",
+  },
   members: "Členové",
   recentActivity: "Nedávná aktivita",
   viewAll: "Zobrazit vše",

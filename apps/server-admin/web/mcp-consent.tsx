@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { z } from "zod";
+import { McpAvailability } from "../../../packages/protocol/mcp-admin";
 import { Link } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
 import { AuthLayout } from "@admin/components/console/auth-layout";
@@ -48,8 +49,26 @@ const ConsentInfoSchema = z.object({
   resource: z.url().max(2048),
   redirectUri: z.url().max(2048),
   requiresSignIn: z.boolean().default(false),
+  /** What linking means in each workspace the person may choose (NIAR-237). */
+  workspaces: z
+    .array(z.object({ id: z.string(), state: McpAvailability }))
+    .max(1000)
+    .default([]),
 });
 type ConsentInfo = z.infer<typeof ConsentInfoSchema>;
+/** Explains a workspace where linking is not simply available. */
+const stateCopy = {
+  request: "stateRequest",
+  pending: "statePending",
+  rejected: "stateRejected",
+  off: "stateOff",
+} as const satisfies Record<Exclude<McpAvailability, "available">, string>;
+/** The policy's refusals of a consent and the state they leave behind. */
+const refusals: Record<string, Exclude<McpAvailability, "available">> = {
+  mcp_app_pending: "pending",
+  mcp_app_rejected: "rejected",
+  mcp_external_apps_off: "off",
+};
 export function validMcpCallback(value: string) {
   try {
     const url = new URL(value);
@@ -121,9 +140,17 @@ export function McpConsent({ logout }: { logout?: () => void } = {}) {
     selectedWorkspace.organizationId === scope.organization?.id &&
     scope.detail.data?.workspaces.some(
       (workspace) => workspace.id === selectedWorkspace.id,
-    )
+    ) &&
+    info?.workspaces.some((workspace) => workspace.id === selectedWorkspace.id)
       ? selectedWorkspace.id
       : "";
+  const workspaceState = info?.workspaces.find(
+    (workspace) => workspace.id === workspaceId,
+  )?.state;
+  const blocked =
+    workspaceState === "pending" ||
+    workspaceState === "rejected" ||
+    workspaceState === "off";
   const disabled =
     pending || loading || scope.identity.isFetching || scope.detail.isFetching;
   async function decide(accept: boolean) {
@@ -164,12 +191,27 @@ export function McpConsent({ logout }: { logout?: () => void } = {}) {
       if (!controller.signal.aborted) window.location.assign(redirect.href);
     } catch (cause) {
       if (!controller.signal.aborted) {
+        const refused =
+          cause instanceof ApiError ? refusals[cause.code ?? ""] : undefined;
+        if (refused)
+          setInfo({
+            ...info,
+            workspaces: info.workspaces.map((workspace) =>
+              workspace.id === workspaceId
+                ? { ...workspace, state: refused }
+                : workspace,
+            ),
+          });
         setError(
-          cause instanceof ApiError && cause.status === 401
-            ? copy.authError
-            : cause instanceof ApiError && cause.status === 403
-              ? copy.consentForbidden
-              : copy.consentFailed,
+          refused === "pending"
+            ? copy.requestSent
+            : refused
+              ? copy[stateCopy[refused]]
+              : cause instanceof ApiError && cause.status === 401
+                ? copy.authError
+                : cause instanceof ApiError && cause.status === 403
+                  ? copy.consentForbidden
+                  : copy.consentFailed,
         );
         setPending(false);
         request.current = null;
@@ -318,14 +360,27 @@ export function McpConsent({ logout }: { logout?: () => void } = {}) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {scope.detail.data?.workspaces.map((workspace) => (
-                        <SelectItem key={workspace.id} value={workspace.id}>
-                          {workspace.name}
-                        </SelectItem>
-                      ))}
+                      {scope.detail.data?.workspaces
+                        .filter((workspace) =>
+                          info.workspaces.some(
+                            (available) => available.id === workspace.id,
+                          ),
+                        )
+                        .map((workspace) => (
+                          <SelectItem key={workspace.id} value={workspace.id}>
+                            {workspace.name}
+                          </SelectItem>
+                        ))}
                     </SelectGroup>
                   </SelectContent>
                 </Select>
+                {workspaceState && workspaceState !== "available" ? (
+                  <Alert>
+                    <AlertDescription>
+                      {copy[stateCopy[workspaceState]]}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
               </Field>
               <FieldSet>
                 <FieldLegend variant="label">{copy.permissions}</FieldLegend>
@@ -377,6 +432,7 @@ export function McpConsent({ logout }: { logout?: () => void } = {}) {
                 disabled={
                   disabled ||
                   !workspaceId ||
+                  blocked ||
                   scopes.length === 0 ||
                   info.requiresSignIn ||
                   !scope.ready
@@ -384,7 +440,11 @@ export function McpConsent({ logout }: { logout?: () => void } = {}) {
                 onClick={() => void decide(true)}
               >
                 {pending ? <Spinner data-icon="inline-start" /> : null}
-                {pending ? copy.consentSending : copy.allowClient}
+                {pending
+                  ? copy.consentSending
+                  : workspaceState === "request"
+                    ? copy.requestAccess
+                    : copy.allowClient}
               </Button>
             </div>
           </>

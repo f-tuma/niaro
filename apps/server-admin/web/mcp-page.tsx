@@ -82,6 +82,20 @@ import {
   type McpScope,
 } from "./mcp-copy";
 import { McpOAuthClient } from "./mcp-oauth-client";
+import { loadMcpAdmin, mcpAdminKey } from "./lib/mcp-admin";
+import type {
+  McpAdminApp,
+  McpAdminGrant,
+  McpPolicy,
+} from "../../../packages/protocol/mcp-admin";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@admin/components/ui/select";
+import { SettingRow, SettingRows } from "@admin/components/console/setting-row";
 
 const searchId = z.string().trim().min(1).max(200).optional().catch(undefined);
 export const mcpSearchSchema = z.object({
@@ -242,6 +256,13 @@ export function McpPage() {
               key={`${authorityGeneration}:${scope.workspace.id}:${search.approval}`}
               workspaceId={scope.workspace.id}
               requestId={search.approval}
+            />
+          ) : null}
+          {scope.organization && scope.detail.data?.canManageWorkspaces ? (
+            <MembersMcp
+              key={`${authorityGeneration}:${data.authentication.principalId}:${scope.workspace.id}`}
+              organizationId={scope.organization.id}
+              workspaceId={scope.workspace.id}
             />
           ) : null}
           <WorkspaceMcp
@@ -470,7 +491,7 @@ function WorkspaceMcp({
               <CodeBlock value={config} />
             </Disclosure>
             <Disclosure title={copy.register}>
-              <McpOAuthClient />
+              <McpOAuthClient workspaceId={workspaceId} />
             </Disclosure>
           </div>
         </Card>
@@ -792,5 +813,365 @@ function ConnectorApproval({
         )}
       </Card>
     </Section>
+  );
+}
+
+const appTone = {
+  approved: "success",
+  pending: "warning",
+  rejected: "danger",
+} as const;
+const appLabel = {
+  approved: "appApproved",
+  pending: "appPending",
+  rejected: "appRejected",
+} as const;
+const person = (value: { name: string; email: string }) =>
+  value.name ? `${value.name} (${value.email})` : value.email;
+
+/** A waiting grant or app: approve, or reject with a reason the person sees. */
+function RequestRow({
+  title,
+  description,
+  disabled,
+  decide,
+}: {
+  title: string;
+  description: string;
+  disabled: boolean;
+  decide: (decision: "approve" | "reject", reason?: string) => void;
+}) {
+  const copy = useMcpCopy();
+  const [reason, setReason] = useState("");
+  return (
+    <Item variant="row" size="row" data-testid="mcp-request">
+      <ItemContent>
+        <ItemTitle>{title}</ItemTitle>
+        <ItemDescription className="break-words">{description}</ItemDescription>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Input
+            aria-label={copy.rejectReason}
+            placeholder={copy.rejectReason}
+            className="min-w-0 flex-1 basis-48"
+            maxLength={500}
+            value={reason}
+            disabled={disabled}
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <Button
+            variant="outline"
+            disabled={disabled}
+            onClick={() => decide("reject", reason.trim() || undefined)}
+          >
+            {copy.decline}
+          </Button>
+          <Button disabled={disabled} onClick={() => decide("approve")}>
+            {copy.approve}
+          </Button>
+        </div>
+      </ItemContent>
+    </Item>
+  );
+}
+
+/** Owners and administrators: members' policy, requests, access and apps
+ * of the selected workspace (NIAR-237). Every decision is revision-checked. */
+function MembersMcp({
+  organizationId,
+  workspaceId,
+}: {
+  organizationId: string;
+  workspaceId: string;
+}) {
+  const copy = useMcpCopy();
+  const { data, language } = useAdmin();
+  const client = useQueryClient();
+  const target = { organizationId, workspaceId };
+  const query = useQuery({
+    queryKey: mcpAdminKey(data.authentication.principalId, workspaceId),
+    queryFn: ({ signal }) => loadMcpAdmin(target, signal),
+    staleTime: 0,
+    refetchInterval: 15_000,
+    retry: false,
+  });
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    description: string;
+    label: string;
+    path: string;
+    body: object;
+  } | null>(null);
+  async function send(path: string, body: object) {
+    if (pending) return;
+    setPending(true);
+    setError(null);
+    try {
+      await api(`identity/mcp/admin/${path}`, { ...target, ...body });
+      void client.invalidateQueries({ queryKey: ["admin", "audit"] });
+    } catch (cause) {
+      setError(issueMessage(cause, copy));
+    } finally {
+      setPending(false);
+      void query.refetch();
+    }
+  }
+  if (query.isError)
+    return (
+      <ErrorNotice
+        message={issueMessage(query.error, copy, "loadFailed")}
+        retry={() => void query.refetch()}
+        pending={query.isFetching}
+      />
+    );
+  if (!query.data) return <Skeleton className="h-40 w-full" />;
+  const state = query.data;
+  const shortDate = (value: string) =>
+    new Date(value).toLocaleDateString(language, { dateStyle: "medium" });
+  const scopes = (grant: McpAdminGrant) =>
+    MCP_SCOPES.filter((scope) => grant.scopes.includes(scope))
+      .map((scope) => copy[mcpScopeCopy[scope][0]])
+      .join(", ");
+  const grantLine = (grant: McpAdminGrant) =>
+    [
+      person(grant.person),
+      grant.appName ? copy.linkedThrough.replace("{app}", grant.appName) : null,
+      scopes(grant),
+      `${copy.expires} ${shortDate(grant.expiresAt)}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  const appLine = (app: McpAdminApp) =>
+    [
+      app.requestedBy
+        ? copy.requestedBy.replace("{person}", person(app.requestedBy))
+        : null,
+      app.host ?? app.redirectUris.join(", "),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  const requests = state.requests.grants.length + state.requests.apps.length;
+  return (
+    <>
+      {error ? <ErrorNotice message={error} /> : null}
+      <Section title={copy.membersApps} description={copy.membersAppsHint}>
+        <SettingRows>
+          <SettingRow
+            label={copy.policyLabel}
+            labelId="mcp-policy-label"
+            meta={copy.policyOffHint}
+            wide
+          >
+            <Select
+              value={state.policy}
+              disabled={pending}
+              onValueChange={(value) => {
+                const body = {
+                  policy: value as McpPolicy,
+                  revision: state.revision,
+                };
+                // Off ends members' access: confirm first.
+                if (value === "off")
+                  setConfirm({
+                    title: copy.policyOff,
+                    description: copy.policyOffHint,
+                    label: copy.policyOff,
+                    path: "policy",
+                    body,
+                  });
+                else void send("policy", body);
+              }}
+            >
+              <SelectTrigger
+                aria-labelledby="mcp-policy-label"
+                className="w-full"
+                data-testid="mcp-policy"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="off">{copy.policyOff}</SelectItem>
+                <SelectItem value="review">{copy.policyReview}</SelectItem>
+                <SelectItem value="free">{copy.policyFree}</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        </SettingRows>
+      </Section>
+      {requests > 0 ? (
+        <Section title={copy.requests} count={requests}>
+          <Card variant="list">
+            {state.requests.grants.map((grant) => (
+              <RequestRow
+                key={grant.id}
+                title={grant.label}
+                description={grantLine(grant)}
+                disabled={pending}
+                decide={(decision, reason) =>
+                  void send("review", {
+                    kind: "grant",
+                    id: grant.id,
+                    revision: grant.revision,
+                    decision,
+                    ...(reason ? { reason } : {}),
+                  })
+                }
+              />
+            ))}
+            {state.requests.apps.map((app) => (
+              <RequestRow
+                key={app.clientId}
+                title={app.name}
+                description={appLine(app)}
+                disabled={pending}
+                decide={(decision, reason) =>
+                  void send("review", {
+                    kind: "app",
+                    clientId: app.clientId,
+                    revision: app.revision,
+                    decision,
+                    ...(reason ? { reason } : {}),
+                  })
+                }
+              />
+            ))}
+          </Card>
+        </Section>
+      ) : null}
+      <Section title={copy.membersAccess} count={state.access.length}>
+        {state.access.length === 0 ? (
+          <Empty variant="outline">
+            <EmptyHeader>
+              <EmptyTitle>{copy.membersAccessEmpty}</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <Card variant="list">
+            {state.access.map((grant) => (
+              <Item key={grant.id} variant="row" size="row">
+                <ItemContent>
+                  <ItemTitle>{grant.label}</ItemTitle>
+                  <ItemDescription className="break-words">
+                    {grantLine(grant)}
+                    {" · "}
+                    {grant.lastUsedAt
+                      ? copy.lastUsed.replace(
+                          "{date}",
+                          shortDate(grant.lastUsedAt),
+                        )
+                      : copy.neverUsed}
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <MoreActions label={copy.moreActions} size="sm">
+                    <DropdownMenuGroup>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        disabled={pending}
+                        onSelect={() =>
+                          setConfirm({
+                            title: copy.memberRevokeTitle,
+                            description: `${grant.label} · ${copy.memberRevokeHint}`,
+                            label: copy.revoke,
+                            path: "revoke",
+                            body: { grantId: grant.id },
+                          })
+                        }
+                      >
+                        <Ban aria-hidden="true" />
+                        {copy.revoke}
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </MoreActions>
+                </ItemActions>
+              </Item>
+            ))}
+          </Card>
+        )}
+      </Section>
+      <Section title={copy.apps} count={state.apps.length}>
+        {state.apps.length === 0 ? (
+          <Empty variant="outline">
+            <EmptyHeader>
+              <EmptyTitle>{copy.appsEmpty}</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <Card variant="list">
+            {state.apps.map((app) => (
+              <Item key={app.clientId} variant="row" size="row">
+                <ItemContent>
+                  <ItemTitle>
+                    {app.name}
+                    <StatusBadge
+                      tone={app.state ? appTone[app.state] : "neutral"}
+                    >
+                      {copy[app.state ? appLabel[app.state] : "appUndecided"]}
+                    </StatusBadge>
+                  </ItemTitle>
+                  <ItemDescription className="break-words">
+                    {appLine(app)}
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  {app.state === "approved" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() =>
+                        setConfirm({
+                          title: copy.withdrawTitle,
+                          description: `${app.name} · ${copy.withdrawHint}`,
+                          label: copy.withdraw,
+                          path: "review",
+                          body: {
+                            kind: "app",
+                            clientId: app.clientId,
+                            revision: app.revision,
+                            decision: "withdraw",
+                          },
+                        })
+                      }
+                    >
+                      {copy.withdraw}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      disabled={pending}
+                      onClick={() =>
+                        void send("review", {
+                          kind: "app",
+                          clientId: app.clientId,
+                          revision: app.revision,
+                          decision: "approve",
+                        })
+                      }
+                    >
+                      {copy.approve}
+                    </Button>
+                  )}
+                </ItemActions>
+              </Item>
+            ))}
+          </Card>
+        )}
+      </Section>
+      <ConfirmAction
+        open={!!confirm}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null);
+        }}
+        title={confirm?.title ?? ""}
+        description={confirm?.description ?? ""}
+        confirmLabel={confirm?.label ?? ""}
+        cancelLabel={copy.cancel}
+        onConfirm={() => {
+          if (confirm) return send(confirm.path, confirm.body);
+        }}
+      />
+    </>
   );
 }

@@ -83,13 +83,19 @@ test("invitation links, passwords, reset links and own sign-ins", async (t) => {
   const signIn = async (c: Client, email: string, pw: string) =>
     (await c("auth/sign-in/email", { email, password: pw })).status;
   // A personal MCP grant as the MCP store writes it (no live server needed).
-  const mcpGrant = (userId: string, memberId: string, workspaceId: string) => {
+  const mcpGrant = (
+    userId: string,
+    memberId: string,
+    workspaceId: string,
+    status = "active",
+    reason: string | null = null,
+  ) => {
     const id = randomUUID();
     const member = db
       .prepare('SELECT "organizationId" AS o FROM member WHERE id=?')
       .get(memberId)!;
     db.prepare(
-      "INSERT INTO agent_mcp_access (id,token_digest,user_id,member_id,organization_id,workspace_id,server_id,label,scopes_json,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO agent_mcp_access (id,token_digest,user_id,member_id,organization_id,workspace_id,server_id,label,scopes_json,created_at,expires_at,status,review_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
     ).run(
       id,
       randomUUID(),
@@ -102,6 +108,8 @@ test("invitation links, passwords, reset links and own sign-ins", async (t) => {
       '["memory.write"]',
       Date.now(),
       Date.now() + 3_600_000,
+      status,
+      reason,
     );
     return id;
   };
@@ -398,6 +406,31 @@ test("invitation links, passwords, reset links and own sign-ins", async (t) => {
           id: list.data.mcp[0].id,
         });
         assert.equal(mcpRevoked(grant), true);
+        // Waiting and rejected grants are listed with the reason and removable.
+        const rejected = mcpGrant(
+          userId,
+          memberId,
+          workspaceId,
+          "rejected",
+          "Use the shared assistant",
+        );
+        const pending = mcpGrant(userId, memberId, workspaceId, "pending");
+        const requests = (
+          await member("api/identity/account/access", { action: "list" })
+        ).data.mcp as { id: string; status: string; reason: string | null }[];
+        assert.deepEqual(
+          requests.map((value) => [value.status, value.reason]).sort(),
+          [
+            ["pending", null],
+            ["rejected", "Use the shared assistant"],
+          ],
+        );
+        for (const value of requests)
+          await member("api/identity/account/access", {
+            action: "revoke",
+            id: value.id,
+          });
+        assert(mcpRevoked(rejected) && mcpRevoked(pending));
         assert.equal(list.data.hasPassword, true);
         assert.equal(list.data.limit, 8);
         assert.equal(list.data.devices.length, 1);

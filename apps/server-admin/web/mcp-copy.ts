@@ -111,6 +111,46 @@ const en = {
   callWorkspaceMismatch:
     "This call belongs to a different workspace. Select its workspace before deciding it.",
   selectCallWorkspace: "Select its workspace",
+  membersApps: "Members' AI apps",
+  membersAppsHint:
+    "Whether members may connect their own AI apps to this workspace. Owners and administrators are never held back.",
+  policyLabel: "Members connect apps",
+  policyOff: "Off",
+  policyReview: "Administrator approves",
+  policyFree: "Allowed",
+  policyOffHint:
+    "Turning it off ends every member's access in this workspace at once.",
+  requests: "Requests",
+  requestedBy: "Requested by {person}",
+  rejectReason: "Reason for the person (optional)",
+  membersAccess: "Members' access",
+  membersAccessEmpty: "No member has connected an app",
+  linkedThrough: "Linked through {app}",
+  lastUsed: "Last used {date}",
+  neverUsed: "Not used yet",
+  memberRevokeTitle: "Revoke this member's access?",
+  memberRevokeHint: "The member's app loses access at once.",
+  apps: "OAuth apps",
+  appsEmpty: "No OAuth app is known in this workspace",
+  appApproved: "Approved",
+  appPending: "Waiting",
+  appRejected: "Rejected",
+  appUndecided: "Not decided",
+  withdraw: "Withdraw approval",
+  withdrawTitle: "Withdraw this app's approval?",
+  withdrawHint:
+    "Members' connections through this app in this workspace end, and new ones are refused.",
+  registeredPending:
+    "Registered. The app waits for an administrator's approval in this workspace.",
+  stateRequest:
+    "Allowing sends a request to this workspace's administrators; the app connects once they approve it.",
+  statePending:
+    "This app waits for an administrator's approval in this workspace.",
+  stateRejected: "An administrator did not approve this app in this workspace.",
+  stateOff: "Administrators turned off members' AI apps in this workspace.",
+  requestAccess: "Request access",
+  requestSent:
+    "Request sent. Start again from your MCP client once an administrator approves the app.",
 };
 
 const cs: Record<keyof typeof en, string> = {
@@ -223,6 +263,45 @@ const cs: Record<keyof typeof en, string> = {
   callWorkspaceMismatch:
     "Volání patří do jiného pracovního prostoru. Před rozhodnutím ho vyber.",
   selectCallWorkspace: "Vybrat jeho pracovní prostor",
+  membersApps: "AI aplikace členů",
+  membersAppsHint:
+    "Zda členové smí k tomuto prostoru připojit vlastní AI aplikace. Vlastníků a správců se to netýká.",
+  policyLabel: "Členové připojují aplikace",
+  policyOff: "Vypnuto",
+  policyReview: "Schvaluje správce",
+  policyFree: "Povoleno",
+  policyOffHint:
+    "Vypnutí okamžitě ukončí přístup všech členů v tomto prostoru.",
+  requests: "Žádosti",
+  requestedBy: "Žádá {person}",
+  rejectReason: "Důvod pro žadatele (nepovinný)",
+  membersAccess: "Přístup členů",
+  membersAccessEmpty: "Žádný člen zatím aplikaci nepřipojil",
+  linkedThrough: "Propojeno přes {app}",
+  lastUsed: "Naposledy použito {date}",
+  neverUsed: "Zatím nepoužito",
+  memberRevokeTitle: "Odebrat členovi přístup?",
+  memberRevokeHint: "Aplikace člena okamžitě ztratí přístup.",
+  apps: "Aplikace OAuth",
+  appsEmpty: "V tomto prostoru zatím není žádná aplikace OAuth",
+  appApproved: "Schváleno",
+  appPending: "Čeká",
+  appRejected: "Zamítnuto",
+  appUndecided: "Nerozhodnuto",
+  withdraw: "Odvolat schválení",
+  withdrawTitle: "Odvolat schválení aplikace?",
+  withdrawHint:
+    "Připojení členů přes tuto aplikaci v tomto prostoru skončí a nová budou odmítnuta.",
+  registeredPending:
+    "Zaregistrováno. Aplikace v tomto prostoru čeká na schválení správcem.",
+  stateRequest:
+    "Povolením pošleš žádost správcům tohoto prostoru; aplikace se připojí, až ji schválí.",
+  statePending: "Tato aplikace v tomto prostoru čeká na schválení správcem.",
+  stateRejected: "Správce tuto aplikaci v tomto prostoru neschválil.",
+  stateOff: "Správci v tomto prostoru vypnuli AI aplikace členů.",
+  requestAccess: "Požádat o přístup",
+  requestSent:
+    "Žádost odeslána. Až správce aplikaci schválí, začni znovu ve svém MCP klientovi.",
 };
 
 export type McpCopy = typeof en;

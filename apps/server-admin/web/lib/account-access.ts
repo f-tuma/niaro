@@ -30,7 +30,8 @@ export const AccessSchema = z.object({
       chats: z.array(z.string()),
     }),
   ),
-  /** Active MCP access tokens (manual and OAuth); they end with sign-out everywhere. */
+  /** MCP access tokens (manual and OAuth), waiting and rejected ones too;
+   * they end with sign-out everywhere. */
   mcp: z
     .array(
       z.object({
@@ -41,6 +42,9 @@ export const AccessSchema = z.object({
         createdAt: z.number(),
         expiresAt: z.number(),
         lastUsedAt: z.number().nullable(),
+        status: z.enum(["active", "pending", "rejected"]).default("active"),
+        /** An administrator's reason for a rejection. */
+        reason: z.string().nullable().default(null),
       }),
     )
     .default([]),

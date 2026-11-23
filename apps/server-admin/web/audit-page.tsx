@@ -68,6 +68,11 @@ export const auditSearchSchema = z.object({
 export const auditActions: Record<AuditEntry["action"], keyof Copy> = {
   "mcp.access_issued": "auditMcpAccessIssued",
   "mcp.access_revoked": "auditMcpAccessRevoked",
+  "mcp.policy_changed": "auditMcpPolicyChanged",
+  "mcp.access_reviewed": "auditMcpAccessReviewed",
+  "mcp.app_registered": "auditMcpAppRegistered",
+  "mcp.app_requested": "auditMcpAppRequested",
+  "mcp.app_reviewed": "auditMcpAppReviewed",
   "mcp.data_read": "auditMcpDataRead",
   "auth.provider_changed": "auditAuthProvider",
   "hosted.server_changed": "auditHostedServer",

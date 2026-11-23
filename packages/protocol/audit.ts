@@ -7,6 +7,16 @@ export const AUDIT_PROFILE = "agent-audit/1" as const;
 export const AuditAction = z.enum([
   "mcp.access_issued",
   "mcp.access_revoked",
+  /** An owner or administrator changed members' external AI apps policy of a workspace. */
+  "mcp.policy_changed",
+  /** An owner or administrator approved or rejected a member's grant. */
+  "mcp.access_reviewed",
+  /** An OAuth app was registered on this server. */
+  "mcp.app_registered",
+  /** A member asked for an OAuth app to be approved in a workspace. */
+  "mcp.app_requested",
+  /** An owner or administrator approved, rejected or withdrew an app in a workspace. */
+  "mcp.app_reviewed",
   /** A person's own AI app read their Niaro data (search, meeting, tasks, memory). */
   "mcp.data_read",
   "auth.provider_changed",
@@ -160,6 +170,17 @@ export const AuditDetails = z.strictObject({
   policyScope: z.enum(["organization", "workspace"]).optional(),
   /** Items an imported configuration bundle changed. */
   changed: z.number().int().nonnegative().optional(),
+  /** Members' external AI apps policy of the workspace after and before a change. */
+  externalAppsPolicy: z.enum(["off", "review", "free"]).optional(),
+  previousExternalAppsPolicy: z.enum(["off", "review", "free"]).optional(),
+  /** Whether an issued or reviewed MCP grant is usable or waits for approval. */
+  accessStatus: z.enum(["active", "pending", "rejected"]).optional(),
+  /** An administrator's decision on a member's grant or app. */
+  decision: z.enum(["approved", "rejected", "withdrawn"]).optional(),
+  /** Members' grants a policy change or a withdrawn app revoked. */
+  revokedCount: z.number().int().nonnegative().optional(),
+  /** The grant was made through an OAuth app. */
+  oauth: z.boolean().optional(),
 });
 export const AuditRecordSchema = z.strictObject({
   organizationId: IdentityId,
