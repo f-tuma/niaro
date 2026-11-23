@@ -395,6 +395,8 @@ test("transport cancels before dispatch, clamps output, and settles before downs
       sent++;
     });
     assert.equal((r.body as { max_tokens: number }).max_tokens, 100);
+    // Routing preferences are OpenRouter's; other providers get none.
+    assert.equal((r.body as { provider?: unknown }).provider, undefined);
     // A malformed completion is still a billable, measured provider response.
     return {
       status: 200,
@@ -439,6 +441,47 @@ test("transport cancels before dispatch, clamps output, and settles before downs
     await wrapped(request);
     assert.equal(sent, 1);
     assert.equal(store.summary("TEST-root").accountedTokens, 15);
+  } finally {
+    db.close();
+  }
+});
+
+test("an OpenRouter call is routed only to endpoints within the enforced price", async () => {
+  const { db, store } = fixture();
+  const bodies: Record<string, unknown>[] = [];
+  const wrapped = budgetedInferenceTransport(
+    async (r) => {
+      await r.beforeDispatch!(() => {});
+      bodies.push(r.body as Record<string, unknown>);
+      return {
+        status: 200,
+        headers: {},
+        text: '{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"cost":0.00002}}',
+      };
+    },
+    store,
+    "TEST-root",
+    target,
+    {
+      ...selected,
+      provider: { ...selected.provider, dialect: "openrouter" },
+    },
+    "model",
+    (run) => run(),
+    async () => {},
+    () => 0,
+  );
+  try {
+    await wrapped({
+      url: "https://openrouter.example.test/v1/chat/completions",
+      body: { provider: { data_collection: "deny" } },
+      beforeDispatch: async (start) => start(),
+    });
+    // USD per million tokens, as the price is saved; other preferences stay.
+    assert.deepEqual(bodies[0]!.provider, {
+      data_collection: "deny",
+      max_price: { prompt: 1, completion: 2 },
+    });
   } finally {
     db.close();
   }

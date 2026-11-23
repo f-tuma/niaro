@@ -18,6 +18,7 @@ import {
   type IntegrationTransport,
 } from "../server-integrations/transport";
 import { completionBody } from "../server-integrations/chat-stream";
+import { isOpenRouterDialect } from "../server-integrations/provider-request";
 import { IdentityError } from "./error";
 import { isInferenceBudgetFailureCode } from "./inference-budget-failure";
 import { operatorLog } from "../fixture-server/operator-log";
@@ -824,13 +825,25 @@ export function budgetedInferenceTransport(
     try {
       let body = request.body;
       if (reservation.enforce && reservation.price && kind === "model") {
-        const previous = (body as Record<string, unknown>).max_tokens;
+        const previous = body as Record<string, unknown>;
+        const price = reservation.price;
         body = {
-          ...(body as Record<string, unknown>),
+          ...previous,
           max_tokens: Math.min(
-            safeCount(previous) ?? reservation.price.maxOutputTokens,
-            reservation.price.maxOutputTokens,
+            safeCount(previous.max_tokens) ?? price.maxOutputTokens,
+            price.maxOutputTokens,
           ),
+          // OpenRouter routes only to endpoints within the price, so the
+          // reservation stays an upper bound (its listed price is the cheapest).
+          ...(isOpenRouterDialect(selected.provider) && {
+            provider: {
+              ...(typeof previous.provider === "object" && previous.provider),
+              max_price: {
+                prompt: price.inputMicrosPerMillion / 1_000_000,
+                completion: price.outputMicrosPerMillion / 1_000_000,
+              },
+            },
+          }),
         };
       }
       const response = await transport({
